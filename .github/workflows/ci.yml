@@ -2,7 +2,7 @@ name: ci
 
 # Two tiers (the quick release checks are checks.yml):
 #   every push / pull request : the fast test suite, split into 3 parallel shards per OS image
-#                               (run_all.py --shard I/3, -j auto inside each), after a core-tier setup;
+#                               (run_all.py --shard I/3, -j 2 inside each), after a core-tier setup;
 #                               shard 1 also runs a 2 s 360p render and the path-with-spaces shims
 #   nightly / manual          : the full test suite (voice, ASR, longer renders)
 # Changes that only touch docs, Markdown, README art or the site do not run it.
@@ -129,13 +129,15 @@ jobs:
           Pop-Location
           python -c "import json,sys; d = json.load(open(sys.argv[1], encoding='utf-8-sig')); assert d['ok'], d['counts']" (Join-Path $dest 'showtime\doctor.json')
 
-      - name: Fast test suite, shard ${{ matrix.shard }}/3 (-j auto)
+      # -j 2: two files at a time on every image (auto would pick 1 on the 3-core Apple Silicon runner,
+      # 2 on the 4-core Linux, Windows and Intel Mac runners); the shards are balanced for 2
+      - name: Fast test suite, shard ${{ matrix.shard }}/3 (-j 2)
         shell: bash
         env:
           ONLY: ${{ inputs.tests }}
         run: |
           only=(); for t in $ONLY; do only+=(-k "$t"); done
-          python skills/showtime/tests/run_all.py --fast -j auto --shard "${{ matrix.shard }}/3" "${only[@]}"
+          python skills/showtime/tests/run_all.py --fast -j 2 --shard "${{ matrix.shard }}/3" "${only[@]}"
 
       - name: 2 s 360p render smoke
         if: matrix.shard == 1

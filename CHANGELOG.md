@@ -91,14 +91,19 @@ All notable changes to showtime. Each entry says what changed and why, so this f
 - **CI runs the fast suite in three shards per OS.** `run_all.py --shard I/N` runs one of N parts of the
   test files, split by fixed per-file weights (`SHARD_WEIGHTS`, fast-suite seconds from a CI run; longest
   first into the lightest part), so every machine computes the same split and each file runs exactly
-  once; `-j auto` still runs files in parallel inside a shard. `ci.yml` runs shards 1/3, 2/3 and 3/3 as
+  once; inside a shard two files run at a time (`-j 2`, also on the 3-core Apple Silicon runner, where
+  `auto` would pick 1). `ci.yml` runs shards 1/3, 2/3 and 3/3 as
   separate jobs on Ubuntu, Windows, Apple Silicon and, on the public repository, the Intel Mac
   (`macos-15-intel`: the `macos-13` image is retired); shard 1 also runs the render smoke and the
   path-with-spaces shims. On one 2-core runner the suite took 23 to 31 minutes per OS.
 - **The HTML export test runs alone** (`SERIAL` in `run_all.py`). Its player checks watch playback in real
   time; on the public 4-core runners, sharing the machine with another file's Chrome left the player
   drawing 1 to 4 frames in the 1.5 s window on Windows and the Intel Mac. A file in `SERIAL` counts double
-  when the shards are balanced.
+  when the shards are balanced. Running alone was not enough on the Windows image (1 frame drawn while the
+  clock ran on), so on a CI runner (`CI` set) those real-time checks skip with the reason when the browser
+  draws fewer than 5 frames in the window or the sound is still loading, as they already did on 2 cores;
+  everything before them (requests, errors, duration, soundtrack) still runs, and on a desktop they
+  always run.
 
 ### Changed: the examples have their own repository
 

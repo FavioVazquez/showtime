@@ -6,19 +6,11 @@
   </picture>
 </p>
 
-<!-- ============================================================================================
-HERO: the launch film. GitHub plays an MP4 with sound in a README only when the file is a user attachment,
-so until the owner uploads it, the poster below links to the release asset. To switch to the player
-(publish checklist step 6 in site/README.md):
-  1. On github.com, open README.md > Edit (pencil).
-  2. Delete the whole <p align="center"> ... </p> paragraph right under the HERO-VIDEO-URL line (the poster).
-  3. With the cursor on that empty line, drag launch-16x9.mp4 (under 100 MB) into the editor and wait for a
-     line like https://github.com/user-attachments/assets/<id>
-  4. Keep that URL alone on its line, with an empty line above and below; keep the caption paragraph. Commit.
-============================================================================================ -->
-<!-- HERO-VIDEO-URL -->
 
-<p align="center"><a href="https://github.com/FavioVazquez/showtime-examples/releases/download/examples-media-v1/_launch--launch-16x9.mp4"><img alt="showtime, with its curtain icon: One sentence in. A finished video out. Beside it, a real request typed in Claude Code, Make a 45-second travel slideshow of an Iceland ring-road trip, and the video showtime rendered from it: Kirkjufell mountain with a route map, at 0:34 of 0:45. Watch the launch film, 40 seconds, sound on." src="assets/readme/launch-poster.jpg" width="100%"></a></p>
+
+https://github.com/user-attachments/assets/a11e9613-efd3-490b-a3ec-5583ac65a5d2
+
+
 
 <p align="center"><sub>▶ <a href="https://github.com/FavioVazquez/showtime-examples/releases/download/examples-media-v1/_launch--launch-16x9.mp4"><b>Watch the 40-second launch film</b></a> (sound on). Every frame is from a real showtime example.</sub><br><sub>Music: “With These Hands” by Scott Buckley, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a> (<a href="https://github.com/FavioVazquez/showtime-examples/blob/main/examples/_launch/credits.txt">credits</a>).</sub></p>
 <!-- /HERO -->

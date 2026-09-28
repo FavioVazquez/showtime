@@ -1,0 +1,54 @@
+{
+  "schema": "showtime.bench.arms/1",
+  "note": "Neutral labels. Third-party arms are resolved from a LOCAL, unshipped file (arms.local.json in the benchmark home) that maps each 'local:' key to a path or package on the benchmark machine. See README.md > Arms.",
+  "common": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "tools_on_path": ["ffmpeg", "ffprobe", "node", "npm", "npx", "python3", "uv", "git"],
+    "disallowed_tools": [
+      "Bash(sudo:*)", "Bash(brew install:*)", "Bash(brew upgrade:*)", "Bash(apt-get install:*)",
+      "Bash(rm -rf ~:*)", "Bash(rm -rf /:*)", "Bash(git push:*)", "Bash(open:*)"
+    ]
+  },
+  "arms": [
+    {
+      "id": "baseline",
+      "label": "Plain Claude Code",
+      "kind": "baseline",
+      "description": "Claude Code with no video skill or plugin; same model, effort, tools on PATH, time cap and budget."
+    },
+    {
+      "id": "showtime",
+      "label": "showtime",
+      "kind": "plugin",
+      "snapshot_exclude": [],
+      "description": "A frozen copy of this repository's shipped files minus benchmarks/ (so the arm cannot read the rubrics), loaded with --plugin-dir; runtime home (~/.showtime) already set up by `showtime setup`."
+    },
+    {
+      "id": "skill-h",
+      "label": "Skill H (HTML-to-video framework: skills + CLI)",
+      "kind": "skills",
+      "source": "local:skill-h",
+      "skills": "local:skill-h.skills",
+      "cli": "local:skill-h.cli",
+      "description": "An open-source HTML-composition video framework: its core agent skills copied into the isolated config dir, its CLI installed into an isolated prefix on PATH."
+    },
+    {
+      "id": "skill-v",
+      "label": "Skill V (conversational footage editor)",
+      "kind": "skills",
+      "source": "local:skill-v",
+      "skills": "local:skill-v.skills",
+      "python": "local:skill-v.python",
+      "description": "An open-source transcript-driven footage-editing skill, as shipped. Its transcription needs a cloud speech API key; the benchmark gives no arm a cloud key, so its footage path is expected to fail and is recorded as such."
+    },
+    {
+      "id": "skill-b",
+      "label": "Skill B (single-file minimal video skill)",
+      "kind": "skills",
+      "source": "local:skill-b",
+      "skills": "local:skill-b.skills",
+      "description": "A minimal one-file video skill: the lower bound of 'a skill, but a small one'."
+    }
+  ]
+}

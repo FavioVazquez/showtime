@@ -1,0 +1,5 @@
+# Optional Manim extra (setup.py --with manim) -> installed into the main venv ~/.showtime/venv.
+# Manim Community Edition (MIT): the default engine for `showtime manim`. PyAV (already in the venv)
+# encodes its video, so no ffmpeg binary is needed. pycairo builds from source on macOS and Linux
+# (needs cairo + pango + pkg-config); Windows gets wheels. LaTeX is optional (equations only).
+manim>=0.21,<0.22

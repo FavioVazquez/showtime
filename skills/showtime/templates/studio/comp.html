@@ -1,0 +1,53 @@
+<!doctype html>
+<!-- Style-frame composition for a studio board. Copy it per concept (comps/c1.html, comps/c2.html ...),
+     change the tokens and the three shots, then render:
+       showtime studio frame <job> --concept C1 --html comps/c1.html --shots hook,reveal,end
+     Each shot is this page loaded with ?shot=<name>. Use real product captures and real copy; anything
+     invented must say "placeholder" on the frame. This page is served from the studio folder.
+     Fonts: <link rel="stylesheet" href="/_st/themes/fonts/<family>.css"> for the families setup installs
+     (inter, anton, instrument-serif ...: runtime/themes/fonts/); any other family: `showtime assets font <id>`,
+     then /_assets/fonts/<id>/font.css. Images: ../media/... Nothing may load from the network. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="/_st/themes/fonts/inter.css">
+<link rel="stylesheet" href="/_st/themes/fonts/instrument-serif.css">
+<style>
+  :root {
+    --ground: #f3eee4; --ink: #1d1b17; --accent: #c8553d; --muted: #7a7266;
+    --display: 'Instrument Serif', serif; --body: 'Inter', sans-serif;
+  }
+  html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: var(--ground); color: var(--ink); font-family: var(--body); }
+  .shot { position: absolute; inset: 0; display: none; padding: 120px 160px; box-sizing: border-box; }
+  .shot.on { display: grid; }
+  h1 { font: 400 150px/1.02 var(--display); letter-spacing: -0.02em; margin: 0; max-width: 1400px; }
+  p { font-size: 40px; line-height: 1.35; color: var(--muted); margin: 32px 0 0; max-width: 1100px; }
+  .kicker { font: 600 26px/1 var(--body); letter-spacing: .16em; text-transform: uppercase; color: var(--accent); margin-bottom: 36px; }
+  .card { background: #fff; border-radius: 28px; box-shadow: 0 30px 80px -30px rgba(0,0,0,.35); padding: 56px; font-size: 44px; align-self: center; justify-self: center; width: 1100px; }
+  .mark { width: 120px; height: 120px; border-radius: 30px; background: var(--accent); margin-bottom: 40px; }
+  .end { place-items: center; text-align: center; }
+  .end h1 { font-size: 120px; }
+</style>
+</head>
+<body>
+  <section class="shot" data-shot="hook" style="align-content:center">
+    <div class="kicker">Hook</div>
+    <h1>Your notes, at home.</h1>
+    <p>The first three seconds: one idea, big and legible on a phone.</p>
+  </section>
+  <section class="shot" data-shot="reveal">
+    <div class="card"><div class="kicker">Product</div>The product moment goes here: a real capture, framed.</div>
+  </section>
+  <section class="shot end" data-shot="end">
+    <div><div class="mark" style="margin:0 auto 40px"></div><h1>Product name</h1><p style="margin:24px auto 0">Call to action · example.com</p></div>
+  </section>
+<script>
+  // show the requested shot (default: the first)
+  var want = new URLSearchParams(location.search).get('shot');
+  var shots = document.querySelectorAll('[data-shot]');
+  var hit = false;
+  shots.forEach(function (s) { if (s.dataset.shot === want) { s.classList.add('on'); hit = true; } });
+  if (!hit && shots[0]) shots[0].classList.add('on');
+</script>
+</body>
+</html>

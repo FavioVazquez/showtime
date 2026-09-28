@@ -1,0 +1,15 @@
+# Optional MusicGen extra (setup.py --with musicgen) -> separate venv ~/.showtime/venv-musicgen.
+# MusicGen weights are CC-BY-NC-4.0: output is for non-commercial / temp-track use only.
+#
+# Intel Macs: PyTorch stopped shipping x86_64 macOS wheels after 2.2.2, which needs numpy<2
+# and transformers<4.58 (5.x requires torch>=2.5).
+torch==2.2.2 ; sys_platform == 'darwin' and platform_machine == 'x86_64'
+numpy<2 ; sys_platform == 'darwin' and platform_machine == 'x86_64'
+# Everyone else: a current CPU torch (on Linux setup.py installs it from the PyTorch CPU index first).
+torch>=2.5,<3 ; sys_platform != 'darwin' or platform_machine != 'x86_64'
+numpy>=1.26 ; sys_platform != 'darwin' or platform_machine != 'x86_64'
+transformers>=4.45,<4.58
+huggingface_hub>=0.26,<1.0
+soundfile>=0.12
+scipy>=1.11
+pyloudnorm>=0.1.1

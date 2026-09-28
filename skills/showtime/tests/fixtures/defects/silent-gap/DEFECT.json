@@ -1,0 +1,2 @@
+{ "tool": "qa", "rule": "silent_gap", "severity": "WARN", "render_args": [],
+  "why": "Music that ends early or a dropped voice line leaves dead air in the middle of the video." }

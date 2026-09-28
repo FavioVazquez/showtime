@@ -1,0 +1,2 @@
+{ "tool": "check", "rule": "unseeded_random", "severity": "WARN", "check_args": ["--no-timeline", "--samples", "2"],
+  "why": "Math.random() in a frame function makes every frame different noise; the renderer reseeds it per frame, so it no longer matches the preview and flickers." }

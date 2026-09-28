@@ -1,0 +1,98 @@
+{
+  "id": "interview",
+  "title": "Bob Crippen Interview on STS-1: Soundbites (excerpt)",
+  "author": "NASA / Kennedy Space Center",
+  "license": "Public domain (NASA media). No endorsement implied; do not use NASA logos or insignia.",
+  "landing_url": "https://images.nasa.gov/details/KSC-20210325-MH-JRS01_0001-Bob_Crippen_Interview_on_STS-1_Soundbites",
+  "file_url": "https://images-assets.nasa.gov/video/KSC-20210325-MH-JRS01_0001-Bob_Crippen_Interview_on_STS-1_Soundbites/KSC-20210325-MH-JRS01_0001-Bob_Crippen_Interview_on_STS-1_Soundbites~small.mp4",
+  "source_sha256": "0bdd7f5b8d723c234559af4bd3ac5ad8afa46e175a968df2f6d3318f1f8c7e50",
+  "source_bytes": 27452850,
+  "trim": {
+    "start": 79.6,
+    "duration": 63.8
+  },
+  "encode": [
+    "-c:v",
+    "libx264",
+    "-preset",
+    "medium",
+    "-crf",
+    "21",
+    "-pix_fmt",
+    "yuv420p",
+    "-c:a",
+    "aac",
+    "-b:a",
+    "160k",
+    "-movflags",
+    "+faststart"
+  ],
+  "ground_truth": {
+    "fillers": 5,
+    "filler_intervals_s": [
+      [
+        19.94,
+        20.37
+      ],
+      [
+        21.68,
+        22.02
+      ],
+      [
+        32.14,
+        32.72
+      ],
+      [
+        35.46,
+        36.1
+      ],
+      [
+        53.52,
+        53.9
+      ]
+    ],
+    "filler_spans": [
+      {
+        "words": [
+          "nearly",
+          "as",
+          "magnificent"
+        ],
+        "filler_s": 0.77,
+        "note": "two 'uh' around 'as'"
+      },
+      {
+        "words": [
+          "orbit",
+          "we"
+        ],
+        "filler_s": 0.58
+      },
+      {
+        "words": [
+          "do",
+          "we"
+        ],
+        "filler_s": 0.64
+      },
+      {
+        "words": [
+          "eventually",
+          "fly"
+        ],
+        "filler_s": 0.38
+      }
+    ],
+    "long_silences_s": [
+      [
+        24.75,
+        29.97
+      ],
+      [
+        58.47,
+        63.67
+      ]
+    ],
+    "method": "Filler times come from a word-level ASR pass over the whole source file (large-v3-turbo), which transcribed each 'uh'; ASR over the excerpt alone folds the same fillers into the neighbouring words, so the scorer does not count transcribed fillers. It aligns the content words of the output to the excerpt's and checks that each span around a known filler got shorter by at least 60% of the filler's length. Silences: ffmpeg silencedetect at -35 dB, 0.5 s."
+  }
+}

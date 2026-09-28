@@ -1,0 +1,45 @@
+#!/bin/sh
+# showtime: POSIX entry point. Finds a Python 3.8+ and hands off to
+# lib/st/launcher.py, which does all the real work (stdlib only).
+# Override the interpreter with SHOWTIME_PYTHON=/path/to/python.
+
+self="$0"
+while [ -h "$self" ]; do
+  link=$(readlink "$self")
+  case "$link" in
+    /*) self="$link" ;;
+    *) self="$(dirname "$self")/$link" ;;
+  esac
+done
+bin_dir=$(cd "$(dirname "$self")" && pwd -P)
+launcher="$bin_dir/../lib/st/launcher.py"
+st_home="${SHOWTIME_HOME:-$HOME/.showtime}"
+
+# Fast path: the showtime venv interpreter (Linux/macOS layout, then Git Bash on Windows).
+for py in "$SHOWTIME_PYTHON" "$st_home/venv/bin/python" "$st_home/venv/Scripts/python.exe"; do
+  if [ -n "$py" ] && [ -x "$py" ]; then
+    exec "$py" "$launcher" "$@"
+  fi
+done
+
+for py in python3 python; do
+  if command -v "$py" >/dev/null 2>&1 &&
+     "$py" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)' >/dev/null 2>&1; then
+    exec "$py" "$launcher" "$@"
+  fi
+done
+
+# No Python yet: uv can provide one on the fly. A fresh uv install is not on this
+# app's PATH until it restarts, so look in the installer's default folders too.
+for uv in "$(command -v uv 2>/dev/null)" "${XDG_BIN_HOME:-}/uv" "$HOME/.local/bin/uv" "$HOME/.cargo/bin/uv" \
+          /opt/homebrew/bin/uv /usr/local/bin/uv; do
+  if [ -n "$uv" ] && [ "$uv" != "/uv" ] && [ -x "$uv" ]; then
+    exec "$uv" run --no-project --python 3.12 python "$launcher" "$@"
+  fi
+done
+
+echo "showtime: no Python 3.8+ found." >&2
+echo "  Install uv (https://docs.astral.sh/uv/getting-started/installation/) or Python 3," >&2
+echo "  then run: $bin_dir/showtime setup" >&2
+echo "  If you just installed one, restart Claude Code (or open a new terminal) so it sees the new PATH." >&2
+exit 127

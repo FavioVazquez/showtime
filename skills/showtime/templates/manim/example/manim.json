@@ -1,0 +1,22 @@
+{
+  "title": "Odd numbers build squares",
+  "file": "scenes.py",
+  "scenes": [
+    "Sum",
+    "Squares"
+  ],
+  "aspect": "16:9",
+  "fps": 30,
+  "voice": "voice/timeline.json",
+  "narration": "narration.md",
+  "mix": "audio/mix.json",
+  "colors": {
+    "1": "hue1",
+    "3": "hue2",
+    "5": "hue3",
+    "7": "hue4",
+    "16": "emph",
+    "4^2": "emph",
+    "n^2": "emph"
+  }
+}

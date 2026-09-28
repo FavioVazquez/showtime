@@ -1,0 +1,32 @@
+{
+  "source": "placeholder timings: replace with showtime voice say ... (vo.words.json) or showtime transcribe",
+  "language": "en",
+  "words": [
+    {"text": "Stop", "start": 0.35, "end": 0.652, "type": "word"},
+    {"text": "editing", "start": 0.702, "end": 1.133, "type": "word"},
+    {"text": "videos", "start": 1.183, "end": 1.571, "type": "word"},
+    {"text": "by", "start": 1.621, "end": 1.837, "type": "word"},
+    {"text": "hand.", "start": 1.887, "end": 2.189, "type": "word"},
+    {"text": "Describe", "start": 2.609, "end": 3.083, "type": "word"},
+    {"text": "it", "start": 3.133, "end": 3.349, "type": "word"},
+    {"text": "once,", "start": 3.399, "end": 3.701, "type": "word"},
+    {"text": "and", "start": 3.901, "end": 4.16, "type": "word"},
+    {"text": "Northwind", "start": 4.21, "end": 4.684, "type": "word"},
+    {"text": "builds", "start": 4.734, "end": 5.122, "type": "word"},
+    {"text": "it", "start": 5.172, "end": 5.388, "type": "word"},
+    {"text": "on", "start": 5.438, "end": 5.654, "type": "word"},
+    {"text": "your", "start": 5.704, "end": 6.006, "type": "word"},
+    {"text": "own", "start": 6.056, "end": 6.315, "type": "word"},
+    {"text": "machine:", "start": 6.365, "end": 6.796, "type": "word"},
+    {"text": "voice,", "start": 6.996, "end": 7.341, "type": "word"},
+    {"text": "captions,", "start": 7.541, "end": 8.015, "type": "word"},
+    {"text": "music,", "start": 8.215, "end": 8.56, "type": "word"},
+    {"text": "all", "start": 8.76, "end": 9.019, "type": "word"},
+    {"text": "of", "start": 9.069, "end": 9.285, "type": "word"},
+    {"text": "it.", "start": 9.335, "end": 9.551, "type": "word"},
+    {"text": "Try", "start": 9.971, "end": 10.23, "type": "word"},
+    {"text": "it", "start": 10.28, "end": 10.496, "type": "word"},
+    {"text": "free", "start": 10.546, "end": 10.848, "type": "word"},
+    {"text": "today.", "start": 10.898, "end": 11.243, "type": "word"}
+  ]
+}

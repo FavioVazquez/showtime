@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="{{LANG}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+{{CSP}}
+<title>{{TITLE}}</title>
+<link rel="icon" href="data:,">
+<meta name="generator" content="{{GENERATOR}}">
+<meta name="description" content="{{DESCRIPTION}}">
+<!--
+{{NOTICE}}
+-->
+<style>
+{{CSS}}
+</style>
+</head>
+<body>
+<div id="stp" class="stp" tabindex="0" role="region" aria-label="{{TITLE}} (video player)">
+  <div class="stp-stage"><div class="stp-holder"><img class="stp-poster" alt="{{TITLE}}" src="{{POSTER}}"></div></div>
+  <noscript><div class="stp-noscript">This video needs JavaScript to play.</div></noscript>
+</div>
+<script type="application/json" id="st-manifest">{{MANIFEST}}</script>
+{{FILES}}
+{{PLAYER}}
+</body>
+</html>

@@ -1,0 +1,6 @@
+# Optional ManimGL engine (setup.py --with manimgl) -> separate venv ~/.showtime/venv-manimgl.
+# The released PyPI build (MIT, OpenGL renderer through moderngl). It imports pkg_resources, which
+# setuptools 81 removed, so setuptools stays below 81. The project's newer GPU renderer is not
+# released on PyPI; showtime pins the release.
+manimgl==1.7.2
+setuptools<81

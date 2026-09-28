@@ -1,0 +1,36 @@
+name: checks
+
+# The quick release checks, on every push and pull request (under a minute, one Linux runner): versions,
+# SKILL.md, links, commands named in the docs, paths, names, and the skill structure test. The test suite
+# on every OS is ci.yml, which skips changes that only touch docs and README art.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUTF8: "1"
+  NO_COLOR: "1"
+
+jobs:
+  release-checks:
+    name: release checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Versions, SKILL.md, links, commands, paths, names
+        run: python scripts/check_release.py --check
+      - name: Skill structure test
+        run: python skills/showtime/tests/test_skill_structure.py -v

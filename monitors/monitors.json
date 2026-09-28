@@ -1,0 +1,8 @@
+[
+  {
+    "name": "showtime-progress",
+    "command": "node \"${CLAUDE_PLUGIN_ROOT}/skills/showtime/mcp/progress-monitor.mjs\"",
+    "description": "showtime: progress and completion of long renders, exports and transcriptions",
+    "when": "on-skill-invoke:showtime"
+  }
+]

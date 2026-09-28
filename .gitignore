@@ -1,0 +1,26 @@
+# Render outputs and scratch
+showtime-out/
+# work folders showtime writes inside projects and jobs (check, snap, render scratch)
+**/work/
+*.work/
+*.part
+showtime-bug-report.md
+**/studio/.state/
+
+# Dependencies and environments
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Media: renders are never committed. The examples and their videos live in
+# FavioVazquez/showtime-examples.
+*.mp4
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

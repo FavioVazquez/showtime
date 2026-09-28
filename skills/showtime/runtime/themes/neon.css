@@ -1,0 +1,41 @@
+/* showtime theme: neon. Night-tech look: deep navy-black, electric cyan + magenta glow, wide display, fast motion.
+   Token contract (every theme defines all of these; components read them with fallbacks):
+   palette, type, shape, space, motion, captions, texture. See references/components.md. */
+@import url('base.css');
+@import url('fonts/unbounded.css');
+@import url('fonts/space-grotesk.css');
+@import url('fonts/jetbrains-mono.css');
+@import url('fonts/caveat.css');
+
+:root, [data-theme="neon"] {
+  color-scheme: dark;
+  /* palette */
+  --bg: #05060f; --fg: #e9f6ff; --muted: #9ba7b9;
+  --surface: #0d1122; --surface-2: #141a33; --border: rgb(120 220 255 / 0.18);
+  --accent: #29e7ff; --accent-2: #ff4fd8; --accent-ink: #05060f;
+  --good: #4dffa6; --bad: #ff4f6b; --shadow: 0 0 6cqmin rgb(41 231 255 / 0.22);
+  /* type */
+  --font-display: 'Unbounded', 'Space Grotesk', system-ui, sans-serif;
+  --font-body: 'Space Grotesk', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --font-hand: 'Caveat', cursive;
+  --weight-display: 800; --weight-body: 400;
+  --tracking-display: -0.03em; --leading-display: 1.0; --case-display: none;
+  /* shape + space (container units scale with the frame) */
+  --radius: 1.4cqmin; --radius-lg: 2.4cqmin; --stroke: max(1px, 0.2cqmin);
+  --space-1: 1.2cqmin; --space-2: 2.4cqmin; --space-3: 4cqmin; --space-4: 6.4cqmin;
+  --safe-x: 5cqw; --safe-y: 6cqh;
+  /* motion (read by the motion components: durations in s, eases as cubic-bezier) */
+  --motion-energy: high;
+  --dur-in: 0.5s; --dur-out: 0.3s; --dur-beat: 0.4s; --stagger: 0.04s;
+  --ease-in: cubic-bezier(0.55, 0, 1, 0.45);
+  --ease-out: cubic-bezier(0.19, 1, 0.22, 1);
+  --ease-move: cubic-bezier(0.76, 0, 0.24, 1);
+  --ease-emph: cubic-bezier(0.16, 1, 0.3, 1);
+  /* captions */
+  --cap-font: 'Space Grotesk', sans-serif; --cap-weight: 700; --cap-case: none;
+  --cap-outline: #02030a; --cap-active-ink: #05060f;
+  --cap-ink: #ffffff; --cap-accent: #29e7ff; --cap-plate: rgb(5 6 15 / 0.75);
+  /* texture */
+  --grain: 0.03; --glow: 0.7;
+}

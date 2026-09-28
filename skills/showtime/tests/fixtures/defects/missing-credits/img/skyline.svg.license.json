@@ -1,0 +1,11 @@
+{
+  "title": "Night skyline",
+  "creator": "Example Photographer",
+  "source": "fixture",
+  "url": "https://example.org/skyline",
+  "license": "CC-BY-4.0",
+  "license_class": "attribution",
+  "attribution_required": true,
+  "credit": "\"Night skyline\" by Example Photographer, CC BY 4.0",
+  "file": "skyline.svg"
+}

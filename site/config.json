@@ -1,0 +1,16 @@
+{
+  "repo": "FavioVazquez/showtime",
+  "_repo": "owner/name on GitHub. CI passes $GITHUB_REPOSITORY, which wins; the site is served at https://faviovazquez.github.io/showtime/.",
+  "examples_repo": "FavioVazquez/showtime-examples",
+  "examples_dir": "../showtime-examples/examples",
+  "_examples": "The examples (and their media release) live in their own repository. The build reads them from --examples, else examples/ in this checkout, else examples_dir (a sibling clone); CI checks that repository out.",
+  "branch": "main",
+  "version": "0.1",
+  "marketplace": "FavioVazquez/showtime",
+  "description": "A local video studio for Claude Code: describe a video in one sentence, Claude directs, your machine renders. No cloud AI services, no API keys, no uploads.",
+  "hero": {
+    "folder": "examples/_launch",
+    "film": "launch-16x9.mp4",
+    "_film": "A release asset (examples/MEDIA.json); the workflow downloads it. The hero band loops the silent teaser in that folder and the button plays this film with sound."
+  }
+}

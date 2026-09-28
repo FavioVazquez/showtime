@@ -1,0 +1,2 @@
+{ "tool": "check", "rule": "safe_zone", "severity": "WARN", "check_args": ["--no-timeline", "--no-determinism", "--samples", "2"],
+  "why": "A call to action placed at the bottom of a 9:16 frame is covered by the caption and buttons of Reels, TikTok and Shorts." }

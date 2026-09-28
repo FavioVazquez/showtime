@@ -1,0 +1,15 @@
+<!doctype html><html><head><meta charset="utf-8">
+<script src="/_st/stage.js"></script>
+<style>html,body{margin:0;background:#0b0d12;overflow:hidden}</style></head><body>
+<canvas id="c" width="320" height="180"></canvas>
+<script>
+  const g = document.getElementById('c').getContext('2d');
+  ST.onSeek((t) => {
+    // the defect: the animation pauses from 1.5 s to 4.5 s (a timeline gap left after re-timing scenes)
+    const u = t < 1.5 ? t : t < 4.5 ? 1.5 : t - 3.0;
+    g.fillStyle = '#0b0d12'; g.fillRect(0, 0, 320, 180);
+    g.fillStyle = '#1f2a44'; g.fillRect(0, 120, 320, 60);
+    g.fillStyle = '#ffb224'; g.beginPath(); g.arc(30 + u * 50, 90, 22, 0, 7); g.fill();
+    g.fillStyle = '#7cc4ff'; g.fillRect(200 - u * 20, 30, 60, 16);
+  });
+</script></body></html>

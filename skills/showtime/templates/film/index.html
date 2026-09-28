@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Film Template</title>
+  <!-- Fonts are real files served from ~/.showtime/node (never system fonts). -->
+  <link rel="stylesheet" href="/_lib/@fontsource-variable/inter/index.css">
+  <link rel="stylesheet" href="/_lib/@fontsource/instrument-serif/index.css">
+  <link rel="stylesheet" href="/_lib/@fontsource/instrument-serif/400-italic.css">
+  <script src="/_st/stage.js"></script>
+  <script src="/_st/film.js"></script>
+  <script src="/_st/synth.js"></script>
+</head>
+<body>
+  <script src="cues.js"></script>
+  <script src="scenes.js"></script>
+  <script src="score.js"></script>
+  <script>
+    Film.start({
+      look: 'paper',
+      design: [1920, 1080],          // author in 1920x1080 units; renders at any 16:9 size
+      palette: { accent: '#d9482b', accent2: '#2f6f73', muted: '#5e574e' },   // muted darkened: small grey text keeps >= 4.5:1 on the paper
+      fonts: ['400 1em "Instrument Serif"', 'italic 400 1em "Instrument Serif"',
+              '400 1em "Inter Variable"', '650 1em "Inter Variable"', '800 1em "Inter Variable"'],
+      acts: CUE.acts,
+      scenes: drawFilm,
+      score: FILM_SCORE,
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "_comment": "Generated music + sound design, no downloads. Times are on the video timeline and match the scene cuts in index.html (music sections start on the scenes; each sfx sits on the beat it accents). `showtime retime <project> -d <seconds>` moves the scenes, these times and the poster together; after editing one scene by hand, move its sfx 'at' with it. Swap the music for a library track with {\"kind\": \"music\", \"lib\": \"<id>\", \"fit\": true} (showtime audio lib search --kind music --mood uplifting).",
+  "sample_rate": 48000,
+  "tracks": [
+    {"id": "bed", "kind": "music", "compose": {"style": "upbeat-tech", "bpm": 120, "key": "D", "sections": "0:intro,6.8:build,9.8:drop,12.0:outro", "seed": 1}, "gain_db": 0, "fade_out": 1.0},
+    {"kind": "sfx", "synth": {"type": "whoosh", "intensity": 0.6, "seed": 2}, "at": 2.4, "align": "hit", "gain_db": -3},
+    {"kind": "sfx", "synth": {"type": "click", "seed": 3}, "at": 4.9, "align": "hit", "gain_db": -2},
+    {"kind": "sfx", "synth": {"type": "keyclick", "seed": 4}, "at": 3.35, "align": "hit", "gain_db": -2},
+    {"kind": "sfx", "synth": {"type": "swoosh-in", "intensity": 0.5, "seed": 5}, "at": 6.8, "align": "hit", "gain_db": -4},
+    {"kind": "sfx", "synth": {"type": "thock", "intensity": 0.7, "seed": 6}, "at": 9.8, "align": "hit", "gain_db": -3},
+    {"kind": "sfx", "synth": {"type": "logo-sting", "key": "D", "seed": 7}, "at": 13.45, "align": "hit", "gain_db": -3}
+  ],
+  "master": {"lufs": -14, "true_peak": -1}
+}

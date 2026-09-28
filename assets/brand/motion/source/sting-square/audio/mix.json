@@ -1,0 +1,160 @@
+{
+ "duration": 6.0,
+ "sample_rate": 48000,
+ "tracks": [
+  {
+   "kind": "ambience",
+   "synth": {
+    "type": "drone",
+    "key": "D",
+    "dur": 6.0,
+    "seed": 5
+   },
+   "start": 0,
+   "gain_db": 7,
+   "fade_in": 0.8,
+   "fade_out": 1.4
+  },
+  {
+   "kind": "sfx",
+   "synth": {
+    "type": "whoosh",
+    "intensity": 0.3,
+    "seed": 12
+   },
+   "at": 0.65,
+   "align": "peak",
+   "gain_db": -13
+  },
+  {
+   "kind": "sfx",
+   "synth": {
+    "type": "swell",
+    "key": "D",
+    "dur": 2.4,
+    "intensity": 0.6,
+    "seed": 4
+   },
+   "at": 3.15,
+   "align": "hit",
+   "gain_db": -3
+  },
+  {
+   "kind": "sfx",
+   "synth": {
+    "type": "reverse-cymbal",
+    "seed": 3
+   },
+   "at": 3.15,
+   "align": "hit",
+   "gain_db": -11
+  },
+  {
+   "kind": "sfx",
+   "synth": {
+    "type": "paper-swipe",
+    "seed": 8
+   },
+   "at": 2.35,
+   "align": "peak",
+   "gain_db": -16
+  },
+  {
+   "kind": "sfx",
+   "synth": {
+    "type": "whoosh-heavy",
+    "intensity": 0.45,
+    "seed": 6
+   },
+   "at": 2.7,
+   "align": "peak",
+   "gain_db": -9
+  },
+  {
+   "kind": "sfx",
+   "synth": {
+    "type": "thock",
+    "intensity": 0.6,
+    "seed": 2
+   },
+   "at": 3.13,
+   "align": "hit",
+   "gain_db": -9
+  },
+  {
+   "kind": "sfx",
+   "synth": {
+    "type": "impact",
+    "intensity": 0.75,
+    "seed": 7
+   },
+   "at": 3.15,
+   "align": "hit",
+   "gain_db": -3
+  },
+  {
+   "kind": "sfx",
+   "synth": {
+    "type": "stinger",
+    "key": "D",
+    "intensity": 0.8,
+    "seed": 9
+   },
+   "at": 3.15,
+   "align": "hit",
+   "gain_db": -2
+  },
+  {
+   "kind": "sfx",
+   "synth": {
+    "type": "braam",
+    "key": "D",
+    "intensity": 0.5,
+    "seed": 4
+   },
+   "at": 3.15,
+   "align": "hit",
+   "gain_db": -6
+  },
+  {
+   "kind": "sfx",
+   "synth": {
+    "type": "whoosh",
+    "intensity": 0.35,
+    "seed": 21
+   },
+   "at": 4.35,
+   "align": "peak",
+   "gain_db": -8
+  },
+  {
+   "kind": "sfx",
+   "synth": {
+    "type": "logo-sting",
+    "key": "D",
+    "dur": 2.2,
+    "seed": 13
+   },
+   "at": 4.66,
+   "align": "hit",
+   "gain_db": 0,
+   "fade_out": 0.4
+  },
+  {
+   "kind": "sfx",
+   "synth": {
+    "type": "shimmer",
+    "key": "D",
+    "intensity": 0.35,
+    "seed": 5
+   },
+   "at": 5.35,
+   "align": "peak",
+   "gain_db": -9
+  }
+ ],
+ "master": {
+  "lufs": -14,
+  "true_peak": -1
+ }
+}

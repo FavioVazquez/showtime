@@ -1,0 +1,21 @@
+<!doctype html><html><head><meta charset="utf-8">
+<script src="/_st/stage.js"></script>
+<style>html,body{margin:0;background:#0b0d12;overflow:hidden}</style></head><body>
+<canvas id="c" width="320" height="180"></canvas>
+<script>
+  const g = document.getElementById('c').getContext('2d');
+  ST.onSeek((t) => {
+    g.fillStyle = '#0b0d12'; g.fillRect(0, 0, 320, 180);
+    g.fillStyle = '#e5484d'; g.fillRect(20 + t * 90, 70, 40, 40);
+  });
+  // the defect: a bed pushed about 12 dB into a hard clipper (a "loud" preset) and delivered without
+  // the mastering limiter: the waveform is squared off at full scale
+  ST.score = async (ctx, dest) => {
+    const o = ctx.createOscillator(), v = ctx.createGain(), clip = ctx.createWaveShaper();
+    const n = 2048, curve = new Float32Array(n);
+    for (let i = 0; i < n; i++) { const x = (i / (n - 1)) * 2 - 1; curve[i] = Math.max(-1, Math.min(1, x * 4)); }
+    clip.curve = curve;
+    o.type = 'sine'; o.frequency.value = 220; v.gain.value = 0.9;
+    o.connect(v).connect(clip).connect(dest); o.start(0); o.stop(2.5);
+  };
+</script></body></html>

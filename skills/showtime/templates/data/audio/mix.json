@@ -1,0 +1,9 @@
+{
+  "_comment": "Generated music + sound design, no downloads. Times match index.html: sections start on the scenes (title, bars, lines, closing number) and the one chime lands when the count-up settles. A restrained underscore (strings, a soft piano pulse, no drums, no build or drop) keeps the numbers in front; no music is also fine for a team report (remove the bed). `showtime retime <project> -d <seconds>` moves them with the scenes. For narration add a voice track and duck the music under it.",
+  "sample_rate": 48000,
+  "tracks": [
+    {"id": "bed", "kind": "music", "compose": {"style": "underscore", "key": "Dm", "sections": "0:intro,2.5:verse,7:chorus,11:outro", "seed": 1}, "gain_db": 0, "fade_out": 1.0},
+    {"kind": "sfx", "synth": {"type": "chime", "key": "D", "intensity": 0.5, "seed": 5}, "at": 12.7, "align": "hit", "gain_db": -7}
+  ],
+  "master": {"lufs": -14, "true_peak": -1}
+}

@@ -1,0 +1,21 @@
+<!doctype html><html><head><meta charset="utf-8">
+<script src="/_st/stage.js"></script>
+<style>html,body{margin:0;background:#0b0d12;overflow:hidden}</style></head><body>
+<canvas id="c" width="320" height="180"></canvas>
+<script>
+  const g = document.getElementById('c').getContext('2d');
+  ST.onSeek((t) => {
+    g.fillStyle = '#0b0d12'; g.fillRect(0, 0, 320, 180);
+    g.fillStyle = '#46a758'; g.fillRect(20 + t * 55, 70, 40, 40);
+  });
+  // the defect: the bed stops at 1.2 s and the next cue starts at 3.2 s (a missing voice line)
+  ST.score = async (ctx, dest) => {
+    for (const [a, b] of [[0, 1.2], [3.2, 4.5]]) {
+      const o = ctx.createOscillator(), v = ctx.createGain();
+      o.type = 'triangle'; o.frequency.value = 220;
+      v.gain.setValueAtTime(0, a); v.gain.linearRampToValueAtTime(0.3, a + 0.02);
+      v.gain.setValueAtTime(0.3, b - 0.02); v.gain.linearRampToValueAtTime(0, b);
+      o.connect(v).connect(dest); o.start(a); o.stop(b);
+    }
+  };
+</script></body></html>

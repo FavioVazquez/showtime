@@ -1,0 +1,2 @@
+{ "tool": "qa", "rule": "first_frame_black", "severity": "FAIL", "render_args": [],
+  "why": "Opening on black (a fade-in from nothing, a late first clip) and never baking a poster: feeds and chat apps show frame 0 as the thumbnail." }

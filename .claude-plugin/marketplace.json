@@ -1,0 +1,24 @@
+{
+  "name": "showtime",
+  "owner": {
+    "name": "Favio Vazquez"
+  },
+  "metadata": {
+    "description": "showtime: a local video studio skill for Claude Code",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "showtime",
+      "source": "./",
+      "description": "Local video making for Claude Code: motion graphics, voice-over, music, footage editing, captions and exports, all on your machine.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Favio Vazquez"
+      },
+      "license": "MIT",
+      "keywords": ["video", "motion-graphics", "tts", "music", "captions", "ffmpeg"],
+      "category": "media"
+    }
+  ]
+}

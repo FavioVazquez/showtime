@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 200" width="640" height="200">
+  <title>Brightloom (fictional benchmark brand)</title>
+  <g transform="translate(40 30)">
+    <rect x="0" y="0" width="140" height="140" rx="32" fill="#1f3a5f"/>
+    <path d="M28 104 C 52 40, 88 40, 112 104" fill="none" stroke="#ffc857" stroke-width="12" stroke-linecap="round"/>
+    <path d="M28 70 H 112" stroke="#f5f1e8" stroke-width="10" stroke-linecap="round"/>
+    <path d="M28 92 H 112" stroke="#f5f1e8" stroke-width="10" stroke-linecap="round" opacity="0.55"/>
+    <circle cx="70" cy="44" r="10" fill="#ffc857"/>
+  </g>
+  <text x="210" y="122" font-family="Georgia, 'Times New Roman', serif" font-size="68" font-weight="700" fill="#1f3a5f">Brightloom</text>
+  <text x="212" y="160" font-family="Helvetica, Arial, sans-serif" font-size="20" letter-spacing="6" fill="#4a5a70">WOVEN LIGHT STUDIO</text>
+</svg>

@@ -1,0 +1,10 @@
+{
+  "title": "Vertical short",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "duration": 12.0,
+  "background": "#0d0b0a",
+  "poster": 1.6,
+  "audio": "audio/mix.json"
+}

@@ -1,0 +1,40 @@
+# Line endings are fixed per file type so a checkout behaves the same on every OS.
+* text=auto eol=lf
+
+# POSIX shell entry points and every source/doc file: LF everywhere (a CR breaks `#!/bin/sh`).
+*.sh    text eol=lf
+*.py    text eol=lf
+*.mjs   text eol=lf
+*.js    text eol=lf
+*.cjs   text eol=lf
+*.md    text eol=lf
+*.json  text eol=lf
+*.yml   text eol=lf
+*.html  text eol=lf
+*.css   text eol=lf
+skills/showtime/bin/showtime text eol=lf
+
+# Windows shims: CRLF (cmd.exe mis-parses labels in LF batch files).
+*.cmd   text eol=crlf
+*.bat   text eol=crlf
+*.ps1   text eol=crlf
+
+# Binary assets: never touch.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.webp  binary
+*.gif   binary
+*.mp4   binary
+*.mov   binary
+*.webm  binary
+*.wav   binary
+*.m4a   binary
+*.mp3   binary
+*.sf2   binary
+*.sf3   binary
+*.onnx  binary
+*.woff2 binary
+*.woff  binary
+*.ttf   binary
+*.otf   binary

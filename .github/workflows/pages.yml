@@ -1,0 +1,99 @@
+name: pages
+
+# Builds the companion site (site/build.py) and deploys it to GitHub Pages.
+# The examples live in their own repository, FavioVazquez/showtime-examples: this workflow checks it out
+# next to the site sources, and downloads its media release (the example videos over 10 MB and the launch
+# film, listed in its MEDIA.json) so the gallery can play them.
+# One-time setup: Settings > Pages > Build and deployment > Source: "GitHub Actions" (site/README.md).
+# Enable Pages once both repositories are public: the default token reads public repositories. To build while
+# the examples repository is still private, add a fine-grained token with read access to it as the secret
+# EXAMPLES_TOKEN (Settings > Secrets and variables > Actions).
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "docs/**"
+      - "README.md"
+      - "assets/readme/**"
+      - "assets/brand/**"
+      - "agents/**"
+      - "skills/showtime/references/**"
+      - "skills/showtime/SKILL.md"
+      - "CONTEXT.md"
+      - "CHANGELOG.md"
+      - "CONTRIBUTING.md"
+      - ".out-of-scope/**"
+      - ".github/workflows/pages.yml"
+  # a push or a new media release in showtime-examples can trigger a rebuild:
+  #   gh api repos/FavioVazquez/showtime/dispatches -f event_type=examples-updated
+  repository_dispatch:
+    types: [examples-updated]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  PYTHONUTF8: "1"
+  EXAMPLES_REPO: FavioVazquez/showtime-examples
+
+jobs:
+  build:
+    # Pages sites are public even for a private repository: nothing is built or deployed while this
+    # repository is private, except by hand (Actions > pages > Run workflow).
+    if: ${{ !github.event.repository.private || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check out the examples
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ env.EXAMPLES_REPO }}
+          path: _examples
+          token: ${{ secrets.EXAMPLES_TOKEN || github.token }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Markdown renderer, and ffmpeg for the gallery's 4-second hover clips
+        run: |
+          python -m pip install "markdown-it-py>=3,<5"
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - name: Download the example media (and the launch film) from the examples release
+        env:
+          GH_TOKEN: ${{ secrets.EXAMPLES_TOKEN || github.token }}
+        run: |
+          TAG=$(python -c "import json; print(json.load(open('_examples/examples/MEDIA.json'))['release']['tag'])")
+          mkdir -p _media
+          if gh release view "$TAG" --repo "$EXAMPLES_REPO" > /dev/null 2>&1; then
+            gh release download "$TAG" --repo "$EXAMPLES_REPO" --dir _media --clobber \
+              --pattern '*.mp4' --pattern '*.html'
+            ls -la _media
+          else
+            echo "::warning::release $TAG not found in $EXAMPLES_REPO: the gallery links to the release instead of playing its videos"
+          fi
+      - name: Build the site
+        run: >-
+          python site/build.py --examples _examples/examples --examples-repo "$EXAMPLES_REPO"
+          --media-from _media --repo "$GITHUB_REPOSITORY" --out _site --clean
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

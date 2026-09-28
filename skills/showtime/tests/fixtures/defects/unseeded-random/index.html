@@ -1,0 +1,16 @@
+<!doctype html><html><head><meta charset="utf-8">
+<script src="/_st/stage.js"></script>
+<style>html,body{margin:0;background:#0b0d12;overflow:hidden}</style></head><body>
+<canvas id="c" width="480" height="270"></canvas>
+<script>
+  const g = document.getElementById('c').getContext('2d');
+  ST.onSeek((t) => {
+    g.fillStyle = '#0b0d12'; g.fillRect(0, 0, 480, 270);
+    // the defect: Math.random() inside the frame function; particles jump every frame
+    // and the preview never matches the render (use ST.rand(seed) created once instead)
+    for (let i = 0; i < 60; i++) {
+      g.fillStyle = '#7cc4ff';
+      g.fillRect(Math.random() * 480, Math.random() * 270, 4, 4);
+    }
+  });
+</script></body></html>

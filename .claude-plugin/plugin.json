@@ -1,0 +1,81 @@
+{
+  "name": "showtime",
+  "version": "0.1.0",
+  "description": "Local video making for Claude Code: HTML/canvas motion graphics rendered frame-exactly, voice-over, music and sound design, footage editing from transcripts, captions and platform-ready exports. Everything runs on your machine.",
+  "author": {
+    "name": "Favio Vazquez"
+  },
+  "license": "MIT",
+  "homepage": "https://faviovazquez.github.io/showtime/",
+  "repository": "https://github.com/FavioVazquez/showtime",
+  "keywords": [
+    "video",
+    "motion-graphics",
+    "animation",
+    "voice-over",
+    "tts",
+    "music",
+    "captions",
+    "ffmpeg",
+    "playwright",
+    "editing"
+  ],
+  "mcpServers": {
+    "showtime": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/skills/showtime/mcp/server.mjs"
+      ],
+      "env": {
+        "SHOWTIME_MCP_BASE": "${CLAUDE_PROJECT_DIR}",
+        "SHOWTIME_OPT_VOICE": "${user_config.voice}",
+        "SHOWTIME_OPT_LANGUAGE": "${user_config.language}",
+        "SHOWTIME_OPT_OPEN_BROWSER": "${user_config.open_browser}",
+        "SHOWTIME_OPT_MAX_WORKERS": "${user_config.max_workers}",
+        "SHOWTIME_OPT_HOME": "${user_config.home}",
+        "SHOWTIME_OPT_SOUND": "${user_config.sound}"
+      }
+    }
+  },
+  "userConfig": {
+    "voice": {
+      "type": "string",
+      "title": "Default narration voice",
+      "description": "Voice used when a request names none, e.g. af_heart (warm, US English), am_michael, bf_emma (British), ef_dora (Spanish). List them with `showtime voice list`. A voice in another language than the video's is skipped for that video.",
+      "default": "af_heart"
+    },
+    "language": {
+      "type": "string",
+      "title": "Default narration language",
+      "description": "Language for narration when a request names none: en, en-gb, es, fr, it, pt-br, hi, ja or zh.",
+      "default": "en"
+    },
+    "open_browser": {
+      "type": "boolean",
+      "title": "Open review boards in the browser",
+      "description": "When on, `showtime studio open` also opens the board in your default browser (otherwise it prints the link).",
+      "default": false
+    },
+    "max_workers": {
+      "type": "number",
+      "title": "CPU limit (0 = automatic)",
+      "description": "Most parallel render browsers and CPU threads showtime may use. 0 lets showtime decide; set 1 or 2 to keep the machine responsive while it renders.",
+      "default": 0,
+      "min": 0,
+      "max": 64
+    },
+    "sound": {
+      "type": "boolean",
+      "title": "Sound when a long job finishes",
+      "description": "When on, a short showtime sound plays after a render, export or other command that ran over 20 seconds finishes, in a terminal you run showtime from yourself (never in Claude's tool calls, pipes, CI or with NO_COLOR). Same as SHOWTIME_SOUND=1.",
+      "default": false
+    },
+    "home": {
+      "type": "string",
+      "title": "showtime folder (advanced)",
+      "description": "Where showtime keeps its tools, models and caches (several GB). Leave empty for ~/.showtime. After changing it, run `showtime setup` once.",
+      "default": ""
+    }
+  }
+}

@@ -1,0 +1,16 @@
+/* Every showtime font family except CJK (import this to use any of them in a page).
+   Each theme imports only the families it uses; Japanese: fonts/noto-sans-jp.css. */
+@import url('fonts/inter.css');
+@import url('fonts/geist.css');
+@import url('fonts/geist-mono.css');
+@import url('fonts/jetbrains-mono.css');
+@import url('fonts/space-grotesk.css');
+@import url('fonts/instrument-serif.css');
+@import url('fonts/fraunces.css');
+@import url('fonts/anton.css');
+@import url('fonts/bebas-neue.css');
+@import url('fonts/bricolage-grotesque.css');
+@import url('fonts/caveat.css');
+@import url('fonts/ibm-plex-sans.css');
+@import url('fonts/ibm-plex-mono.css');
+@import url('fonts/unbounded.css');

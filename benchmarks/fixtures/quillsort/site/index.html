@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quillsort: tidy lines, fast</title>
+<style>
+  :root { --ink: #1d2433; --paper: #fbf8f1; --accent: #2f6f5e; --muted: #5b6475; }
+  body { margin: 0; font: 18px/1.55 system-ui, sans-serif; color: var(--ink); background: var(--paper); }
+  header, section, footer { max-width: 760px; margin: 0 auto; padding: 32px 20px; }
+  h1 { font-size: 56px; margin: 0; letter-spacing: -0.02em; }
+  h1 span { color: var(--accent); }
+  .tag { font-size: 24px; color: var(--muted); margin-top: 8px; }
+  pre { background: var(--ink); color: #e8edf5; padding: 16px 20px; border-radius: 10px; overflow-x: auto; }
+  ul { padding-left: 20px; }
+  .cta { display: inline-block; background: var(--accent); color: white; padding: 12px 22px; border-radius: 8px; text-decoration: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>quill<span>sort</span></h1>
+  <p class="tag">Sort, dedupe and tidy the lines of any text file.</p>
+  <a class="cta" href="#install">Get quillsort 2.0</a>
+</header>
+<section>
+  <pre>$ quillsort files.txt --natural --unique
+file1.txt
+file2.txt
+file10.txt</pre>
+  <ul>
+    <li>Natural sort: <code>file2</code> before <code>file10</code></li>
+    <li>In-place edits with an automatic <code>.bak</code> backup</li>
+    <li>Duplicate removal that keeps the first occurrence</li>
+    <li>One Python file, no dependencies</li>
+  </ul>
+</section>
+<section id="install">
+  <h2>Install</h2>
+  <pre>pip install quillsort</pre>
+</section>
+<footer>MIT licensed.</footer>
+</body>
+</html>

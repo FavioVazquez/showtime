@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>showtime: vertical short with karaoke captions</title>
+<script src="/_st/stage.js"></script>
+<!-- Theme = colours, fonts and motion feel (neon, neutral, editorial, paper and terminal also work) -->
+<link rel="stylesheet" href="/_st/themes/bold.css">
+<script type="module" src="/_st/components/index.js"></script>
+<style>
+  /* 1080x1920. Everything stays inside the vertical safe box (x 6-85 %, y 11.5-75 %): the app's
+     right-hand action rail and its caption/controls band cover the rest. Captions hang from 62 %
+     of the height and grow down (never past 75 %), so on-screen content lives in the top ~58 %. */
+
+  /* ---------- a lit ground in every scene (key light top left, warm pool low right, faint grid) */
+  .scene { background:
+      radial-gradient(75% 38% at 12% 10%, color-mix(in oklab, var(--accent-2) 34%, transparent), transparent 70%),
+      radial-gradient(90% 45% at 92% 78%, color-mix(in oklab, var(--accent) 38%, transparent), transparent 70%),
+      var(--bg); }
+  .scene::before { content: ''; position: absolute; inset: 0; pointer-events: none;
+    background-image: linear-gradient(to right, color-mix(in oklab, var(--fg) 6%, transparent) 1px, transparent 1px), linear-gradient(to bottom, color-mix(in oklab, var(--fg) 6%, transparent) 1px, transparent 1px);
+    background-size: 9cqw 9cqw; -webkit-mask-image: radial-gradient(80% 50% at 40% 35%, black, transparent 75%); mask-image: radial-gradient(80% 50% at 40% 35%, black, transparent 75%); }
+
+  /* ---------- 1. hook: the claim, huge, readable by 0.3 s */
+  .top { position: absolute; left: 6cqw; right: 15cqw; top: 13cqh; display: flex; flex-direction: column; gap: 2.6cqh; }
+  .hook-title { font-size: 16cqw; line-height: 0.92; letter-spacing: -0.045em; }
+  .hook-title em { font-style: normal; color: var(--accent); }
+  .hook-sub { font: 500 5.4cqw/1.25 var(--font-body); color: var(--muted); margin: 0; max-width: 20em; }
+  /* a product card rises under the hook (the thing the video is about, not a stock prop) */
+  .teaser { position: absolute; left: 6cqw; right: 15cqw; top: 46cqh; height: 12cqh; border-radius: var(--radius-lg); overflow: hidden;
+    background: radial-gradient(90% 120% at 100% 100%, color-mix(in oklab, var(--accent) 75%, transparent), transparent 70%),
+                radial-gradient(80% 100% at 0% 0%, color-mix(in oklab, var(--accent-2) 65%, transparent), transparent 70%), var(--surface-2);
+    box-shadow: var(--shadow), 0 0 0 max(1px, 0.2cqmin) var(--border); display: grid; place-items: center;
+    animation: rise 0.7s var(--ease-out) 0.7s both; }
+  .teaser b { font: var(--weight-display) 7.4cqw/1 var(--font-display); letter-spacing: -0.04em; color: var(--fg); }
+  .teaser i { position: absolute; left: 4cqw; right: 4cqw; bottom: 1.6cqh; height: 0.5cqh; border-radius: 1cqh; background: color-mix(in oklab, var(--fg) 25%, transparent); }
+  .teaser i::after { content: ''; position: absolute; inset: 0; border-radius: inherit; background: var(--fg); transform-origin: 0 50%; animation: fill 1.8s linear 0.7s both; }
+  @keyframes rise { from { opacity: 0; transform: translateY(4cqh) scale(0.96); } to { opacity: 1; transform: none; } }
+  @keyframes fill { from { transform: scaleX(0); } to { transform: scaleX(0.6); } }
+
+  /* ---------- 2. demo: the ask, the answer, and the parts ticking on as the voice names them */
+  .scene .chat { position: absolute; left: 6cqw; right: 15cqw; top: 12cqh; height: 25cqh; font-size: 4.6cqw; }
+  .panel { position: absolute; left: 6cqw; right: 15cqw; top: 39cqh; padding: 4cqw 5cqw; border-radius: var(--radius-lg);
+    background: linear-gradient(180deg, color-mix(in oklab, var(--fg) 7%, transparent), transparent 50%), var(--surface);
+    border: max(1px, 0.2cqmin) solid var(--border); box-shadow: var(--shadow); animation: rise 0.6s var(--ease-out) 1.6s both; }
+  .panel h3 { margin: 0 0 2.4cqw; font: 600 4.2cqw/1 var(--font-mono); letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+  .panel .checks.st-steps-list { display: grid; grid-template-columns: 1fr 1fr; gap: 3cqw 4cqw; }
+  .panel .checks .st-step { font-size: 5.4cqw; font-weight: 650; gap: 2.4cqw; }
+  .panel .checks .st-step-box { width: 6.4cqw; height: 6.4cqw; }
+
+  /* ---------- 3. close: logo, one call to action, held; the captions finish the sentence below */
+  .close [data-st="end-card"] { --logo-size: 13cqw; }
+  .close .st-ec-stack { transform: translateY(-15cqh); gap: 3cqw; }
+  .close .st-ec-stack .st-ec-cta { font-size: 5.6cqw; padding: 2.4cqw 6cqw; }
+  .close .st-ec-stack .st-ec-url { font-size: 4.2cqw; color: var(--fg); }
+</style>
+</head>
+<body>
+<div class="stage">
+
+  <!-- 1. Hook: text on screen by 0.3 s, above the caption zone. SLOT: the claim and one line under it. -->
+  <section class="scene" id="hook" data-start="0" data-dur="2.5">
+    <div class="top">
+      <h1 class="t-hero hook-title" data-st="kinetic-type" data-style="pop" data-by="words" data-at="0.12">Stop editing by <em>hand.</em></h1>
+      <p class="hook-sub" data-st="kinetic-type" data-style="rise" data-at="0.45">Describe it. Get the video.</p>
+    </div>
+    <!-- SLOT: a frame of the product (swap for <img src="shots/app.png"> or a clip) -->
+    <div class="teaser" data-st-decor><b>Northwind</b><i></i></div>
+  </section>
+
+  <!-- 2. Demo: the ask, the answer, the parts landing on the words that name them. SLOT: the messages
+       and the checklist (data-cues are the scene-local times the voice says each item). -->
+  <section class="scene" id="demo" data-start="#hook" data-dur="7.3" data-transition="push up 0.5">
+    <div class="chat" data-st="chat-thread" data-typing="0.7"
+         data-messages='[{"from":"me","text":"Make a teaser for our launch","at":0.3},{"from":"them","text":"On it. Script, voice, captions and music, made on this machine.","stream":true,"at":1.9}]'></div>
+    <div class="panel">
+      <h3>Building your video</h3>
+      <div class="checks" data-st="steps" data-variant="list" data-steps='["Script","Voice","Captions","Music"]'
+           data-cues="[1.9, 4.45, 5.0, 5.7]"></div>
+    </div>
+  </section>
+
+  <!-- 3. Close: logo and call to action, held. SLOT: name, CTA, URL. -->
+  <section class="scene close" id="close" data-start="#demo" data-dur="2.2" data-transition="sdf-iris 0.6">
+    <div data-st="end-card" data-text="Northwind" data-cta="Try it free" data-url="northwind.app" data-at="0.15" data-style="mask"></div>
+  </section>
+
+  <!-- Captions for the whole video, from word timings (voice/vo.words.json after `showtime voice say`).
+       Styles: clean-pop, bold-pop, highlight-box, underline-sweep, minimal, boxed-pill, fill.
+       data-emphasis: the 3-5 words that carry the message (one shows per card), not every term. -->
+  <div data-st="caption-karaoke" data-src="words.json" data-style="clean-pop" data-emphasis="hand,machine,free"></div>
+
+  <div data-st="grain"></div>
+</div>
+</body>
+</html>

@@ -1,0 +1,37 @@
+{
+  "_comment": "Chrome/Chromium launch flags for showtime capture. Read by scripts/lib/chrome.mjs and lib/st/platform.py. 'common' always applies; 'gpu' is per OS for the hardware path; 'software' replaces it when GPU is off.",
+  "common": [
+    "--force-color-profile=srgb",
+    "--font-render-hinting=none",
+    "--hide-scrollbars",
+    "--mute-audio",
+    "--autoplay-policy=no-user-gesture-required",
+    "--disable-background-timer-throttling",
+    "--disable-backgrounding-occluded-windows",
+    "--disable-renderer-backgrounding",
+    "--disable-ipc-flooding-protection",
+    "--disable-hang-monitor",
+    "--disable-popup-blocking",
+    "--disable-default-apps",
+    "--disable-component-update",
+    "--disable-sync",
+    "--disable-breakpad",
+    "--disable-extensions",
+    "--no-first-run",
+    "--no-default-browser-check",
+    "--password-store=basic",
+    "--use-mock-keychain",
+    "--disable-features=Translate,BackForwardCache,IntensiveWakeUpThrottling,CalculateNativeWinOcclusion,MediaRouter,OptimizationHints"
+  ],
+  "gpu": {
+    "mac": ["--use-angle=metal", "--enable-gpu-rasterization", "--ignore-gpu-blocklist"],
+    "windows": ["--use-angle=d3d11", "--enable-gpu-rasterization", "--ignore-gpu-blocklist"],
+    "linux": ["--enable-gpu-rasterization", "--ignore-gpu-blocklist", "--enable-unsafe-swiftshader"]
+  },
+  "software": [
+    "--use-gl=angle",
+    "--use-angle=swiftshader",
+    "--enable-unsafe-swiftshader",
+    "--disable-gpu-compositing"
+  ]
+}

@@ -1,0 +1,4 @@
+# build output and downloaded media (python site/build.py; .github/workflows/pages.yml)
+_site/
+_media/
+_cache/

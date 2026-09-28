@@ -1,0 +1,5 @@
+# Fetched media fixtures and any local results never go into git.
+fixtures/media/*.mp4
+results/
+plugin-eval/results/
+__pycache__/

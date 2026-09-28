@@ -1,0 +1,887 @@
+{
+  "schema": 1,
+  "about": "Pinned downloads for showtime setup. Every file has a sha256 and size; setup verifies both. Regenerate hashes when bumping a version.",
+  "tiers": {
+    "minimal": "ffmpeg, Python venv, Node deps, Kokoro (timestamped) + voices, whisper small.en (CI tier)",
+    "core": "minimal + stock Kokoro, Silero VAD, YuNet, arnndn models, FluidR3Mono SoundFont (MIT)",
+    "full": "core + asr-turbo, parakeet, diarize, events, supertonic, deepfilter"
+  },
+  "full_extras": [
+    "asr-turbo",
+    "parakeet",
+    "diarize",
+    "events",
+    "supertonic",
+    "deepfilter"
+  ],
+  "extras": {
+    "asr-turbo": {
+      "description": "Whisper large-v3-turbo (multilingual, highest accuracy; ~1.6 GB)"
+    },
+    "parakeet": {
+      "description": "Parakeet-TDT 0.6B v2 via sherpa-onnx (fast English ASR; ~480 MB)"
+    },
+    "diarize": {
+      "description": "speaker diarization models (pyannote segmentation + TitaNet; ~50 MB)"
+    },
+    "events": {
+      "description": "CED-mini audio event tagger (laughter/applause/music; ~50 MB)"
+    },
+    "supertonic": {
+      "description": "Supertonic 3 multilingual TTS (Spanish and 30 more languages; ~400 MB)",
+      "pip": [
+        "supertonic==1.3.1"
+      ]
+    },
+    "sf-generaluser": {
+      "description": "GeneralUser GS General MIDI SoundFont (richer GM bank, used first when present; own free license; 32 MB)"
+    },
+    "sf-musescore": {
+      "description": "MuseScore_General orchestral SoundFont (MIT; 40 MB, slow mirror)"
+    },
+    "deepfilter": {
+      "description": "DeepFilterNet3 denoiser binary (~30 MB)"
+    },
+    "rife": {
+      "description": "RIFE frame interpolation, ncnn/Vulkan GPU binary (430 MB download, 80 MB installed)"
+    },
+    "chromium": {
+      "description": "Playwright's pinned Chromium (installed automatically when no Chrome/Edge is found)"
+    },
+    "musicgen": {
+      "description": "MusicGen-small draft music in a separate venv (~3.5 GB). Weights are CC-BY-NC-4.0: non-commercial use only",
+      "license_warning": "MusicGen weights are CC-BY-NC-4.0: output is for personal/demo/temp-track use only, not for commercial videos."
+    },
+    "manim": {
+      "description": "Manim Community 0.21 (math and diagram animation, `showtime manim`) into the main venv (about 60 MB); macOS/Linux build pycairo against system cairo/pango; LaTeX is optional (equations)"
+    },
+    "manimgl": {
+      "description": "ManimGL 1.7.2 (optional OpenGL engine for scene files written with `from manimlib import *`) in its own venv ~/.showtime/venv-manimgl (about 150 MB); needs OpenGL 3.3"
+    },
+    "imagegen": {
+      "description": "local image generation (not implemented yet; see references)",
+      "todo": true
+    },
+    "aligner": {
+      "description": "English CTC word aligner (wav2vec2-base-960h ONNX uint8, 95 MB, Apache-2.0); fetched on first use",
+      "lazy": true
+    },
+    "piper": {
+      "description": "Piper voices for sherpa-onnx (60-115 MB each, commercial-use voices only); fetched on first use",
+      "lazy": true
+    },
+    "rembg": {
+      "description": "rembg for non-macOS cutouts; installed on first use, then rembg downloads its default model, isnet-general-use (~170 MB), once (u2netp, ~5 MB, with --model u2netp)",
+      "lazy": true
+    }
+  },
+  "ffmpeg": {
+    "mac-x64": [
+      {
+        "id": "evermeet-9.0.2",
+        "version": "9.0.2",
+        "license": "GPL-3.0-or-later",
+        "source": "https://evermeet.cx/ffmpeg/",
+        "notes": "static x86_64 build linked from ffmpeg.org; includes libass, zimg, vid.stab, rubberband, soxr",
+        "files": [
+          {
+            "url": "https://evermeet.cx/ffmpeg/ffmpeg-9.0.2.zip",
+            "sha256": "4acc0be580f9b2788029eb7bd4d645ff87968911b0a62aeeb3940d42d54558d5",
+            "size": 26198325,
+            "archive": "zip",
+            "pick": [
+              "ffmpeg"
+            ]
+          },
+          {
+            "url": "https://evermeet.cx/ffmpeg/ffprobe-9.0.2.zip",
+            "sha256": "24a9c968cd4da72d99c7245e914b921815835eb6dff01d99868031aebaf1d439",
+            "size": 26104193,
+            "archive": "zip",
+            "pick": [
+              "ffprobe"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "martin-riedl-9.0.2-amd64",
+        "version": "9.0.2",
+        "license": "GPL-3.0-or-later",
+        "source": "https://ffmpeg.martin-riedl.de/",
+        "notes": "Developer ID signed; no vid.stab/rubberband/soxr",
+        "files": [
+          {
+            "url": "https://ffmpeg.martin-riedl.de/download/macos/amd64/1789931006_9.0.2/ffmpeg.zip",
+            "sha256": "7c6b4125b191cbf773832dc51f424cf2b6bb7da43007d1e066f95909e47cacd4",
+            "size": 33816391,
+            "archive": "zip",
+            "pick": [
+              "ffmpeg"
+            ]
+          },
+          {
+            "url": "https://ffmpeg.martin-riedl.de/download/macos/amd64/1789931006_9.0.2/ffprobe.zip",
+            "sha256": "2322438ed2f6319a691291b247d09c69dcaa3a982460d1f269a7e1af335cfdfd",
+            "size": 33719233,
+            "archive": "zip",
+            "pick": [
+              "ffprobe"
+            ]
+          }
+        ]
+      }
+    ],
+    "mac-arm64": [
+      {
+        "id": "martin-riedl-9.0.2-arm64",
+        "version": "9.0.2",
+        "license": "GPL-3.0-or-later",
+        "source": "https://ffmpeg.martin-riedl.de/",
+        "notes": "native Apple Silicon, Developer ID signed; includes libass, zimg, freetype, harfbuzz; lacks vid.stab (stabilize falls back to deshake), rubberband, soxr",
+        "files": [
+          {
+            "url": "https://ffmpeg.martin-riedl.de/download/macos/arm64/1789931890_9.0.2/ffmpeg.zip",
+            "sha256": "c8ed4c4e6978a03c485edbfe4e0a5dc2380f8a30bba5150531b31b094492d924",
+            "size": 28395699,
+            "archive": "zip",
+            "pick": [
+              "ffmpeg"
+            ]
+          },
+          {
+            "url": "https://ffmpeg.martin-riedl.de/download/macos/arm64/1789931890_9.0.2/ffprobe.zip",
+            "sha256": "fcbe839537485eaee7a7a8bc5cbc0f90d53617e80943e8a5b2e31cb851197ea6",
+            "size": 28317701,
+            "archive": "zip",
+            "pick": [
+              "ffprobe"
+            ]
+          }
+        ]
+      }
+    ],
+    "win-x64": [
+      {
+        "id": "gyan-9.0.2-essentials",
+        "version": "9.0.2",
+        "license": "GPL-3.0-or-later",
+        "source": "https://www.gyan.dev/ffmpeg/builds/",
+        "notes": "linked from ffmpeg.org; GitHub release mirror GyanD/codexffmpeg; includes libass, zimg, vid.stab, rubberband",
+        "files": [
+          {
+            "url": "https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9.0.2-essentials_build.zip",
+            "sha256": "60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba",
+            "size": 114768076,
+            "archive": "zip",
+            "pick": [
+              "ffmpeg",
+              "ffprobe"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "btbn-n9.0.2-win64-gpl",
+        "version": "9.0.2",
+        "license": "GPL-3.0-or-later",
+        "source": "https://github.com/BtbN/FFmpeg-Builds",
+        "files": [
+          {
+            "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-27-13-04/ffmpeg-n9.0.2-12-gc867e13549-win64-gpl-9.0.zip",
+            "sha256": "c9b6fe2a66923907eea3cf60f069a4136b956154a287bf2acfe98e4e875d4ef0",
+            "size": 194034059,
+            "archive": "zip",
+            "pick": [
+              "ffmpeg",
+              "ffprobe"
+            ]
+          }
+        ]
+      }
+    ],
+    "win-arm64": [
+      {
+        "id": "btbn-n9.0.2-winarm64-gpl",
+        "version": "9.0.2",
+        "license": "GPL-3.0-or-later",
+        "source": "https://github.com/BtbN/FFmpeg-Builds",
+        "files": [
+          {
+            "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-27-13-04/ffmpeg-n9.0.2-12-gc867e13549-winarm64-gpl-9.0.zip",
+            "sha256": "f68ce0d3a11674725fd2e23f6b5fa1eb876cf49a318f4e74c5d785360d264495",
+            "size": 135509035,
+            "archive": "zip",
+            "pick": [
+              "ffmpeg",
+              "ffprobe"
+            ]
+          }
+        ]
+      }
+    ],
+    "linux-x64": [
+      {
+        "id": "btbn-n9.0.2-linux64-gpl",
+        "version": "9.0.2",
+        "license": "GPL-3.0-or-later",
+        "source": "https://github.com/BtbN/FFmpeg-Builds",
+        "notes": "static glibc build; includes libass, zimg, vid.stab, rubberband, soxr",
+        "files": [
+          {
+            "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-27-13-04/ffmpeg-n9.0.2-12-gc867e13549-linux64-gpl-9.0.tar.xz",
+            "sha256": "16ca27dbb0d113d74fc6072ef3436fcb66efff2c501416317e6b6961b242f992",
+            "size": 150986180,
+            "archive": "tar.xz",
+            "pick": [
+              "ffmpeg",
+              "ffprobe"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "martin-riedl-9.0.2-linux-amd64",
+        "version": "9.0.2",
+        "license": "GPL-3.0-or-later",
+        "source": "https://ffmpeg.martin-riedl.de/",
+        "files": [
+          {
+            "url": "https://ffmpeg.martin-riedl.de/download/linux/amd64/1789931100_9.0.2/ffmpeg.zip",
+            "sha256": "fa8ecf4abbd290d98f7d188b8649cc6b391ae209a98452be955a15aab1909d7f",
+            "size": 33326445,
+            "archive": "zip",
+            "pick": [
+              "ffmpeg"
+            ]
+          },
+          {
+            "url": "https://ffmpeg.martin-riedl.de/download/linux/amd64/1789931100_9.0.2/ffprobe.zip",
+            "sha256": "3f428c49070be3d24ec338602b76d412e401ffcb8a5641ef0e729181a232fc32",
+            "size": 33223234,
+            "archive": "zip",
+            "pick": [
+              "ffprobe"
+            ]
+          }
+        ]
+      }
+    ],
+    "linux-arm64": [
+      {
+        "id": "btbn-n9.0.2-linuxarm64-gpl",
+        "version": "9.0.2",
+        "license": "GPL-3.0-or-later",
+        "source": "https://github.com/BtbN/FFmpeg-Builds",
+        "files": [
+          {
+            "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-27-13-04/ffmpeg-n9.0.2-12-gc867e13549-linuxarm64-gpl-9.0.tar.xz",
+            "sha256": "89531dca7b72b7a5c66c6d10fbbaef73e62757aaf9f65bff4f75147ab8ae6c7f",
+            "size": 127393396,
+            "archive": "tar.xz",
+            "pick": [
+              "ffmpeg",
+              "ffprobe"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "musicgen": {
+    "repo": "facebook/musicgen-small",
+    "revision": "4c8334b02c6ec4e8664a91979669a501ec497792",
+    "allow_patterns": [
+      "*.json",
+      "model.safetensors",
+      "spiece.model"
+    ],
+    "license": "CC-BY-NC-4.0"
+  },
+  "items": [
+    {
+      "id": "kokoro-timestamped",
+      "tier": "minimal",
+      "group": "voice",
+      "description": "Kokoro-82M v1.0 fp32 ONNX export that also outputs phoneme durations (exact word timings)",
+      "license": "Apache-2.0",
+      "source": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX-timestamped",
+      "files": [
+        {
+          "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX-timestamped/resolve/dd4401a9add81ac692d20e240d22ec9dda82cc29/onnx/model.onnx",
+          "sha256": "651ea8291843a92276a4a003581a215cb07d15e47dde6fcfb1b768f9a1682054",
+          "size": 325532171,
+          "dest": "models/kokoro/kokoro-v1.0-timestamped.onnx"
+        }
+      ]
+    },
+    {
+      "id": "kokoro-voices",
+      "tier": "minimal",
+      "group": "voice",
+      "description": "Kokoro v1.0 voice style vectors (54 voices)",
+      "license": "Apache-2.0",
+      "source": "https://github.com/thewh1teagle/kokoro-onnx",
+      "files": [
+        {
+          "url": "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin",
+          "sha256": "bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d",
+          "size": 28214398,
+          "dest": "models/kokoro/voices-v1.0.bin"
+        }
+      ]
+    },
+    {
+      "id": "whisper-small.en",
+      "tier": "minimal",
+      "group": "asr",
+      "description": "faster-whisper small.en (CTranslate2), default English ASR",
+      "license": "MIT",
+      "source": "https://huggingface.co/Systran/faster-whisper-small.en",
+      "files": [
+        {
+          "url": "https://huggingface.co/Systran/faster-whisper-small.en/resolve/d1d751a5f8271d482d14ca55d9e2deeebbae577f/model.bin",
+          "sha256": "62b2a45b05ee59acb4a5341b33ee35e041395d378d418a18acfe4c9e768ee37a",
+          "size": 483545366,
+          "dest": "models/whisper/small.en/model.bin"
+        },
+        {
+          "url": "https://huggingface.co/Systran/faster-whisper-small.en/resolve/d1d751a5f8271d482d14ca55d9e2deeebbae577f/config.json",
+          "sha256": "666a9605530ac1f61fa8177f3702b4dacec9966749e42610839fcc32661d5fae",
+          "size": 2657,
+          "dest": "models/whisper/small.en/config.json"
+        },
+        {
+          "url": "https://huggingface.co/Systran/faster-whisper-small.en/resolve/d1d751a5f8271d482d14ca55d9e2deeebbae577f/tokenizer.json",
+          "sha256": "929c5252409436dce1b38a75d1abbcb5e132d170d8e324e4e04ed915fa2d22df",
+          "size": 2128466,
+          "dest": "models/whisper/small.en/tokenizer.json"
+        },
+        {
+          "url": "https://huggingface.co/Systran/faster-whisper-small.en/resolve/d1d751a5f8271d482d14ca55d9e2deeebbae577f/vocabulary.txt",
+          "sha256": "ff77588746d3a2595d32ab5b69ffd7b95ce2441ac57533cb66fc3eb575a115cf",
+          "size": 422309,
+          "dest": "models/whisper/small.en/vocabulary.txt"
+        }
+      ]
+    },
+    {
+      "id": "kokoro-v1.0",
+      "tier": "core",
+      "group": "voice",
+      "description": "Kokoro-82M v1.0 fp32 ONNX (stock export; fallback if the timestamped export misbehaves)",
+      "license": "Apache-2.0",
+      "source": "https://github.com/thewh1teagle/kokoro-onnx",
+      "files": [
+        {
+          "url": "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx",
+          "sha256": "7d5df8ecf7d4b1878015a32686053fd0eebe2bc377234608764cc0ef3636a6c5",
+          "size": 325532387,
+          "dest": "models/kokoro/kokoro-v1.0.onnx"
+        }
+      ]
+    },
+    {
+      "id": "silero-vad-v5",
+      "tier": "core",
+      "group": "asr",
+      "description": "Silero VAD v5 (sherpa-onnx)",
+      "license": "MIT",
+      "source": "https://github.com/snakers4/silero-vad",
+      "files": [
+        {
+          "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad_v5.onnx",
+          "sha256": "6b99cbfd39246b6706f98ec13c7c50c6b299181f2474fa05cbc8046acc274396",
+          "size": 2313101,
+          "dest": "models/sherpa/silero_vad_v5.onnx"
+        }
+      ]
+    },
+    {
+      "id": "yunet",
+      "tier": "core",
+      "group": "vision",
+      "description": "YuNet face detector for auto-reframe (OpenCV FaceDetectorYN)",
+      "license": "MIT",
+      "source": "https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet",
+      "files": [
+        {
+          "url": "https://github.com/opencv/opencv_zoo/raw/f12e12798e8314f7c074a6656816c048dcc95b7a/models/face_detection_yunet/face_detection_yunet_2023mar.onnx",
+          "sha256": "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4",
+          "size": 232589,
+          "dest": "models/yunet/face_detection_yunet_2023mar.onnx"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/opencv/opencv_zoo/f12e12798e8314f7c074a6656816c048dcc95b7a/models/face_detection_yunet/LICENSE",
+          "sha256": "c83b8120c50ccbd4c4f96edf53141bdd566ebb8f8e9227e415326aa1b1aba958",
+          "size": 1085,
+          "dest": "models/yunet/LICENSE"
+        }
+      ]
+    },
+    {
+      "id": "arnndn",
+      "tier": "core",
+      "group": "audio",
+      "description": "RNNoise models for ffmpeg arnndn (sh = speech/general, cb = conference, std = Xiph)",
+      "license": "Public domain (models by Gregor Richards; std is BSD-3-Clause, Xiph)",
+      "source": "https://github.com/richardpl/arnndn-models",
+      "files": [
+        {
+          "url": "https://raw.githubusercontent.com/richardpl/arnndn-models/c670d8220c9db2667f0879541f9dd80bc5abfbdc/sh.rnnn",
+          "sha256": "70bb6685eb0c2a1d18e2918dca3fbfbd39317010b1802eb1b6ea73a92f3fdec0",
+          "size": 297646,
+          "dest": "models/arnndn/sh.rnnn"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/richardpl/arnndn-models/c670d8220c9db2667f0879541f9dd80bc5abfbdc/cb.rnnn",
+          "sha256": "f1357c4e5be9dee8467bead486dfced2d75b640c26ad0b594fa7f102322371d9",
+          "size": 299741,
+          "dest": "models/arnndn/cb.rnnn"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/richardpl/arnndn-models/c670d8220c9db2667f0879541f9dd80bc5abfbdc/std.rnnn",
+          "sha256": "6b8943dc4a9b6b24425873992a44f29c0577503276456af46a8854774faeb294",
+          "size": 302903,
+          "dest": "models/arnndn/std.rnnn"
+        }
+      ]
+    },
+    {
+      "id": "sf-generaluser",
+      "extra": "sf-generaluser",
+      "group": "soundfonts",
+      "description": "GeneralUser GS 2.0.3 General MIDI SoundFont (optional; preferred by compose when installed)",
+      "license": "GeneralUser GS License v2.0 (free for commercial music; see LICENSE file)",
+      "source": "https://github.com/mrbumpy409/GeneralUser-GS",
+      "mirror_note": "the author asks projects to host their own copy; mirror this file in a showtime release before wide distribution",
+      "files": [
+        {
+          "url": "https://raw.githubusercontent.com/mrbumpy409/GeneralUser-GS/97049183643d5fc5a9322a69c5b09efb667c6c3a/GeneralUser-GS.sf2",
+          "sha256": "9575028c7a1f589f5770fccc8cff2734566af40cd26ed836944e9a5152688cfe",
+          "size": 32319396,
+          "dest": "soundfonts/GeneralUser-GS.sf2"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/mrbumpy409/GeneralUser-GS/97049183643d5fc5a9322a69c5b09efb667c6c3a/documentation/LICENSE.txt",
+          "sha256": "7b32efefdf95ce38a043799f0659853ddc00fbaa14d8c50f0aca16b9b8b405be",
+          "size": 2317,
+          "dest": "soundfonts/GeneralUser-GS_LICENSE.txt"
+        }
+      ]
+    },
+    {
+      "id": "sf-fluidr3mono",
+      "tier": "core",
+      "group": "soundfonts",
+      "description": "FluidR3Mono GM SoundFont (.sf3, MIT; the default General MIDI bank)",
+      "license": "MIT",
+      "source": "https://github.com/musescore/MuseScore/tree/master/share/sound",
+      "files": [
+        {
+          "url": "https://raw.githubusercontent.com/musescore/MuseScore/1a4bd0feb9378cd145418dbcb40246980ca1013d/share/sound/FluidR3Mono_GM.sf3",
+          "sha256": "2aacd036d7058d40a371846ef2f5dc5f130d648ab3837fe2626591ba49a71254",
+          "size": 23712790,
+          "dest": "soundfonts/FluidR3Mono_GM.sf3"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/musescore/MuseScore/1a4bd0feb9378cd145418dbcb40246980ca1013d/share/sound/FluidR3Mono_License.md",
+          "sha256": "cf1889febeafd2b0a20c2c82359245524fc7dba29ded336cc3b51e0bcfdc8b84",
+          "size": 3355,
+          "dest": "soundfonts/FluidR3Mono_License.md"
+        }
+      ]
+    },
+    {
+      "id": "sf-musescore-general",
+      "extra": "sf-musescore",
+      "group": "soundfonts",
+      "description": "MuseScore_General 0.2 SoundFont (.sf3, MIT; orchestral)",
+      "license": "MIT",
+      "source": "https://ftp.osuosl.org/pub/musescore/soundfont/MuseScore_General/",
+      "files": [
+        {
+          "url": "https://ftp.osuosl.org/pub/musescore/soundfont/MuseScore_General/MuseScore_General.sf3",
+          "sha256": "5b85b6c2c61d10b2b91cddd41efcce7b25cd31c8271d511c73afafbef20b6fa3",
+          "size": 39900972,
+          "dest": "soundfonts/MuseScore_General.sf3"
+        },
+        {
+          "url": "https://ftp.osuosl.org/pub/musescore/soundfont/MuseScore_General/MuseScore_General_License.md",
+          "sha256": "5ad8d737e13c7f01f5b9674872a82a92b4ba253603e8ed14b9db12293550b4b9",
+          "size": 3419,
+          "dest": "soundfonts/MuseScore_General_License.md"
+        }
+      ]
+    },
+    {
+      "id": "whisper-large-v3-turbo",
+      "extra": "asr-turbo",
+      "group": "asr",
+      "description": "faster-whisper large-v3-turbo (multilingual, best transcripts)",
+      "license": "MIT",
+      "source": "https://huggingface.co/mobiuslabsgmbh/faster-whisper-large-v3-turbo",
+      "files": [
+        {
+          "url": "https://huggingface.co/mobiuslabsgmbh/faster-whisper-large-v3-turbo/resolve/0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf/model.bin",
+          "sha256": "e76620f83d5f5b69efd3d87e3dc180c1bd21df9fbebacfd4335e5e1efcc018da",
+          "size": 1617884929,
+          "dest": "models/whisper/large-v3-turbo/model.bin"
+        },
+        {
+          "url": "https://huggingface.co/mobiuslabsgmbh/faster-whisper-large-v3-turbo/resolve/0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf/config.json",
+          "sha256": "b0253ea6c0d3bea6b1e19e91a02acfd3b53f4467362efcb5a3e6b16c9b3a9b7e",
+          "size": 2263,
+          "dest": "models/whisper/large-v3-turbo/config.json"
+        },
+        {
+          "url": "https://huggingface.co/mobiuslabsgmbh/faster-whisper-large-v3-turbo/resolve/0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf/preprocessor_config.json",
+          "sha256": "7ccc62c6f2765af1f3b46c00c9b5894426835a05021c8b9c01eecb6dfb542711",
+          "size": 340,
+          "dest": "models/whisper/large-v3-turbo/preprocessor_config.json"
+        },
+        {
+          "url": "https://huggingface.co/mobiuslabsgmbh/faster-whisper-large-v3-turbo/resolve/0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf/tokenizer.json",
+          "sha256": "297b13372ac43916285644fb9687add3cc62ee2a1adb60da3dc25cc94c1871fd",
+          "size": 2710337,
+          "dest": "models/whisper/large-v3-turbo/tokenizer.json"
+        },
+        {
+          "url": "https://huggingface.co/mobiuslabsgmbh/faster-whisper-large-v3-turbo/resolve/0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf/vocabulary.json",
+          "sha256": "c69260f2ab26d659b7c398f9a2b2b48ed0df16c3b47d7326782fd9cba71690c1",
+          "size": 1068114,
+          "dest": "models/whisper/large-v3-turbo/vocabulary.json"
+        }
+      ]
+    },
+    {
+      "id": "parakeet-tdt-0.6b-v2-int8",
+      "extra": "parakeet",
+      "group": "asr",
+      "description": "NVIDIA Parakeet-TDT 0.6B v2 int8 via sherpa-onnx (fast English ASR, keeps fillers)",
+      "license": "CC-BY-4.0 (model), Apache-2.0 (sherpa-onnx)",
+      "attribution": "Parakeet-TDT-0.6B-v2 by NVIDIA, CC-BY-4.0",
+      "source": "https://github.com/k2-fsa/sherpa-onnx/releases/tag/asr-models",
+      "files": [
+        {
+          "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8.tar.bz2",
+          "sha256": "157c157bc51155e03e37d2466522a3a737dd9c72bb25f36eb18912964161e1ad",
+          "size": 482468385,
+          "archive": "tar.bz2",
+          "dest": "models/sherpa",
+          "creates": "models/sherpa/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8"
+        }
+      ]
+    },
+    {
+      "id": "pyannote-segmentation-3-0",
+      "extra": "diarize",
+      "group": "asr",
+      "description": "pyannote segmentation-3.0 (ONNX, sherpa-onnx) for speaker diarization",
+      "license": "MIT",
+      "source": "https://github.com/k2-fsa/sherpa-onnx/releases/tag/speaker-segmentation-models",
+      "files": [
+        {
+          "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2",
+          "sha256": "24615ee884c897d9d2ba09bb4d30da6bb1b15e685065962db5b02e76e4996488",
+          "size": 6958444,
+          "dest": "models/sherpa",
+          "archive": "tar.bz2",
+          "creates": "models/sherpa/sherpa-onnx-pyannote-segmentation-3-0"
+        }
+      ]
+    },
+    {
+      "id": "titanet-small",
+      "extra": "diarize",
+      "group": "asr",
+      "description": "NeMo TitaNet-small speaker embeddings (sherpa-onnx)",
+      "license": "CC-BY-4.0",
+      "attribution": "TitaNet by NVIDIA, CC-BY-4.0",
+      "source": "https://github.com/k2-fsa/sherpa-onnx/releases/tag/speaker-recongition-models",
+      "files": [
+        {
+          "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/nemo_en_titanet_small.onnx",
+          "sha256": "ad4a1802485d8b34c722d2a9d04249662f2ece5d28a7a039063ca22f515a789e",
+          "size": 40257283,
+          "dest": "models/sherpa/nemo_en_titanet_small.onnx"
+        }
+      ]
+    },
+    {
+      "id": "ced-mini",
+      "extra": "events",
+      "group": "asr",
+      "description": "CED-mini AudioSet tagger (laughter, applause, music...) via sherpa-onnx",
+      "license": "Apache-2.0",
+      "source": "https://github.com/k2-fsa/sherpa-onnx/releases/tag/audio-tagging-models",
+      "files": [
+        {
+          "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/audio-tagging-models/sherpa-onnx-ced-mini-audio-tagging-2024-04-19.tar.bz2",
+          "sha256": "bec8bfa0af2c20ec3a9e7c6dd6c92d0fb6e96d6b25370ebe7a48e7283a60a02c",
+          "size": 47658399,
+          "dest": "models/sherpa",
+          "archive": "tar.bz2",
+          "creates": "models/sherpa/sherpa-onnx-ced-mini-audio-tagging-2024-04-19"
+        }
+      ]
+    },
+    {
+      "id": "supertonic-3",
+      "extra": "supertonic",
+      "group": "voice",
+      "description": "Supertonic 3 multilingual TTS weights (31 languages incl. Spanish) at the revision supertonic==1.3.1 pins",
+      "license": "OpenRAIL-M (use-based restrictions; commercial use allowed)",
+      "source": "https://huggingface.co/Supertone/supertonic-3",
+      "files": [
+        {
+          "url": "https://huggingface.co/Supertone/supertonic-3/resolve/724fb5abbf5502583fb520898d45929e62f02c0b/LICENSE",
+          "sha256": "0d944a9110fed9a9602d60e0423a272903e7bd21ab060490774efc77c2275e9f",
+          "size": 15007,
+          "dest": "models/supertonic3/LICENSE"
+        },
+        {
+          "url": "https://huggingface.co/Supertone/supertonic-3/resolve/724fb5abbf5502583fb520898d45929e62f02c0b/config.json",
+          "sha256": "4099082b107a9d4029849ac76b89eca65e03732660969c2babe5bf308c7357f2",
+          "size": 174,
+          "dest": "models/supertonic3/config.json"
+        },
+        {
+          "url": "https://huggingface.co/Supertone/supertonic-3/resolve/724fb5abbf5502583fb520898d45929e62f02c0b/onnx/duration_predictor.onnx",
+          "sha256": "c3eb91414d5ff8a7a239b7fe9e34e7e2bf8a8140d8375ffb14718b1c639325db",
+          "size": 3700147,
+          "dest": "models/supertonic3/onnx/duration_predictor.onnx"
+        },
+        {
+          "url": "https://huggingface.co/Supertone/supertonic-3/resolve/724fb5abbf5502583fb520898d45929e62f02c0b/onnx/text_encoder.onnx",
+          "sha256": "c7befd5ea8c3119769e8a6c1486c4edc6a3bc8365c67621c881bbb774b9902ff",
+          "size": 36416150,
+          "dest": "models/supertonic3/onnx/text_encoder.onnx"
+        },
+        {
+          "url": "https://huggingface.co/Supertone/supertonic-3/resolve/724fb5abbf5502583fb520898d45929e62f02c0b/onnx/tts.json",
+          "sha256": "42078d3aef1cd43ab43021f3c54f47d2d75ceb4e75f627f118890128b06a0d09",
+          "size": 8253,
+          "dest": "models/supertonic3/onnx/tts.json"
+        },
+        {
+          "url": "https://huggingface.co/Supertone/supertonic-3/resolve/724fb5abbf5502583fb520898d45929e62f02c0b/onnx/unicode_indexer.json",
+          "sha256": "9bf7346e43883a81f8645c81224f786d43c5b57f3641f6e7671a7d6c493cb24f",
+          "size": 277676,
+          "dest": "models/supertonic3/onnx/unicode_indexer.json"
+        },
+        {
+          "url": "https://huggingface.co/Supertone/supertonic-3/resolve/724fb5abbf5502583fb520898d45929e62f02c0b/onnx/vector_estimator.onnx",
+          "sha256": "883ac868ea0275ef0e991524dc64f16b3c0376efd7c320af6b53f5b780d7c61c",
+          "size": 256534781,
+          "dest": "models/supertonic3/onnx/vector_estimator.onnx"
+        },
+        {
+          "url": "https://huggingface.co/Supertone/supertonic-3/resolve/724fb5abbf5502583fb520898d45929e62f02c0b/onnx/vocoder.onnx",
+          "sha256": "085de76dd8e8d5836d6ca66826601f615939218f90e519f70ee8a36ed2a4c4ba",
+          "size": 101424195,
+          "dest": "models/supertonic3/onnx/vocoder.onnx"
+        },
+        {
+          "url": "https://huggingface.co/Supertone/supertonic-3/resolve/724fb5abbf5502583fb520898d45929e62f02c0b/voice_styles/F1.json",
+          "sha256": "bbdec6ee00231c2c742ad05483df5334cab3b52fda3ba38e6a07059c4563dbc2",
+          "size": 292046,
+          "dest": "models/supertonic3/voice_styles/F1.json"
+        },
+        {
+          "url": "https://huggingface.co/Supertone/supertonic-3/resolve/724fb5abbf5502583fb520898d45929e62f02c0b/voice_styles/F2.json",
+          "sha256": "7c722c6a72707b1a77f035d67f0d1351ba187738e06f7683e8c72b1df3477fc6",
+          "size": 292423,
+          "dest": "models/supertonic3/voice_styles/F2.json"
+        },
+        {
+          "url": "https://huggingface.co/Supertone/supertonic-3/resolve/724fb5abbf5502583fb520898d45929e62f02c0b/voice_styles/F3.json",
+          "sha256": "12f6ef2573baa2defa1128069cb59f203e3ab67c92af77b42df8a0e3a2f7c6ab",
+          "size": 290794,
+          "dest": "models/supertonic3/voice_styles/F3.json"
+        },
+        {
+          "url": "https://huggingface.co/Supertone/supertonic-3/resolve/724fb5abbf5502583fb520898d45929e62f02c0b/voice_styles/F4.json",
+          "sha256": "c2fa764c1225a76dfc3e2c73e8aa4f70d9ee48793860eb34c295fff01c2e032b",
+          "size": 291808,
+          "dest": "models/supertonic3/voice_styles/F4.json"
+        },
+        {
+          "url": "https://huggingface.co/Supertone/supertonic-3/resolve/724fb5abbf5502583fb520898d45929e62f02c0b/voice_styles/F5.json",
+          "sha256": "45966e73316415626cf41a7d1c6f3b4c70dbc1ba2bee5c1978ef0ce33244fc8d",
+          "size": 291479,
+          "dest": "models/supertonic3/voice_styles/F5.json"
+        },
+        {
+          "url": "https://huggingface.co/Supertone/supertonic-3/resolve/724fb5abbf5502583fb520898d45929e62f02c0b/voice_styles/M1.json",
+          "sha256": "e35604687f5d23694b8e91593a93eec0e4eca6c0b02bb8ed69139ab2ea6b0a5b",
+          "size": 291748,
+          "dest": "models/supertonic3/voice_styles/M1.json"
+        },
+        {
+          "url": "https://huggingface.co/Supertone/supertonic-3/resolve/724fb5abbf5502583fb520898d45929e62f02c0b/voice_styles/M2.json",
+          "sha256": "b76cbf62bac707c710cf0ae5aba5e31eea1a6339a9734bfae33ab98499534a50",
+          "size": 292055,
+          "dest": "models/supertonic3/voice_styles/M2.json"
+        },
+        {
+          "url": "https://huggingface.co/Supertone/supertonic-3/resolve/724fb5abbf5502583fb520898d45929e62f02c0b/voice_styles/M3.json",
+          "sha256": "ea1ac35ccb91b0d7ecad533a2fbd0eec10c91513d8951e3b25fbba99954e159b",
+          "size": 290198,
+          "dest": "models/supertonic3/voice_styles/M3.json"
+        },
+        {
+          "url": "https://huggingface.co/Supertone/supertonic-3/resolve/724fb5abbf5502583fb520898d45929e62f02c0b/voice_styles/M4.json",
+          "sha256": "ca8eefad4fcd989c9379032ff3e50738adc547eeb5e221b82593a6d7b3bac303",
+          "size": 291522,
+          "dest": "models/supertonic3/voice_styles/M4.json"
+        },
+        {
+          "url": "https://huggingface.co/Supertone/supertonic-3/resolve/724fb5abbf5502583fb520898d45929e62f02c0b/voice_styles/M5.json",
+          "sha256": "dd22b92740314321f8ae11c5e87f8dd60d060f15dd3a632b5adf77f471f77af2",
+          "size": 291469,
+          "dest": "models/supertonic3/voice_styles/M5.json"
+        }
+      ]
+    },
+    {
+      "id": "deep-filter",
+      "extra": "deepfilter",
+      "group": "audio",
+      "description": "DeepFilterNet3 speech denoiser (deep-filter 0.5.6 binary)",
+      "license": "MIT OR Apache-2.0",
+      "source": "https://github.com/Rikorose/DeepFilterNet/releases/tag/v0.5.6",
+      "platform_files": {
+        "mac-arm64": [
+          {
+            "url": "https://github.com/Rikorose/DeepFilterNet/releases/download/v0.5.6/deep-filter-0.5.6-aarch64-apple-darwin",
+            "sha256": "4601e7f4e4c03e59a4c5b5000216ef3add3e808799cfccd95e14e83ea4611081",
+            "size": 27877081,
+            "dest": "bin/deep-filter",
+            "executable": true
+          }
+        ],
+        "mac-x64": [
+          {
+            "url": "https://github.com/Rikorose/DeepFilterNet/releases/download/v0.5.6/deep-filter-0.5.6-x86_64-apple-darwin",
+            "sha256": "d3be84003acb7c23e738ad7f70a158ec779a8d233a82e7fa3e717d112eb5b50f",
+            "size": 29933512,
+            "dest": "bin/deep-filter",
+            "executable": true
+          }
+        ],
+        "win-x64": [
+          {
+            "url": "https://github.com/Rikorose/DeepFilterNet/releases/download/v0.5.6/deep-filter-0.5.6-x86_64-pc-windows-msvc.exe",
+            "sha256": "75e11fa16445f560cb6b021521ddb89e89270d13b83089705d98776f58fd7915",
+            "size": 26912256,
+            "dest": "bin/deep-filter.exe",
+            "executable": true
+          }
+        ],
+        "linux-x64": [
+          {
+            "url": "https://github.com/Rikorose/DeepFilterNet/releases/download/v0.5.6/deep-filter-0.5.6-x86_64-unknown-linux-musl",
+            "sha256": "70775e251eee44c0f2451a1e833326cf8bcbbe304d3e7cd12851e6fce72ef7da",
+            "size": 36417296,
+            "dest": "bin/deep-filter",
+            "executable": true
+          }
+        ],
+        "linux-arm64": [
+          {
+            "url": "https://github.com/Rikorose/DeepFilterNet/releases/download/v0.5.6/deep-filter-0.5.6-aarch64-unknown-linux-gnu",
+            "sha256": "14e02a1c0028f3ca0bdf83b62b3336e56ba0556894ef295a95e8573f06557166",
+            "size": 39238496,
+            "dest": "bin/deep-filter",
+            "executable": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "rife-ncnn-vulkan",
+      "extra": "rife",
+      "group": "video",
+      "description": "RIFE v4.6 frame interpolation (ncnn/Vulkan; GPU)",
+      "license": "MIT",
+      "source": "https://github.com/nihui/rife-ncnn-vulkan/releases/tag/20221029",
+      "platform_files": {
+        "mac-arm64": [
+          {
+            "url": "https://github.com/nihui/rife-ncnn-vulkan/releases/download/20221029/rife-ncnn-vulkan-20221029-macos.zip",
+            "sha256": "4a63a1f3c9c715773c57d2ee51df1b315ed20cd6c63103e45c483ecc4400b595",
+            "size": 436537917,
+            "dest": "tools/rife",
+            "archive": "zip",
+            "strip": 1,
+            "include": [
+              "rife-ncnn-vulkan",
+              "LICENSE",
+              "rife-v4.6/*"
+            ],
+            "executables": [
+              "rife-ncnn-vulkan"
+            ],
+            "creates": "tools/rife/rife-ncnn-vulkan"
+          }
+        ],
+        "mac-x64": [
+          {
+            "url": "https://github.com/nihui/rife-ncnn-vulkan/releases/download/20221029/rife-ncnn-vulkan-20221029-macos.zip",
+            "sha256": "4a63a1f3c9c715773c57d2ee51df1b315ed20cd6c63103e45c483ecc4400b595",
+            "size": 436537917,
+            "dest": "tools/rife",
+            "archive": "zip",
+            "strip": 1,
+            "include": [
+              "rife-ncnn-vulkan",
+              "LICENSE",
+              "rife-v4.6/*"
+            ],
+            "executables": [
+              "rife-ncnn-vulkan"
+            ],
+            "creates": "tools/rife/rife-ncnn-vulkan"
+          }
+        ],
+        "win-x64": [
+          {
+            "url": "https://github.com/nihui/rife-ncnn-vulkan/releases/download/20221029/rife-ncnn-vulkan-20221029-windows.zip",
+            "sha256": "d8e4d772d26cd8006ef0ad0bc82eb191b53c68677d1ae2f42506d74cbbbea606",
+            "size": 431540241,
+            "dest": "tools/rife",
+            "archive": "zip",
+            "strip": 1,
+            "include": [
+              "rife-ncnn-vulkan.exe",
+              "*.dll",
+              "LICENSE",
+              "rife-v4.6/*"
+            ],
+            "creates": "tools/rife/rife-ncnn-vulkan.exe"
+          }
+        ],
+        "linux-x64": [
+          {
+            "url": "https://github.com/nihui/rife-ncnn-vulkan/releases/download/20221029/rife-ncnn-vulkan-20221029-ubuntu.zip",
+            "sha256": "1e2c7ee7fa7daa326542d50622f0afedc80cf6f1858bda411d16385ffa5cdf68",
+            "size": 431302796,
+            "dest": "tools/rife",
+            "archive": "zip",
+            "strip": 1,
+            "include": [
+              "rife-ncnn-vulkan",
+              "LICENSE",
+              "rife-v4.6/*"
+            ],
+            "executables": [
+              "rife-ncnn-vulkan"
+            ],
+            "creates": "tools/rife/rife-ncnn-vulkan"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "title": "Film Template",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "duration": 12,
+  "background": "#f3eee4",
+  "score": true,
+  "poster": 5.8
+}

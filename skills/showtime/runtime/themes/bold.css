@@ -1,0 +1,43 @@
+/* showtime theme: bold. Loud, confident launch look: warm near-black ground lit by an ember-orange
+   key light and a cool blue rim, a heavy grotesk display in sentence case, crisp high-contrast text.
+   Token contract (every theme defines all of these; components read them with fallbacks):
+   palette, type, shape, space, motion, captions, texture. See references/components.md.
+   Contrast on --bg: fg 18.3:1, muted 10.8:1, accent 6.3:1, accent-2 6.4:1; accent-ink on accent 6.3:1. */
+@import url('base.css');
+@import url('fonts/bricolage-grotesque.css');
+@import url('fonts/inter.css');
+@import url('fonts/jetbrains-mono.css');
+@import url('fonts/caveat.css');
+
+:root, [data-theme="bold"] {
+  color-scheme: dark;
+  /* palette */
+  --bg: #0d0b0a; --fg: #fbf6f1; --muted: #c9beb3;
+  --surface: #1c1715; --surface-2: #29211d; --border: rgb(255 236 220 / 0.14);
+  --accent: #ff5a1f; --accent-2: #6f8cff; --accent-ink: #120a06;
+  --good: #3ddc97; --bad: #ff5a4e; --shadow: 0 3cqmin 9cqmin rgb(0 0 0 / 0.55);
+  /* type */
+  --font-display: 'Bricolage Grotesque', 'Inter', sans-serif;
+  --font-body: 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --font-hand: 'Caveat', cursive;
+  --weight-display: 800; --weight-body: 450;
+  --tracking-display: -0.035em; --leading-display: 0.95; --case-display: none;
+  /* shape + space (container units scale with the frame) */
+  --radius: 1.4cqmin; --radius-lg: 2.4cqmin; --stroke: max(1px, 0.18cqmin);
+  --space-1: 1.2cqmin; --space-2: 2.4cqmin; --space-3: 4cqmin; --space-4: 6.4cqmin;
+  --safe-x: 6cqw; --safe-y: 7cqh;
+  /* motion (read by the motion components: durations in s, eases as cubic-bezier) */
+  --motion-energy: high;
+  --dur-in: 0.5s; --dur-out: 0.3s; --dur-beat: 0.35s; --stagger: 0.045s;
+  --ease-in: cubic-bezier(0.5, 0, 0.75, 0);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-move: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-emph: cubic-bezier(0.34, 1.4, 0.64, 1);
+  /* captions */
+  --cap-font: 'Bricolage Grotesque', sans-serif; --cap-weight: 800; --cap-case: none;
+  --cap-outline: #000000; --cap-active-ink: #120a06;
+  --cap-ink: #ffffff; --cap-accent: #ff5a1f; --cap-plate: rgb(13 11 10 / 0.8);
+  /* texture */
+  --grain: 0.04; --glow: 0.5;
+}

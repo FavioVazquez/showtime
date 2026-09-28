@@ -1,0 +1,2 @@
+{ "tool": "check", "rule": "text_clipped", "severity": "WARN", "check_args": ["--no-timeline", "--no-determinism", "--samples", "2"],
+  "why": "Copy edits make labels longer than the box designed for them; overflow:hidden then cuts words off silently." }

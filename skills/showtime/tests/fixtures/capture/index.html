@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nimbus - Deploy previews in seconds</title>
+<meta name="description" content="Nimbus gives every pull request a live preview URL. Test fixture for showtime capture.">
+<meta property="og:title" content="Nimbus">
+<meta property="og:image" content="/og.png">
+<meta name="theme-color" content="#6d28d9">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="/logo.svg" type="image/svg+xml">
+<style>
+  :root { --brand: #6d28d9; --brand-2: #22d3ee; --bg: #ffffff; --fg: #111827; --muted: #6b7280; --card: #f3f4f6; --radius: 14px; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0b0b12; --fg: #f3f4f6; --muted: #9ca3af; --card: #171725; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 18px/1.5 ui-sans-serif, system-ui, sans-serif; background: var(--bg); color: var(--fg); }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 18px 48px; position: sticky; top: 0; background: var(--bg); z-index: 10; }
+  header a.home { display: flex; gap: 10px; align-items: center; color: inherit; text-decoration: none; font-weight: 700; }
+  nav a { margin-left: 22px; color: var(--muted); text-decoration: none; }
+  .hero { padding: 90px 48px 70px; display: grid; grid-template-columns: 1.1fr 1fr; gap: 40px; align-items: center; min-height: 620px; }
+  h1 { font-size: 64px; line-height: 1.05; margin: 0 0 18px; letter-spacing: -0.02em; }
+  .lead { color: var(--muted); font-size: 22px; max-width: 34em; }
+  .btn { display: inline-block; padding: 14px 26px; border-radius: var(--radius); text-decoration: none; font-weight: 600; margin-right: 12px; }
+  .btn.primary { background: var(--brand); color: #fff; }
+  .btn.secondary { border: 1px solid var(--muted); color: var(--fg); }
+  .hero img { width: 100%; border-radius: var(--radius); box-shadow: 0 20px 60px rgba(0,0,0,.25); }
+  section { padding: 80px 48px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+  .card { background: var(--card); border-radius: var(--radius); padding: 28px; }
+  .stats { display: flex; gap: 60px; }
+  .stat b { display: block; font-size: 48px; color: var(--brand); }
+  blockquote { margin: 0; font-size: 22px; }
+  .testimonial { background: var(--card); border-radius: var(--radius); padding: 32px; }
+  .pricing { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; }
+  footer { padding: 40px 48px; color: var(--muted); }
+  #cookie-banner { position: fixed; bottom: 0; left: 0; right: 0; background: #111; color: #fff; padding: 20px 48px; z-index: 1000; display: flex; justify-content: space-between; align-items: center; }
+  #chat { position: fixed; right: 24px; bottom: 100px; width: 320px; height: 120px; background: #22d3ee; border-radius: 16px; z-index: 900; }
+  .app { display: grid; gap: 12px; max-width: 520px; }
+  .app input { font: inherit; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--muted); background: var(--bg); color: var(--fg); }
+  .app button { font: inherit; padding: 12px 18px; border-radius: 10px; border: 0; background: var(--brand); color: #fff; cursor: pointer; transition: transform .2s ease, background-color .3s ease; }
+  .app button:hover { background: #5b21b6; transform: translateY(-2px); }
+  #result { min-height: 32px; font-weight: 600; opacity: 0; transition: opacity .4s ease; }
+  #result.show { opacity: 1; }
+</style>
+</head>
+<body>
+<header>
+  <a class="home" href="/"><img src="/logo.svg" alt="Nimbus logo" width="36" height="36">Nimbus</a>
+  <nav><a href="#features">Features</a><a href="#pricing">Pricing</a><a href="#demo">Demo</a><a class="btn primary" href="#signup">Sign up</a></nav>
+</header>
+<main>
+  <div class="hero">
+    <div>
+      <h1>Deploy previews in seconds</h1>
+      <p class="lead">Every pull request gets a live URL with seeded data, so reviewers click instead of imagining.</p>
+      <a class="btn primary" href="#signup">Start free</a><a class="btn secondary" href="#demo">Watch the demo</a>
+    </div>
+    <img src="/hero.png" alt="Nimbus dashboard showing three preview deployments">
+  </div>
+  <section id="features">
+    <h2>Why teams switch</h2>
+    <div class="grid">
+      <div class="card"><h3>Instant URLs</h3><p>A preview is live about forty seconds after you push, with logs streaming in the pull request.</p></div>
+      <div class="card"><h3>Seeded data</h3><p>Each preview boots with a fresh copy of your fixtures so nobody tests against an empty screen.</p></div>
+      <div class="card"><h3>Comments on the page</h3><p>Reviewers pin comments to any element and they show up as threads in your code review.</p></div>
+    </div>
+  </section>
+  <section id="numbers">
+    <h2>In numbers</h2>
+    <div class="stats">
+      <div class="stat"><b>40s</b>median time to preview</div>
+      <div class="stat"><b>12k+</b>previews per day</div>
+      <div class="stat"><b>99.9%</b>uptime last quarter</div>
+    </div>
+  </section>
+  <section id="testimonials">
+    <h2>What reviewers say</h2>
+    <figure class="testimonial">
+      <blockquote>We stopped arguing about screenshots. The preview link is the review now, and our cycle time dropped by half.</blockquote>
+      <figcaption>Ada Example, staff engineer at Fictional Co</figcaption>
+    </figure>
+    <img loading="lazy" src="/photo.jpg" alt="A team reviewing a preview on a big screen" style="width:60%;margin-top:40px;border-radius:14px">
+  </section>
+  <section id="pricing">
+    <h2>Pricing</h2>
+    <div class="pricing">
+      <div class="card"><h3>Hobby</h3><p>Free for personal projects with up to three previews at a time.</p><a class="btn secondary" href="#signup">Choose Hobby</a></div>
+      <div class="card"><h3>Team</h3><p>Unlimited previews, seeded databases and on-page comments for the whole team.</p><a class="btn primary" href="#signup">Choose Team</a></div>
+    </div>
+  </section>
+  <section id="demo">
+    <h2>Try it</h2>
+    <div class="app">
+      <input id="repo" placeholder="owner/repository" autocomplete="off">
+      <button id="go">Create preview</button>
+      <div id="result"></div>
+    </div>
+  </section>
+</main>
+<footer>Nimbus is a fictional product used to test showtime.</footer>
+<div id="cookie-banner" class="cookie-consent"><span>We use cookies to improve the site.</span><span><button>Accept all</button> <button>Reject all</button></span></div>
+<div id="chat" class="chat-widget"></div>
+<script>
+  for (const b of document.querySelectorAll('#cookie-banner button')) b.addEventListener('click', () => document.getElementById('cookie-banner').remove());
+  document.getElementById('go').addEventListener('click', () => {
+    const r = document.getElementById('result');
+    const v = document.getElementById('repo').value || 'demo/app';
+    r.textContent = 'Preview ready: https://' + v.replace('/', '-') + '.nimbus.test';
+    r.classList.add('show');
+  });
+</script>
+</body>
+</html>

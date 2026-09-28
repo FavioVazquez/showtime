@@ -1,0 +1,93 @@
+{
+ "_comment": "The window of each example that the gallery previews on hover (seconds into its main video). site/build.py cuts a short silent clip from it when ffmpeg is available; the gallery falls back to the README loop otherwise.",
+ "previews": {
+  "01-launch-tidepool": {
+   "from": 0.47,
+   "dur": 4.0
+  },
+  "02-explainer-heat-pump": {
+   "from": 37.87,
+   "dur": 4.0
+  },
+  "03-explainer-heat-pump-es": {
+   "from": 31.87,
+   "dur": 4.0
+  },
+  "04-tutorial-tidepool": {
+   "from": 24.5,
+   "dur": 4.0
+  },
+  "05-short-vertical": {
+   "from": 6.2,
+   "dur": 4.0
+  },
+  "06-footage-edit-nasa": {
+   "from": 22.0,
+   "dur": 4.0
+  },
+  "07-data-story": {
+   "from": 4.8,
+   "dur": 4.0
+  },
+  "08-beat-montage": {
+   "from": 9.3,
+   "dur": 4.0
+  },
+  "09-studio-trailer": {
+   "from": 9.6,
+   "dur": 4.0
+  },
+  "10-launch-showtime": {
+   "from": 13.8,
+   "dur": 4.0
+  },
+  "11-tutorial-series-tidepool": {
+   "from": 33.93,
+   "dur": 4.0
+  },
+  "12-energy-report": {
+   "from": 34.0,
+   "dur": 4.0
+  },
+  "13-wikipedia-waggle-dance": {
+   "from": 20.07,
+   "dur": 4.0
+  },
+  "14-usgs-kilauea-pdf": {
+   "from": 41.8,
+   "dur": 4.0
+  },
+  "15-oss-release-black": {
+   "from": 6.2,
+   "dur": 4.0
+  },
+  "16-podcast-audiogram": {
+   "from": 24.07,
+   "dur": 4.0
+  },
+  "17-product-promo-teapot": {
+   "from": 2.0,
+   "dur": 4.0
+  },
+  "18-book-trailer-war-of-the-worlds": {
+   "from": 17.07,
+   "dur": 4.0
+  },
+  "19-travel-slideshow-iceland": {
+   "from": 20.13,
+   "dur": 4.0
+  },
+  "20-curtain-call-pack": {
+   "from": 0.33,
+   "dur": 4.0
+  },
+  "21-tutorial-studio-board": {
+   "from": 33.8,
+   "dur": 4.0
+  },
+  "22-manim-circle-area": {
+   "from": 3.93,
+   "dur": 4.0
+  }
+ }
+}

@@ -1,0 +1,2 @@
+{ "tool": "qa", "rule": "clipping", "severity": "FAIL", "render_args": ["--no-loudnorm"],
+  "why": "Gain pushed past full scale with mastering skipped (--no-loudnorm, or an external mix) squares off the waveform: audible distortion." }

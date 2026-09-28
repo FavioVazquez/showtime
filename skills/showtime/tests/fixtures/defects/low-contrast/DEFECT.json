@@ -1,0 +1,2 @@
+{ "tool": "check", "rule": "low_contrast", "severity": "FAIL", "check_args": ["--no-timeline", "--no-determinism", "--samples", "2"],
+  "why": "A 'subtle' secondary colour picked on a bright laptop screen disappears on phones and in compressed video." }

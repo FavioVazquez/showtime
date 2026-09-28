@@ -1,0 +1,106 @@
+{
+ "duration": 4.0,
+ "sample_rate": 48000,
+ "tracks": [
+  {
+   "kind": "ambience",
+   "synth": {
+    "type": "drone",
+    "key": "D",
+    "dur": 4.0,
+    "seed": 5
+   },
+   "start": 0,
+   "gain_db": 5,
+   "fade_in": 0.4,
+   "fade_out": 1.2
+  },
+  {
+   "kind": "sfx",
+   "synth": {
+    "type": "swell",
+    "key": "D",
+    "dur": 1.25,
+    "intensity": 0.6,
+    "seed": 4
+   },
+   "at": 1.25,
+   "align": "hit",
+   "gain_db": -3
+  },
+  {
+   "kind": "sfx",
+   "synth": {
+    "type": "reverse-cymbal",
+    "seed": 3
+   },
+   "at": 1.25,
+   "align": "hit",
+   "gain_db": -11
+  },
+  {
+   "kind": "sfx",
+   "synth": {
+    "type": "impact",
+    "intensity": 0.75,
+    "seed": 7
+   },
+   "at": 1.25,
+   "align": "hit",
+   "gain_db": -3
+  },
+  {
+   "kind": "sfx",
+   "synth": {
+    "type": "stinger",
+    "key": "D",
+    "intensity": 0.8,
+    "seed": 9
+   },
+   "at": 1.25,
+   "align": "hit",
+   "gain_db": -2
+  },
+  {
+   "kind": "sfx",
+   "synth": {
+    "type": "braam",
+    "key": "D",
+    "intensity": 0.5,
+    "seed": 4
+   },
+   "at": 1.25,
+   "align": "hit",
+   "gain_db": -6
+  },
+  {
+   "kind": "sfx",
+   "synth": {
+    "type": "logo-sting",
+    "key": "D",
+    "dur": 2.2,
+    "seed": 13
+   },
+   "at": 1.75,
+   "align": "hit",
+   "gain_db": 0,
+   "fade_out": 0.4
+  },
+  {
+   "kind": "sfx",
+   "synth": {
+    "type": "shimmer",
+    "key": "D",
+    "intensity": 0.35,
+    "seed": 5
+   },
+   "at": 2.45,
+   "align": "peak",
+   "gain_db": -9
+  }
+ ],
+ "master": {
+  "lufs": -14,
+  "true_peak": -1
+ }
+}

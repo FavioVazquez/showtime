@@ -1,0 +1,41 @@
+/* showtime theme: editorial. Magazine look: warm paper, serif display, deep teal accent, slow deliberate motion.
+   Token contract (every theme defines all of these; components read them with fallbacks):
+   palette, type, shape, space, motion, captions, texture. See references/components.md. */
+@import url('base.css');
+@import url('fonts/instrument-serif.css');
+@import url('fonts/ibm-plex-sans.css');
+@import url('fonts/ibm-plex-mono.css');
+@import url('fonts/caveat.css');
+
+:root, [data-theme="editorial"] {
+  color-scheme: light;
+  /* palette */
+  --bg: #efe8dc; --fg: #1d2422; --muted: #424540;
+  --surface: #f8f4ec; --surface-2: #e3dacb; --border: rgb(29 36 34 / 0.16);
+  --accent: #1f6b62; --accent-2: #9c5438; --accent-ink: #f8f4ec;
+  --good: #2f7d4f; --bad: #b0412e; --shadow: 0 1.6cqmin 4cqmin rgb(60 45 20 / 0.12);
+  /* type */
+  --font-display: 'Instrument Serif', 'Fraunces', Georgia, serif;
+  --font-body: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --font-hand: 'Caveat', cursive;
+  --weight-display: 400; --weight-body: 400;
+  --tracking-display: -0.02em; --leading-display: 1.0; --case-display: none;
+  /* shape + space (container units scale with the frame) */
+  --radius: 0.6cqmin; --radius-lg: 1cqmin; --stroke: max(1px, 0.15cqmin);
+  --space-1: 1.2cqmin; --space-2: 2.4cqmin; --space-3: 4cqmin; --space-4: 6.4cqmin;
+  --safe-x: 5cqw; --safe-y: 6cqh;
+  /* motion (read by the motion components: durations in s, eases as cubic-bezier) */
+  --motion-energy: calm;
+  --dur-in: 0.9s; --dur-out: 0.55s; --dur-beat: 0.7s; --stagger: 0.08s;
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-move: cubic-bezier(0.45, 0, 0.55, 1);
+  --ease-emph: cubic-bezier(0.16, 1, 0.3, 1);
+  /* captions */
+  --cap-font: 'IBM Plex Sans', sans-serif; --cap-weight: 600; --cap-case: none;
+  --cap-outline: #101614; --cap-active-ink: #1d2422;
+  --cap-ink: #fdfaf3; --cap-accent: #f2c14e; --cap-plate: rgb(29 36 34 / 0.78);
+  /* texture */
+  --grain: 0.03; --glow: 0.25;
+}

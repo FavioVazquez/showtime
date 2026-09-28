@@ -1,0 +1,194 @@
+name: ci
+
+# Two tiers (the quick release checks are checks.yml):
+#   every push / pull request : the fast test suite, split into 3 parallel shards per OS image
+#                               (run_all.py --shard I/3, -j auto inside each), after a core-tier setup;
+#                               shard 1 also runs a 2 s 360p render and the path-with-spaces shims
+#   nightly / manual          : the full test suite (voice, ASR, longer renders)
+# Changes that only touch docs, Markdown, README art or the site do not run it.
+# The showtime runtime (ffmpeg, models, SoundFont, Node packages, Python venv) is cached per OS, keyed on the
+# setup manifest, the requirements lock, the Node lock, setup.py and the Python version: a warm run only checks it.
+# While the repository is private, Actions minutes come from the owner's plan (macOS counts 10x, Windows 2x):
+# pushes skip the Intel Mac and the nightly tier; run them by hand (Actions > ci > Run workflow).
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "assets/readme/**"
+      - "site/**"
+      - ".out-of-scope/**"
+      - "LICENSE"
+  pull_request:
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "assets/readme/**"
+      - "site/**"
+      - ".out-of-scope/**"
+      - "LICENSE"
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+    inputs:
+      os:
+        description: 'Runner images as a JSON list, e.g. ["windows-2022"] (empty: every OS)'
+        type: string
+        default: ""
+      full:
+        description: "Run the nightly (full) tier instead of the fast one"
+        type: boolean
+        default: false
+      tests:
+        description: "Only these test files (substrings, space-separated; empty: all)"
+        type: string
+        default: ""
+
+concurrency:
+  # one run per branch (a newer push or manual run replaces the one in progress); the nightly has its own
+  group: ci-${{ github.event_name == 'schedule' && 'nightly' || github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHONUTF8: "1"
+  NO_COLOR: "1"
+  SHOWTIME_PROGRESS: "auto"
+
+jobs:
+  smoke:
+    name: fast (${{ matrix.os }}, ${{ matrix.shard }}/3)
+    if: github.event_name == 'push' || github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && !inputs.full)
+    strategy:
+      fail-fast: false
+      matrix:
+        # macos-14: Apple Silicon (arm64). macos-15-intel: x86_64 (the macos-13 image is retired).
+        # ubuntu-24.04 and windows-2022: x64. A private repository's pushes skip the Intel Mac.
+        os: ${{ fromJSON(inputs.os || (github.event.repository.private && '["ubuntu-24.04", "windows-2022", "macos-14"]' || '["ubuntu-24.04", "windows-2022", "macos-14", "macos-15-intel"]')) }}
+        # the suite's files split into 3 weight-balanced parts (run_all.py SHARD_WEIGHTS), one job each
+        shard: [1, 2, 3]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0   # immutable releases: no floating major tag
+        with:
+          enable-cache: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@v7
+        id: py
+        with:
+          python-version: "3.12"
+      - name: Cache the showtime runtime (ffmpeg, models, SoundFont, Node packages, Python venv)
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.showtime/bin
+            ~/.showtime/models
+            ~/.showtime/soundfonts
+            ~/.showtime/node
+            ~/.showtime/venv
+          key: showtime-rt-${{ runner.os }}-${{ runner.arch }}-py${{ steps.py.outputs.python-version }}-${{ hashFiles('skills/showtime/setup/manifest.json', 'skills/showtime/setup/requirements.txt', 'skills/showtime/setup/package.json', 'skills/showtime/setup/package-lock.json', 'skills/showtime/setup/setup.py') }}
+          restore-keys: showtime-rt-${{ runner.os }}-${{ runner.arch }}-py${{ steps.py.outputs.python-version }}-
+
+      - name: Setup (core tier)
+        run: python skills/showtime/setup/setup.py --tier core
+
+      - name: Doctor
+        run: python skills/showtime/lib/st/launcher.py doctor
+
+      - name: Shims from a path with spaces and parentheses (POSIX)
+        if: runner.os != 'Windows' && matrix.shard == 1
+        shell: bash
+        run: |
+          dest="$RUNNER_TEMP/show time (ci)"
+          mkdir -p "$dest"
+          cp -R skills/showtime "$dest/"
+          cd "$dest/showtime"
+          sh bin/showtime --version
+          bin/showtime version --json
+          bin/showtime doctor --json --quick > doctor.json
+          python -c "import json; d = json.load(open('doctor.json')); assert d['ok'], d['counts']"
+
+      - name: Shims from a path with spaces and parentheses (cmd + PowerShell)
+        if: runner.os == 'Windows' && matrix.shard == 1
+        shell: pwsh
+        run: |
+          $dest = Join-Path $env:RUNNER_TEMP 'show time (ci)'
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          Copy-Item -Recurse skills/showtime $dest
+          Push-Location (Join-Path $dest 'showtime\bin')
+          cmd /c showtime.cmd --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmd /c showtime.cmd doctor --json --quick | Out-File -Encoding utf8 ..\doctor.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          pwsh -NoProfile -ExecutionPolicy Bypass -File .\showtime.ps1 version --json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Pop-Location
+          python -c "import json,sys; d = json.load(open(sys.argv[1], encoding='utf-8-sig')); assert d['ok'], d['counts']" (Join-Path $dest 'showtime\doctor.json')
+
+      - name: Fast test suite, shard ${{ matrix.shard }}/3 (-j auto)
+        shell: bash
+        env:
+          ONLY: ${{ inputs.tests }}
+        run: |
+          only=(); for t in $ONLY; do only+=(-k "$t"); done
+          python skills/showtime/tests/run_all.py --fast -j auto --shard "${{ matrix.shard }}/3" "${only[@]}"
+
+      - name: 2 s 360p render smoke
+        if: matrix.shard == 1
+        shell: bash
+        run: |
+          st="python skills/showtime/lib/st/launcher.py"
+          $st new dom "$RUNNER_TEMP/smoke" --width 640 --height 360 --duration 2 --force
+          $st render "$RUNNER_TEMP/smoke" --preview -o "$RUNNER_TEMP/smoke.mp4"
+          PYTHONPATH=skills/showtime/lib python -c "import sys; from st import ff; p = ff.probe(sys.argv[1]); print(p['width'], p['height'], p['duration']); assert (p['width'], p['height']) == (640, 360) and abs(p['duration'] - 2.0) < 0.1" "$RUNNER_TEMP/smoke.mp4"
+
+      - name: Doctor report (JSON)
+        if: always()
+        run: python skills/showtime/lib/st/launcher.py doctor --json --quick
+
+  nightly:
+    name: nightly (${{ matrix.os }})
+    # the schedule runs only once the repository is public (a private repository pays for its minutes)
+    if: (github.event_name == 'schedule' && !github.event.repository.private) || (github.event_name == 'workflow_dispatch' && inputs.full)
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(inputs.os || '["ubuntu-24.04", "windows-2022", "macos-14", "macos-15-intel"]') }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0   # immutable releases: no floating major tag
+        with:
+          enable-cache: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@v7
+        id: py
+        with:
+          python-version: "3.12"
+      - name: Cache the showtime runtime (ffmpeg, models, SoundFont, Node packages, Python venv)
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.showtime/bin
+            ~/.showtime/models
+            ~/.showtime/soundfonts
+            ~/.showtime/node
+            ~/.showtime/venv
+          key: showtime-rt-${{ runner.os }}-${{ runner.arch }}-py${{ steps.py.outputs.python-version }}-${{ hashFiles('skills/showtime/setup/manifest.json', 'skills/showtime/setup/requirements.txt', 'skills/showtime/setup/package.json', 'skills/showtime/setup/package-lock.json', 'skills/showtime/setup/setup.py') }}
+          restore-keys: showtime-rt-${{ runner.os }}-${{ runner.arch }}-py${{ steps.py.outputs.python-version }}-
+      - name: Setup (core tier)
+        run: python skills/showtime/setup/setup.py --tier core
+      - name: Doctor
+        run: python skills/showtime/lib/st/launcher.py doctor
+      - name: Full test suite
+        run: python skills/showtime/tests/run_all.py -j auto --json
+      - name: Release checks
+        if: always()
+        run: python scripts/check_release.py --check

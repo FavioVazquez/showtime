@@ -1,0 +1,14 @@
+{
+ "title": "showtime sting",
+ "width": 1920,
+ "height": 1080,
+ "fps": 30,
+ "duration": 6.0,
+ "background": "#15100E",
+ "poster": 5.7,
+ "audio": "audio/mix.json",
+ "render": {
+  "crf": 18,
+  "poster": "none"
+ }
+}

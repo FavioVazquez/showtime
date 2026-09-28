@@ -1,0 +1,8 @@
+{
+  "_comment": "Music under the narration. `showtime manim render` adds the voice from voice/timeline.json on the video's clock and sets the length; the bed ducks under it. Swap the bed for a library track with {\"kind\": \"music\", \"lib\": \"<id>\", \"fit\": true}.",
+  "tracks": [
+    {"id": "bed", "kind": "music", "compose": {"style": "ambient-pad", "seed": 2}, "gain_db": -4, "fade_in": 0.6,
+     "fade_out": 1.5, "duck": {"under": "voice", "depth_db": 8}}
+  ],
+  "master": {"lufs": -14, "true_peak": -1}
+}

@@ -1,0 +1,50 @@
+/* showtime base layout + type scale, shared by every theme (imported by each theme file).
+   Everything is sized in container units (cqw/cqh/cqmin) so one page works at 16:9, 9:16
+   and 1:1. With no size container, container units fall back to viewport units, which in a
+   render equal the frame size. */
+/* fonts: each theme imports its own families (see fonts/); fonts.css imports them all */
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; }
+body {
+  background: var(--bg); color: var(--fg);
+  font-family: var(--font-body); font-weight: var(--weight-body, 400);
+  font-size: 3cqmin; line-height: 1.3;
+  -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision;
+  font-kerning: normal; font-variant-ligatures: common-ligatures;
+}
+
+/* Frame, scenes and layers */
+.stage { position: relative; width: 100%; height: 100%; overflow: hidden; container-type: size; background: var(--bg); }
+.scene { position: absolute; inset: 0; overflow: hidden; container-type: size; background: var(--scene-bg, var(--bg)); }
+.layer { position: absolute; inset: 0; }
+.safe { position: absolute; inset: var(--safe-y) var(--safe-x); }
+.center { display: grid; place-items: center; text-align: center; }
+.stack { display: flex; flex-direction: column; gap: var(--space-2); }
+.row { display: flex; gap: var(--space-2); align-items: center; }
+.fill { width: 100%; height: 100%; }
+.cover { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* Type scale (video sizes, not web sizes) */
+.t-hero { font-family: var(--font-display); font-weight: var(--weight-display); letter-spacing: var(--tracking-display); line-height: var(--leading-display); text-transform: var(--case-display, none); font-size: 13cqmin; margin: 0; }
+.t-display { font-family: var(--font-display); font-weight: var(--weight-display); letter-spacing: var(--tracking-display); line-height: var(--leading-display); text-transform: var(--case-display, none); font-size: 9cqmin; margin: 0; }
+.t-title { font-family: var(--font-display); font-weight: var(--weight-display); letter-spacing: calc(var(--tracking-display) * 0.6); line-height: 1.08; font-size: 6cqmin; margin: 0; }
+.t-sub { font-size: 3.6cqmin; line-height: 1.3; color: var(--muted); margin: 0; }
+.t-body { font-size: 3cqmin; line-height: 1.35; margin: 0; }
+.t-label { font-family: var(--font-mono); font-size: 2cqmin; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0; }
+.t-mono { font-family: var(--font-mono); }
+/* bare code elements use the theme's mono face, not the browser's (Courier differs per OS) */
+code, kbd, pre, samp { font-family: var(--font-mono, ui-monospace, monospace); }
+.t-num { font-variant-numeric: tabular-nums; }
+.accent { color: var(--accent); }
+.accent-2 { color: var(--accent-2); }
+.muted { color: var(--muted); }
+.surface { background: var(--surface); border: var(--stroke) solid var(--border); border-radius: var(--radius-lg); }
+
+/* Depth helpers: soft glow behind a hero, animated grain overlay (seek-safe: the grain seed
+   is driven by the motion components' Grain helper or stays static). */
+.glow { position: absolute; inset: -20%; background: radial-gradient(closest-side, color-mix(in oklab, var(--accent) 38%, transparent), transparent 70%); opacity: var(--glow, 0.5); pointer-events: none; }
+.vignette { position: absolute; inset: 0; background: radial-gradient(ellipse at center, transparent 55%, rgb(0 0 0 / 0.35)); pointer-events: none; }
+
+/* Tall frames (9:16): keep clear of short-form app chrome (top bar, caption block, action rail). */
+@container (max-aspect-ratio: 5/6) { .safe { inset: 11.5cqh 15cqw 25cqh 6cqw; } }

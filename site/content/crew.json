@@ -1,0 +1,65 @@
+{
+ "_comment": "The crew as the site shows it: one line per role and when it is usually cast. Keep in step with agents/*.md and skills/showtime/references/crew.md.",
+ "roles": [
+  {
+   "id": "creative-director",
+   "name": "creative director",
+   "line": "Pitches three concepts and a wildcard, then signs off the storyboard.",
+   "when": "Studio"
+  },
+  {
+   "id": "brand-designer",
+   "name": "brand designer",
+   "line": "Pulls a brand kit from your repo or site, or proposes one.",
+   "when": "Studio"
+  },
+  {
+   "id": "scriptwriter",
+   "name": "scriptwriter",
+   "line": "Writes every word you hear or read, each fact tied to a source.",
+   "when": "Studio"
+  },
+  {
+   "id": "storyboard-artist",
+   "name": "storyboard artist",
+   "line": "Turns the picked concept into shots, timings and an animatic.",
+   "when": "Studio · Long Videos"
+  },
+  {
+   "id": "motion-designer",
+   "name": "motion designer",
+   "line": "Builds one scene in its own sandbox; several work in parallel.",
+   "when": "Studio · 6+ Scenes"
+  },
+  {
+   "id": "sound-designer",
+   "name": "sound designer",
+   "line": "Music bed, effects on cues, the sound logo and a metered mix.",
+   "when": "Studio"
+  },
+  {
+   "id": "voice-director",
+   "name": "voice director",
+   "line": "Casting, pronunciation, the voice-over and other languages.",
+   "when": "Studio · Languages"
+  },
+  {
+   "id": "editor",
+   "name": "editor",
+   "line": "Cuts real footage by transcript; captions and reframes it.",
+   "when": "Footage"
+  },
+  {
+   "id": "researcher",
+   "name": "researcher",
+   "line": "Checks every claim against its source and every asset's license.",
+   "when": "Publish-Bound"
+  },
+  {
+   "id": "critic",
+   "name": "critic",
+   "line": "Watches the draft like a stranger: blocker, should-fix, polish.",
+   "when": "Publish-Bound"
+  }
+ ]
+}

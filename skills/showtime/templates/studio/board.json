@@ -1,0 +1,19 @@
+{
+  "schema": "showtime.studio.board/1",
+  "job": "",
+  "title": "",
+  "brief": "",
+  "rev": 1,
+  "phase": "concepts",
+  "format": { "width": 1920, "height": 1080 },
+  "round": { "n": 1, "label": "Round 1 · directions", "prompt": "Which direction feels right?" },
+  "history": [{ "rev": 1, "note": "Board created" }],
+  "fonts": [],
+  "concepts": [],
+  "audio": [],
+  "questions": [],
+  "dials": [
+    { "id": "energy", "label": "Energy", "left": "calm", "right": "punchy", "default": 50 },
+    { "id": "pace", "label": "Pace", "left": "unhurried", "right": "rapid", "default": 50 }
+  ]
+}

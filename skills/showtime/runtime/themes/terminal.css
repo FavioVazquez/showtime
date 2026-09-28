@@ -1,0 +1,38 @@
+/* showtime theme: terminal. Developer console look: black-green CRT palette, all-mono type, stepped mechanical motion.
+   Token contract (every theme defines all of these; components read them with fallbacks):
+   palette, type, shape, space, motion, captions, texture. See references/components.md. */
+@import url('base.css');
+@import url('fonts/jetbrains-mono.css');
+
+:root, [data-theme="terminal"] {
+  color-scheme: dark;
+  /* palette */
+  --bg: #0a0d0a; --fg: #d3f5d3; --muted: #96ae98;
+  --surface: #0f1510; --surface-2: #162016; --border: rgb(92 255 138 / 0.22);
+  --accent: #5cff8a; --accent-2: #ffcc4d; --accent-ink: #0a0d0a;
+  --good: #5cff8a; --bad: #ff5f56; --shadow: 0 0 4cqmin rgb(92 255 138 / 0.12);
+  /* type */
+  --font-display: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, monospace;
+  --font-body: 'JetBrains Mono', ui-monospace, monospace;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --font-hand: 'JetBrains Mono', monospace;
+  --weight-display: 800; --weight-body: 400;
+  --tracking-display: -0.04em; --leading-display: 1.05; --case-display: none;
+  /* shape + space (container units scale with the frame) */
+  --radius: 0.4cqmin; --radius-lg: 0.8cqmin; --stroke: max(1px, 0.18cqmin);
+  --space-1: 1.2cqmin; --space-2: 2.4cqmin; --space-3: 4cqmin; --space-4: 6.4cqmin;
+  --safe-x: 5cqw; --safe-y: 6cqh;
+  /* motion (read by the motion components: durations in s, eases as cubic-bezier) */
+  --motion-energy: medium;
+  --dur-in: 0.4s; --dur-out: 0.25s; --dur-beat: 0.45s; --stagger: 0.03s;
+  --ease-in: cubic-bezier(0.5, 0, 0.75, 0);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-move: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-emph: cubic-bezier(0.22, 1, 0.36, 1);
+  /* captions */
+  --cap-font: 'JetBrains Mono', monospace; --cap-weight: 700; --cap-case: none;
+  --cap-outline: #000000; --cap-active-ink: #0a0d0a;
+  --cap-ink: #d3f5d3; --cap-accent: #5cff8a; --cap-plate: rgb(10 13 10 / 0.85);
+  /* texture */
+  --grain: 0.04; --glow: 0.3;
+}

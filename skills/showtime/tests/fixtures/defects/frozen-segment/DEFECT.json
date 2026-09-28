@@ -1,0 +1,2 @@
+{ "tool": "qa", "rule": "frozen", "severity": "WARN", "render_args": [],
+  "why": "A scene shortened or re-timed leaves a stretch where nothing changes; viewers read it as a stall." }

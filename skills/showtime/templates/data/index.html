@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>showtime: animated chart story</title>
+<script src="/_st/stage.js"></script>
+<link rel="stylesheet" href="/_st/themes/editorial.css">
+<script type="module" src="/_st/components/index.js"></script>
+<style>
+  /* One insight per scene; the headline is the takeaway, not the metric name.
+     Charts read their numbers from data/*.json (edit those, not the HTML).
+     All numbers shipped here are SAMPLE DATA and are labelled on screen as such: replace them with
+     your real figures and cite the source in the last scene. */
+
+  /* ---------- a lit paper ground (never flat): window light from the top left, a warm pool low right,
+     a faint baseline grid and a soft vignette; every colour comes from the theme */
+  .scene { padding: 7cqh 7cqw; background:
+      radial-gradient(70% 80% at 12% 0%, color-mix(in oklab, var(--surface) 90%, white), transparent 70%),
+      radial-gradient(60% 70% at 100% 100%, color-mix(in oklab, var(--accent-2) 12%, transparent), transparent 70%),
+      var(--bg); }
+  .scene::before { content: ''; position: absolute; inset: 0; pointer-events: none;
+    background-image: linear-gradient(to bottom, color-mix(in oklab, var(--fg) 6%, transparent) 1px, transparent 1px);
+    background-size: 100% 6cqmin;
+    -webkit-mask-image: radial-gradient(80% 80% at 50% 50%, black, transparent 80%); mask-image: radial-gradient(80% 80% at 50% 50%, black, transparent 80%); }
+  .scene::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(130% 100% at 50% 45%, transparent 60%, color-mix(in oklab, var(--fg) 10%, transparent)); }
+
+  /* ---------- 1. title: kicker, the takeaway at hero size, a rule that draws under it */
+  .open { display: flex; flex-direction: column; justify-content: center; gap: 3.6cqh; }
+  .kicker { font: 600 max(2.8cqh, 2.5vmin, 2.25vh)/1.2 var(--font-mono, monospace); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); margin: 0; }
+  .open .t-hero { font-size: 17cqmin; line-height: 0.95; max-width: 72cqw; }
+  .open .t-hero em { font-style: italic; color: var(--accent); }
+  .rule { width: 34cqw; height: max(3px, 0.5cqmin); background: var(--fg); transform-origin: 0 50%; animation: draw 0.9s cubic-bezier(0.16, 1, 0.3, 1) 0.9s both; }
+  @keyframes draw { from { transform: scaleX(0); } to { transform: none; } }
+
+  /* ---------- 2-3. charts: full-frame, the title is the takeaway */
+  .chart { position: absolute; inset: 7cqh 7cqw 10cqh; }
+  /* a slow push-in over each chart scene, driven by the scene's progress (--p is set by the stage
+     on every seek), so a longer cut (`showtime retime`) still has motion while the numbers are read */
+  .chart { transform: scale(calc(1 + .04 * var(--p, 0))); transform-origin: 50% 55%; }
+
+  /* ---------- 4. the number and its meaning, one block, with the source in plain sight */
+  .stat { display: grid; grid-template-columns: auto auto; justify-content: center; align-content: center; align-items: center; column-gap: 5cqw; }
+  .stat [data-st="count-up"] { --cu-size: 34cqmin; color: var(--fg); }
+  .stat .t-display { font-size: 8cqmin; max-width: 42cqw; text-wrap: balance; }
+  .source { position: absolute; left: 7cqw; right: 7cqw; bottom: 12cqh; font: 500 max(2.6cqh, 2.5vmin, 2.25vh)/1.3 var(--font-mono, monospace); letter-spacing: 0.04em; color: var(--muted); }
+  .source::before { content: ''; display: block; width: 8cqw; height: max(2px, 0.3cqmin); background: var(--accent); margin-bottom: 1.6cqh; }
+
+  /* tall frames: stack, and keep clear of short-form app UI (right rail ~15 %, bottom ~25 %)
+     (insets in %: cq units inside a padded scene would shrink with the padding) */
+  @container (max-aspect-ratio: 5/6) {
+    .open, .stat { padding: 12% 16% 26% 6%; }
+    .open .t-hero { font-size: 20cqw; max-width: none; }
+    .rule { width: 50cqw; }
+    .stat { grid-template-columns: 1fr; align-content: center; text-align: center; justify-items: center; row-gap: 3cqh; }
+    .stat .t-display { max-width: none; font-size: 11cqw; }
+    .stat [data-st="count-up"] { --cu-size: 38cqw; }
+    .chart { inset: 13% 19% 27% 7%; }
+    .source { left: 6%; right: 16%; bottom: 26%; text-align: center; }
+    .source::before { margin: 0 auto 1.4cqh; }
+  }
+  /* square frames: a little less display size so the takeaway keeps to 3 lines */
+  @container (min-aspect-ratio: 5/6) and (max-aspect-ratio: 5/4) {
+    .open .t-hero { font-size: 15cqmin; max-width: none; }
+    .stat { grid-template-columns: 1fr; text-align: center; justify-items: center; row-gap: 3cqh; }
+    .stat .t-display { max-width: 80cqw; }
+    .source { text-align: center; }
+    .source::before { margin: 0 auto 1.4cqh; }
+  }
+</style>
+</head>
+<body>
+<div class="stage">
+
+  <!-- 1. Title: SLOT kicker (topic + "sample data" until the numbers are real), the takeaway, one line of context -->
+  <section class="scene open" id="open" data-start="0" data-dur="2.5">
+    <p class="kicker" data-st="kinetic-type" data-style="fade" data-by="chars" data-at="0.05">Build performance · sample data</p>
+    <h1 class="t-hero" data-st="kinetic-type" data-style="mask" data-at="0.15">Our builds got <em>four times</em> faster</h1>
+    <div class="rule"></div>
+  </section>
+
+  <!-- Transitions: one calm family for a report (a soft dissolve out of the title, dips between
+       charts: two dense charts crossfaded read as a double exposure). Pushes, warps and wipes move
+       a chart the viewer is still reading, so they feel chopped in a data story. -->
+  <!-- 2. Bars: grow from the baseline, the key month highlighted, callout after they settle -->
+  <section class="scene" id="bars" data-start="#open" data-dur="4.5" data-transition="blur-dissolve 0.6">
+    <div class="chart" data-st="chart" data-type="bar" data-src="data/build-time.json" data-at="0.15"></div>
+  </section>
+
+  <!-- 3. Lines: the consequence, drawn on -->
+  <section class="scene" id="lines" data-start="#bars" data-dur="4" data-transition="dip 0.6">
+    <div class="chart" data-st="chart" data-type="line" data-src="data/deploys.json" data-at="0.2"></div>
+  </section>
+
+  <!-- 4. The number, held long enough to read. SLOT: the source line. -->
+  <section class="scene stat" id="stat" data-start="#lines" data-dur="3" data-transition="dip 0.7">
+    <div data-st="count-up" data-value="-74" data-from="0" data-suffix="%" data-at="0.3" data-dur="1.4"></div>
+    <h2 class="t-display" data-st="kinetic-type" data-style="rise" data-at="0.6">less time waiting, every single build</h2>
+    <p class="source">Sample data. Cite your real source here.</p>
+  </section>
+
+  <div data-st="grain" data-opacity="0.035"></div>
+</div>
+</body>
+</html>

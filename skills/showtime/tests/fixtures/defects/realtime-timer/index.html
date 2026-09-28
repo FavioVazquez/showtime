@@ -1,0 +1,10 @@
+<!doctype html><html><head><meta charset="utf-8">
+<script src="/_st/stage.js"></script>
+<style>html,body{margin:0;width:480px;height:270px;background:#0b0d12;overflow:hidden}
+.box{position:absolute;left:0;top:110px;width:50px;height:50px;background:#e5484d}</style></head><body>
+<div class="box" id="box"></div>
+<script>
+  // the defect: motion driven by wall-clock timers instead of ST.onSeek(t)
+  let x = 0;
+  setInterval(() => { x = (x + 7) % 430; document.getElementById('box').style.left = x + 'px'; }, 16);
+</script></body></html>

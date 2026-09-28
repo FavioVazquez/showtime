@@ -1,0 +1,2 @@
+{ "tool": "check", "rule": "font_load_failed", "severity": "FAIL", "check_args": ["--no-timeline", "--no-determinism", "--samples", "2"],
+  "why": "A brand font referenced by path but never copied into the project falls back to a system font." }

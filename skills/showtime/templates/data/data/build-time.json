@@ -1,0 +1,15 @@
+{
+  "title": "Median build time fell 74%",
+  "subtitle": "Minutes per build, 2026 (sample data: replace with your own)",
+  "suffix": " min",
+  "highlight": "Jun",
+  "annotate": {"label": "Jun", "text": "remote cache on"},
+  "data": [
+    {"label": "Jan", "value": 42},
+    {"label": "Feb", "value": 39},
+    {"label": "Mar", "value": 35},
+    {"label": "Apr", "value": 31},
+    {"label": "May", "value": 24},
+    {"label": "Jun", "value": 11}
+  ]
+}

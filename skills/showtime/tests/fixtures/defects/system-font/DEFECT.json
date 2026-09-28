@@ -1,0 +1,2 @@
+{ "tool": "check", "rule": "font_not_embedded", "severity": "WARN", "check_args": ["--no-timeline", "--no-determinism", "--samples", "2"],
+  "why": "font-family: Arial renders with whatever the machine has, so Mac, Windows and Linux renders differ." }

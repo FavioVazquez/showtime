@@ -1,0 +1,2 @@
+{ "tool": "qa", "rule": "missing_credits", "severity": "FAIL", "render_args": [],
+  "why": "A CC BY asset needs a visible credit; forgetting CREDITS.txt breaks the license." }

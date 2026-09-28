@@ -1,0 +1,13 @@
+{
+  "title": "Meet Northwind",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "duration": 15.0,
+  "background": "#0d0b0a",
+  "poster": 1.9,
+  "audio": "audio/mix.json",
+  "subtitle": "Your launch video, in one sentence.",
+  "kicker": "Product launch",
+  "startTitle": false
+}

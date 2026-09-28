@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Tutorial Template</title>
+  <link rel="stylesheet" href="/_lib/@fontsource-variable/inter/index.css">
+  <link rel="stylesheet" href="/_lib/@fontsource-variable/jetbrains-mono/index.css">
+  <script src="/_st/stage.js"></script>
+  <script src="/_st/film.js"></script>
+  <script src="/_st/synth.js"></script>
+</head>
+<body>
+  <script src="cues.js"></script>
+  <script src="app.js"></script>
+  <script src="scenes.js"></script>
+  <script src="score.js"></script>
+  <script>
+    Film.start({
+      look: { base: 'dark', grain: 0.025, vignette: 0.3 },
+      design: [1920, 1080],
+      palette: { accent: '#6d8bff', accent2: '#35c79a' },
+      fonts: ['400 1em "Inter Variable"', '500 1em "Inter Variable"', '650 1em "Inter Variable"',
+              '800 1em "Inter Variable"', '500 1em "JetBrains Mono Variable"'],
+      // chapters: one per step (scrubber ticks, keys 1-9 and #chapter= links in the HTML export)
+      acts: [[0, 'Create a project'], [CUE.step2, 'Give it a name'], [CUE.step3, 'Render it'], [CUE.outro, 'Wrap-up']],
+      scenes: drawTutorial,
+      score: TUTORIAL_SCORE,
+    });
+  </script>
+</body>
+</html>

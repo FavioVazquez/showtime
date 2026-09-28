@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>showtime: product launch (DOM)</title>
+<script src="/_st/stage.js"></script>
+<!-- Theme = colours, fonts and motion feel. Swap for neutral / editorial / neon / paper / terminal,
+     or override the palette tokens below for a brand (keep ink >= 7:1 and muted >= 4.5:1 on --bg). -->
+<link rel="stylesheet" href="/_st/themes/bold.css">
+<!-- Every component on the page; elements with data-st="..." mount themselves, and scenes
+     with data-transition="..." are wired to the scene before them. -->
+<script type="module" src="/_st/components/index.js"></script>
+<style>
+  /* =====================================================================================
+     PRODUCT LAUNCH TEMPLATE
+     Four scenes: hero (hook -> the product doing its verb), features, formats, close.
+     Slots to replace are marked "SLOT:" in the markup. Every size is a container unit, so
+     `showtime new dom x --aspect 9:16` or `--aspect 1:1` re-lays the same page (see the
+     @container blocks at the end). Camera moves are CSS @keyframes: the stage seeks them,
+     so every frame renders on its own (animation-delay = seconds from the scene start).
+     ===================================================================================== */
+
+  /* ---------- page tokens (derived from the theme; no raw colours below this block). The type
+     scale lives on .scene so the @container queries at the end (which query the stage) can swap it. */
+  .stage {
+    --ember: color-mix(in oklab, var(--accent) 44%, transparent);
+    --rim: color-mix(in oklab, var(--accent-2) 34%, transparent);
+    --line: color-mix(in oklab, var(--fg) 7%, transparent);
+    --ink-soft: color-mix(in oklab, var(--fg) 88%, var(--bg));
+    --app-bg: color-mix(in oklab, var(--surface) 92%, var(--fg));
+    --app-panel: color-mix(in oklab, var(--surface) 70%, var(--bg));
+    --app-line: color-mix(in oklab, var(--fg) 12%, transparent);
+    --amber: color-mix(in oklab, var(--accent) 55%, var(--fg));
+    font-feature-settings: 'ss01', 'cv11';
+  }
+  /* type scale (landscape); square and tall frames override it at the end */
+  .scene { background: var(--bg);
+    --s-hero: 11cqh; --s-title: 7.4cqh; --s-sub: 4.2cqh; --s-card-t: 4.6cqh; --s-card: 3cqh; --s-label: 2.8cqh; --s-step: 3.8cqh; }
+
+  /* ---------- light: every scene gets a lit ground (key light + rim light + grid + sweep), never flat */
+  .bg { position: absolute; inset: 0; pointer-events: none;
+    background:
+      radial-gradient(62% 78% at var(--kx, 88%) var(--ky, 108%), var(--ember), transparent 70%),
+      radial-gradient(52% 64% at var(--rx, 4%) var(--ry, -8%), var(--rim), transparent 72%),
+      var(--bg); }
+  .bg::before { content: ''; position: absolute; inset: 0;
+    background-image: linear-gradient(to right, var(--line) 1px, transparent 1px), linear-gradient(to bottom, var(--line) 1px, transparent 1px);
+    background-size: 8cqmin 8cqmin; background-position: 50% 50%;
+    -webkit-mask-image: radial-gradient(70% 70% at 50% 45%, black 10%, transparent 78%); mask-image: radial-gradient(70% 70% at 50% 45%, black 10%, transparent 78%); }
+  /* one slow ambient move per scene: the key light drifts across the shot */
+  .bg::after { content: ''; position: absolute; inset: -20%;
+    background: radial-gradient(30% 30% at 50% 50%, color-mix(in oklab, var(--accent) 16%, transparent), transparent 70%);
+    animation: sweep var(--sweep, 7s) cubic-bezier(0.37, 0, 0.63, 1) both; }
+  @keyframes sweep { from { transform: translate(18%, 10%); } to { transform: translate(-6%, -4%); } }
+  .vig { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(120% 90% at 50% 45%, transparent 55%, rgb(0 0 0 / 0.45)); }
+
+  /* ---------- shared bits */
+  .brand { position: absolute; left: 6cqw; top: 6cqh; display: flex; align-items: center; gap: 1.4cqmin;
+    font: 700 var(--s-label)/1 var(--font-display); letter-spacing: -0.01em; color: var(--fg);
+    animation: fadeIn 0.5s var(--ease-out) 0.05s both; }
+  .mark { width: 1.35em; height: 1.35em; display: block; flex: none; }
+  .mark .m-bg { fill: var(--accent); }
+  .mark .m-fg { fill: var(--accent-ink); }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(1.2cqmin); } to { opacity: 1; transform: none; } }
+  @keyframes rise { from { opacity: 0; transform: translateY(5cqmin) scale(0.97); } to { opacity: 1; transform: none; } }
+  .t-hero em, .t-display em { font-style: normal; color: var(--accent); }
+  .features .head em, .formats .say em { display: block; }
+
+  /* =====================================================================================
+     SCENE 1: hero. 0-2.3 s the claim (hook); 2.3-3.1 s the camera pulls the product window
+     to the centre (match move); then the verb: type the prompt, click Generate, the cut builds.
+     ===================================================================================== */
+  .hero .hook { position: absolute; left: 6cqw; top: 20cqh; width: 47cqw; display: flex; flex-direction: column; gap: 3.2cqh; }
+  .hero .headline { font-size: var(--s-hero); line-height: 0.95; letter-spacing: -0.04em; }
+  .hero .sub { font: 500 var(--s-sub)/1.3 var(--font-body); color: var(--muted); margin: 0; max-width: 21em; }
+
+  /* the product window: .cam-a carries the hook pose -> centre move; the frame's own data-zoom
+     is the camera push to the UI target (inside the window, so nothing crops off-frame) */
+  .win { position: absolute; left: 6cqw; top: 14cqh; width: 68cqw; height: 74cqh;
+    animation: settle 4s cubic-bezier(0.37, 0, 0.63, 1) 5.9s both; }
+  /* after the demo lands the camera keeps breathing in (a slow push while the result holds) */
+  @keyframes settle { from { scale: 1; } to { scale: 1.035; } }
+  .cam-a { position: absolute; inset: 0; transform-origin: 50% 50%;
+    --hook: translate(31cqw, 5cqh) scale(0.6) perspective(160cqmin) rotateY(-15deg) rotateX(4deg);
+    animation: camIn 0.9s var(--ease-out) 0.12s both, camCenter 0.8s var(--ease-move) 2.4s forwards; }
+  @keyframes camIn { from { opacity: 0; transform: translateY(14cqh) var(--hook); } to { opacity: 1; transform: var(--hook); } }
+  @keyframes camCenter { from { opacity: 1; transform: var(--hook); } to { opacity: 1; transform: translate(0, 0) scale(1) perspective(160cqmin) rotateY(0deg) rotateX(0deg); } }
+  .win::before { content: ''; position: absolute; inset: -6% -16% -20% -16%; border-radius: 50%;
+    background: radial-gradient(closest-side, color-mix(in oklab, var(--accent) 42%, transparent), transparent);
+    animation: fadeIn 1s ease 2.7s both; }
+  .frame { position: absolute; inset: 0; border-radius: var(--radius-lg);
+    box-shadow: 0 4cqmin 12cqmin rgb(0 0 0 / 0.6), 0 0 0 max(1px, 0.14cqmin) var(--app-line); }
+
+  /* SLOT: the mock app. Replace the whole .app with a real capture:
+     <div class="frame" data-st="browser-frame" data-src="shots/app.png" ...> (showtime site capture)
+     or a recorded clip (showtime demo record). It is marked data-st-decor: UI detail, not copy. */
+  .app { display: grid; grid-template-columns: 36% 1fr; grid-template-rows: auto 1fr; height: 100%;
+    background: var(--app-bg); color: var(--fg); font-family: var(--font-body); }
+  .app .bar { grid-column: 1 / -1; display: flex; align-items: center; gap: 2cqmin; padding: 2.2cqmin 3cqmin; border-bottom: max(1px, 0.14cqmin) solid var(--app-line); font-size: 2.6cqmin; font-weight: 600; }
+  .app .bar .mark { width: 3.4cqmin; height: 3.4cqmin; }
+  .app .bar .crumb { color: var(--muted); font-weight: 500; }
+  .app .bar .sp { flex: 1; }
+  .app .bar .avs { display: flex; }
+  .app .bar .avs i { width: 3.6cqmin; height: 3.6cqmin; border-radius: 50%; margin-left: -0.9cqmin; border: 0.3cqmin solid var(--app-bg); background: var(--accent-2); }
+  .app .bar .avs i + i { background: var(--amber); }
+  .app .bar .exp { padding: 1.1cqmin 2.4cqmin; border-radius: 99cqmin; border: max(1px, 0.16cqmin) solid var(--app-line); font-size: 2.3cqmin; }
+  .app .side { padding: 3cqmin; display: flex; flex-direction: column; gap: 2.2cqmin; background: var(--app-panel); border-right: max(1px, 0.14cqmin) solid var(--app-line); }
+  .app .lbl { font: 600 2.2cqmin/1.2 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+  .app .prompt { min-height: 18cqmin; padding: 2.2cqmin 2.4cqmin; border-radius: var(--radius); background: var(--bg); border: max(1px, 0.2cqmin) solid color-mix(in oklab, var(--accent) 60%, var(--app-line));
+    font-size: 3.2cqmin; line-height: 1.3; font-weight: 500; box-shadow: 0 0 0 0.8cqmin color-mix(in oklab, var(--accent) 16%, transparent); }
+  .app .chips { display: flex; flex-wrap: wrap; gap: 1.2cqmin; }
+  .app .chips span { padding: 0.9cqmin 1.8cqmin; border-radius: 99cqmin; background: color-mix(in oklab, var(--fg) 8%, transparent); font-size: 2.3cqmin; font-weight: 500; }
+  .app .opts { display: flex; flex-direction: column; border-radius: var(--radius); border: max(1px, 0.14cqmin) solid var(--app-line); }
+  .app .opts div { display: flex; justify-content: space-between; padding: 1.5cqmin 2cqmin; font-size: 2.4cqmin; color: var(--muted); }
+  .app .opts div + div { border-top: max(1px, 0.14cqmin) solid var(--app-line); }
+  .app .opts b { color: var(--fg); font-weight: 600; }
+  .app .go { margin-top: auto; display: flex; align-items: center; justify-content: center; gap: 1.4cqmin; padding: 2cqmin; border-radius: var(--radius); background: var(--accent); color: var(--accent-ink); font-weight: 700; font-size: 3cqmin;
+    box-shadow: 0 1.4cqmin 4cqmin color-mix(in oklab, var(--accent) 40%, transparent); }
+  .app .go[data-st-hover] { filter: brightness(1.1); }
+  .app .main { padding: 3cqmin; display: grid; grid-template-rows: 1fr auto; gap: 2.4cqmin; min-height: 0; }
+  .app .preview { position: relative; border-radius: var(--radius); overflow: hidden; background: var(--bg); border: max(1px, 0.14cqmin) solid var(--app-line); min-height: 0; }
+  .thumb { position: absolute; inset: 0; display: grid; place-items: center; overflow: hidden;
+    background: radial-gradient(80% 90% at 85% 100%, color-mix(in oklab, var(--accent) 80%, transparent), transparent 70%),
+                radial-gradient(70% 80% at 0% 0%, color-mix(in oklab, var(--accent-2) 70%, transparent), transparent 70%), var(--surface-2); }
+  .thumb b { font: var(--weight-display) 7cqmin/0.95 var(--font-display); letter-spacing: -0.04em; color: var(--fg); text-align: center; }
+  .app .preview .thumb { clip-path: inset(0 100% 0 0); animation: wipe 0.9s var(--ease-move) 5.0s forwards; }
+  @keyframes wipe { to { clip-path: inset(0 0 0 0); } }
+  @keyframes out { to { opacity: 0; } }
+  .app .preview .empty { animation: out 0.3s ease 5s forwards; position: absolute; inset: 2cqmin; display: grid; place-items: center; border-radius: var(--radius); border: max(1px, 0.2cqmin) dashed var(--app-line); color: var(--muted); font-size: 2.4cqmin;
+    background: radial-gradient(60% 60% at 50% 50%, color-mix(in oklab, var(--accent-2) 12%, transparent), transparent 70%); }
+  .app .tl { display: grid; gap: 1.1cqmin; }
+  .app .trk { display: grid; grid-template-columns: 10cqmin 1fr; align-items: center; gap: 1.4cqmin; font-size: 2.1cqmin; color: var(--muted); }
+  .app .lane { position: relative; height: 3.8cqmin; border-radius: 0.8cqmin; background: color-mix(in oklab, var(--fg) 6%, transparent); display: flex; gap: 0.6cqmin; padding: 0.5cqmin; }
+  .app .lane i { display: block; height: 100%; border-radius: 0.5cqmin; transform-origin: 0 50%; animation: grow 0.55s var(--ease-out) both; }
+  .app .v i { background: var(--accent); } .app .a i { background: var(--accent-2); } .app .m i { background: var(--amber); }
+  @keyframes grow { from { transform: scaleX(0); opacity: 0; } to { transform: none; opacity: 1; } }
+  .app .playhead { position: absolute; top: -0.6cqmin; bottom: -0.6cqmin; left: 0; width: 0.35cqmin; background: var(--fg); border-radius: 1cqmin; animation: play 3.6s linear 5.35s both; }
+  @keyframes play { from { translate: 0 0; } to { translate: 40cqw 0; } }
+  .toast { position: absolute; right: 3cqmin; top: 12.5cqmin; display: flex; align-items: center; gap: 1.4cqmin; padding: 1.6cqmin 2.4cqmin; border-radius: var(--radius);
+    background: var(--fg); color: var(--bg); font-size: 2.6cqmin; font-weight: 650; box-shadow: var(--shadow); animation: rise 0.5s var(--ease-out) 5.9s both; }
+  .toast i { width: 2.4cqmin; height: 2.4cqmin; border-radius: 50%; background: var(--good); }
+
+  /* the steps rail: tells the viewer where they are in the flow */
+  .rail { position: absolute; right: 6cqw; top: 50%; translate: 0 -50%; width: 15cqw; display: flex; flex-direction: column; gap: 4cqh; }
+  .step { display: grid; grid-template-columns: auto 1fr; column-gap: 1.2cqmin; align-items: baseline;
+    font: 800 var(--s-step)/1.05 var(--font-display); letter-spacing: -0.02em; color: var(--muted); animation: stepIn 0.5s var(--ease-out) both, lit 0.3s ease forwards; }
+  .step small { font: 600 var(--s-label)/1 var(--font-mono); letter-spacing: 0; color: var(--muted); animation: noop 0.5s both, litNum 0.3s ease forwards; }
+  @keyframes noop { to { outline-color: transparent; } }
+  .step::after { content: ''; grid-column: 1 / -1; height: 0.4cqmin; margin-top: 1.4cqh; border-radius: 1cqmin; background: var(--accent); transform-origin: 0 50%; transform: scaleX(0); animation: bar 0.5s var(--ease-out) forwards; }
+  @keyframes stepIn { from { opacity: 0; transform: translateY(3cqmin); } to { opacity: 1; transform: none; } }
+  @keyframes lit { from { color: var(--muted); } to { color: var(--fg); } }
+  @keyframes litNum { from { color: var(--muted); } to { color: var(--accent); } }
+  @keyframes bar { to { transform: scaleX(1); } }
+  /* a finished step keeps its words but hands the accent bar to the step now running */
+  @keyframes barDone { to { transform: scaleX(1); background: color-mix(in oklab, var(--fg) 22%, transparent); } }
+  @keyframes numDone { to { color: var(--muted); } }
+  .step:nth-child(1), .step:nth-child(1) small { animation-delay: 2.9s, 3.35s; } .step:nth-child(1)::after { animation: bar 0.5s var(--ease-out) 3.35s forwards, barDone 0.4s ease 4.85s forwards; }
+  .step:nth-child(1) small { animation: noop 0.5s 2.9s both, litNum 0.3s ease 3.35s forwards, numDone 0.4s ease 4.85s forwards; }
+  .step:nth-child(2), .step:nth-child(2) small { animation-delay: 3s, 4.85s; } .step:nth-child(2)::after { animation: bar 0.5s var(--ease-out) 4.85s forwards, barDone 0.4s ease 5.9s forwards; }
+  .step:nth-child(2) small { animation: noop 0.5s 3s both, litNum 0.3s ease 4.85s forwards, numDone 0.4s ease 5.9s forwards; }
+  .step:nth-child(3), .step:nth-child(3) small { animation-delay: 3.1s, 5.9s; } .step:nth-child(3)::after { animation-delay: 5.9s; }
+
+  /* =====================================================================================
+     SCENE 2: features. Three benefits as a tight bento; each card has a live motif and
+     lights up in turn (the spotlight is a CSS keyframe at the card's cue).
+     ===================================================================================== */
+  .features { --kx: 12%; --ky: 112%; --rx: 96%; --ry: -12%; --sweep: 3.4s; }
+  .features .head { position: absolute; left: 6cqw; top: 9cqh; right: 6cqw; font-size: var(--s-title); }
+  .cards { position: absolute; left: 6cqw; right: 6cqw; top: 34cqh; bottom: 9cqh; display: grid; grid-template-columns: repeat(3, 1fr); gap: 2.2cqw; }
+  .card { position: relative; display: flex; flex-direction: column; gap: 1.6cqh; padding: 3.4cqmin; border-radius: var(--radius-lg); overflow: hidden;
+    background: linear-gradient(180deg, color-mix(in oklab, var(--fg) 7%, transparent), transparent 45%), var(--surface);
+    border: max(1px, 0.16cqmin) solid var(--border); box-shadow: var(--shadow);
+    animation: rise 0.6s var(--ease-out) both, spot 1.1s ease both; }
+  .card::before { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0;
+    box-shadow: inset 0 0 0 0.3cqmin var(--accent), 0 0 6cqmin color-mix(in oklab, var(--accent) 30%, transparent);
+    animation: glowOn 1.1s ease both; }
+  @keyframes spot { 0% { translate: 0 0; } 30% { translate: 0 -1.2cqh; } 100% { translate: 0 0; } }
+  @keyframes glowOn { 0% { opacity: 0; } 25% { opacity: 1; } 100% { opacity: 0.25; } }
+  .card:nth-child(1) { animation-delay: 0.35s, 1s; } .card:nth-child(1)::before { animation-delay: 1s; }
+  .card:nth-child(2) { animation-delay: 0.44s, 1.5s; } .card:nth-child(2)::before { animation-delay: 1.5s; }
+  .card:nth-child(3) { animation-delay: 0.53s, 2s; } .card:nth-child(3)::before { animation-delay: 2s; }
+  .card h3 { margin: auto 0 0; font: var(--weight-display) var(--s-card-t)/1.02 var(--font-display); letter-spacing: -0.03em; color: var(--fg); }
+  .card p { margin: 0; font: 450 var(--s-card)/1.32 var(--font-body); color: var(--muted); text-wrap: balance; min-height: 2.64em; }
+  .icon { width: 7cqmin; height: 7cqmin; border-radius: var(--radius); display: grid; place-items: center; flex: none;
+    background: color-mix(in oklab, var(--accent) 18%, transparent); color: var(--accent); }
+  .icon svg { width: 58%; height: 58%; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .motif { flex: 1; min-height: 0; display: flex; align-items: flex-end; gap: 0.8cqmin; padding-top: 1cqh; }
+  .motif i { flex: 1; border-radius: 0.6cqmin 0.6cqmin 0.2cqmin 0.2cqmin; background: color-mix(in oklab, var(--fg) 16%, transparent); transform-origin: 50% 100%; animation: bars 0.7s var(--ease-out) both; }
+  .card:nth-child(2) .motif i { background: color-mix(in oklab, var(--accent-2) 70%, transparent); }
+  .card:nth-child(3) .motif i:nth-child(4n+1) { background: var(--accent); }
+  .motif.lines { flex-direction: column; align-items: stretch; justify-content: flex-end; }
+  .motif.lines i { flex: none; height: 1.6cqmin; border-radius: 1cqmin; transform-origin: 0 50%; animation-name: barsX; }
+  .motif.lines i:nth-child(2) { background: var(--accent); width: 80%; } .motif.lines i:nth-child(3) { width: 64%; } .motif.lines i:nth-child(4) { width: 88%; }
+  @keyframes bars { from { transform: scaleY(0.05); } to { transform: none; } }
+  @keyframes barsX { from { transform: scaleX(0.02); } to { transform: none; } }
+
+  /* =====================================================================================
+     SCENE 3: formats. One cut, every aspect: three frames fan in and settle.
+     ===================================================================================== */
+  .formats { --kx: 70%; --ky: 50%; --rx: 0%; --ry: 100%; --sweep: 2.2s; }
+  .formats .say { position: absolute; left: 6cqw; top: 50%; translate: 0 -50%; width: 40cqw; font-size: var(--s-title); }
+  .fan { position: absolute; left: 47cqw; right: 6cqw; top: 14cqh; bottom: 12cqh; display: flex; align-items: center; justify-content: center; gap: 2cqw; }
+  .fmt { display: flex; flex-direction: column; align-items: center; gap: 2cqh; animation: fanIn 0.75s var(--ease-out) both; }
+  .fmt .scr { position: relative; border-radius: 1.4cqmin; overflow: hidden; box-shadow: var(--shadow), 0 0 0 max(1px, 0.16cqmin) var(--border); }
+  .fmt .scr .thumb b { font-size: 3.6cqmin; }
+  .fmt.w .scr { width: 19cqw; aspect-ratio: 16 / 9; }
+  .fmt.t .scr { height: 50cqh; aspect-ratio: 9 / 16; }
+  .fmt.s .scr { width: 13cqw; aspect-ratio: 1; }
+  .fmt span { font: 600 var(--s-label)/1 var(--font-mono); color: var(--fg); }
+  .fmt:nth-child(1) { animation-delay: 0.2s; } .fmt:nth-child(2) { animation-delay: 0.32s; } .fmt:nth-child(3) { animation-delay: 0.44s; }
+  @keyframes fanIn { from { opacity: 0; transform: translateX(10cqw) rotate(6deg) scale(0.94); } to { opacity: 1; transform: none; } }
+
+  /* =====================================================================================
+     SCENE 4: close. A horizon of light, the mark and name, one line, one call to action.
+     ===================================================================================== */
+  .close { --sweep: 2.8s; }
+  .close .bg { background:
+      radial-gradient(150% 83% at 50% 136%, color-mix(in oklab, var(--accent) 18%, var(--bg)) 0 57%, transparent 58.2%),
+      radial-gradient(150% 83% at 50% 136%, transparent 57.4%, color-mix(in oklab, var(--accent) 55%, var(--fg)) 58%, transparent 59.4%),
+      radial-gradient(60% 50% at 50% 100%, var(--ember), transparent 75%),
+      radial-gradient(50% 60% at 50% -10%, var(--rim), transparent 70%), var(--bg); }
+  .close .horizon { position: absolute; inset: 0; animation: horizon 1.6s var(--ease-out) 0.1s both; }
+  @keyframes horizon { from { transform: translateY(14cqh); opacity: 0.4; } to { transform: none; opacity: 1; } }
+  .close [data-st="end-card"] { --logo-size: 14cqh; --logo-mark-size: 13cqh; }
+  .close .st-ec-stack { gap: 3cqh; translate: 0 -3cqh; }
+  .close .st-ec-tagline { font: 500 var(--s-sub)/1.25 var(--font-body); color: var(--ink-soft); text-wrap: balance; }
+  .close .st-ec-cta { font: 700 var(--s-step)/1 var(--font-body); padding: 2cqmin 4.4cqmin; }
+  .close .st-ec-url { font: 600 var(--s-label)/1 var(--font-mono); color: var(--fg); letter-spacing: 0.02em; }
+
+  /* ---------- square frames (1:1, 4:5): the hook sits over a small teaser of the window; features
+     become full-width rows (icon, copy, motif) */
+  @container (max-aspect-ratio: 5/4) {
+    .scene { --s-hero: 10cqmin; --s-title: 7.4cqmin; --s-sub: 4.2cqmin; --s-card-t: 4.6cqmin; --s-card: 3.2cqmin; --s-label: 3cqmin; --s-step: 4cqmin; }
+    .hero .hook { top: 13cqh; width: 88cqw; }
+    .win { left: 6cqw; top: 15cqh; width: 88cqw; height: 64cqh; }
+    .cam-a { --hook: translate(20cqw, 33cqh) scale(0.5) perspective(160cqmin) rotateY(-12deg) rotateX(5deg); }
+    .rail { left: 6cqw; right: 6cqw; top: auto; bottom: 6cqh; translate: none; width: auto; flex-direction: row; gap: 3cqw; }
+    .step { flex: 1; }
+    .features .head { top: 8cqh; }
+    .cards { top: 30cqh; bottom: 7cqh; grid-template-columns: 1fr; gap: 2cqh; }
+    .card { display: grid; grid-template-columns: auto 1fr 20cqw; align-items: center; column-gap: 3.4cqw; padding: 2.6cqmin 3.4cqmin; }
+    .card .motif { order: 3; height: 100%; padding: 0; }
+    .card .txt { display: flex; flex-direction: column; gap: 0.8cqh; }
+    .card h3 { margin: 0; }
+    .card p { min-height: 0; }
+    .icon { width: 10cqmin; height: 10cqmin; }
+    .formats .say { left: 6cqw; right: 6cqw; top: 10cqh; translate: none; width: auto; }
+    .fan { left: 6cqw; right: 6cqw; top: 38cqh; bottom: 8cqh; }
+    .fmt.w .scr { width: 36cqw; } .fmt.t .scr { height: 42cqh; } .fmt.s .scr { width: 22cqw; }
+    .close [data-st="end-card"] { --logo-size: 12cqmin; --logo-mark-size: 11cqmin; }
+    .close .st-ec-tagline { max-width: 88cqw; }
+  }
+  /* ---------- tall frames (9:16): everything stays inside the short-form safe box
+     (x 6-85 %, y 11.5-75 %): the app's right-hand action rail and caption band cover the rest */
+  @container (max-aspect-ratio: 5/6) {
+    .scene { --s-hero: 10.4cqw; --s-title: 8.4cqw; --s-sub: 5.2cqw; --s-card-t: 6cqw; --s-card: 4.4cqw; --s-label: 4.2cqw; --s-step: 5.4cqw; }
+    .brand { top: 12.5cqh; }
+    .hero .hook { left: 6cqw; top: 18cqh; width: 79cqw; gap: 2cqh; }
+    .win { left: 6cqw; top: 19cqh; width: 79cqw; height: 37cqh; }
+    .cam-a { --hook: translate(3cqw, 24cqh) scale(0.72) perspective(160cqmin) rotateY(-10deg) rotateX(5deg); }
+    .rail { left: 6cqw; right: 15cqw; top: 60cqh; bottom: auto; translate: none; flex-direction: column; gap: 1.3cqh; }
+    .step::after { margin-top: 0.8cqh; }
+    .features .head { top: 13cqh; right: 15cqw; }
+    .cards { top: 29cqh; bottom: 25cqh; right: 15cqw; gap: 1.4cqh; }
+    .card { grid-template-columns: auto 1fr; column-gap: 4cqw; padding: 3cqw 4cqw; }
+    .card .motif { display: none; }
+    .icon { width: 13cqw; height: 13cqw; }
+    .formats .say { right: 15cqw; top: 13cqh; }
+    .fan { left: 6cqw; right: 15cqw; top: 29cqh; bottom: 25cqh; display: grid; grid-template-columns: auto auto; align-content: center; justify-content: space-between; gap: 2cqh 3cqw; }
+    .fmt.t { grid-row: span 2; }
+    .fmt.w .scr { width: 39cqw; } .fmt.t .scr { height: 34cqh; } .fmt.s .scr { width: 22cqw; }
+    .close .st-ec-stack { translate: 0 -8cqh; }
+    .close [data-st="end-card"] { --logo-size: 13cqw; --logo-mark-size: 16cqw; }
+    .close .st-ec-tagline { max-width: 79cqw; }
+  }
+</style>
+</head>
+<body>
+<div class="stage">
+
+  <!-- 1. HERO: the claim on frame 1, then the product doing its verb -->
+  <section class="scene hero" id="hero" data-start="0" data-dur="6.8" data-design-dur="6.8">
+    <div class="bg"></div>
+
+    <!-- SLOT: product mark + name (swap the SVG for the real logo file: <img class="mark" src="logo.svg">) -->
+    <div class="brand"><svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect class="m-bg" width="32" height="32" rx="9"/><path class="m-fg" d="M9 23V9h3.2l7.6 9V9H23v14h-3.2L12.2 14v9z"/></svg>Northwind</div>
+
+    <!-- SLOT: the hook (the claim in the viewer's words, 3 short lines) and one supporting line -->
+    <div class="hook">
+      <h1 class="t-hero headline" data-st="kinetic-type" data-style="mask" data-at="0.1" data-exit="mask" data-exit-at="2.2">Your launch<br>video, in one<br><em>sentence.</em></h1>
+      <p class="sub" data-st="kinetic-type" data-style="rise" data-at="0.5" data-exit="fade" data-exit-at="1.8">Scored, voiced and captioned.</p>
+    </div>
+
+    <div class="win">
+      <div class="cam-a">
+        <!-- data-zoom: push in on the prompt while it types, back out as the cut builds -->
+        <div class="frame" data-st="browser-frame" data-url="northwind.app" data-enter="none" data-drift="none"
+             data-zoom='[{"at":3.25,"scale":1.32,"x":2,"y":30,"dur":0.75},{"at":5.0,"scale":1,"x":50,"y":50,"dur":0.75}]'>
+          <div class="app" data-st-decor>
+            <div class="bar">
+              <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect class="m-bg" width="32" height="32" rx="9"/><path class="m-fg" d="M9 23V9h3.2l7.6 9V9H23v14h-3.2L12.2 14v9z"/></svg>
+              <span class="crumb">Projects /</span><span>launch-teaser</span><span class="sp"></span>
+              <span class="avs"><i></i><i></i></span><span class="exp">Export</span>
+            </div>
+            <div class="side">
+              <span class="lbl">Describe your video</span>
+              <div class="prompt" data-st="typewriter" data-at="3.35" data-fit="1.3" data-caret="bar">A 20-second launch teaser. Upbeat, warm voice, captions.</div>
+              <div class="chips"><span>16:9</span><span>9:16</span><span>1:1</span><span>Music</span></div>
+              <div class="opts"><div><span>Voice</span><b>Warm</b></div><div><span>Captions</span><b>On</b></div><div><span>Style</span><b>Bold</b></div></div>
+              <div class="go" id="go">Generate</div>
+            </div>
+            <div class="main">
+              <div class="preview">
+                <div class="empty">Your cut appears here</div>
+                <div class="thumb"><b>Meet<br>Northwind</b></div>
+              </div>
+              <div class="tl">
+                <div class="trk">Video<div class="lane v"><i style="flex:3;animation-delay:5.10s"></i><i style="flex:2;animation-delay:5.20s"></i><i style="flex:4;animation-delay:5.30s"></i><i style="flex:2;animation-delay:5.40s"></i><span class="playhead"></span></div></div>
+                <div class="trk">Voice<div class="lane a"><i style="flex:5;animation-delay:5.25s"></i><i style="flex:4;animation-delay:5.35s"></i><b style="flex:2"></b></div></div>
+                <div class="trk">Music<div class="lane m"><i style="flex:11;animation-delay:5.40s"></i></div></div>
+              </div>
+            </div>
+            <div class="toast"><i></i>Draft ready</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SLOT: the three steps of your product's core flow (short verbs) -->
+    <div class="rail">
+      <div class="step"><small>01</small>Describe</div>
+      <div class="step"><small>02</small>Generate</div>
+      <div class="step"><small>03</small>Export</div>
+    </div>
+
+    <!-- the cursor fades in once the window is centred (path times count from data-at) -->
+    <div data-st="cursor" data-at="3.0" data-path='[{"at":0.3,"x":70,"y":96},{"at":1.75,"target":"#go","hover":true},{"at":1.85,"target":"#go","click":true}]' data-hide-after="1.2"></div>
+    <div class="vig"></div>
+  </section>
+
+  <!-- 2. FEATURES: three benefits, one spotlight at a time -->
+  <section class="scene features" id="features" data-start="#hero" data-dur="3.0" data-design-dur="3.0" data-transition="push left 0.6">
+    <div class="bg"></div>
+    <!-- SLOT: section line (the accent word is the payoff) -->
+    <h2 class="t-display head" data-st="kinetic-type" data-style="mask" data-at="0.1">Everything it takes, <em>on your machine.</em></h2>
+    <!-- SLOT: three features. Title = the benefit (2-3 words), line = how (<= 6 words).
+         Icons: any path from /_lib/lucide-static/icons/ (inline the SVG, it takes the accent). -->
+    <div class="cards">
+      <div class="card">
+        <div class="icon"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h13"/></svg></div>
+        <div class="motif lines" data-st-decor><i style="animation-delay:0.7s"></i><i style="animation-delay:0.78s"></i><i style="animation-delay:0.86s"></i><i style="animation-delay:0.94s"></i></div>
+        <div class="txt"><h3>Script to cut</h3><p>One line becomes a timed edit.</p></div>
+      </div>
+      <div class="card">
+        <div class="icon"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></div>
+        <div class="motif" data-st-decor><i style="height:40%;animation-delay:0.8s"></i><i style="height:75%;animation-delay:0.83s"></i><i style="height:55%;animation-delay:0.86s"></i><i style="height:95%;animation-delay:0.89s"></i><i style="height:62%;animation-delay:0.92s"></i><i style="height:84%;animation-delay:0.95s"></i><i style="height:38%;animation-delay:0.98s"></i><i style="height:70%;animation-delay:1.01s"></i><i style="height:50%;animation-delay:1.04s"></i><i style="height:88%;animation-delay:1.07s"></i><i style="height:45%;animation-delay:1.1s"></i><i style="height:66%;animation-delay:1.13s"></i></div>
+        <div class="txt"><h3>Voice and captions</h3><p>Narrated and subtitled offline.</p></div>
+      </div>
+      <div class="card">
+        <div class="icon"><svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div>
+        <div class="motif" data-st-decor><i style="height:30%;animation-delay:0.9s"></i><i style="height:55%;animation-delay:0.93s"></i><i style="height:30%;animation-delay:0.96s"></i><i style="height:55%;animation-delay:0.99s"></i><i style="height:30%;animation-delay:1.02s"></i><i style="height:55%;animation-delay:1.05s"></i><i style="height:30%;animation-delay:1.08s"></i><i style="height:55%;animation-delay:1.11s"></i><i style="height:30%;animation-delay:1.14s"></i><i style="height:55%;animation-delay:1.17s"></i><i style="height:30%;animation-delay:1.2s"></i><i style="height:55%;animation-delay:1.23s"></i></div>
+        <div class="txt"><h3>Scored on the beat</h3><p>Music and sound land on cuts.</p></div>
+      </div>
+    </div>
+    <div class="vig"></div>
+  </section>
+
+  <!-- 3. FORMATS: the payoff in one image. No numbers here: a stat needs a real, cited source
+       (to add one, use data-st="count-up" with the sourced figure and put the source on screen). -->
+  <section class="scene formats" id="formats" data-start="#features" data-dur="2.2" data-design-dur="2.2" data-transition="push left 0.6">
+    <div class="bg"></div>
+    <!-- SLOT: the payoff line -->
+    <h2 class="t-display say" data-st="kinetic-type" data-style="mask" data-at="0.1">One sentence. <em>Every format.</em></h2>
+    <div class="fan">
+      <div class="fmt w"><div class="scr"><div class="thumb" data-st-decor><b>Meet<br>Northwind</b></div></div><span>16:9</span></div>
+      <div class="fmt t"><div class="scr"><div class="thumb" data-st-decor><b>Meet<br>Northwind</b></div></div><span>9:16</span></div>
+      <div class="fmt s"><div class="scr"><div class="thumb" data-st-decor><b>Meet<br>Northwind</b></div></div><span>1:1</span></div>
+    </div>
+    <div class="vig"></div>
+  </section>
+
+  <!-- 4. CLOSE: mark + name, one line, one call to action (hold >= 2.5 s). Shader transition in. -->
+  <section class="scene close" id="close" data-start="#formats" data-dur="3.0" data-design-dur="3.0" data-transition="sdf-iris 0.8" data-transition-options='{"a":0.5,"b":0.62}'>
+    <div class="horizon"><div class="bg"></div></div>
+    <!-- SLOT: name, tagline, CTA, URL; the child SVG is the mark (or data-logo="logo.svg") -->
+    <div data-st="end-card" data-text="Northwind" data-tagline="Your launch video, in one sentence." data-cta="Try it free" data-url="northwind.app" data-at="0.3" data-style="mask" data-dot="false">
+      <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect class="m-bg" width="32" height="32" rx="9"/><path class="m-fg" d="M9 23V9h3.2l7.6 9V9H23v14h-3.2L12.2 14v9z"/></svg>
+    </div>
+    <div class="vig"></div>
+  </section>
+
+  <!-- film grain over everything (seeded per frame; hides gradient banding after encode) -->
+  <div data-st="grain"></div>
+</div>
+<script>
+  // Retime support: the CSS keyframe times above are written for each scene's designed length
+  // (data-design-dur). When `showtime retime` / `new --duration` shortens a scene it scales the
+  // component times inside it; this scales the scene's CSS animations by the same factor
+  // (longer scenes keep their speed and hold longer, like the components).
+  (function () {
+    var done = new WeakSet();
+    ST.onSeek(function () {
+      document.querySelectorAll('[data-design-dur]').forEach(function (s) {
+        var k = Math.min(1, parseFloat(s.getAttribute('data-dur')) / parseFloat(s.getAttribute('data-design-dur')));
+        if (!(k > 0) || k > 0.999) return;
+        s.getAnimations({ subtree: true }).forEach(function (a) {
+          if (done.has(a) || !a.effect) return;
+          var t = a.effect.getTiming();
+          a.effect.updateTiming({ delay: t.delay * k, duration: t.duration * k });
+          done.add(a);
+        });
+      });
+    });
+  })();
+</script>
+</body>
+</html>

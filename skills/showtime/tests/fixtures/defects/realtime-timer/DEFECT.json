@@ -1,0 +1,2 @@
+{ "tool": "check", "rule": "timers", "severity": "WARN", "check_args": ["--no-timeline", "--samples", "2"],
+  "why": "setInterval/setTimeout run on real time, so the render depends on machine speed and differs from the preview." }

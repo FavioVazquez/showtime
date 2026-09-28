@@ -1,0 +1,10 @@
+{
+  "title": "Data story",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "duration": 14.0,
+  "background": "#efe8dc",
+  "poster": 6.2,
+  "audio": "audio/mix.json"
+}

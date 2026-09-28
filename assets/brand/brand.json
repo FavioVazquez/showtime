@@ -1,0 +1,143 @@
+{
+ "schema": 1,
+ "status": "confirmed",
+ "name": "showtime",
+ "tagline": "Describe a video. Claude directs. Your machine renders.",
+ "url": null,
+ "logo": {
+  "path": "logo/mark.svg",
+  "mark": "logo/mark-hero.svg",
+  "on_dark": "logo/lockup-horizontal-on-dark.svg",
+  "on_light": "logo/lockup-horizontal.svg",
+  "candidates": [
+   "logo/lockup-stacked-on-dark.svg",
+   "logo/lockup-stacked.svg",
+   "logo/mark-small.svg",
+   "logo/mono-black.svg",
+   "logo/mono-white.svg",
+   "logo/wordmark-terminal.svg"
+  ]
+ },
+ "colors": [
+  {
+   "role": "bg",
+   "hex": "#15100E",
+   "name": "Stage",
+   "source": "BRAND.md"
+  },
+  {
+   "role": "surface",
+   "hex": "#231916",
+   "name": "Wings",
+   "source": "BRAND.md"
+  },
+  {
+   "role": "ink",
+   "hex": "#F5EBDC",
+   "name": "House cream",
+   "source": "BRAND.md"
+  },
+  {
+   "role": "muted",
+   "hex": "#B6A795",
+   "name": "Programme",
+   "source": "BRAND.md"
+  },
+  {
+   "role": "accent",
+   "hex": "#E9B949",
+   "name": "Spotlight gold",
+   "source": "BRAND.md"
+  },
+  {
+   "role": "accent2",
+   "hex": "#B3121F",
+   "name": "Velvet",
+   "source": "BRAND.md"
+  },
+  {
+   "role": "border",
+   "hex": "#3A2C27",
+   "name": "Proscenium",
+   "source": "BRAND.md"
+  },
+  {
+   "role": "other",
+   "hex": "#6E0B16",
+   "name": "Velvet deep",
+   "source": "BRAND.md"
+  },
+  {
+   "role": "other",
+   "hex": "#3A0A0F",
+   "name": "Velvet shadow",
+   "source": "BRAND.md"
+  },
+  {
+   "role": "other",
+   "hex": "#D0413A",
+   "name": "Velvet sheen",
+   "source": "BRAND.md"
+  }
+ ],
+ "palette": {
+  "bg": "#15100E",
+  "surface": "#231916",
+  "ink": "#F5EBDC",
+  "muted": "#B6A795",
+  "accent": "#E9B949",
+  "accent2": "#B3121F",
+  "border": "#3A2C27"
+ },
+ "palette_light": {
+  "bg": "#F5EBDC",
+  "surface": "#FFFFFF",
+  "ink": "#15100E",
+  "muted": "#5E524A",
+  "accent": "#B3121F",
+  "accent2": "#6E0B16",
+  "border": "#E2D6C4"
+ },
+ "fonts": {
+  "display": {
+   "family": "Fraunces",
+   "fontsource": "fraunces",
+   "weight": 900,
+   "license": "OFL-1.1",
+   "note": "the wordmark is outlined in the SVGs; install for other display type with: showtime assets font fraunces --weights 900"
+  },
+  "body": {
+   "family": "Inter",
+   "fontsource": "inter",
+   "license": "OFL-1.1"
+  },
+  "mono": {
+   "family": "JetBrains Mono",
+   "fontsource": "jetbrains-mono",
+   "license": "OFL-1.1"
+  }
+ },
+ "sound": {
+  "logo": "motion/sound-logo.mp3",
+  "sting": "https://github.com/FavioVazquez/showtime-examples/releases/download/examples-media-v1/_brand--sting.mp4",
+  "sting_square": "https://github.com/FavioVazquez/showtime-examples/releases/download/examples-media-v1/_brand--sting-square.mp4",
+  "key": "D",
+  "loudness_lufs": -14
+ },
+ "formats": [
+  "16:9",
+  "1:1",
+  "9:16"
+ ],
+ "tone": [
+  "cinematic",
+  "warm",
+  "confident",
+  "crafted",
+  "playful, never silly"
+ ],
+ "other": {
+  "license": "code MIT; brand assets project-owned (see LICENSE.md)",
+  "concept": "Curtain Call"
+ }
+}

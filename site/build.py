@@ -375,6 +375,16 @@ THEME_BOOT = ("<script>try{var t=localStorage.getItem('st-theme');if(t==='light'
               "document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>")
 
 
+def site_url(repo: str) -> str:
+    """The published site's address, ending in '/': config.json "site_url", else GitHub Pages for the repo
+    (https://owner.github.io/name/), else '' (a local build keeps relative URLs)."""
+    u = (CONFIG.get("site_url") or "").strip()
+    if not u and repo and "/" in repo:
+        owner, name = repo.split("/", 1)
+        u = "https://%s.github.io/%s/" % (owner.lower(), name)
+    return (u.rstrip("/") + "/") if u else ""
+
+
 def shell(site: Site, page: str, title: str, body: str, active: str = "", desc: str = "") -> str:
     r = lambda p: rel(page, p)  # noqa: E731
     fav = site.copy_asset(REPO / "assets/brand/icon/favicon.svg")
@@ -386,6 +396,10 @@ def shell(site: Site, page: str, title: str, body: str, active: str = "", desc: 
         links += '<a href="https://github.com/%s">GitHub</a>' % esc(site.repo)
     full = title if title.startswith("showtime") else "%s \u00b7 showtime" % title
     d = desc or CONFIG.get("description", "")
+    # link previews (Slack, X, iMessage ...) need absolute URLs: the published site's address + the page's path
+    base = site_url(site.repo)
+    og_abs = (base + og) if base else r(og)
+    page_abs = (base + (page[:-len("index.html")] if page.endswith("index.html") else page)) if base else ""
     return """<!doctype html>
 <html lang="en">
 <head>
@@ -395,10 +409,11 @@ def shell(site: Site, page: str, title: str, body: str, active: str = "", desc: 
 <meta name="description" content="{desc}">
 <meta property="og:title" content="{title}">
 <meta property="og:description" content="{desc}">
-<meta property="og:image" content="{og}">
+<meta property="og:image" content="{og_abs}">{og_url}
 <meta property="og:image:width" content="1280">
 <meta property="og:image:height" content="640">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="{og_abs}">
 <meta name="theme-color" content="#15100E" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#FBF6EE" media="(prefers-color-scheme: light)">
 <link rel="icon" href="{fav}" type="image/svg+xml">
@@ -426,7 +441,8 @@ def shell(site: Site, page: str, title: str, body: str, active: str = "", desc: 
 <script src="{js}"></script>
 </body>
 </html>
-""".format(title=esc(full), desc=esc(d), og=r(og), fav=r(fav), touch=r(touch), css=r("static/style.css"), boot=THEME_BOOT,
+""".format(title=esc(full), desc=esc(d), og_abs=esc(og_abs),
+           og_url=('\n<meta property="og:url" content="%s">' % esc(page_abs)) if page_abs else "", fav=r(fav), touch=r(touch), css=r("static/style.css"), boot=THEME_BOOT,
            root="../" * page.count("/"), home=r("index.html"), menu=ICON_MENU, links=links, sun=ICON_SUN, body=body,
            version=esc(CONFIG.get("version", "")), docs=r("docs/index.html"), gallery=r("gallery.html"), crew=r("crew.html"),
            js=r("static/app.js"), font=r("static/fonts/inter.woff2"),

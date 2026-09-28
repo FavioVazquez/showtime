@@ -1,5 +1,7 @@
 {
   "repo": "FavioVazquez/showtime",
+  "site_url": "https://faviovazquez.github.io/showtime/",
+  "_site_url": "The published address: link previews (og:image, og:url, twitter:image) need absolute URLs. Empty: derived from the repo (GitHub Pages).",
   "_repo": "owner/name on GitHub. CI passes $GITHUB_REPOSITORY, which wins; the site is served at https://faviovazquez.github.io/showtime/.",
   "examples_repo": "FavioVazquez/showtime-examples",
   "examples_dir": "../showtime-examples/examples",

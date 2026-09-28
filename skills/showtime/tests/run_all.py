@@ -47,16 +47,20 @@ from st import platform as plat  # noqa: E402
 from st.launcher import build_env, showtime_home  # noqa: E402
 
 # Test files that must not run while another test file runs, with the reason. They run one after
-# another once the parallel batch is done. Empty today: every file isolates its temp/scratch folders,
-# binds free ports and writes the shared caches atomically. Add a file here (with its reason) rather
-# than letting it flake under -j.
-SERIAL: dict = {}
+# another once the parallel batch is done. Every file isolates its temp/scratch folders, binds free
+# ports and writes the shared caches atomically, so only timing-sensitive files belong here. Add a file
+# here (with its reason) rather than letting it flake under -j.
+SERIAL: dict = {
+    "test_export.py": "its HTML player checks watch playback in real time (frames drawn, picture against the "
+                      "sound clock); on a 4-core CI runner another file's Chrome starves them",
+}
 
 MAX_AUTO_JOBS = 8
 
 # Seconds per file in the fast suite (the slowest of Ubuntu, Windows and macOS arm64 on 2-core GitHub
 # runners, September 2026). Used only to balance --shard parts, so they need to be roughly right, not
-# current; a file missing here weighs SHARD_DEFAULT_WEIGHT.
+# current; a file missing here weighs SHARD_DEFAULT_WEIGHT, and a file in SERIAL counts double (it runs
+# alone, while the others share the machine).
 SHARD_WEIGHTS = {
     "test_render.py": 363, "test_motion.py": 308, "test_export.py": 294, "test_capture.py": 198,
     "test_audio.py": 185, "test_footage.py": 133, "test_qa.py": 131, "test_voice.py": 102,
@@ -164,7 +168,9 @@ def parse_shard(v: str) -> tuple:
 def shard_parts(names: list, n: int, weights: dict = None) -> list:
     """Split file names into n parts: heaviest first, each into the currently lightest part (ties: the
     lower-numbered part). Deterministic: depends only on the names and the weights."""
-    weights = SHARD_WEIGHTS if weights is None else weights
+    if weights is None:
+        weights = {k: v * (2 if k in SERIAL else 1) for k, v in SHARD_WEIGHTS.items()}
+        weights.update({k: 2 * SHARD_DEFAULT_WEIGHT for k in SERIAL if k not in SHARD_WEIGHTS})
     w = lambda name: float(weights.get(name, SHARD_DEFAULT_WEIGHT))  # noqa: E731
     parts, loads = [[] for _ in range(n)], [0.0] * n
     for name in sorted(set(names), key=lambda x: (-w(x), x)):

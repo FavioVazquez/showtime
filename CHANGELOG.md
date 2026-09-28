@@ -85,6 +85,9 @@ All notable changes to showtime. Each entry says what changed and why, so this f
   real renders); the README's Requirements, status table and badges say so ("tested: Intel Mac · Apple
   Silicon · Linux x64 · Windows x64"), and that Windows 10/11 desktop editions and Linux arm64 have not
   been run yet. A run on a physical Apple Silicon Mac is still welcome.
+- **Site link previews use absolute URLs.** `og:image` was a relative path, which link previews (Slack,
+  X, iMessage) cannot load. Every page now has an absolute `og:image`, `twitter:image` and `og:url` built from
+  `site_url` in `site/config.json` (or the repository's GitHub Pages address).
 - **CI runs the fast suite in three shards per OS.** `run_all.py --shard I/N` runs one of N parts of the
   test files, split by fixed per-file weights (`SHARD_WEIGHTS`, fast-suite seconds from a CI run; longest
   first into the lightest part), so every machine computes the same split and each file runs exactly
@@ -92,6 +95,10 @@ All notable changes to showtime. Each entry says what changed and why, so this f
   separate jobs on Ubuntu, Windows, Apple Silicon and, on the public repository, the Intel Mac
   (`macos-15-intel`: the `macos-13` image is retired); shard 1 also runs the render smoke and the
   path-with-spaces shims. On one 2-core runner the suite took 23 to 31 minutes per OS.
+- **The HTML export test runs alone** (`SERIAL` in `run_all.py`). Its player checks watch playback in real
+  time; on the public 4-core runners, sharing the machine with another file's Chrome left the player
+  drawing 1 to 4 frames in the 1.5 s window on Windows and the Intel Mac. A file in `SERIAL` counts double
+  when the shards are balanced.
 
 ### Changed: the examples have their own repository
 

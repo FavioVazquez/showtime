@@ -400,6 +400,14 @@ class TestRunAllShards(unittest.TestCase):
         self.assertEqual(sorted(len(set(p) & set(heavy)) for p in ra.shard_parts(list(ra.SHARD_WEIGHTS), 3)),
                          [1, 1, 1], "the three heaviest files share a part")
 
+    def test_serial_files_count_double(self):
+        ra = self.ra
+        ra.SERIAL = {"test_b.py": "runs alone"}
+        ra.SHARD_WEIGHTS = {"test_a.py": 100, "test_b.py": 60, "test_c.py": 50, "test_d.py": 50}
+        # b runs alone, so it weighs 120 and goes first: b (120) + d (50) against a (100) + c (50)
+        self.assertEqual(ra.shard_parts(["test_a.py", "test_b.py", "test_c.py", "test_d.py"], 2),
+                         [["test_b.py", "test_d.py"], ["test_a.py", "test_c.py"]])
+
     def test_parse_shard(self):
         ra = self.ra
         self.assertEqual(ra.parse_shard("2/3"), (2, 3))

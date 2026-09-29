@@ -11,7 +11,7 @@
 https://github.com/user-attachments/assets/48b61d02-04cd-4816-8ac5-afca096722da
 
 
-<p align="center"><sub>▶ <a href="https://github.com/FavioVazquez/showtime-examples/releases/download/examples-media-v1/_launch--launch-16x9.mp4"><b>Watch the 40-second launch film</b></a> (sound on). Every frame is from a real showtime example.</sub><br><sub>Music: “With These Hands” by Scott Buckley, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a> (<a href="https://github.com/FavioVazquez/showtime-examples/blob/main/examples/_launch/credits.txt">credits</a>).</sub></p>
+<p align="center"><sub><a href="https://github.com/FavioVazquez/showtime-examples/releases/download/examples-media-v1/_launch--launch-16x9.mp4"><b>Download the 40-second launch film</b></a> (full quality, 68 MB). Every frame is from a real showtime example.</sub><br><sub>Music: “With These Hands” by Scott Buckley, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a> (<a href="https://github.com/FavioVazquez/showtime-examples/blob/main/examples/_launch/credits.txt">credits</a>).</sub></p>
 <!-- /HERO -->
 
 <p align="center">
@@ -505,8 +505,8 @@ them, except a researcher and a critic when you say it will be published (and sc
 videos). Each member gets a written brief, works only in its own folder, never asks you anything, never
 uploads, and reports back with a short status.
 
-<p align="center"><a href="https://github.com/FavioVazquez/showtime-examples/releases/download/examples-media-v1/_crew--crew-16x9.mp4"><img alt="The crew film: the critic's catch in example 13, the old caption struck through with a BLOCKER note." src="assets/readme/crew/crew-film-poster.jpg" width="100%"></a></p>
-<p align="center"><sub>▶ <a href="https://github.com/FavioVazquez/showtime-examples/releases/download/examples-media-v1/_crew--crew-16x9.mp4"><b>Watch the crew at work</b></a> (45 s, made with showtime; <a href="https://github.com/FavioVazquez/showtime-examples/blob/main/examples/_crew/README.md">about the film</a>).</sub><br><sub>Music: “Artemis” by Scott Buckley, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Bee footage: Su et al. 2008, CC BY 3.0 (<a href="https://github.com/FavioVazquez/showtime-examples/blob/main/examples/_crew/credits.txt">credits</a>).</sub></p>
+<p align="center"><a href="https://faviovazquez.github.io/showtime/crew.html#film"><img alt="The crew film: the critic's catch in example 13, the old caption struck through with a BLOCKER note." src="assets/readme/crew/crew-film-poster.jpg" width="100%"></a></p>
+<p align="center"><sub>▶ <a href="https://faviovazquez.github.io/showtime/crew.html#film"><b>Watch the crew at work</b></a> (45 s, plays on the showtime site; made with showtime, <a href="https://github.com/FavioVazquez/showtime-examples/blob/main/examples/_crew/README.md">about the film</a>, <a href="https://github.com/FavioVazquez/showtime-examples/releases/download/examples-media-v1/_crew--crew-16x9.mp4">download</a>).</sub><br><sub>Music: “Artemis” by Scott Buckley, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Bee footage: Su et al. 2008, CC BY 3.0 (<a href="https://github.com/FavioVazquez/showtime-examples/blob/main/examples/_crew/credits.txt">credits</a>).</sub></p>
 
 <p align="center"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/readme/crew/cast-dark.svg">

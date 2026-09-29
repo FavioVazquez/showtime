@@ -830,7 +830,7 @@ def build_crew(site: Site) -> None:
               '<a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Bee footage in the example 13 frames: '
               'Su et al. 2008, PLOS ONE, CC BY 3.0.')
     if film:
-        crew_film = ('<div class="players" style="grid-template-columns:1fr"><figure><video controls playsinline preload="metadata"%s src="%s" '
+        crew_film = ('<div class="players" id="film" style="grid-template-columns:1fr;scroll-margin-top:96px"><figure><video controls playsinline preload="metadata"%s src="%s" '
                      'aria-label="The crew film"></video><figcaption>%s</figcaption></figure></div>' % (pa, rel(page, film), credit))
     else:
         crew_film = ('<p class="note"><a class="link-arrow" href="%s">Watch the crew film (45 s) <span>\u2192</span></a> %s</p>'

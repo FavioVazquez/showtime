@@ -298,15 +298,17 @@ setup:
 }
 ```
 
-(Use the full path to that file in your home folder; on Windows it is `showtime.cmd` in `%USERPROFILE%\.showtime\bin`, written out in full.) That works today. Two more routes need no clone and
-**become available once 0.2.0 is published** (the npm package and the GitHub release asset do not exist yet):
+(Use the full path to that file in your home folder; on Windows it is `showtime.cmd` in `%USERPROFILE%\.showtime\bin`, written out in full.) Two more routes need no clone at all:
 
 ```json
 { "command": "npx", "args": ["-y", "@faviovazquez/showtime-mcp"] }
 ```
 
-is the same server from npm (see [`packages/npm/README.md`](packages/npm/README.md)), and `showtime-0.2.0.mcpb`
-on the v0.2.0 release opens in Claude Desktop with a double click. Setup still runs once on your machine: the
+is the same server from npm ([@faviovazquez/showtime-mcp](https://www.npmjs.com/package/@faviovazquez/showtime-mcp),
+also listed in the [MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.FavioVazquez/showtime)
+as `io.github.FavioVazquez/showtime` and on [Smithery](https://smithery.ai/servers/favio-vazquezp/showtime)), and
+[`showtime-0.2.0.mcpb`](https://github.com/FavioVazquez/showtime-examples/releases/download/v0.2.0/showtime-0.2.0.mcpb) from
+the v0.2.0 release opens in Claude Desktop with a double click. Setup still runs once on your machine: the
 models and tools never travel inside a package. Long tools answer with a task id after about 20 seconds when a
 client stops calls early; the `status` tool reports progress and the result.
 
@@ -1029,7 +1031,7 @@ small set of coarse tools: `doctor`, `new_project`, `render`, `check`, `snap`, `
 command on your machine and answers with a short summary and the paths it wrote; a tool that runs longer than about
 20 seconds answers with a task id, and `status` reports progress and the result. The plugins register it for you.
 For Claude Desktop or any other MCP client, run `~/.showtime/bin/showtime mcp` (see [MCP only](#mcp-only) for the
-snippet and the npm and `.mcpb` routes that arrive with the release); the snippet for each client is in
+snippet and the npm and `.mcpb` routes); the snippet for each client is in
 [references/mcp.md](skills/showtime/references/mcp.md), next to the plugin settings (default voice and
 language, a CPU limit) and the render progress monitor.
 

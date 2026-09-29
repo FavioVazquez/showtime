@@ -49,9 +49,9 @@ Highlights (details in the entries below):
 - [x] **Windows end-to-end rerun**: `windows-11-arm` and `windows-2025` pass end to end with the fast suite, as do
       `macos-14` and `ubuntu-24.04-arm`.
 - [x] **README and CHANGELOG** launch-video entries written.
-- [ ] **Publish the MCP packages, in order** (the maintainer's publish notes): npm
-      `@faviovazquez/showtime-mcp`, the `.mcpb` as a release asset of `v0.2.0`, the MCP Registry, Smithery. The
-      README's "MCP only" section and `docs/agents.md` say those routes exist "once 0.2.0 is published".
+- [x] **MCP packages published** (2026-09-29): npm `@faviovazquez/showtime-mcp` 0.2.0, the `.mcpb` as a release
+      asset of `v0.2.0`, the MCP Registry (`io.github.FavioVazquez/showtime`) and Smithery
+      (`favio-vazquezp/showtime`). The README's "MCP only" section and `docs/agents.md` link them.
 - [ ] **Directory listing text** for Cursor, Codex and Cline.
 - [ ] Carried over from 0.1.0: mirror the GeneralUser GS SoundFont (its author asks projects to host their own copy;
       sha256 `9575028c…688cfe`) and the MuseScore_General SoundFont on a release and point `setup/manifest.json` at

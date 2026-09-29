@@ -8,8 +8,7 @@
 
 
 
-https://github.com/user-attachments/assets/a11e9613-efd3-490b-a3ec-5583ac65a5d2
-
+https://github.com/user-attachments/assets/48b61d02-04cd-4816-8ac5-afca096722da
 
 
 <p align="center"><sub>▶ <a href="https://github.com/FavioVazquez/showtime-examples/releases/download/examples-media-v1/_launch--launch-16x9.mp4"><b>Watch the 40-second launch film</b></a> (sound on). Every frame is from a real showtime example.</sub><br><sub>Music: “With These Hands” by Scott Buckley, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a> (<a href="https://github.com/FavioVazquez/showtime-examples/blob/main/examples/_launch/credits.txt">credits</a>).</sub></p>

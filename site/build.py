@@ -215,7 +215,7 @@ class Site:
         asset = ASSET_BY_PATH.get(repo_rel)
         fallback = self.release_url(asset) if asset else self.gh(repo_rel)
         is_html = repo_rel.endswith(".html")
-        if self.only is not None and folder[:2] not in self.only and not is_html and folder != "_launch":
+        if self.only is not None and folder[:2] not in self.only and not is_html and folder not in ("_launch", "_crew"):
             return None, fallback
         src = self.find_media(repo_rel)
         if not src:
@@ -822,11 +822,25 @@ def build_crew(site: Site) -> None:
                      '<p class="job">%s</p><p class="call"><code>@agent-showtime:%s</code><a href="%s">The brief</a></p></article>'
                      % (esc(r["id"]), esc(r["name"]), esc(r["when"]), esc(model), esc(r["line"]), job, esc(r["id"]),
                         rel(page, site.pages.get(brief.resolve(), "docs/crew.html"))))
+    # the crew film (examples/_crew): plays here when this build has it, else links to the release asset
+    film, film_fb = site.media("examples/_crew/crew-16x9.mp4", "_crew")
+    cposter = src_path("examples/_crew/poster.jpg")
+    pa = ' poster="%s"' % rel(page, site.copy_asset(cposter)) if cposter.is_file() else ""
+    credit = ('The crew at work, 45 seconds, made with showtime. Music: \u201cArtemis\u201d by Scott Buckley, '
+              '<a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Bee footage in the example 13 frames: '
+              'Su et al. 2008, PLOS ONE, CC BY 3.0.')
+    if film:
+        crew_film = ('<div class="players" style="grid-template-columns:1fr"><figure><video controls playsinline preload="metadata"%s src="%s" '
+                     'aria-label="The crew film"></video><figcaption>%s</figcaption></figure></div>' % (pa, rel(page, film), credit))
+    else:
+        crew_film = ('<p class="note"><a class="link-arrow" href="%s">Watch the crew film (45 s) <span>\u2192</span></a> %s</p>'
+                     % (esc(film_fb or "#"), credit))
     body = """<div class="wrap">
 <header class="room-head"><h1 class="title">Ten specialists, one director</h1>
 <p class="lede">Your agent directs every video. For studio work and videos you will publish, it can hand parts of the job to ten
 sub-agents that ship with the plugin. They are optional: a quick video uses none of them, except a researcher and a critic when
 it will be published, and scene builders for long videos.</p></header>
+{crew_film}
 <div style="margin-top:48px">{cast}</div>
 <section class="section" style="padding-bottom:0"><div class="section-head"><h2 class="title">Who hands what to whom</h2>
 <p class="lede">Every brief and every result goes through the director. Members never talk to each other or to you, and fixes go
@@ -847,7 +861,7 @@ Let's make a launch trailer for this repo. Show me options first.
 # no crew at all
 Make it quick, no crew.</code></pre></div></div></section>
 </div>
-""".format(cast=art(site, page, "crew/cast", "The crew as a cast of ten illustrated cards: " + "; ".join("%s: %s" % (r["name"], r["line"]) for r in roles)),
+""".format(crew_film=crew_film, cast=art(site, page, "crew/cast", "The crew as a cast of ten illustrated cards: " + "; ".join("%s: %s" % (r["name"], r["line"]) for r in roles)),
            handoff=art(site, page, "diagrams/crew-handoff", "How the crew hands work around: pitch, plan, build, review, deliver, all through the director."),
            cards="".join(cards), guide=rel(page, "docs/crew.html"))
     write(site, page, shell(site, page, "The crew", body, "crew", "Ten optional specialist sub-agents, one director."))

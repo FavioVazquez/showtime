@@ -307,7 +307,7 @@ setup:
 is the same server from npm ([@faviovazquez/showtime-mcp](https://www.npmjs.com/package/@faviovazquez/showtime-mcp),
 also listed in the [MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.FavioVazquez/showtime)
 as `io.github.FavioVazquez/showtime` and on [Smithery](https://smithery.ai/servers/favio-vazquezp/showtime)), and
-[`showtime-0.2.0.mcpb`](https://github.com/FavioVazquez/showtime-examples/releases/download/v0.2.0/showtime-0.2.0.mcpb) from
+[`showtime-0.2.0.mcpb`](https://github.com/FavioVazquez/showtime/releases/download/v0.2.0/showtime-0.2.0.mcpb) from
 the v0.2.0 release opens in Claude Desktop with a double click. Setup still runs once on your machine: the
 models and tools never travel inside a package. Long tools answer with a task id after about 20 seconds when a
 client stops calls early; the `status` tool reports progress and the result.
@@ -506,9 +506,12 @@ them, except a researcher and a critic when you say it will be published (and sc
 videos). Each member gets a written brief, works only in its own folder, never asks you anything, never
 uploads, and reports back with a short status.
 
+<p align="center"><a href="https://github.com/FavioVazquez/showtime-examples/releases/download/examples-media-v1/_crew--crew-16x9.mp4"><img alt="The crew film: the critic's catch in example 13, the old caption struck through with a BLOCKER note." src="assets/readme/crew/crew-film-poster.jpg" width="100%"></a></p>
+<p align="center"><sub>▶ <a href="https://github.com/FavioVazquez/showtime-examples/releases/download/examples-media-v1/_crew--crew-16x9.mp4"><b>Watch the crew at work</b></a> (45 s, made with showtime; <a href="https://github.com/FavioVazquez/showtime-examples/blob/main/examples/_crew/README.md">about the film</a>).</sub><br><sub>Music: “Artemis” by Scott Buckley, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Bee footage: Su et al. 2008, CC BY 3.0 (<a href="https://github.com/FavioVazquez/showtime-examples/blob/main/examples/_crew/credits.txt">credits</a>).</sub></p>
+
 <p align="center"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/readme/crew/cast-dark.svg">
-  <img alt="The crew as a cast of ten illustrated cards, all optional: creative director (pitches three concepts and a wildcard, then signs off the storyboard); brand designer (pulls a brand kit from your repo or site, or proposes one); scriptwriter (every word, each fact tied to a source); storyboard artist (shots, timings and an animatic); motion designer (one scene in its own sandbox, several in parallel); sound designer (bed, effects, sound logo, a metered mix); voice director (casting, pronunciation, voice-over, other languages); editor (cuts real footage by transcript); researcher (checks every claim and every asset's license); critic (watches the draft like a stranger)." src="assets/readme/crew/cast-light.svg" width="100%">
+  <img alt="The crew as a cast of ten illustrated cards, all optional: creative director (pitches three concepts and a wildcard, then signs off the storyboard); brand designer (pulls a brand kit from your repo or site, or proposes one); scriptwriter (every word, each fact tied to a source); storyboard artist (turns the concept into shots, timings and an animatic); motion designer (one scene in its own sandbox, several in parallel); sound designer (bed, effects, sound logo, a metered mix); voice director (picks the voice, fixes pronunciation, adds languages); editor (cuts real footage by transcript); researcher (checks every claim and every asset's license); critic (watches the draft like a stranger)." src="assets/readme/crew/cast-light.svg" width="100%">
 </picture></p>
 
 ### Who hands what to whom

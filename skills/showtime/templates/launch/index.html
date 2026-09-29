@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>showtime: launch film</title>
+<script src="/_st/stage.js"></script>
+<!-- One type system: the theme's display face for words, its mono face for commands. Swap the theme
+     or override the tokens below for a brand (keep --fg >= 7:1 and --muted >= 4.5:1 on --bg). -->
+<link rel="stylesheet" href="/_st/themes/neutral.css">
+<script type="module" src="/_st/components/index.js"></script>
+<style>
+  /* =====================================================================================
+     LAUNCH FILM (5 scenes, one continuous camera). Grammar:
+       1 hook     one line, complete at frame 0, the key word in the accent
+       2 verb     the camera flies THROUGH a letter of the key word into the product doing its verb
+       3 proof    MATCH: the same window stays, the next command runs, the camera pushes on the result
+       4 proof    MATCH again
+       5 end      soft BLUR-DISSOLVE onto the name, the value line, the install command, the URL
+     No hard cuts, one ground for the whole film, one accent, one message on screen at a time.
+     Slots are marked SLOT:. Times: `showtime audio cuts --apply <project>` puts the scene changes
+     on the music's phrases; `showtime retime <project> -d <s>` changes the length.
+     ===================================================================================== */
+
+  /* ---------- tokens: one ground, one accent (a brand kit overrides these four) */
+  :root {
+    --bg: #0c0d10; --fg: #f4f2ee; --muted: #a9adb6; --accent: #f2c14e;
+    --accent-ink: #14110a; --surface: #15171c; --line: rgb(244 242 238 / 0.09);
+    --font-display: 'Geist', 'Inter', sans-serif; --font-mono: 'Geist Mono', 'JetBrains Mono', monospace;
+    --weight-display: 620; --tracking-display: -0.032em;
+    --scene-bg: transparent;                   /* scenes are see-through: the world below is the one ground */
+    color-scheme: dark;
+  }
+  .stage { background: var(--bg); }
+  .scene { --s-hook: 13cqh; --s-head: 7cqh; --s-label: 2.6cqh; --s-term: 4cqh; --s-name: 13cqh; --s-value: 3.8cqh; --s-cta: 3.6cqh; --s-url: 2.8cqh; }
+
+  /* ---------- the world: one lit ground under every scene (never cuts) */
+  .world { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  .world .key { position: absolute; inset: -30%;
+    background: radial-gradient(34% 40% at 50% 50%, color-mix(in oklab, var(--accent) 17%, transparent), transparent 72%);
+    animation: keyDrift 40s cubic-bezier(0.37, 0, 0.63, 1) both; }
+  @keyframes keyDrift { from { transform: translate(-14%, 6%); } to { transform: translate(16%, -8%); } }
+  .world .rim { position: absolute; inset: 0;
+    background: radial-gradient(70% 60% at 100% 110%, color-mix(in oklab, var(--accent) 7%, transparent), transparent 70%),
+                radial-gradient(60% 55% at -5% -10%, rgb(120 140 255 / 0.06), transparent 70%); }
+  .world .vig { position: absolute; inset: 0; background: radial-gradient(120% 95% at 50% 45%, transparent 55%, rgb(0 0 0 / 0.5)); }
+
+  /* ---------- type system */
+  .label { font: 500 var(--s-label)/1.3 var(--font-mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin: 0; }
+  .label b { color: var(--accent); font-weight: 500; }
+  .head { font: var(--weight-display) var(--s-head)/1.04 var(--font-display); letter-spacing: var(--tracking-display); color: var(--fg); margin: 0; text-wrap: balance; }
+  .head em, .hook em { font-style: normal; color: var(--accent); }
+
+  /* ---------- scene 1: the hook */
+  .cam { position: absolute; inset: 0; }
+  .hook-block { position: absolute; left: 8cqw; right: 8cqw; top: 50%; translate: 0 -50%; display: flex; flex-direction: column; gap: 3.4cqh; }
+  .hook { font: var(--weight-display) var(--s-hook)/1.0 var(--font-display); letter-spacing: var(--tracking-display); color: var(--fg); margin: 0; text-wrap: balance; max-width: 16em; }
+  /* the hook is complete at frame 0 (it is the poster and the thumbnail), large (>= 9 % of the frame
+     height) and still: the camera does not move. Its one fly-through (into the product, through the
+     key word's letter) is the film's only camera move; everything else is match cuts and dissolves */
+  @keyframes rise { from { opacity: 0; transform: translateY(0.35em); filter: blur(0.06em); } to { opacity: 1; transform: none; filter: none; } }
+  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+
+  /* ---------- scenes 2-4: the product window + one headline (the window carries across) */
+  .win { position: absolute; left: 6cqw; top: 20cqh; width: 57cqw; height: 60cqh; border-radius: 1.6cqh; overflow: hidden;
+    background: color-mix(in oklab, var(--surface) 94%, var(--fg));
+    box-shadow: 0 4cqh 10cqh rgb(0 0 0 / 0.55), 0 0 0 max(1px, 0.12cqh) var(--line); }
+  .win .bar { height: 5.4cqh; display: flex; align-items: center; gap: 1cqh; padding: 0 2.2cqh; border-bottom: max(1px, 0.12cqh) solid var(--line); }
+  .win .bar i { width: 1.2cqh; height: 1.2cqh; border-radius: 50%; background: rgb(244 242 238 / 0.16); }
+  .win .bar span { margin-left: 1.4cqh; font: 500 2.4cqh/1 var(--font-mono); color: var(--muted); letter-spacing: 0.02em; }
+  .term { padding: 3.2cqh 3.4cqh; font: 450 var(--s-term)/1.5 var(--font-mono); color: var(--fg); white-space: pre; }
+  .term .ps { color: var(--accent); }
+  .term .hist { display: block; color: var(--muted); }   /* the previous command: one session across the scenes */
+  .term .hist * { color: var(--muted); }
+  .term, .term * { white-space: pre !important; }
+  .term .out { display: block; color: var(--muted); }
+  .term .out .hi { color: var(--fg); }
+  .term .out .ok { color: var(--accent); }
+  /* motion comes from the content, not the camera: the result line is marked a beat after it lands */
+  .term .out .ok { background: linear-gradient(color-mix(in oklab, var(--accent) 16%, transparent), color-mix(in oklab, var(--accent) 16%, transparent)) no-repeat 0 0 / 0% 100%;
+    animation: lineIn 0.45s cubic-bezier(0.16, 1, 0.3, 1) calc(var(--i, 0) * 0.07s) both, mark 0.7s cubic-bezier(0.16, 1, 0.3, 1) 1.1s both; }
+  @keyframes mark { to { background-size: 100% 100%; } }
+  .term .ln { display: block; animation: lineIn 0.45s cubic-bezier(0.16, 1, 0.3, 1) calc(var(--i, 0) * 0.07s) both; }
+  @keyframes lineIn { from { opacity: 0; transform: translateY(0.35em); } to { opacity: 1; transform: none; } }
+  .side { position: absolute; left: 66cqw; width: 23cqw; top: 50%; translate: 0 -50%; display: flex; flex-direction: column; gap: 2.6cqh; }
+
+  /* ---------- scene 5: the end card */
+  .end { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3cqh; text-align: center; }
+  .end .name { font: 700 var(--s-name)/0.95 var(--font-display); letter-spacing: -0.04em; color: var(--fg); margin: 0; }
+  .end .name em { font-style: normal; color: var(--accent); font-size: 0.5em; letter-spacing: -0.02em; margin-left: 0.22em; }
+  .end .value { font: 450 var(--s-value)/1.3 var(--font-display); color: var(--muted); margin: 0; max-width: 34em; }
+  .end .cta { margin-top: 1.4cqh; padding: 1.5cqh 3cqh; border-radius: 1.2cqh; font: 500 var(--s-cta)/1 var(--font-mono); color: var(--fg);
+    background: color-mix(in oklab, var(--surface) 90%, var(--fg)); box-shadow: 0 0 0 max(1px, 0.14cqh) color-mix(in oklab, var(--accent) 55%, transparent); }
+  .end .cta .ps { color: var(--accent); }
+  .end .url { font: 500 var(--s-url)/1 var(--font-mono); color: var(--muted); letter-spacing: 0.02em; margin: 0; }
+  .end .credit { position: absolute; bottom: 5cqh; left: 0; right: 0; font: 400 1.9cqh/1.3 var(--font-display); color: var(--muted); opacity: 0.8; margin: 0; }
+  .end > * { animation: rise 0.9s cubic-bezier(0.16, 1, 0.3, 1) calc(0.35s + var(--i, 0) * 0.14s) both; }
+  .end .credit { animation: fade 1s ease 1.2s both; }
+
+  /* ---------- square and tall frames: the window on top, the words below (inside the feed safe zone) */
+  @container (max-aspect-ratio: 5/4) {
+    .scene { --s-hook: 12cqw; --s-head: 7.2cqw; --s-label: 2.6cqw; --s-term: 3.7cqw; --s-name: 13cqw; --s-value: 4.2cqw; --s-cta: 3.9cqw; --s-url: 3cqw; }
+    .hook-block { left: 7cqw; right: 7cqw; }
+    .win { left: 6cqw; width: 88cqw; top: 9cqh; height: 52cqh; }
+    .side { left: 7cqw; width: 86cqw; top: 66cqh; translate: none; gap: 2cqh; }
+    .end .value { max-width: 86cqw; }
+  }
+  @container (max-aspect-ratio: 3/4) {
+    .scene { --s-hook: 13.5cqw; --s-head: 8.4cqw; --s-label: 4cqw; --s-term: 4.2cqw; --s-name: 12cqw; --s-value: 4.8cqw; --s-cta: 4.4cqw; --s-url: 4cqw; }
+    .hook-block { left: 7cqw; right: 12cqw; top: 42%; }
+    .term { padding: 2.4cqw 2.6cqw; }
+    .win { top: 14cqh; height: 38cqh; left: 5cqw; width: 79.5cqw; box-shadow: 0 1.2cqh 3cqh rgb(0 0 0 / 0.35), 0 0 0 max(1px, 0.12cqh) var(--line); }
+    .side { top: 53cqh; width: 78cqw; }
+    .end { justify-content: flex-start; padding: 30cqh 16cqw 0 6cqw; }
+    .end .value { max-width: 78cqw; }
+    .end .credit { bottom: 27cqh; left: 7cqw; right: 15cqw; }
+  }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="world" data-st-decor><div class="key"></div><div class="rim"></div><div class="vig"></div></div>
+
+  <!-- 1. HOOK: complete at frame 0 (poster). The key word carries the portal letter the camera flies through. -->
+  <section class="scene" id="hook" data-start="0" data-dur="4.57">
+    <div class="cam">
+      <div class="hook-block">
+        <p class="label">SLOT: product <b>&middot;</b> version</p>
+        <!-- SLOT: the promise or the problem, 4-9 words, from the product's own copy. The key word in
+             <em>, and one letter with a closed counter (o a e d g p q b 0 6 8 9) of it in
+             <span data-portal="counter">: the camera leans in and flies through it. -->
+        <h1 class="hook">One sentence in, <em>w<span data-portal="counter">o</span>rk</em> out.</h1>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. VERB: through the letter into the product doing its one job. -->
+  <section class="scene" id="verb" data-start="#hook" data-dur="6.76" data-transition="through 1.5">
+    <div class="cam">
+      <!-- SLOT: the window. A terminal for a CLI (lines copied from <job>/work/evidence/*.txt, never
+           invented), or <div class="win" data-match="win" data-st="browser-frame" data-src="shots/app.png">
+           for a web product (a real capture). Keep data-match="win" on the window in scenes 2-4. -->
+      <div class="win" data-match="win">
+        <div class="bar" data-st-decor><i></i><i></i><i></i><span>SLOT: ~/folder</span></div>
+        <div class="term" data-st="fit"><span class="ps">$ </span><span data-st="typewriter" data-at="1.7" data-fit="1.1" data-hide-caret-after="3.2">SLOT: tool in.txt</span>
+<span class="out" data-start="+3.0"><span class="ln" style="--i:0">SLOT: output line one</span><span class="ln hi" style="--i:1">SLOT: output line two</span><span class="ln ok" style="--i:2">SLOT: the result line</span></span></div>
+      </div>
+      <div class="side">
+        <p class="label">SLOT: <b>new</b> in 2.0</p>
+        <h2 class="head">SLOT: What it does, <em>in 3-6 words.</em></h2>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. PROOF: the same window, the next command; the camera pulls back as the window carries across.
+       .hist repeats the last command (dimmed) with its WHOLE output, or with none: never only its last
+       line, which reads as the command's entire result ("--natural" printing just "file10.txt"). -->
+  <section class="scene" id="proof1" data-start="#verb" data-dur="6.75" data-transition="match 1">
+    <div class="cam">
+      <div class="win" data-match="win">
+        <div class="bar" data-st-decor><i></i><i></i><i></i><span>SLOT: ~/folder</span></div>
+        <div class="term" data-st="fit"><span class="hist"><span class="ps">$ </span>SLOT: tool in.txt
+<span class="ok">SLOT: the result line</span></span><span class="ps">$ </span><span data-st="typewriter" data-at="1.1" data-fit="1.1" data-hide-caret-after="2.6">SLOT: tool -f in.txt</span>
+<span class="out" data-start="+2.4"><span class="ln" style="--i:0">SLOT: output line one</span><span class="ln ok" style="--i:1">SLOT: the result line</span></span></div>
+      </div>
+      <div class="side">
+        <p class="label">SLOT: <b>new</b> in 2.0</p>
+        <h2 class="head">SLOT: The second <em>benefit.</em></h2>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. PROOF: once more (or delete this scene for a 4-scene film). -->
+  <section class="scene" id="proof2" data-start="#proof1" data-dur="6.76" data-transition="match 1">
+    <div class="cam">
+      <div class="win" data-match="win">
+        <div class="bar" data-st-decor><i></i><i></i><i></i><span>SLOT: ~/folder</span></div>
+        <div class="term" data-st="fit"><span class="hist"><span class="ps">$ </span>SLOT: tool -f in.txt
+<span class="ok">SLOT: the result line</span></span><span class="ps">$ </span><span data-st="typewriter" data-at="1.1" data-fit="1.1" data-hide-caret-after="2.6">SLOT: tool -o in.txt</span>
+<span class="out" data-start="+2.4"><span class="ln" style="--i:0">SLOT: output line one</span><span class="ln ok" style="--i:1">SLOT: the result line</span></span></div>
+      </div>
+      <div class="side">
+        <p class="label">SLOT: <b>new</b> in 2.0</p>
+        <h2 class="head">SLOT: The third <em>benefit.</em></h2>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5. END CARD: the name on the music's swell; held to the end. -->
+  <section class="scene" id="end" data-start="#proof2" data-dur="5.16" data-transition="blur-dissolve 0.9">
+    <div class="cam">
+      <div class="end">
+        <h2 class="name" style="--i:0">SLOT: name<em>2.0</em></h2>
+        <p class="value" style="--i:1">SLOT: the one-line value, in the product's own words.</p>
+        <div class="cta" style="--i:2"><span class="ps">$ </span>SLOT: install command</div>
+        <p class="url" style="--i:3">SLOT: example.com/project</p>
+        <!-- filled by `showtime audio cuts --apply` for catalog music (the credit also goes to credits.txt and share.txt) -->
+        <p class="credit" data-credit></p>
+      </div>
+    </div>
+  </section>
+
+  <div data-st="grain" data-opacity="0.035"></div>
+</div>
+</body>
+</html>

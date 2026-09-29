@@ -10,6 +10,12 @@ Blinding and position
   - The order is shuffled per task (seeded), and judge k sees it rotated by k, so with N judges every arm
     is shown in every position once. The key is stored only in the results file.
   - Every judge is a fresh headless session with only the Read tool.
+Proof that the judge looked at the pictures (judge.py: ask_verified). A judgment counts only when
+  1. the session's own tool calls show that EVERY image of the packet was opened with Read, and
+  2. the judge reports, for each image, the random 5-digit number printed in a strip at its bottom (stamped
+     on every image of every candidate; known only to the scorer), at most 10 percent wrong.
+  Otherwise it is discarded and asked again in a fresh session with a fresh packet (--attempts, default 3).
+  rank.jsonl keeps every attempt with the images opened and the numbers reported against the true ones.
 Output: <bench home>/runs/<run>/rank.jsonl (one line per judgment) and rank_summary.json:
   per_task   {task: {arm: {"mean_rank", "rank_score", "scores"}}}   rank_score = (N - rank) / (N - 1), 1 = best
   rank_score {arm: mean rank_score over its tasks}
@@ -83,6 +89,8 @@ def main() -> int:
     ap.add_argument("--judges", type=int, default=1, help="judgments per task (default 1)")
     ap.add_argument("--seed", type=int, default=5)
     ap.add_argument("-j", "--jobs", type=int, default=3, help="judgments in parallel (default 3)")
+    ap.add_argument("--attempts", type=int, default=3,
+                    help="a judgment that cannot prove it looked at every frame is asked again, up to N sessions (default 3)")
     a = ap.parse_args()
     root = common.bench_home() / "runs" / a.run
     out_path = root / "rank.jsonl"
@@ -113,22 +121,35 @@ def main() -> int:
     def judge_one(job):
         task, arms, k, order = job
         task_id = task["id"]
-        pk = common.ws_root() / "judge-packets" / ("rk-" + common.opaque("%s/%s/%d" % (a.run, task_id, k), 10))
-        if pk.exists():
-            shutil.rmtree(pk)
-        for i, arm in enumerate(order):
-            build_side(pk / ("video-%d" % (i + 1)), arms[arm], html_recording(a.run, task_id, arm) if is_html(arms[arm]) else None)
         n = len(order)
-        folders = ", ".join("video-%d/" % (i + 1) for i in range(n))
-        res = judge.ask(pk, PROMPT.format(n=n, request=task["prompt"], folders=folders) + "\n\n" + judge.frames_prompt(pk),
-                        schema(n))
-        # a ranking made without looking at the pictures does not count (seen in r1/r2: the judge guessed
-        # file names, found none and ranked from numbers and transcripts)
-        blind = judge.check_seen(res, pk, ["video-%d" % (i + 1) for i in range(n)]) if res.get("ok") else None
-        if blind:
-            res.update(ok=False, error=blind)
-        rec = {"task": task_id, "judge": k, "order": order, "ok": res.get("ok"), "cost_usd": res.get("cost_usd"),
-               "error": res.get("error"), "images_read": len(res.get("read") or [])}
+        tag = "rk-" + common.opaque("%s/%s/%d" % (a.run, task_id, k), 10)
+
+        def build() -> Path:
+            pk = common.ws_root() / "judge-packets" / tag
+            if pk.exists():
+                shutil.rmtree(pk)
+            for i, arm in enumerate(order):
+                build_side(pk / ("video-%d" % (i + 1)), arms[arm],
+                           html_recording(a.run, task_id, arm) if is_html(arms[arm]) else None)
+            return pk
+
+        folders = ["video-%d" % (i + 1) for i in range(n)]
+
+        def prompt(pk: Path) -> str:
+            return (PROMPT.format(n=n, request=task["prompt"], folders=", ".join(f + "/" for f in folders))
+                    + "\n\n" + judge.frames_prompt(pk))
+
+        # A ranking made without looking at the pictures does not count (seen in r1/r2: the judge guessed file
+        # names, found none and ranked from numbers and transcripts). Every image must have been opened (from
+        # the session's tool calls) and its reading-check number reported; otherwise it is asked again.
+        res, attempts = judge.ask_verified(build, prompt, schema(n), folders, attempts=a.attempts,
+                                           seed="%s/%s/%d/%d" % (a.run, task_id, k, a.seed))
+        last = attempts[-1]
+        rec = {"task": task_id, "judge": k, "order": order, "ok": res.get("ok"),
+               "cost_usd": round(sum(x.get("cost_usd") or 0 for x in attempts), 4), "error": res.get("error"),
+               "images_read": last.get("images_opened"), "images_total": last.get("images_total"),
+               "codes_right": last.get("codes_right"), "codes_total": last.get("codes_total"),
+               "attempts": attempts}
         if res.get("ok"):
             d = res["data"]
             rk = [str(x) for x in d.get("ranking") or []]

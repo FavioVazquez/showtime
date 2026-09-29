@@ -341,6 +341,19 @@ main:focus { outline: none; }
 .banner { position: sticky; top: 55px; z-index: 25; background: var(--accent-soft); color: var(--text); border-bottom: 1px solid var(--accent-line); font-size: 13.5px; -webkit-transform: translateZ(0); transform: translateZ(0); }
 .banner > div { max-width: 1320px; margin: 0 auto; padding: 9px 24px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .banner code { font-family: var(--mono); font-size: 12.5px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; overflow-wrap: anywhere; }
+.handoff { background: var(--accent-soft); border-bottom: 1px solid var(--accent-line); }
+.handoff[hidden] { display: none; }
+.handoff-in { max-width: 1320px; margin: 0 auto; padding: 12px 24px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.handoff .ho-text { flex: 1 1 320px; display: grid; gap: 2px; font-size: 13.5px; }
+.handoff .ho-text strong { font-size: 15px; }
+.handoff .ho-text span { color: var(--muted); }
+.handoff .ho-fallback { flex: 1 1 100%; display: grid; gap: 6px; font-size: 13px; }
+.handoff .ho-fallback[hidden] { display: none; }
+.handoff textarea { font: 12.5px/1.5 var(--mono); }
+.btn.big { height: 42px; padding: 0 20px; font-size: 15px; font-weight: 650; }
+.approve .next { display: grid; gap: 8px; padding: 12px; border-radius: 10px; background: var(--accent-soft); border: 1px solid var(--accent-line); font-size: 13.5px; }
+.approve .next[hidden] { display: none; }
+.approve .next .btn { justify-self: start; }
 .phases { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 12px; padding: 0; list-style: none; }
 .phases li { font-size: 11.5px; letter-spacing: .04em; color: var(--faint); border: 1px solid var(--line); border-radius: 99px; padding: 2px 9px; }
 .phases li[data-state="done"] { color: var(--muted); border-color: var(--line-2); }
@@ -371,6 +384,8 @@ main:focus { outline: none; }
 @media (max-width: 720px) {
   .banner { top: 51px; }
   .banner > div { padding: 9px 16px; }
+  .handoff-in { padding: 12px 16px; }
+  .handoff .btn.big { width: 100%; }
   .frame .flags { left: 48px; right: 12px; top: 14px; }
   .frame .picked-tag { top: auto; bottom: 34px; }
 }

@@ -2,48 +2,239 @@
 
 All notable changes to showtime. Each entry says what changed and why, so this file also answers
 "where did X go?". Versions follow [semantic versioning](https://semver.org); the version lives in
-`skills/showtime/lib/st/__init__.py` and `python3 scripts/check_release.py` keeps the plugin manifests and
+`skills/showtime/lib/st/__init__.py` and `python3 scripts/check_release.py` keeps the plugin manifests, the registry files and
 `setup/package.json` in sync with it.
 
-## Unreleased
+## 0.2.0: every coding agent, a lighter first run, a real music catalog
 
-### Before publishing (release checklist)
+showtime is now a local video studio for your coding agent, not only for Claude Code: describe a video, your
+agent directs, your machine renders. The same repository installs in Claude Code, Codex, Cursor, Devin and OpenCode
+(each made a real test video) and is packaged for Copilot, Gemini CLI, Antigravity, Cline, Kilo Code, Kiro, Zed, Goose,
+Amp, Factory Droid and Qwen Code. The first run fell from about 3 GB (0.1's own `setup --estimate`: 1.3 GB of downloads plus 1.7 GB of
+packages) to about 770 MB on Linux x64 (`setup --plan`; about 560 to 610 MB on macOS and Windows); nothing was
+removed, the rest is fetched the first time a video needs it. Music now comes from a catalog of 249 produced tracks with the credit written for
+you, and Apple Silicon, Linux arm64 and Windows on Arm run end to end in CI.
 
-- [ ] **GeneralUser GS SoundFont mirror.** Its author asks projects to host their own copy instead of
-      linking the author's repository. It is now an optional extra (`showtime setup --with sf-generaluser`)
-      and the default bank is FluidR3Mono (MIT). Before advertising the extra, upload the pinned file
-      (sha256 `9575028c…688cfe`) and its license to a showtime release and point `setup/manifest.json`
-      at that copy.
-- [ ] **MuseScore_General mirror** (`sf-musescore` extra) downloads slowly from its upstream mirror;
-      consider the same release-asset copy.
-- [x] **Repository URL.** README, the marketplace instructions and `site/config.json` use
-      `FavioVazquez/showtime`; `.claude-plugin/plugin.json` has `homepage` and `repository`.
-- [ ] **First CI run on every OS.** macOS x86_64, Linux x86_64 (Ubuntu 24.04, setup with every
-      extra except musicgen, `doctor` and the fast suite green) and Windows x64 (Windows Server 2025 as a
-      standard user: setup, doctor, a voiced render with qa, HTML export, captions, the MCP server and the
-      fast suite) have been executed so far, and Apple Silicon in CI (GitHub's macOS 14 arm64 runners:
-      core setup and the fast suite, which renders for real). Windows 10/11 desktop and Linux arm64 were
-      reviewed by reading the code only; a run on a physical Apple Silicon Mac is still welcome.
-- [ ] **Plugin validation** with a current Claude Code: `claude plugin validate . --strict`.
-- [ ] **SKILL.md** written and `python3 scripts/check_release.py --check` clean (commands named in the docs
-      exist, links resolve, word budget met).
-- [ ] **Extended audio library tier**: about 150 entries have no pinned size/sha256 yet (hashes are
-      recorded on first download); pin them before the tier is offered by default.
-- [ ] **Example media as release assets** (in showtime-examples). `python3 scripts/publish_media.py --refresh`, create the release
-      tag named in `examples/MEDIA.json` (`examples-media-v1`), `python3 scripts/publish_media.py --upload`,
-      then point the example READMEs at the printed links (`--links --example N`). `examples/README.md`
-      already links to `https://github.com/FavioVazquez/showtime-examples/releases/download/examples-media-v1/`;
-      regenerate those links if the tag changes.
-- [ ] **README hero and benchmark slots.** Follow the publish checklist in `site/README.md`: drag the
-      launch film into the `<!-- HERO-VIDEO-URL -->` slot of `README.md` in GitHub's web editor (a user
-      attachment is the only way GitHub plays an MP4 with sound in a README; it replaces the poster), set
-      the social preview (`assets/readme/social/launch-1280x640.jpg`), fill the hidden `BENCHMARK SECTION` once results are
-      published, and update the platform badges and the Requirements paragraph after the first Windows
-      10/11 desktop and Linux arm64 runs.
-- [ ] **GitHub Pages.** Settings > Pages > Source: GitHub Actions, publish the media release (it now
-      includes the launch films in `examples/_launch/`), run the `pages` workflow and check that https://faviovazquez.github.io/showtime/ (linked
-      from `README.md` and `docs/README.md`) is up (`site/README.md` has the steps). Watch the teaser and
-      the film once in Safari (Mac and iPhone).
+Highlights (details in the entries below):
+
+- **Any agent.** `showtime install --agent <name>`, Agent Plugins manifests next to `.claude-plugin/`, a stable
+  `~/.showtime/bin/showtime` command, background runs for hosts that kill long commands, MCP task ids, and a
+  doctor that knows each agent's sandbox. Install steps per agent: `docs/agents.md`.
+- **Smaller first run.** `showtime setup --plan` (per platform), `--full` (everything now, for offline use),
+  `--fetch`, `--prune`; one fp16 Kokoro voice, Whisper, Manim, the audio library beyond a 41 MB starter part, icons
+  and the browser fetched on first use, each announced with its size. Homes made by 0.1 keep working.
+- **Music and sound.** A catalog of 249 measured tracks (Scott Buckley, Kevin MacLeod, CC0 and public-domain
+  recordings), fetched from the creators on first use, credited automatically in `credits.txt` and the post copy;
+  35 more sound packs; Openverse live search.
+- **Platforms.** `scripts/e2e.py` and a manual workflow run the whole path on Apple Silicon, Linux arm64, Windows
+  11 on Arm and Windows Server 2025; Windows on Arm runs an x64 Python under emulation.
+- **Security.** The preview and server commands answer only requests that carry a per-session key.
+- **Transcription.** Parakeet-TDT 0.6B v3 is the default (fetched on first use, 465 MB): it keeps "um" and "uh",
+  finds 81% of the fillers on a public human-labelled podcast set at 83% precision against its labels (0.1.0's
+  Whisper small.en: 11% at 78%), and hears speech under music better (7.3% word errors at equal loudness, was
+  19.7%). Local evaluations on small sets; details in the entry below.
+- **Faster tests.** `run_all.py --changed` runs only the tests a change can affect.
+- **Launch videos.** The default launch/promo film has four to six scenes, a big still hook, a still camera and
+  at most one motivated fly-through (from the hook into the product, one continuous dolly), match cuts and a
+  dissolve into the end card; motion comes from the content (typing, results landing). A produced catalog track is
+  cut so its swell lands on the end card (`showtime audio cuts --for launch`), terminals fit every size
+  (`data-st="fit"`), and text cut off by its container, or cropped during a transition, is now a check ERROR;
+  `render --size` checks the layout at that size first.
+- **Captions, boards and edits.** Caption shadows follow the outline colour (clean on light themes); standalone
+  studio boards show a clear "copy for your agent, then paste it" step; footage edits are mastered to -14 LUFS
+  unless you ask to keep the source level.
+
+### Before publishing 0.2.0 (release checklist)
+
+- [x] **Windows end-to-end rerun**: `windows-11-arm` and `windows-2025` pass end to end with the fast suite, as do
+      `macos-14` and `ubuntu-24.04-arm`.
+- [x] **README and CHANGELOG** launch-video entries written.
+- [ ] **Publish the MCP packages, in order** (the maintainer's publish notes): npm
+      `@faviovazquez/showtime-mcp`, the `.mcpb` as a release asset of `v0.2.0`, the MCP Registry, Smithery. The
+      README's "MCP only" section and `docs/agents.md` say those routes exist "once 0.2.0 is published".
+- [ ] **Directory listing text** for Cursor, Codex and Cline.
+- [ ] Carried over from 0.1.0: mirror the GeneralUser GS SoundFont (its author asks projects to host their own copy;
+      sha256 `9575028c…688cfe`) and the MuseScore_General SoundFont on a release and point `setup/manifest.json` at
+      them; pin size and sha256 for the extended audio-library tier (about 150 entries record theirs on first download).
+
+### Changed: verbatim transcription by default, fillers found, speech under music heard
+
+- **Parakeet-TDT 0.6B v3 is the default transcription model** (sherpa-onnx, int8, CC-BY-4.0): it writes
+  "um"/"uh" as words and covers 25 European languages including English and Spanish. It is fetched on
+  first use (465 MB, announced with its size). Whisper stays for other languages (`--language xx`
+  picks it) and for anyone who asks (`--model turbo|small`). Why: Whisper small.en, the old default,
+  found 11% of the fillers on PodcastFillers test excerpts (Whisper turbo 40%); the new pipeline finds
+  81% at 83% precision against the dataset's labels (event match within 200 ms; local evaluation).
+- **A filler scan after ASR** decodes voiced pauses no word covers, and words far longer than their
+  spelling, again on their own, and adds the hesitations it hears (`"filler": true`). Backchannels
+  ("mm-hmm", "uh-huh") are words and never cut. Spanish "este" / "o sea" are cut only on request
+  (`edit cut --filler-set es-discourse`). `edit cut --strict-fillers` cuts only fillers a second decode
+  confirmed.
+- **Cleaner filler cuts:** the pause left where a filler was is capped at 0.2 s, each cut edge moves to
+  the quietest 10 ms within 40 ms, and cuts get a 20 ms equal-power crossfade (was a 30 ms fade out and
+  in). On the benchmark interview the default commands now find and cut all five known "uh" (the
+  benchmark's own scorer credits 4 of 5; the same commands in 0.1.0 removed none).
+- **Speech under music:** transcribing a video showtime rendered reads the dry narration stem the render
+  kept (the mixer now writes `<mix>.voice.wav`; edit renders record the speech before the music bed).
+  Other footage: when the music is within ~8 dB of the voice, the voice is separated first with UVR's
+  MDX-Net model (ONNX, no PyTorch, 67 MB on first use), unless the bed is ducked under the speech.
+  On a speech-over-music test set this took word errors from 6.6% (small.en) to 4.4%, and at equal
+  loudness from 19.7% to 7.3%.
+- **CrisperWhisper 2.0** is available as an opt-in "max accuracy" model (`--model crisper`): its weights
+  are for non-commercial use, so it asks for `--accept-license` once; it needs PyTorch, which no longer
+  ships for Intel Macs, so it says so there instead of trying.
+
+### Added: faster test runs (`--changed`, long files in parts, big machines)
+
+- **`run_all.py --changed [REF]`** runs only the test files a change can affect, `--explain` says why
+  each was picked. It combines what each test really used in earlier runs (recorded while the suite runs:
+  every repository file its Python and Node processes import or open), a static scan (imports, named
+  paths, `showtime <cmd>` routing, template names) and a short override table for docs and manifests; a
+  file it cannot place runs everything. On the 64-core build machine an edit to the transcriber picks
+  the footage, packaging and portability tests plus the hygiene check; one such run took 27 s.
+- **Long files run in parts** on machines with many cores (from 9 processes at once): tests that share
+  state stay together, tests the plan does not know run in the first part, and each part is checked to
+  have run its tests exactly once. Laptops and CI runners keep running whole files.
+- **`-j auto` uses big machines**: up to half the cores (was at most 8), fewer when free memory is short;
+  there each test's model threads are sized to its share of the machine. The fast suite on 64 cores went
+  from 219 s to 131 s at `-j 32` (159 s while other jobs loaded the machine); the HTML export file, which
+  runs alone, is 78 s of that.
+
+### Added: one repository for every coding agent, and `showtime install --agent`
+
+- **Manifests next to `.claude-plugin/`** (which is unchanged): an Agent Plugins 1.0 `plugin.json` +
+  `mcp.json` at the root (Codex, Copilot, Kiro; the MCP server starts from `./skills/showtime/mcp/server.mjs`
+  in the plugin folder), `gemini-extension.json` (Gemini CLI, `${extensionPath}`), `mcp_config.json`
+  (Antigravity, which installs the root plugin from a clone) and the Copilot crew in
+  `com.github.copilot/agents/`, because Copilot takes agents only from there once a root `plugin.json`
+  exists. Cursor and Devin read `.claude-plugin/` and need nothing new. `scripts/build_agents.py`
+  regenerates the crew copies from `agents/*.md`.
+- **`showtime install --agent <name>`** for Codex, Copilot, Cursor, Devin, Gemini CLI, Antigravity,
+  OpenCode, Cline, Kilo, Kiro, Zed, Goose, Amp, Factory, Qwen and Claude Code: links the skill where
+  the agent looks (Kiro, Cline, Qwen and Antigravity have their own folders), writes the ten crew agents
+  in the agent's format (Codex TOML, OpenCode `mode: subagent`, Gemini tool names and `timeout_mins: 60`,
+  Kiro JSON; Claude-only fields and model aliases dropped) and adds the MCP server as
+  `<SHOWTIME_HOME>/bin/showtime mcp`. It merges config files (one `.before-showtime` backup) and leaves a
+  file it cannot parse alone with the entry printed; `--print`, `--project`, `--uninstall`, `--list`.
+  The skill carries a copy of the crew (`setup/agents/`) so a skill installed on its own has it too.
+- **Real agent tests** ("make a 5-second test video that says hello", qa with no FAIL): Codex CLI
+  0.158.0 (plugin), Cursor CLI (plugin folder), Devin CLI 3000.11.3 (local plugin), OpenCode 1.18.33
+  (`showtime install`). Per-agent install steps: `docs/agents.md`.
+
+### Added: a portable core (the stable command, background runs, MCP task ids, a sandbox-aware doctor)
+
+- **`~/.showtime/bin/showtime`** (`.cmd`/`.ps1` on Windows) is written by setup and repaired by `doctor`. It runs
+  the skill recorded in `<home>/skill-path`, finds a skill that moved, follows the newest version and keeps a copy
+  of a skill that runs from npm's cache, so it keeps working when a plugin update changes the skill folder. Setup
+  prints how to put it on `PATH` and never edits a shell file.
+- **SKILL.md and the crew agents no longer depend on Claude Code's variables.** Paths are relative to the skill
+  folder, SKILL.md has a `compatibility:` line, no command is built from `${CLAUDE_SKILL_DIR}` or
+  `${CLAUDE_PLUGIN_ROOT}` (other hosts leave them empty, so `${CLAUDE_SKILL_DIR}/bin/showtime` became
+  `/bin/showtime`), and the crew agents call `showtime` from `PATH`. `check_release.py` enforces it.
+- **`showtime <cmd> --background`** and `showtime status <run> [--wait S] [--cancel] [--runs]` for hosts that kill a
+  command after a few minutes; a "still running" line every 45 s when stderr is not a terminal.
+- **The MCP server answers `initialize` in milliseconds and runs long tools as background runs**: after about
+  20 s a call returns a task id and `status {task}` reports progress and the result (Claude Code keeps waiting and
+  gets the result in one call). `showtime mcp` starts it; a `${...}` placeholder a host did not fill counts as
+  unset, and the projects folder is never inside the plugin.
+- **`doctor` knows agent sandboxes**: whether `~/.showtime` and the work folder are writable and whether the
+  network is reachable, and it names the setting to change for Codex, Antigravity, Cursor, Copilot's cloud agent,
+  Gemini CLI or Devin. `SHOWTIME_HOME` is the escape hatch (relative values, a project's `.showtime` found without
+  any variable, uv and npm caches moved in when their folders are read-only).
+- **Windows.** The home lookup searches every home folder Windows can name (`USERPROFILE`, `HOME`,
+  `HOMEDRIVE`+`HOMEPATH`, the account's real profile); `showtime version --json` says how the home was chosen.
+- Tests: `tests/test_portable.py`, `tests/test_mcp.py`.
+
+### Changed: a smaller first download, and everything else on first use
+
+- **The default install is about 770 MB on Linux x64 (about 3 GB before)**, 560 to 610 MB on macOS and Windows,
+  with a Chrome, Edge or Chromium already installed (about 100 MB more without one). `showtime setup --plan` lists
+  every component per platform (`--platform`) with its size, source, sha256 and when it is fetched; `--urls` lists
+  the pinned files for pre-seeding; `--full` installs everything now (6.6 to 7.2 GB, for machines that will be
+  offline; `--seed DIR` reuses files); `--fetch NAMES` fetches chosen first-use components; `--prune` removes what
+  older versions left behind. `doctor` lists the first-use components.
+- **Kokoro** is one fp16 timestamped model (163 MB) instead of two fp32 files (651 MB), loaded with an in-memory
+  guard for half-precision 0/0 phase bins.
+- **Whisper** (small.en and its engine, about 500 MB) is fetched on the first transcription, **Manim** and
+  **ManimGL** before the first scene, **icons** one at a time (a few KB each, pinned versions), the **audio library**
+  in parts (a 41 MB starter part, category parts when a search finds fewer than three results), and the
+  **browser** is an installed Chrome/Edge/Chromium first, else the pinned Chrome Headless Shell (about 100 MB,
+  sha256, resumable); the full Chromium is fetched only for `--headed` runs or when the shell cannot start.
+- Every first-use fetch prints "fetching X (N MB) for Y" first, is pinned by size and sha256, resumes, and fails with
+  exit code 3 and the exact command when the machine is offline. A shared Hugging Face cache is reused
+  (sha256-verified, hard-linked; `SHOWTIME_SHARED_HF_CACHE=0` opts out). imageio's ffmpeg is a last-resort
+  fallback only. The Windows ffmpeg is BtbN's GPL shared build (86 MB) before Gyan's essentials (115 MB).
+- **Upgrading from 0.1 needs no action.** A home with the old fp32 Kokoro keeps working (`doctor` warns and offers
+  `showtime setup`, then `setup --prune`); nothing that worked stops working.
+- Docs: `references/onboarding.md` has the first-use table; the README and `docs/agents.md` state the new sizes.
+
+### Added: a produced-music catalog, credits that write themselves, more sound
+
+- **`lib/st/audio/music_catalog.json`**: 249 produced tracks (Scott Buckley 128, Kevin MacLeod 82, Wikimedia
+  Commons 20, Internet Archive 19), each pinned by URL, bytes and sha256, tagged by shelf, mood, energy, tempo, use
+  and vocals, with a measured ending, quiet intro and highlight offset. Nothing is bundled or re-hosted: a mix (or
+  `audio music fetch <id>`, or `setup --full`) downloads a track from its creator's site the first time, announces
+  its size and caches it in `~/.showtime/music`.
+- **A quality gate**: every track was downloaded, decoded and measured (format, bandwidth, stereo, clipping, hiss,
+  crackle, loudness range, silences, length, rhythm, ending); 16 failed and were removed. Jamendo artists were
+  removed too (its own terms add conditions to commercial use); Jamendo is only reachable with
+  `--source jamendo` and a warning.
+- **Commands**: `audio music search|pick|fetch|info|veto|stats|presets|check|openverse`, `audio packs list|fetch`,
+  `audio credits`. `pick` ranks by energy, length fit and a featured track; a catalog track skips its near-silent
+  lead-in, or starts at its loudest stretch with `"offset": "highlight"`. `audio music openverse` searches
+  Freesound and Wikimedia Commons live (CC BY and CC0).
+- **Credits.** Every render that uses a catalog track writes the creator's credit into `credits.txt`, a description
+  block in `share.txt` and the end-card line, and prints a note (Scott Buckley's Content ID only claims uncredited
+  uses). A CC BY sound without credit text fails the mix, and `qa` warns when Content ID-protected music lacks its
+  credit in `share.txt`.
+- **Sound packs**: 35 extra packs (34 CC0, 1 CC BY: applause, cheering, rain and thunder, camera shutter, pencil
+  and marker writing, clicks, and more) installed the first time a mix or search needs them.
+- Docs: `references/music.md` (a produced track, a composed bed or none), `references/audio.md`, the workflows.
+  Tests: `tests/test_music.py`.
+
+### Added: end-to-end platform tests, Windows on Arm
+
+- **`scripts/e2e.py`** runs everything through the user's entry point on any OS: setup, doctor, a voiced render
+  with qa, HTML export, transcription, captions (SRT/VTT and burned in), an MCP handshake and the fast suite, with
+  per-step logs and a summary; a step whose output has a Python traceback fails even with exit code 0.
+  **`scripts/e2e-windows.ps1`** wraps it for a standard user on Windows 10/11 (entry points, execution policy, a
+  BOM script, a path with a space, a results zip). **`.github/workflows/e2e.yml`** (manual) runs it on `macos-14`,
+  `ubuntu-24.04-arm`, `windows-11-arm` and `windows-2025`. What ran where is listed under Requirements in the README.
+- **Windows on Arm**: `arch()` reports arm64 even from an emulated x64 Python; setup builds the venvs with x64
+  CPython 3.12 (ctranslate2, opencv-python, av and numba have no Windows arm64 wheels) and recreates a venv of the
+  wrong architecture; downloads without a win-arm64 build fall back to win-x64. The native arm64 ffmpeg is tried
+  first, then the x64 builds; a failing ffmpeg now says why (exit code with its Windows status name, stderr tail or a
+  time-out), and `doctor` says why it passed one over. phonemizer's espeak-ng exit hook no longer prints a
+  `PermissionError` there (the folder is removed on the next run).
+
+### Added: MCP packages and housekeeping
+
+- **`server.json`** (MCP Registry) and **`packages/npm`** (`@faviovazquez/showtime-mcp`: the skill folder plus
+  two bins, `showtime-mcp` for the stdio server and `showtime` for setup), **`scripts/build_packages.py`** (npm
+  package and a reproducible `.mcpb` bundle), **`llms-install.md`** (step-by-step install for agents such as
+  Cline). Nothing is published yet.
+- **The preview and server commands need a per-session key.** They answer only requests that carry the server's
+  random 256-bit key (the printed link has `k=<key>`, traded for an HttpOnly SameSite=Strict cookie); anything else
+  gets a plain 403 that says where the link is. Before, any web page open in the browser could read project files
+  over `http://127.0.0.1` (the server sent `Access-Control-Allow-Origin: *`). `site capture` names showtime's own
+  server instead of calling its 403 a bot check.
+- **CI runs the Intel Mac only nightly and by hand**; pushes and pull requests run Linux, Windows and Apple
+  Silicon. `check_release` refuses links to the old Codex documentation address.
+
+### Changed: wording, README, docs and site for every agent
+
+- The tagline is "A local video studio for your coding agent. Describe a video. Your agent directs. Your machine
+  renders." Claude Code is named in its own install section and where it is factually the host. README, its art
+  (hero, pipeline, what runs where, crew hand-offs), plugin and extension descriptions, `brand.json`, the site and
+  the docs say so; the CLI's help, `setup` and `doctor` say "your coding agent" instead of Claude.
+- **README**: a "Works with" section (tested agents, the ones that should work, the install for each, the MCP-only
+  route), new sizes and first-use downloads, the music catalog, the platform list with what actually ran where, and
+  a "New in 0.2.0" list. **Docs**: `docs/agents.md` is part of the docs map and the site.
+- **`doctor`** labels a plugin install by the agent that owns the folder ("installed as a plugin for Codex") and the
+  row is `agent skill` (it was `claude skill`). **SKILL.md** says the launcher is `<skill folder>/bin/showtime`
+  and that a plugin root has no `bin/` (an agent looked for it there in testing).
+
+## 0.1.0: final pass (changes after the first complete build)
 
 ### Changed: pre-publish pass (brand media, requirements, platform status)
 

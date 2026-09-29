@@ -109,6 +109,11 @@ there-and-back for pulses.
   rest toward where they go, and swings parts that cross the relation sign on a 40 degree arc
   (never a straight line through other glyphs). `key_map={"+": "-"}` turns one part into another.
 - Change one thing per step; unchanged parts stay pixel-still (place `b` over `a` first).
+- **Every frame is a true statement that matches the picture.** A still is judged on its own: an
+  equation ahead of its tiles ("1+3+5 = 2²" beside a 2x2 grid while the third layer flies in) reads as
+  wrong maths. Add the new term, its picture and the new result in the same `play()` (or bring the term
+  in only after the picture lands, and update the result in that step); never leave a stale result
+  showing while the left side has already grown. Same for counters and totals next to a diagram.
 - Focus without deleting: `dim_others(e, ["x"])` (to 35 %), a `highlight()` box, then `undim(e)`.
 - Braces carry 1-3 word labels. Derivations stack with aligned relation signs (`stack()`), at most 3-4
   lines, older lines faded.
@@ -287,7 +292,8 @@ class Proof(ShowScene):             # ShowCameraScene (movable frame), Show3DSce
 
 ## 13. Setup and LaTeX per OS
 
-`showtime setup --with manim` installs Manim Community into the main venv and smoke-tests it. Text,
+Manim Community installs itself into the main venv before the first Manim render (about 60 MB,
+announced; `showtime setup --fetch manim` or `--with manim` does it now) and is smoke-tested. Text,
 shapes, graphs and planes need nothing else. Equations need LaTeX, which showtime never installs itself
 (admin rights, size); `showtime doctor` and `showtime manim check` print the exact line:
 

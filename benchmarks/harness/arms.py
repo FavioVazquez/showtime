@@ -177,6 +177,38 @@ def snapshot_plugin(dst: Path, exclude: set) -> Path:
     return dst
 
 
+OWN_ENTRIES = {"bin", "skill-path", "skill"}
+
+
+def overlay_home(shared: Path, dst: Path, skill: Path) -> Path:
+    """The arm's showtime home: every entry of the operator's home (tools, models, caches) linked in, but
+    its own bin/ and skill-path, so `<home>/bin/showtime` runs THIS snapshot. A plain link to the shared
+    home let the command run whatever skill another worker's launcher last recorded there (round 3 ran
+    two tasks on another branch's code that way)."""
+    if dst.is_symlink() or dst.is_file():
+        dst.unlink()
+    elif dst.exists():
+        shutil.rmtree(dst)
+    dst.mkdir(parents=True)
+    for e in sorted(shared.iterdir()):
+        if e.name in OWN_ENTRIES:
+            continue
+        (dst / e.name).symlink_to(e, target_is_directory=e.is_dir())
+    (dst / "bin").mkdir()
+    if (shared / "bin").is_dir():
+        for e in sorted((shared / "bin").iterdir()):
+            if e.name.split(".")[0] != "showtime":
+                (dst / "bin" / e.name).symlink_to(e.resolve())
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("_arm_shim", str(skill / "lib" / "st" / "shim.py"))
+    shim = importlib.util.module_from_spec(spec)   # the snapshot's own code (stdlib only)
+    spec.loader.exec_module(shim)
+    code, detail = shim.install(dst, skill)
+    if code != "ok":
+        raise SystemExit("could not write the arm's showtime command: %s" % detail)
+    return dst
+
+
 def setup_arm(arm: Dict, common_cfg: Dict, force: bool = False) -> Dict:
     d = arm_dir(arm["id"])
     if force and d.exists():
@@ -198,12 +230,10 @@ def setup_arm(arm: Dict, common_cfg: Dict, force: bool = False) -> Dict:
         snap = snapshot_plugin(prefix / "plugin", set(arm.get("snapshot_exclude", [])))
         manifest["plugin_dir"] = str(snap)
         manifest["plugin_files"] = sum(1 for p in snap.rglob("*") if p.is_file())
-        sh = common.showtime_home()
-        link = home / ".showtime"
-        if not link.exists():
-            link.symlink_to(sh, target_is_directory=True)
+        overlay_home(common.showtime_home(), home / ".showtime", snap / "skills" / "showtime")
         manifest["plugin_dir_digest"] = common.tree_digest(snap / "skills")
-        manifest["notes"].append("runtime home linked read-write from the operator's showtime home")
+        manifest["notes"].append("runtime home: the operator's showtime home linked read-write entry by entry, "
+                                 "with the arm's own `showtime` command (bin/showtime -> this snapshot)")
 
     if arm["kind"] == "skills":
         src = Path(local["path"]).expanduser()

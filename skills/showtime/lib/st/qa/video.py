@@ -24,7 +24,7 @@ from . import captions as capmod
 from . import media
 
 
-_THRESHOLD_DEFAULTS = {"still_hold_s": 2.5, "final_hold_max_s": 4.0, "frozen_fail_s": 6.0, "freeze_noise_db": -50.0}
+_THRESHOLD_DEFAULTS = {"still_hold_s": 2.5, "launch_hold_s": 5.0, "final_hold_max_s": 4.0, "frozen_fail_s": 6.0, "freeze_noise_db": -50.0}
 THRESHOLDS_FILE = Path(__file__).resolve().parents[3] / "runtime" / "thresholds.json"
 
 
@@ -101,6 +101,7 @@ RULES = {
     "captions_unverified": "captions may be burned in but cannot be verified",
     "missing_credits": "attribution is required but no credits file ships with the video",
     "credits_incomplete": "the credits file lacks a required line",
+    "content_id_credit": "music protected by Content ID lacks its credit in share.txt (the description)",
     "too_long": "longer than the platform allows",
     "too_short": "shorter than the platform allows",
     "aspect": "aspect ratio differs from the platform's",
@@ -216,7 +217,7 @@ def load_expect(project: Optional[Path], expect_file: Optional[PathLike]) -> Tup
 
 
 EXPECT_KEYS = {"duration", "tolerance", "duration_tolerance", "platform", "lufs", "true_peak", "audio", "captions",
-               "must_show", "max_size_mb", "fps", "width", "height", "aspect", "credits", "notes"}
+               "must_show", "max_size_mb", "fps", "width", "height", "aspect", "credits", "notes", "style"}
 
 
 def target_for(name: Optional[str]) -> Optional[Dict[str, Any]]:
@@ -364,10 +365,12 @@ def run(video: PathLike, *, project: Optional[PathLike] = None, expect_file: Opt
         rep["detect"]["picture"] = pic
     first = media.extract_frames(vpath, [0.0], frames_dir, width=min(W, 960) or None, duration=dur, fps=fps)
     _check_picture(F, det, first[0] if first else None, dur, fps, vpath=vpath, crop=pic, rms=loud.get("_rms"),
-                   footage=_may_hold_footage(proj, cfg), rep=rep)
+                   footage=_may_hold_footage(proj, cfg), rep=rep,
+                   launch_kind=str(cfg.get("kind") or "").lower() in ("launch", "promo", "trailer", "teaser", "release"))
     _check_opening_flash(F, vpath, fps)
 
     _check_upscale(F, vpath)
+    _check_rhythm(F, vpath, dur, fps, proj, cfg, expect, rep, say)
 
     # ---------------------------------------------------------- captions, credits, texts
     caps = caption_files(vpath, proj, captions, W, H, say)
@@ -554,6 +557,7 @@ def _check_audio(F: Findings, vpath: Path, aus: List[Dict[str, Any]], dur: float
                  cfg: Dict[str, Any]) -> Dict[str, Any]:
     import numpy as np
     from ..audio import meter
+    kept_source = False
     a0 = aus[0]
     codec, sr = a0.get("codec_name"), int(a0.get("sample_rate") or 0)
     if vpath.suffix.lower() in (".mp4", ".m4v", ".mov") and codec != "aac":
@@ -575,6 +579,15 @@ def _check_audio(F: Findings, vpath: Path, aus: List[Dict[str, Any]], dur: float
         target = tgt.get("lufs")
     elif target is None:
         target = -14.0
+        # nothing named a target: an edit render's own report says what it was mastered to, so the check
+        # judges it against that (the default is showtime's delivery -14 LUFS; an EDL may ask for another
+        # level or to keep the source level)
+        lt = (edit_report(vpath) or {}).get("loudness_target")
+        if isinstance(lt, dict):
+            if lt.get("mode") == "source":
+                kept_source = True
+            elif isinstance(lt.get("lufs"), (int, float)):
+                target = float(lt["lufs"])
     mix_master = None
     if isinstance(cfg.get("audio"), str):
         mix_master = cfg.get("audio")
@@ -590,7 +603,12 @@ def _check_audio(F: Findings, vpath: Path, aus: List[Dict[str, Any]], dur: float
         return out
     if target is not None:
         off = I - float(target)
-        if abs(off) > 3:
+        if kept_source:
+            # asked for (edit render --keep-loudness / "loudness": false): say so, do not fail it
+            F.add("loudness", "INFO", "loudness %.1f LUFS: this edit keeps the source level as asked; showtime delivers "
+                  "at %g LUFS" % (I, target) + ("" if abs(off) <= 1 else " (%.1f LU %s)" % (abs(off), "louder" if off > 0 else "quieter")),
+                  fix="render without --keep-loudness to master it to %g LUFS / -1 dBTP" % target)
+        elif abs(off) > 3:
             F.add("loudness", "FAIL", "integrated loudness %.1f LUFS is %.1f LU off the %.0f LUFS target" % (I, off, target),
                   fix="master to the target: showtime audio master <in> -o <out> --lufs %g, then re-mux" % target)
         elif abs(off) > 1:
@@ -666,7 +684,7 @@ def _sound_share(rms: Optional[Dict[str, Any]], s: float, e: float, floor_db: fl
 def _check_picture(F: Findings, det: Dict[str, List[Tuple[float, float]]], first: Optional[Path],
                    dur: float, fps: float, *, vpath: Optional[Path] = None, crop: Optional[Sequence[int]] = None,
                    rms: Optional[Dict[str, Any]] = None, footage: bool = False,
-                   rep: Optional[Dict[str, Any]] = None) -> None:
+                   rep: Optional[Dict[str, Any]] = None, launch_kind: bool = False) -> None:
     frame = 1.0 / fps
     black0 = next((b for b in det["black"] if b[0] <= frame * 0.5), None)
     st = media.image_stats(first) if first else None
@@ -708,6 +726,8 @@ def _check_picture(F: Findings, det: Dict[str, List[Tuple[float, float]]], first
 
     th = thresholds()
     hold, end_max, fail_s = th["still_hold_s"], th["final_hold_max_s"], th["frozen_fail_s"]
+    if launch_kind:
+        hold = th.get("launch_hold_s", 5.0)     # a still camera on a settled result is the launch grammar
     any_frozen = False
     for s, e in det["freeze"]:
         ln = e - s
@@ -745,6 +765,68 @@ def _check_picture(F: Findings, det: Dict[str, List[Tuple[float, float]]], first
 
 
 POSTER_FLASH_DIFF = 12.0   # same threshold as render's --poster-bake auto
+
+
+def _check_rhythm(F: Findings, vpath: Path, dur: float, fps: float, proj: Optional[Path], cfg: Dict[str, Any],
+                  expect: Dict[str, Any], rep: Dict[str, Any], say: Any) -> None:
+    """Edit rhythm (st.qa.rhythm): measured for every short video; judged for launch, promo, release and
+    trailer films, where hard cuts, too many scenes and a flat music bed read as choppy and cheap."""
+    from . import rhythm
+    goal = None
+    job = job_of(vpath)
+    if job is not None:
+        goal = (read_json(job / "job.json", {}) or {}).get("goal") if (job / "job.json").is_file() else None
+    launch = rhythm.launch_like(cfg, expect, goal)
+    if dur <= 0 or (dur > 180 and not launch):
+        return
+    say("qa: measuring the edit rhythm")
+    scenes = None
+    try:
+        from .review import planned_scenes
+        pl = planned_scenes(vpath, proj, dur) if proj is not None else None
+        scenes = [t for t, _ in pl["scenes"]] if pl else None
+    except Exception:  # noqa: BLE001 - the scene list is optional
+        scenes = None
+    try:
+        r = rhythm.measure(vpath, dur, fps, scenes=scenes, max_seconds=180)
+    except Exception as e:  # noqa: BLE001 - a measurement aid, never a reason to fail qa
+        rep["rhythm"] = {"error": str(e)}
+        return
+    r["launch"] = launch
+    r["summary"] = rhythm.summary(r)
+    rep["rhythm"] = r
+    if not launch:
+        return
+    L = rhythm.LIMITS
+    pic = r["picture"]
+    short = dur <= 60
+    if short and pic["n_hard_cuts"] > L["max_hard_cuts"]:
+        F.add("edit_choppy", "WARN", "%d hard cuts in %.0fs (%s): premium launch films change scene with a camera move, a "
+              "match or a soft dissolve, and cut hard at most %d times" % (pic["n_hard_cuts"], dur,
+                                                                           ", ".join("%.2f" % c for c in pic["hard_cuts"][:8]),
+                                                                           L["max_hard_cuts"]),
+              t=pic["hard_cuts"][0], fix="use the launch template's handoffs (through, match, pan, blur-dissolve) instead of cuts "
+                                         "(references/workflows/launch-video.md)")
+    n_sc = max(r["scenes"]["count"] if r.get("scenes") else 0, pic.get("n_layouts", 0))
+    if short and n_sc > L["max_scenes"]:
+        F.add("too_many_scenes", "WARN", "%d scenes or layouts in %.0fs: the eye re-learns the screen every %.1fs; tell it "
+              "in 4-6 scenes" % (n_sc, dur, dur / n_sc),
+              fix="merge beats into one scene with a camera move, or cut the weakest (launch-video.md, scene grammar)")
+    if pic.get("longest_still_s", 0) > L["max_still_s"]:
+        F.add("dead_hold", "WARN", "nothing moves for %.1fs from %.2fs" % (pic["longest_still_s"], pic["longest_still_at"]),
+              t=pic["longest_still_at"], fix="a slow camera drift (camera component data-drift) or the next beat")
+    m = r.get("music")
+    voiced = False
+    if proj is not None:
+        mix = cfg.get("audio")
+        if isinstance(mix, str) and (proj / mix).is_file() and mix.lower().endswith(".json"):
+            spec = read_json(proj / mix, {}) or {}
+            voiced = any((tr.get("kind") == "voice") for tr in spec.get("tracks", []) if isinstance(tr, dict))
+    if m and not voiced and m.get("range_db", 99) < L["min_music_range_db"]:
+        F.add("flat_music", "WARN", "the soundtrack moves only %.1f dB (10th-90th percentile): no breath, no swell for the "
+              "edit to ride" % m["range_db"],
+              fix="a produced track excerpt with a build (`showtime audio cuts --apply <project>`), or gain_points that "
+                  "dip the middle and lift into the end card")
 
 
 def _check_opening_flash(F: Findings, vpath: Path, fps: float) -> None:
@@ -947,6 +1029,7 @@ def _check_captions(F: Findings, vpath: Path, files: Sequence[Path], expect: Dic
 def _check_credits(F: Findings, vpath: Path, proj: Optional[Path], expect: Dict[str, Any]) -> None:
     need: List[str] = []
     sources: List[str] = []
+    claimable: List[Dict[str, Any]] = []
     roots = [p for p in (proj, vpath.parent / "work", vpath.with_suffix(".work")) if p and p.is_dir()]
     for root in roots:
         for rp in _limited_rglob(root, "mix.report.json"):
@@ -956,6 +1039,20 @@ def _check_credits(F: Findings, vpath: Path, proj: Optional[Path], expect: Dict[
                     if c and c not in need:
                         need.append(str(c))
                         sources.append(str(rp))
+                for it in data.get("credit_items") or []:
+                    if isinstance(it, dict) and it.get("content_id") == "smart-cid-releasable" and it not in claimable:
+                        claimable.append(it)
+    if claimable and expect.get("credits") is not False:
+        share = vpath.parent / "share.txt"
+        body = share.read_text(encoding="utf-8", errors="replace").lower() if share.is_file() else ""
+        lacking = [it for it in claimable if (it.get("artist") or "").lower() not in body
+                   or (it.get("title") or "").lower() not in body]
+        if lacking:
+            F.add("content_id_credit", "WARN", "%s: YouTube's Content ID claims videos whose description lacks this credit, and "
+                  "%s" % ("; ".join("\u201c%s\u201d by %s" % (it.get("title"), it.get("artist")) for it in lacking[:3]),
+                          "share.txt does not have it" if share.is_file() else "there is no share.txt next to the video"),
+                  fix="re-render (render writes the credits block into share.txt) or run: showtime audio credits --report "
+                      "<mix.report.json> --out-dir %s" % vpath.parent)
     if proj:
         try:
             from ..assets import licenses
@@ -1191,6 +1288,9 @@ def format_text(rep: Dict[str, Any], verbose: bool = False) -> str:
             lines.append("        frame: %s" % f["frame"])
         if f.get("fix") and f["severity"] != "INFO":
             lines.append("        fix: %s" % f["fix"])
+    rh = rep.get("rhythm") or {}
+    if rh.get("summary"):
+        lines.append("  rhythm  %s" % rh["summary"])
     if rep.get("sheet"):
         lines.append("  sheet   %s" % rep["sheet"])
     lines.append("  report  %s" % rep.get("report"))

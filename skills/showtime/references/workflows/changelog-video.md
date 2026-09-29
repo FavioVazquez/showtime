@@ -12,8 +12,12 @@ comes from the change itself; the code is shown as real hunks, never whole files
 
 ## Defaults
 
-20-40 s, 16:9; `dom` template (code panels, browser frames) with the `technical` tone for developers or
-`default` for users; `news-bumper` or `upbeat-tech` bed; 2-4 real hunks of 4-12 lines each; credit the
+20-40 s, 16:9; a release announced to users ("v2.0 is out", "a video for the 2.0 launch") follows the
+launch grammar in `launch-video.md`: the `launch` template, 4-6 scenes, one window that carries the
+changes one per scene, continuous camera handoffs, a produced track cut with `showtime audio cuts`.
+A code-level what's-new for contributors: `dom` template (code panels) with the `technical` tone, a
+restrained produced track (`showtime audio cuts --for tech`) or a composed `minimal-pulse` bed; 2-4
+real hunks of 4-12 lines each. Either way: at most 6 scenes, no push or cut per item, credit the
 authors by the names they use in the repo. State the audience (users, unless the change is internal)
 as an assumption; ask only when the request leaves it open and the two cuts would differ.
 
@@ -28,8 +32,10 @@ as an assumption; ask only when the request leaves it open and the two cuts woul
    wrap), a feature reveal (outcome, impact, the change, the diff, the mechanism, callback), a fix
    explainer (problem, cause, before/after, working), or a refactor (the smell, before/after structure,
    same outputs). The hook speaks outcome language, not file names.
-4. **Project.** `showtime new dom <job>/project --title "<Product> <version>" --duration <len>`. One scene per
-   change; alternate code and mechanism scenes; an end card with the version and where to get it.
+4. **Project.** Announcement: `showtime new launch <job>/project --duration <len>` (one proof scene per
+   change, up to three; the rest go in the end card's value line or the post copy). Code walkthrough:
+   `showtime new dom <job>/project --title "<Product> <version>" --duration <len>`, one scene per change,
+   code and mechanism in the same panel. Both end on the version and where to get it.
 5. **Material.**
    - Code: save the before and after versions of each hunk you will show, then
      `showtime code <before-file> --to <after-file> -o <job>/project/code/<name>.json` for a diff

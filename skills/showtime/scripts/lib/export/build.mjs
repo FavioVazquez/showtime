@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { skillDir, nodeModulesDir, showtimeHome } from '../deps.mjs';
+import { iconPackageDir } from '../iconcache.mjs';
 import { isText, isMedia, isJs, isCss, VORIGIN } from './collect.mjs';
 import { minifyJs, minifyCss } from './minify.mjs';
 
@@ -77,7 +78,9 @@ export function notices(files, { projDir, extraCredits = [] } = {}) {
     const m = /^\/_lib\/((?:@[^/]+\/)?[^/]+)\//.exec(p);
     if (!m || pkgs.has(m[1])) continue;
     try {
-      const j = JSON.parse(fs.readFileSync(path.join(nodeModulesDir(), ...m[1].split('/'), 'package.json'), 'utf8'));
+      let pj = path.join(nodeModulesDir(), ...m[1].split('/'), 'package.json');
+      if (!fs.existsSync(pj) && iconPackageDir(m[1])) pj = path.join(iconPackageDir(m[1]), 'package.json');
+      const j = JSON.parse(fs.readFileSync(pj, 'utf8'));
       pkgs.set(m[1], `${j.name}@${j.version} (${typeof j.license === 'string' ? j.license : (j.license && j.license.type) || 'see package'})`);
     } catch { pkgs.set(m[1], `${m[1]} (see its package)`); }
   }

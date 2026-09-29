@@ -2,7 +2,7 @@
 """Audio module smoke tests (runs in about a minute).
 
 Drives the real CLI (`showtime audio ...`) through the launcher, like a user
-or Claude would, and checks the numbers:
+or an agent would, and checks the numbers:
 
 - styles / sfx-types list >= 12 styles and >= 30 effect types
 - compose 3 styles (10 s): exact sample count, -14 +-0.5 LUFS, true peak <= -1 dBTP,

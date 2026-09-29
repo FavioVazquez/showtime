@@ -15,12 +15,15 @@
 // align "center" straddles the cut, align "end" finishes exactly at the cut.
 //
 // CSS types:  crossfade, dip, blur-dissolve, push, slide, zoom-through, whip-pan, iris, wipe,
-//             glitch, flash, stagger
+//             glitch, flash, stagger, and the camera moves through (fly into a portal element of
+//             the outgoing scene: the next scene is inside it), pan (travel to the next scene laid
+//             beside this one) and match (shared elements, data-match="name", carry across the cut)
 // WebGL types: domain-warp, ridged-burn, sdf-iris, ripple, chromatic-split, cross-zoom,
 //             light-leak, pixel-dissolve, morph-warp, whip-blur, signal-glitch
 import { clamp, ease, lerp, hash, h, clipStart } from '../components/core.js';
+import { portalShape } from '../components/portal.js';
 
-export const CSS_TYPES = ['crossfade', 'dip', 'blur-dissolve', 'push', 'slide', 'zoom-through', 'whip-pan', 'iris', 'wipe', 'glitch', 'flash', 'stagger'];
+export const CSS_TYPES = ['crossfade', 'dip', 'blur-dissolve', 'push', 'slide', 'zoom-through', 'whip-pan', 'iris', 'wipe', 'glitch', 'flash', 'stagger', 'through', 'pan', 'match'];
 export const GL_TYPES = ['domain-warp', 'ridged-burn', 'sdf-iris', 'ripple', 'chromatic-split', 'cross-zoom', 'light-leak', 'pixel-dissolve', 'morph-warp', 'whip-blur', 'signal-glitch'];
 // What a shader falls back to when WebGL is unavailable.
 const GL_FALLBACK = { 'domain-warp': 'blur-dissolve', 'ridged-burn': 'dip', 'sdf-iris': 'iris', ripple: 'blur-dissolve', 'chromatic-split': 'glitch', 'cross-zoom': 'zoom-through', 'light-leak': 'flash', 'pixel-dissolve': 'crossfade', 'morph-warp': 'blur-dissolve', 'whip-blur': 'whip-pan', 'signal-glitch': 'glitch' };
@@ -29,6 +32,7 @@ const DEFAULTS = {
   push: { dur: 0.55, ease: 'power3.inOut' }, slide: { dur: 0.6, ease: 'power3.inOut' }, 'zoom-through': { dur: 0.55, ease: 'linear' },
   'whip-pan': { dur: 0.45, ease: 'power3.inOut' }, iris: { dur: 0.6, ease: 'power2.inOut' }, wipe: { dur: 0.6, ease: 'power2.inOut' },
   glitch: { dur: 0.35, ease: 'linear' }, flash: { dur: 0.4, ease: 'linear' }, stagger: { dur: 0.9, ease: 'linear' },
+  through: { dur: 1.5, ease: 'power2.inOut' }, pan: { dur: 1.2, ease: 'power3.inOut' }, match: { dur: 0.9, ease: 'power3.inOut' },
   'domain-warp': { dur: 0.9, ease: 'sine.inOut' }, 'ridged-burn': { dur: 0.8, ease: 'power1.inOut' }, 'sdf-iris': { dur: 0.65, ease: 'power2.inOut' },
   ripple: { dur: 0.8, ease: 'sine.inOut' }, 'chromatic-split': { dur: 0.4, ease: 'power2.inOut' }, 'cross-zoom': { dur: 0.5, ease: 'power2.inOut' },
   'light-leak': { dur: 0.8, ease: 'sine.inOut' }, 'pixel-dissolve': { dur: 0.6, ease: 'linear' }, 'morph-warp': { dur: 0.8, ease: 'sine.inOut' },
@@ -36,6 +40,7 @@ const DEFAULTS = {
 };
 
 const DIRS = { left: [-1, 0], right: [1, 0], up: [0, -1], down: [0, 1] };
+const MEASURED = new Set(['through', 'match']);
 
 /* ------------------------------------------------------------ helpers */
 
@@ -94,7 +99,10 @@ function overlayFor(parent) {
 // Each: (ctx) => void. ctx: { p (eased), r (linear), A (out), B (in), W, H, o (options), set(el, props), overlay() }
 
 const CSS = {
-  crossfade({ p, B, set }) { set(B, { opacity: p }); },
+  crossfade({ p, A, B, set }) {
+    set(B, { opacity: p });
+    if (seeThrough(B)) set(A, { opacity: (1 - p).toFixed(4) });   // no opaque ground to cover the old scene
+  },
 
   dip({ r, A, B, set, overlay, o }) {
     const ov = overlay();
@@ -109,7 +117,9 @@ const CSS = {
   'blur-dissolve'({ p, r, A, B, W, set, o }) {
     const b = Number(o.blur) || Math.min(24, W * 0.0125);
     set(A, { filter: `blur(${(b * p).toFixed(2)}px)`, scale: (1 + 0.035 * p).toFixed(4) });
-    set(B, { opacity: ease('power1.inOut')(clamp((r - 0.12) / 0.76)).toFixed(4), filter: `blur(${(b * (1 - p)).toFixed(2)}px)`, scale: lerp(0.97, 1, p).toFixed(4) });
+    const inB = ease('power1.inOut')(clamp((r - 0.12) / 0.76));
+    set(B, { opacity: inB.toFixed(4), filter: `blur(${(b * (1 - p)).toFixed(2)}px)`, scale: lerp(0.97, 1, p).toFixed(4) });
+    if (seeThrough(B)) set(A, { opacity: (1 - ease('power1.inOut')(clamp((r - 0.05) / 0.7))).toFixed(4) });
   },
 
   push({ p, r, A, B, W, set, o, id }) {
@@ -229,7 +239,216 @@ const CSS = {
     const swap = clamp((r - 0.42) / 0.12);
     set(B, { opacity: swap.toFixed(4) });
   },
+
+  through({ p, A, B, W, H, o, set, tr }) {
+    // One continuous camera move: the camera flies into a portal element of the outgoing scene
+    // (data-portal, or `into`), and the incoming scene is what was inside it. With `inverse` the
+    // camera pulls back out of a portal of the incoming scene instead (the outgoing scene shrinks
+    // into it). Zoom runs in log space, so the push feels even from 1x to 40x.
+    const inv = !!o.inverse;
+    const outer = inv ? B : A, inner = inv ? A : B;
+    const q = inv ? 1 - p : p;
+    const origin = tr.parent.getBoundingClientRect();
+    const k = origin.width / W || 1;
+    const portal = findPortal(outer, o.into || o.portal);
+    if (!portal) {
+      if (!tr.warned) { tr.warned = true; console.warn(`[showtime] through: no [data-portal] in #${outer.id || 'scene'}; using a blur-dissolve`); }
+      CSS['blur-dissolve']({ p, r: p, A, B, W, set, o: {} });
+      return;
+    }
+    const sh = portalShape(portal, origin);
+    const px = sh.x / k, py = sh.y / k, pw = Math.max(1, sh.w / k), ph = Math.max(1, sh.h / k);
+    const cx = px + pw / 2, cy = py + ph / 2, CX = W / 2, CY = H / 2;
+    // One pure zoom, no second motion: the opening keeps its own shape and simply grows with the camera.
+    // The incoming scene starts CONTAINED in the opening (an ellipse: inscribed so the frame's corners are
+    // inside it) and ends at 1:1 exactly when the opening covers the whole frame, so nothing is clipped,
+    // grown or swapped separately: the letter's ink flies past the lens at the speed of the zoom.
+    const s0 = sh.kind === 'ellipse' ? Math.min(pw / (Math.SQRT2 * W), ph / (Math.SQRT2 * H)) : Math.min(pw / W, ph / H);
+    const z = Math.exp(q * Math.log(1 / s0));               // camera zoom on the outer scene
+    // a dolly toward ONE fixed point: the screen point P that stays put while the camera zooms is chosen so the
+    // opening lands on the frame centre exactly at the end (no pan first and zoom after: one motion)
+    const z1 = 1 / s0;
+    const Px = (CX - z1 * cx) / (1 - z1), Py = (CY - z1 * cy) / (1 - z1);
+    const qx = Px + z * (cx - Px), qy = Py + z * (cy - Py);   // where the opening's centre is on screen now
+    // text of the outer scene fades out before the zoom carries it across the frame edge, so no frame
+    // shows a headline cut mid-word ("file2 comes befor"); the portal's own word flies through whole (measured
+    // before the camera transform is set)
+    fadeCropped(tr, outer, portal, origin, k, { W, H, z, q, z1, Px, Py, ox: qx - z * cx, oy: qy - z * cy }, set);
+    set(outer, { 'transform-origin': '0 0', transform: `translate(${(qx - z * cx).toFixed(3)}px, ${(qy - z * cy).toFixed(3)}px) scale(${z.toFixed(5)})` });
+    const zi = z * s0;
+    set(inner, { 'transform-origin': '0 0', transform: `translate(${(qx - zi * CX).toFixed(3)}px, ${(qy - zi * CY).toFixed(3)}px) scale(${zi.toFixed(5)})` });
+    // the opening, fixed: in the inner scene's coordinates (centred, 1/s0 times the portal) and cut out of
+    // the outer scene at the portal itself (so a see-through incoming scene never shows the outer behind it)
+    const f = (x) => x.toFixed(2);
+    const outerFrame = `M0 0H${f(W)}V${f(H)}H0Z`;
+    if (sh.kind === 'ellipse') {
+      const rx = sh.rx / k / s0, ry = sh.ry / k / s0;
+      set(inner, { 'clip-path': `ellipse(${f(rx)}px ${f(ry)}px at 50% 50%)` });
+      const ox = sh.rx / k, oy = sh.ry / k;
+      set(outer, { 'clip-path': `path(evenodd, "${outerFrame} M${f(cx - ox)} ${f(cy)}a${f(ox)} ${f(oy)} 0 1 0 ${f(2 * ox)} 0a${f(ox)} ${f(oy)} 0 1 0 ${f(-2 * ox)} 0Z")` });
+    } else {
+      const hw = pw / s0 / 2, hh = ph / s0 / 2, rad = sh.radius / k / s0;
+      set(inner, { 'clip-path': `inset(${f(CY - hh)}px ${f(W - CX - hw)}px ${f(H - CY - hh)}px ${f(CX - hw)}px round ${f(rad * (1 - q))}px)` });
+      set(outer, { 'clip-path': `path(evenodd, "${outerFrame} M${f(px)} ${f(py)}H${f(px + pw)}V${f(py + ph)}H${f(px)}Z")` });
+    }
+    if (q >= 0.999) set(outer, { visibility: 'hidden' });
+    // pulling back: the old scene dissolves into the portal's own picture as it lands
+    if (inv && !o.keep) set(inner, { opacity: ease('power1.inOut')(clamp(q / 0.22)).toFixed(4) });
+  },
+
+  pan({ p, r, A, B, W, H, o, set, id }) {
+    // The camera travels to the next scene, laid beside this one in one world, with a slight
+    // pull-back arc (`arc`, default 0.06 = 6 % smaller mid-move) and a gap between the frames.
+    const [dx, dy] = DIRS[o.dir] || DIRS.left;
+    const gap = o.gap != null ? Number(o.gap) : 0.06;
+    const Dx = -dx * W * (1 + gap), Dy = -dy * H * (1 + gap);
+    const arc = o.arc != null ? Number(o.arc) : 0.06;
+    const s = 1 - arc * Math.sin(Math.PI * p);
+    const CX = W / 2, CY = H / 2;
+    const Kx = CX + Dx * p, Ky = CY + Dy * p;
+    const place = (el, Ox, Oy) => set(el, { 'transform-origin': '0 0',
+      transform: `translate(${(CX + s * (Ox - Kx)).toFixed(3)}px, ${(CY + s * (Oy - Ky)).toFixed(3)}px) scale(${s.toFixed(5)})` });
+    place(A, 0, 0);
+    place(B, Dx, Dy);
+    if (o.blur) {
+      const f = dirBlur(id + '-pan');
+      const b = Math.sin(Math.PI * r) ** 2 * Math.min(10, W * 0.005);
+      f.set(Math.abs(dx) * b, Math.abs(dy) * b);
+      set(A, { filter: f.url }); set(B, { filter: f.url });
+    }
+  },
+
+  match({ p, r, A, B, W, o, set, tr }) {
+    // Shared elements carry across the cut: every [data-match="name"] in the incoming scene flies
+    // from where its partner sits in the outgoing scene to its own place; everything else in the
+    // outgoing scene fades out and the rest of the incoming scene fades in around it. Scenes on the
+    // same ground read as one continuous shot.
+    const origin = tr.parent.getBoundingClientRect();
+    const k = origin.width / W || 1;
+    const pairs = [];
+    for (const b of B.querySelectorAll('[data-match]')) {
+      const a = A.querySelector(`[data-match="${CSS_ESC(b.getAttribute('data-match'))}"]`);
+      if (a) pairs.push([a, b]);
+    }
+    const eo = ease('power2.inOut')(clamp(r / 0.55));
+    const ei = ease('power2.inOut')(clamp((r - 0.35) / 0.65));
+    // the incoming ground fades in on its own layer (under the scene's content), so the shared
+    // elements never disappear behind it
+    const cs = getComputedStyle(B);
+    let ground = B.querySelector(':scope > .st-tx-ground');
+    if (!ground) { ground = h('div', { class: 'st-tx-ground', 'data-st-decor': '', style: { position: 'absolute', inset: '0', zIndex: '-1', pointerEvents: 'none', display: 'none' } }); B.prepend(ground); }
+    set(ground, { display: 'block', 'background-color': cs.backgroundColor, 'background-image': cs.backgroundImage });
+    set(B, { background: 'transparent' });
+    fadeAround(A, pairs.map((x) => x[0]), 1 - eo, set);
+    fadeAround(B, pairs.map((x) => x[1]), ei, set);
+    const ki = ease('power1.inOut')(clamp((r - 0.15) / 0.6));
+    for (const [a, b] of pairs) {
+      const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+      const dxp = (rb.left + rb.width / 2 - ra.left - ra.width / 2) / k, dyp = (rb.top + rb.height / 2 - ra.top - ra.height / 2) / k;
+      const sab = rb.width / Math.max(1, ra.width);
+      set(a, { translate: `${(dxp * p).toFixed(3)}px ${(dyp * p).toFixed(3)}px`, scale: lerp(1, sab, p).toFixed(5), 'transform-origin': '50% 50%' });
+      set(b, { translate: `${(-dxp * (1 - p)).toFixed(3)}px ${(-dyp * (1 - p)).toFixed(3)}px`, scale: lerp(1 / sab, 1, p).toFixed(5), 'transform-origin': '50% 50%',
+        opacity: (o.swap === 'cut' ? (r >= 0.5 ? 1 : 0) : ki).toFixed(4) });
+    }
+  },
 };
+
+/** A scene with no ground of its own (transparent background: the page's world shows through it). */
+function seeThrough(el) {
+  const cs = getComputedStyle(el);
+  const m = cs.backgroundColor.match(/rgba?\(([^)]+)\)/);
+  const alpha = m ? (m[1].split(',').length === 4 ? parseFloat(m[1].split(',')[3]) : 1) : (cs.backgroundColor === 'transparent' ? 0 : 1);
+  return alpha < 0.05 && (!cs.backgroundImage || cs.backgroundImage === 'none');
+}
+
+const CSS_ESC = (s) => (window.CSS && window.CSS.escape ? window.CSS.escape(s) : String(s).replace(/["\\]/g, '\\$&'));
+
+/** The portal element of a scene: a selector, else the first [data-portal] inside it. */
+function findPortal(scene, sel) {
+  if (sel && typeof sel !== 'string') return sel;
+  return (sel && (scene.querySelector(sel) || document.querySelector(sel))) || scene.querySelector('[data-portal]');
+}
+
+/** The text of `scene` as runs the camera can fade one by one: each non-blank text node outside the
+ * portal's own word is wrapped once in <span data-st-tx-text> (inline, so the layout does not change).
+ * The portal's word (the portal and its inline ancestors) is marked data-st-portal-word. */
+function textRuns(tr, scene, portal) {
+  if (tr.textRuns && tr.textRuns.scene === scene) return tr.textRuns.list;
+  let word = portal;
+  while (word.parentElement && word.parentElement !== scene && /^inline/.test(getComputedStyle(word.parentElement).display)) word = word.parentElement;
+  word.setAttribute('data-st-portal-word', '');
+  const nodes = [];
+  const tw = document.createTreeWalker(scene, NodeFilter.SHOW_TEXT);
+  for (let n = tw.nextNode(); n; n = tw.nextNode()) {
+    if (!n.nodeValue.trim() || word.contains(n)) continue;
+    const pe = n.parentElement;
+    if (!pe || pe.closest('script,style,svg,[data-st-decor]')) continue;
+    nodes.push(n);
+  }
+  const out = [];
+  for (const n of nodes) {
+    const pe = n.parentElement;
+    if (pe.hasAttribute('data-st-tx-text')) { out.push(pe); continue; }
+    const sp = document.createElement('span');
+    sp.setAttribute('data-st-tx-text', '');
+    n.replaceWith(sp);
+    sp.append(n);
+    out.push(sp);
+  }
+  tr.textRuns = { scene, list: out };
+  return out;
+}
+
+/** Fade each text run of `scene` as the camera transform (screen = o + z * page) brings it within a
+ * small margin of the frame edge: gone before any of it is cut. Measured untransformed (the manager
+ * resets the scene's transform before each frame). */
+function fadeCropped(tr, scene, portal, origin, k, cam, set) {
+  if (!(cam.z > 1.0005)) return;
+  const ramp = 0.025 * Math.min(cam.W, cam.H);
+  for (const el of textRuns(tr, scene, portal)) {
+    const b = el.getBoundingClientRect();
+    if (b.width < 1 || b.height < 1) continue;
+    const x0 = cam.ox + cam.z * ((b.left - origin.left) / k), x1 = cam.ox + cam.z * ((b.right - origin.left) / k);
+    const y0 = cam.oy + cam.z * ((b.top - origin.top) / k), y1 = cam.oy + cam.z * ((b.bottom - origin.top) / k);
+    if (x1 < 0 || y1 < 0 || x0 > cam.W || y0 > cam.H) { set(el, { opacity: '0' }); continue; }
+    // how far it has come toward the edge compared with where it was laid out (text laid out near an
+    // edge on purpose is not dimmed at the start of the move)
+    const d = Math.min(x0, y0, cam.W - x1, cam.H - y1);
+    const d0 = Math.min((b.left - origin.left) / k, (b.top - origin.top) / k, cam.W - (b.right - origin.left) / k, cam.H - (b.bottom - origin.top) / k);
+    if (!(d0 > 1)) continue;
+    // dim along the whole approach: find the zoom progress at which this word reaches the frame edge in
+    // the dolly (x(z) = P + z (x - P)) and fade over that span, so words dissolve as the camera travels
+    // instead of vanishing in a beat just before the edge
+    let withMove = 1;
+    if (cam.q != null && cam.z1 > 1) {
+      const lx0 = (b.left - origin.left) / k, lx1 = (b.right - origin.left) / k, ly0 = (b.top - origin.top) / k, ly1 = (b.bottom - origin.top) / k;
+      const zs = [];
+      if (lx0 < cam.Px) zs.push(cam.Px / (cam.Px - lx0));
+      if (lx1 > cam.Px) zs.push((cam.W - cam.Px) / (lx1 - cam.Px));
+      if (ly0 < cam.Py) zs.push(cam.Py / (cam.Py - ly0));
+      if (ly1 > cam.Py) zs.push((cam.H - cam.Py) / (ly1 - cam.Py));
+      const zc = Math.max(1.0001, Math.min(...zs, cam.z1));
+      const qc = Math.log(zc) / Math.log(cam.z1);
+      withMove = 1 - ease('sine.inOut')(clamp(cam.q / (0.9 * qc)));
+    }
+    const a = Math.min(clamp(d / Math.min(ramp, d0)), withMove);
+    if (a < 1) set(el, { opacity: a.toFixed(4) });
+  }
+}
+
+/** Set opacity on everything in `scene` except the given elements and their ancestors. */
+function fadeAround(scene, keep, alpha, set) {
+  const path = new Set();
+  for (const el of keep) for (let e = el; e && e !== scene; e = e.parentElement) path.add(e);
+  const walk = (node) => {
+    for (const c of node.children) {
+      if (keep.includes(c)) continue;
+      if (path.has(c)) walk(c);
+      else set(c, { opacity: alpha.toFixed(4) });
+    }
+  };
+  walk(scene);
+}
 
 /* ------------------------------------------------------------ manager */
 
@@ -281,8 +500,11 @@ function install() {
       set(tr.A, { 'z-index': tr.zA }); set(tr.B, { 'z-index': tr.zB });
       liftOverlays(tr, set);
       if (tr.gl) { jobs.push(runGL(tr, p, r, set)); continue; }
-      const ctx = { p, r, A: tr.A, B: tr.B, W: tr.W, H: tr.H, o: tr.o, id: tr.id, set, overlay: () => { tr.overlay = overlayFor(tr.parent); tr.overlay.style.display = ''; tr.overlay.style.zIndex = tr.zB + 1; return tr.overlay; } };
-      CSS[tr.type](ctx);
+      const ctx = { p, r, A: tr.A, B: tr.B, W: tr.W, H: tr.H, o: tr.o, id: tr.id, tr, set, overlay: () => { tr.overlay = overlayFor(tr.parent); tr.overlay.style.display = ''; tr.overlay.style.zIndex = tr.zB + 1; return tr.overlay; } };
+      // camera moves measure the page (a portal, shared elements): run them after the stage has seeked the
+      // CSS animations of this frame (handlers run first), so the measure never sees the previous frame
+      if (MEASURED.has(tr.type)) jobs.push(Promise.resolve().then(() => CSS[tr.type](ctx)));
+      else CSS[tr.type](ctx);
     }
     if (jobs.length) return Promise.all(jobs).then(() => undefined);
     return undefined;
@@ -392,7 +614,9 @@ window.__stLayers = {
 /**
  * Register a transition between two scenes.
  * opts: { from, to, type='crossfade', at, dur, ease, align='start'|'center'|'end', dir, blur,
- *         color, shape, count, center:[x%,y%], inverse, items, a, b, seed }
+ *         color, shape, count, center:[x%,y%], inverse, items, a, b, seed,
+ *         into (through: the portal selector), keep (through inverse: no dissolve), arc, gap (pan),
+ *         swap (match: 'cut' swaps shared elements at the midpoint instead of dissolving) }
  * Returns the transition record ({start, dur, type, ...}).
  */
 export function transition(opts = {}) {
@@ -418,7 +642,7 @@ export function transition(opts = {}) {
   const zBase = 1;
   // "wipe left" names a direction: that is the straight wipe (the default shape is a diagonal sweep)
   if (type === 'wipe' && opts.dir && !opts.shape) opts = { ...opts, shape: 'linear' };
-  const topOut = type === 'zoom-through' && opts.inverse;
+  const topOut = (type === 'zoom-through' || type === 'through') && opts.inverse;
   const tr = {
     id: 'st-tx-' + (++ids), type, A, B, parent, start, dur, W, H, o: opts,
     ease: ease(opts.ease || d.ease), seed: Number(opts.seed ?? ids),

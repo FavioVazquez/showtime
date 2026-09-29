@@ -7,13 +7,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
+from typing import Any, Dict
 
-from .common import ShowtimeError, print_json, warn
+from .common import ShowtimeError, human_size, print_json, warn
 
 COMMANDS = {
-    "audio": "Music (compose/library), sound effects, beats, mixing, loudness and mastering",
+    "audio": "Music (produced catalog/compose/library), sound effects, beats, mixing, credits, loudness, mastering",
 }
 
 _F = argparse.RawDescriptionHelpFormatter
@@ -34,11 +36,16 @@ def _unique(path: Path) -> Path:
 def register(sub: argparse._SubParsersAction) -> None:
     a = sub.add_parser("audio", help=COMMANDS["audio"], formatter_class=_F, description=(
         "Local audio toolkit.\n\n"
+        "  music      produced music catalog (Scott Buckley, Kevin MacLeod, CC0 ...): search, pick, fetch,\n"
+        "             credits; fetched on first use; also live Openverse search\n"
         "  compose    procedural music in 18 styles, exact length, stems + MIDI + beats.json\n"
         "  styles     list music styles (bpm, key, moods, what they suit)\n"
         "  sfx        render a procedural sound effect (prints its hit time)\n"
         "  sfx-types  list the 56 procedural effect types\n"
         "  lib        audio library: fetch, search, info, index, credits, stats, sources, generate\n"
+        "  packs      extra sound-effect packs (CC0 foley, UI, impacts, ambience), fetched on first use\n"
+        "  credits    credits.txt + description block + end-card line for a mix report or ids\n"
+        "  cuts       music-led cut plan: the excerpt of a track and scene changes on its phrases\n"
         "  beats      beat grid, downbeats, onsets, energy, sections, key -> beats.json\n"
         "  fit        loop or trim music to an exact length on bar lines\n"
         "  mix        render an audio/mix.json (ducking, hit alignment, loudness) + report\n"
@@ -46,6 +53,7 @@ def register(sub: argparse._SubParsersAction) -> None:
         "  master     normalise a file to a loudness target (default -14 LUFS / -1 dBTP)\n"
         "  musicgen   optional MusicGen draft music (non-commercial weights)"),
         epilog="Examples:\n"
+               "  showtime audio music pick --for launch --dur 45             # a produced track for a launch film\n"
                "  showtime audio compose --style upbeat-tech --dur 30 --sections 0:intro,8:build,16:drop,26:outro -o bed.wav\n"
                "  showtime audio sfx whoosh --dur 1.2 -o whoosh.wav\n"
                "  showtime audio lib search whoosh --kind sfx --limit 5\n"
@@ -114,7 +122,37 @@ def register(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_sfx_types)
 
+    _register_music(s)
     _register_lib(s)
+    _register_packs(s)
+    _register_credits(s)
+
+    p = s.add_parser("cuts", help="music-led cut plan: excerpt + scene changes on phrase starts, swell on the end card",
+                     formatter_class=_F, description=(
+        "Pick the excerpt of a produced track that fits a short film and put the scene changes on its\n"
+        "phrase starts (4-bar boundaries), with the track's biggest swell where the end card starts.\n"
+        "The excerpt is scored for a calm-to-loud shape, no silence under the hook, no dropouts and an\n"
+        "end on a phrase. TRACK is a catalog id (`showtime audio music search`), a file, or nothing:\n"
+        "then the best catalog track --for the use (default launch) is picked and fetched.\n\n"
+        "--apply <project> moves the project's scenes to the cuts (like `showtime retime --cuts`) and\n"
+        "writes the excerpt as the music track of its audio/mix.json (effects and voice stay); an\n"
+        "element with data-credit on the page gets the music's short credit line."),
+        epilog="Examples:\n"
+               "  showtime audio cuts --for launch --dur 30 --scenes 5            # plan only\n"
+               "  showtime audio cuts buckley-with-these-hands --apply <job>/project\n"
+               "  showtime audio cuts music/theme.mp3 --dur 24 --scenes 4 --end-card 5 --json\n"
+               "  showtime audio cuts --apply <job>/project --offset 142.2        # keep a chosen excerpt")
+    p.add_argument("track", nargs="?", help="catalog id or audio file (default: pick --for USE)")
+    p.add_argument("--for", dest="use", default="launch", help="catalog use when no TRACK is given (default launch)")
+    p.add_argument("--dur", "-d", type=float, help="film length in seconds (default: the project's)")
+    p.add_argument("--scenes", "-n", type=int, help="number of scenes (default: the project's, else 5)")
+    p.add_argument("--end-card", type=float, metavar="S", help="length of the end card (default 20%% of the film, 4-7 s)")
+    p.add_argument("--hook", type=float, metavar="S", help="length of the opening scene (default 16%% of the film, 3.5-6 s)")
+    p.add_argument("--offset", type=float, metavar="S", help="use the excerpt starting here instead of searching")
+    p.add_argument("--apply", metavar="PROJECT", help="retime this project's scenes to the cuts and set its music track")
+    p.add_argument("--dry-run", action="store_true", help="with --apply: show the changes, write nothing")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_cuts)
 
     p = s.add_parser("beats", help="analyse music: beats, downbeats, onsets, energy, sections, key", formatter_class=_F,
                      description="Analyse a music file and write beats.json. `rhythmic`/`pacing` say whether hard "
@@ -206,10 +244,189 @@ def register(sub: argparse._SubParsersAction) -> None:
     a.set_defaults(func=lambda args: _group_help(a))
 
 
+def _music_filters(p) -> None:
+    p.add_argument("--for", dest="use", help="what the music is for: launch, trailer, explainer, tutorial, data, "
+                   "documentary, story, promo, social, product-demo, tech, background (see `music presets`)")
+    p.add_argument("--shelf", help="cinematic, inspiring, ambient, corporate-tech, upbeat, documentary, tension, "
+                   "playful, lofi, piano, orchestral (comma list)")
+    p.add_argument("--mood", help="e.g. hopeful, calm, epic, dark (comma list)")
+    p.add_argument("--energy", help="0..1 or a range, e.g. 0.2-0.5")
+    p.add_argument("--dur", type=float, help="the video's length in seconds (ranks tracks that cover it)")
+    p.add_argument("--min-dur", type=float)
+    p.add_argument("--max-dur", type=float)
+    p.add_argument("--vocals", help="none, some, lead (comma list; explainer presets allow none only)")
+    p.add_argument("--source", help="buckley, incompetech, wikimedia, archive (comma list)")
+    p.add_argument("--license", help="cc-by, cc0, pd, CC-BY-4.0 ... (comma list)")
+    p.add_argument("--ending", help="clean (a final hit and ring-out), soft (fade or quiet outro), cut, unknown")
+    p.add_argument("--all", action="store_true", help="include tracks you vetoed")
+
+
+def _register_music(s) -> None:
+    m = s.add_parser("music", help="produced music catalog: search, pick, fetch, credits, veto", formatter_class=_F,
+                     description="A curated catalog of produced recordings (Scott Buckley, Kevin MacLeod, CC0 and "
+                                 "public-domain recordings), tagged by shelf, mood, energy and use. "
+                                 "Nothing is bundled: a track is fetched from its creator's site the first time it is "
+                                 "used (\"fetching X (N MB) for Y\"), checked against its pinned sha256 and kept in "
+                                 "~/.showtime/music, so it works offline afterwards. Every mix that uses one writes the "
+                                 "exact credit into credits.txt and the description block of share.txt.",
+                     epilog="Examples:\n"
+                            "  showtime audio music pick --for launch --dur 45\n"
+                            "  showtime audio music search --for explainer --mood calm --limit 5\n"
+                            "  showtime audio music search hopeful piano\n"
+                            "  showtime audio music fetch buckley-with-these-hands\n"
+                            "  showtime audio music info buckley-with-these-hands\n"
+                            "  showtime audio music openverse calm cinematic piano    # live search beyond the catalog\n"
+                            "In a mix: {\"kind\": \"music\", \"catalog\": \"buckley-with-these-hands\", \"fit\": true}")
+    ms = m.add_subparsers(dest="music_cmd", metavar="<subcommand>")
+
+    p = ms.add_parser("search", help="search the catalog", formatter_class=_F,
+                      epilog="Examples:\n  showtime audio music search --for launch\n"
+                             "  showtime audio music search --shelf ambient,piano --energy 0-0.3 --dur 60\n"
+                             "  showtime audio music search epic --source buckley --json")
+    p.add_argument("words", nargs="*", help="words matched against title, artist, moods, uses, instruments")
+    _music_filters(p)
+    p.add_argument("--limit", "-n", type=int, default=12)
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_music_search)
+
+    p = ms.add_parser("pick", help="the best track for a use and length (optionally fetch it)", formatter_class=_F,
+                      epilog="Examples:\n  showtime audio music pick --for launch --dur 45\n"
+                             "  showtime audio music pick --for explainer --dur 90 --n 1    # the second-best\n"
+                             "  showtime audio music pick --for trailer --fetch --json")
+    p.add_argument("words", nargs="*")
+    _music_filters(p)
+    p.add_argument("--n", type=int, default=0, help="0 = best, 1 = second best ... (variety between videos)")
+    p.add_argument("--fetch", action="store_true", help="download it now (otherwise the mix fetches it on first use)")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_music_pick)
+
+    p = ms.add_parser("fetch", help="download tracks now (verified, cached)", formatter_class=_F,
+                      description="Download catalog tracks into ~/.showtime/music (sha256-verified). Mixes fetch on "
+                                  "first use anyway; this is for working offline later.",
+                      epilog="Examples:\n  showtime audio music fetch buckley-with-these-hands\n"
+                             "  showtime audio music fetch --for launch --limit 5\n"
+                             "  showtime audio music fetch --all                 # the whole catalog (see `music stats`)\n"
+                             "  showtime audio music fetch --all --seed /media/usb/showtime-seed")
+    p.add_argument("ids", nargs="*")
+    p.add_argument("--for", dest="use")
+    p.add_argument("--shelf")
+    p.add_argument("--limit", type=int, default=5, help="with --for/--shelf: how many (default 5)")
+    p.add_argument("--all", action="store_true", help="every active track in the catalog")
+    p.add_argument("--seed", action="append", metavar="DIR", help="folder with already-downloaded copies (offline)")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_music_fetch)
+
+    p = ms.add_parser("info", help="one track: tags, length, license, exact credit, cache state", formatter_class=_F,
+                      epilog="Examples:\n  showtime audio music info buckley-with-these-hands\n"
+                             "  showtime audio music info with-these-hands --path")
+    p.add_argument("id")
+    p.add_argument("--path", action="store_true", help="print only the cached file path (fetches it first)")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_music_info)
+
+    p = ms.add_parser("veto", help="never pick a track again (or --undo)", formatter_class=_F,
+                      epilog="Examples:\n  showtime audio music veto incompetech-cipher --reason \"too busy\"\n"
+                             "  showtime audio music veto --import vetoes.json     # the list the curation board exports\n"
+                             "  showtime audio music veto incompetech-cipher --undo")
+    p.add_argument("ids", nargs="*")
+    p.add_argument("--reason", default="")
+    p.add_argument("--undo", action="store_true")
+    p.add_argument("--import", dest="import_file", help="a JSON list of ids (or {\"vetoed\": [...]})")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_music_veto)
+
+    p = ms.add_parser("stats", help="catalog counts by shelf, source and license; cache size", formatter_class=_F)
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_music_stats)
+
+    p = ms.add_parser("presets", help="what each --for use means (shelves, energy, vocals)", formatter_class=_F)
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_music_presets)
+
+    p = ms.add_parser("check", help="(maintainers) validate the catalog; --online also checks every URL",
+                      formatter_class=_F)
+    p.add_argument("--online", action="store_true", help="HEAD every file URL (slow, polite; a few minutes)")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_music_check)
+
+    p = ms.add_parser("openverse", help="live search of CC BY / CC0 music on Openverse (beyond the catalog)",
+                      formatter_class=_F,
+                      description="Search Openverse (Freesound and Wikimedia Commons) for CC BY and CC0 audio. "
+                                  "Anonymous use is limited (about 20 searches a minute, 200 a day) and responses are "
+                                  "cached for a day. Nobody has listened to these: preview before using one. "
+                                  "--fetch downloads one result with a .license.json, so the mix credits it. "
+                                  "Jamendo is left out unless you ask (--source jamendo): its own terms add "
+                                  "conditions to commercial use and its licensing program can claim videos.",
+                      epilog="Examples:\n  showtime audio music openverse calm piano --limit 5\n"
+                             "  showtime audio music openverse whoosh --license cc0\n"
+                             "  showtime audio music openverse --fetch openverse:b8d9b313-... -o my-video/audio")
+    p.add_argument("words", nargs="*")
+    p.add_argument("--source", help="freesound, wikimedia (default: both); jamendo only on request (check the "
+                   "artist's terms before publishing)")
+    p.add_argument("--category", default="", help="music, sound_effect ... (Openverse only sets it on Jamendo results)")
+    p.add_argument("--license", default="by,cc0", help="by, cc0, pdm (comma list; default by,cc0)")
+    p.add_argument("--min-dur", type=float)
+    p.add_argument("--max-dur", type=float)
+    p.add_argument("--limit", "-n", type=int, default=10)
+    p.add_argument("--fetch", metavar="ID", help="download this result (openverse:<uuid>)")
+    p.add_argument("-o", "--output", default=".", help="folder for --fetch (default: here)")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_music_openverse)
+
+    m.set_defaults(func=lambda args: _group_help(m))
+
+
+def _register_packs(s) -> None:
+    k = s.add_parser("packs", help="extra sound-effect packs, fetched on first use", formatter_class=_F,
+                     description="CC0 (and credited CC BY) sound-effect packs beyond the library's core tier: foley "
+                                 "(paper, keyboards, typewriter, cloth, coins), UI, impacts, sci-fi, whooshes and "
+                                 "ambiences. A mix that names a pack item, or searches a category with nothing "
+                                 "installed, fetches the pack itself; this command does it ahead of time.",
+                     epilog="Examples:\n  showtime audio packs list\n  showtime audio packs list --category foley\n"
+                            "  showtime audio packs fetch oga-keyboard-typing\n"
+                            "  showtime audio packs fetch --category ui\n  showtime audio packs fetch --all")
+    ks = k.add_subparsers(dest="packs_cmd", metavar="<subcommand>")
+    p = ks.add_parser("list", help="packs, size, license, installed or not")
+    p.add_argument("words", nargs="*")
+    p.add_argument("--category")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_packs_list)
+    p = ks.add_parser("fetch", help="download + analyse packs into the library")
+    p.add_argument("ids", nargs="*", help="pack ids (globs ok) or words")
+    p.add_argument("--category")
+    p.add_argument("--all", action="store_true")
+    p.add_argument("--force", action="store_true")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_packs_fetch)
+    k.set_defaults(func=lambda args: _group_help(k))
+
+
+def _register_credits(s) -> None:
+    p = s.add_parser("credits", help="credits.txt, description block and end card for a mix", formatter_class=_F,
+                     description="Write the credits a video's sounds require: credits.txt (exact attribution lines, "
+                                 "courtesy credits, an optional end-card line, Content ID notes) and a block in "
+                                 "share.txt between '--- Credits (keep in the video description) ---' and "
+                                 "'--- end credits ---' (replaced on every run; the rest of share.txt is kept). "
+                                 "`showtime render` runs this for you; a CC BY sound without credit text is an error.",
+                     epilog="Examples:\n  showtime audio credits --report my-video/audio/mix.report.json --out-dir my-video\n"
+                            "  showtime audio credits buckley-with-these-hands incompetech-inspired\n"
+                            "  showtime audio credits --report mix.report.json --end-card")
+    p.add_argument("ids", nargs="*", help="catalog track ids or library item ids (instead of --report)")
+    p.add_argument("--report", help="a mix.report.json")
+    p.add_argument("--out-dir", help="write credits.txt (and the share.txt block) into this folder")
+    p.add_argument("--name", default="credits.txt", help="credits file name (default credits.txt)")
+    p.add_argument("--merge", help="an existing credits file whose other lines are kept (render passes its own)")
+    p.add_argument("--no-share", action="store_true", help="do not touch share.txt")
+    p.add_argument("--end-card", action="store_true", help="print only the end-card line(s)")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_credits)
+
+
 def _register_lib(s) -> None:
     lib = s.add_parser("lib", help="audio library: fetch, search, info, index, credits, stats", formatter_class=_F,
                        description="The local audio library in ~/.showtime/library (CC0 / CC-BY / generated).",
                        epilog="Examples:\n  showtime audio lib fetch                    # core tier, ~249 MB, ~10-15 min\n"
+                              "  showtime audio lib fetch --part music-epic  # one part of the library (see --list-parts)\n"
                               "  showtime audio lib search --kind music --mood uplifting --bpm 100-130 --min-dur 60\n"
                               "  showtime audio lib search riser --kind sfx\n"
                               "  showtime audio lib info incompetech-voxel-revolution")
@@ -220,8 +437,14 @@ def _register_lib(s) -> None:
                                   "first download and verified after), transcode music to Opus, analyse every "
                                   "file, render the generated tier, and write catalog.json + CREDITS-SOURCES.md. "
                                   "Re-running skips what is installed.",
-                      epilog="Tiers: core (~249 MB), extended (core + ~1 GB more music).")
+                      epilog="Tiers: core (~249 MB), extended (core + ~200 MB more music and effects).\n"
+                             "Parts: the starter part (~41 MB) arrives on first use of the library; category parts\n"
+                             "(sfx, ambience, music-upbeat, music-calm, music-epic) arrive when a search needs them,\n"
+                             "or now with --part NAME. (Extra sound-effect packs: `showtime audio packs`.)")
     p.add_argument("--tier", default="core", choices=["core", "extended"])
+    p.add_argument("--part", help="fetch only this part (starter, sfx, ambience, music-upbeat, music-calm, music-epic, "
+                                  "extended; comma list ok)")
+    p.add_argument("--list-parts", action="store_true", help="list the parts, their sizes and what is installed")
     p.add_argument("--only", help="comma list of source ids (globs ok)")
     p.add_argument("--no-generated", action="store_true", help="skip rendering procedural SFX + composed beds")
     p.add_argument("--force", action="store_true", help="re-install even if present")
@@ -394,6 +617,70 @@ def cmd_sfx_types(args) -> int:
     return 0
 
 
+def cmd_cuts(args) -> int:
+    from .audio import cutplan
+    from .common import read_json
+    proj = Path(args.apply).expanduser().resolve() if args.apply else None
+    dur, scenes = args.dur, args.scenes
+    if proj is not None:
+        if proj.is_file() and proj.name == "showtime.json":
+            proj = proj.parent
+        cfg = read_json(proj / "showtime.json", None)
+        if not cfg:
+            raise ShowtimeError("no showtime.json in %s" % proj, hint="--apply takes the project folder")
+        dur = dur or float(cfg.get("duration") or 0) or None
+        if scenes is None:
+            from .cli_core import _Tags, _split_tops
+            page = proj / str(cfg.get("page") or "index.html")
+            if page.is_file():
+                scenes = len(_split_tops(_Tags(page.read_text(encoding="utf-8")).resolve())[0]) or None
+    if not dur:
+        raise ShowtimeError("how long is the film?", hint="pass --dur 30, or --apply <project> to read it")
+    scenes = scenes or 5
+    source: Dict[str, Any]
+    credit = None
+    label = ""
+    if args.track and Path(args.track).expanduser().is_file():
+        path = Path(args.track).expanduser().resolve()
+        rel = path
+        if proj is not None:
+            try:
+                rel = Path(os.path.relpath(str(path), str(proj)))
+            except ValueError:
+                rel = path
+        source = {"file": rel.as_posix()}
+        label = path.name
+    else:
+        from .audio import music
+        t = music.get(args.track) if args.track else music.pick(use=args.use, dur=dur)
+        path = music.fetch(t, purpose="the cut plan")
+        source = {"catalog": t["id"]}
+        credit = music.end_card_line(t)
+        label = "%s (%s)" % (t["id"], t["artist"])
+    an = cutplan.analysis_for(path)
+    p = cutplan.plan(an, float(dur), int(scenes), end_card=args.end_card, offset=args.offset, hook=args.hook)
+    p["track"] = label
+    p["source"] = source
+    if credit:
+        p["credit_line"] = credit
+    if proj is not None:
+        p["applied"] = cutplan.apply(p, proj, source, credit_line=credit, dry_run=args.dry_run)
+    if args.json:
+        print_json(p)
+        return 0
+    print(cutplan.summary(p, label))
+    print("mix track: " + json.dumps(cutplan.music_track(p, source)))
+    if proj is not None:
+        for line in p["applied"]["changes"]:
+            print(("  would " if args.dry_run else "  ") + line)
+        if not args.dry_run:
+            print("next: showtime check %s" % proj)
+    else:
+        print("apply: showtime retime <project> --cuts %s -d %g   (or rerun with --apply <project>)"
+              % (",".join("%g" % c for c in p["cuts"]), p["dur"]))
+    return 0
+
+
 def cmd_beats(args) -> int:
     from .audio import beats
     from .common import write_json
@@ -528,7 +815,24 @@ def cmd_musicgen(args) -> int:
 
 
 def cmd_lib_fetch(args) -> int:
-    from .audio import library
+    from .audio import library, libparts
+    if args.list_parts:
+        rows = libparts.status()
+        if args.json:
+            print_json(rows)
+        else:
+            for r in rows:
+                print("%-13s %9s  %-9s %s" % (r["id"], human_size(r["bytes"]), "installed" if r["ready"] else
+                                              "missing %s" % human_size(r["missing_bytes"]), r["description"]))
+        return 0
+    if args.part:
+        rc = 0
+        for name in [x.strip() for x in args.part.split(",") if x.strip()]:
+            rep = libparts.ensure(name, "`audio lib fetch --part %s`" % name)
+            print("%s: fetched %d sources%s" % (name, rep.get("fetched", 0),
+                                                ("; %d failed" % len(rep["failed"])) if rep.get("failed") else ""))
+            rc = rc or (1 if rep.get("failed") else 0)
+        return rc
     only = [x.strip() for x in args.only.split(",")] if args.only else None
     rep = library.fetch(args.tier, only=only, generated=not args.no_generated, force=args.force,
                         keep_downloads=args.keep_downloads, workers=args.workers)
@@ -553,11 +857,19 @@ def cmd_lib_search(args) -> int:
     if args.json:
         print_json([{"id": r["id"], "score": r["score"], "path": str(library.item_path(r["item"])), **r["item"]} for r in res])
         return 0
+    hint = None
+    if (args.category or (args.kind or "") in ("sfx", "ambience")) and len(res) < args.limit:
+        from .audio import packs
+        hint = packs.hint_for(args.category, " ".join(args.words) or None)
     if not res:
         print("no matches (loosen the filters, or run `showtime audio lib stats`)", file=sys.stderr)
+        if hint:
+            print(hint, file=sys.stderr)
         return 1
     for r in res:
         print(str(library.item_path(r["item"])) if args.paths else search.row(r))
+    if hint:
+        print(hint, file=sys.stderr)
     return 0
 
 
@@ -645,4 +957,303 @@ def cmd_lib_pin(args) -> int:
     from .audio import library
     only = [x.strip() for x in args.only.split(",")] if args.only else None
     print_json(library.pin(Path(args.manifest) if args.manifest else None, args.tier, only))
+    return 0
+
+
+# ------------------------------------------------------------------------------------------ produced music
+def _music_kw(args) -> dict:
+    return dict(use=args.use, shelf=args.shelf, mood=args.mood, energy=args.energy, dur=args.dur, min_dur=args.min_dur,
+                max_dur=args.max_dur, vocals=args.vocals, source_id=args.source, license=args.license,
+                ending=args.ending, include_vetoed=args.all)
+
+
+def _fmt_dur(sec: float) -> str:
+    return "%d:%02d" % (int(sec) // 60, int(round(sec)) % 60)
+
+
+def _music_row(t: dict, score=None) -> str:
+    from .audio import music
+    cached = "cached" if music.is_cached(t) else "%.0f MB" % (t["bytes"] / 1e6)
+    lic = music.LICENSES[t["license"]][1]
+    return "%-40s %5s  %-14s e%.2f %-6s %-9s %-30s %s" % (
+        t["id"][:40], _fmt_dur(t["duration"]), t["shelf"], t["energy"], t["tempo"], lic, ", ".join(t["moods"][:3])[:30],
+        cached)
+
+
+def cmd_music_search(args) -> int:
+    from .audio import music
+    res = music.search(" ".join(args.words) or None, limit=args.limit, **_music_kw(args))
+    if args.json:
+        print_json([{"id": r["track"]["id"], "score": r["score"], "why": r["why"], "cached": music.is_cached(r["track"]),
+                     **r["track"]} for r in res])
+        return 0 if res else 1
+    if not res:
+        print("no matches (loosen the filters; `showtime audio music presets` lists the uses)", file=sys.stderr)
+        return 1
+    for r in res:
+        print(_music_row(r["track"]))
+    print("%d shown. Details and the exact credit: showtime audio music info <id>" % len(res))
+    return 0
+
+
+def cmd_music_pick(args) -> int:
+    from .audio import music
+    t = music.pick(n=args.n, words=" ".join(args.words) or None, **_music_kw(args))
+    path = music.fetch(t, purpose="music pick") if args.fetch else None
+    item = music.credit_item(t)
+    if args.json:
+        print_json({**t, "path": str(path) if path else None, "cached": music.is_cached(t), "credit": item})
+        return 0
+    print("%s  \u201c%s\u201d by %s, %s, %s, energy %.2f" % (t["id"], t["title"], t["artist"], _fmt_dur(t["duration"]),
+                                                             t["shelf"], t["energy"]))
+    print("  moods: %s   ending: %s   vocals: %s" % (", ".join(t["moods"]), t["ending"], t["vocals"]))
+    print("  preview: %s" % t["landing_url"])
+    if path:
+        print("  file: %s" % path)
+    else:
+        print("  mix track: {\"kind\": \"music\", \"catalog\": \"%s\", \"fit\": true}   (fetched on first use, %s)"
+              % (t["id"], "cached" if music.is_cached(t) else "%.0f MB" % (t["bytes"] / 1e6)))
+    print("  credit: " + (item["attribution"] or item["credit_optional"] or "").replace("\n", " / "))
+    if item.get("content_id") == "smart-cid-releasable":
+        print("  note: Smart Content ID: keep the credit in the video description (render puts it in share.txt)")
+    return 0
+
+
+def cmd_music_fetch(args) -> int:
+    from .audio import music
+    if args.all:
+        ts = music.tracks(include_vetoed=False)
+    elif args.ids:
+        ts = [music.get(i) for i in args.ids]
+    elif args.use or args.shelf:
+        ts = [r["track"] for r in music.search(use=args.use, shelf=args.shelf, limit=args.limit)]
+    else:
+        raise ShowtimeError("name tracks to fetch, or use --for/--shelf/--all",
+                            hint="showtime audio music fetch buckley-with-these-hands")
+    rep = music.fetch_many(ts, seeds=args.seed, purpose="offline use")
+    if args.json:
+        print_json(rep)
+    else:
+        print("fetched %d, already cached %d, failed %d  (%s)" % (len(rep["fetched"]), len(rep["cached"]), len(rep["failed"]),
+                                                                 music.cache_root()))
+        for f in rep["failed"]:
+            print("  FAILED %s: %s" % (f["id"], f["error"]))
+    return 1 if rep["failed"] and not (rep["fetched"] or rep["cached"]) else 0
+
+
+def cmd_music_info(args) -> int:
+    from .audio import music
+    t = music.get(args.id)
+    if args.path:
+        print(music.fetch(t, purpose="music info --path"))
+        return 0
+    item = music.credit_item(t)
+    if args.json:
+        print_json({**t, "cached": music.is_cached(t), "cache_path": str(music.cached_path(t)), "credit": item})
+        return 0
+    for k in ("id", "title", "artist", "composer", "source", "duration", "shelf", "moods", "energy", "tempo", "uses",
+              "vocals", "instruments", "ending", "quiet_intro_s", "highlight_s", "loops", "bpm", "license",
+              "content_id", "landing_url", "notes"):
+        v = t.get(k)
+        if k == "source":
+            v = music.source(t).get("name") or v
+        if k == "duration":
+            v = "%s (%.1f s)" % (_fmt_dur(v), v)
+        if k == "quiet_intro_s":
+            k, v = "quiet intro", ("%.0f s before it is clearly audible" % v) if v and v >= 3 else None
+        if k == "highlight_s":
+            k, v = "highlight", ("%s: its loudest stretch; start a short cut there with \"offset\": \"highlight\""
+                                 % _fmt_dur(v)) if v and v >= 10 else None
+        if v not in (None, [], ""):
+            print("%-12s %s" % (k, ", ".join(map(str, v)) if isinstance(v, list) else v))
+    print("%-12s %s" % ("file", music.cached_path(t) if music.is_cached(t) else "not fetched yet (%.1f MB, on first use)"
+                        % (t["bytes"] / 1e6)))
+    if item["attribution"]:
+        print("CREDIT REQUIRED (%s):\n  %s" % (", ".join(t["placements"]), item["attribution"].replace("\n", "\n  ")))
+    else:
+        print("credit (optional): %s" % item["credit_optional"])
+    print("end card:    %s" % item["end_card"])
+    if item.get("content_id_note"):
+        print("content id:  %s" % item["content_id_note"])
+    if t["id"] in music.vetoed_ids():
+        print("VETOED: this track is never picked automatically (`audio music veto %s --undo`)" % t["id"])
+    return 0
+
+
+def cmd_music_veto(args) -> int:
+    from .audio import music
+    from .common import read_json
+    ids = list(args.ids)
+    reasons = {}
+    if args.import_file:
+        d = read_json(args.import_file)
+        ids += list(d.get("vetoed") if isinstance(d, dict) else d)
+        reasons = dict(d.get("reasons") or {}) if isinstance(d, dict) else {}
+    if reasons and not args.undo:
+        for i in ids:
+            rep = music.veto([i], reason=reasons.get(i) or args.reason)
+        print_json(rep) if args.json else print("vetoed %d track(s); %d vetoed in total (%s)" % (
+            len(ids), len(rep["vetoed"]), rep["file"]))
+        return 0
+    if not ids:
+        v = music.vetoed_ids()
+        print_json(v) if args.json else print("\n".join("%s  %s" % (k, x.get("reason", "")) for k, x in sorted(v.items()))
+                                              or "no vetoed tracks")
+        return 0
+    rep = music.veto(ids, reason=args.reason, undo=args.undo)
+    print_json(rep) if args.json else print("%s %d track(s); %d vetoed in total (%s)" % (
+        "restored" if args.undo else "vetoed", len(rep["changed"]), len(rep["vetoed"]), rep["file"]))
+    return 0
+
+
+def cmd_music_stats(args) -> int:
+    from .audio import music
+    st = music.stats()
+    if args.json:
+        print_json(st)
+        return 0
+    print("%d tracks, %.1f hours, %s if all fetched; %d cached in %s" % (st["tracks"], st["hours"], st["download_size"],
+                                                                         st["cached"], st["cache"]))
+    for k in ("shelf", "source", "license"):
+        print("  %-8s %s" % (k, ", ".join("%s %d" % kv for kv in sorted(st[k].items(), key=lambda z: -z[1]))))
+    if st["vetoed"]:
+        print("  vetoed   %s" % ", ".join(st["vetoed"]))
+    return 0
+
+
+def cmd_music_presets(args) -> int:
+    from .audio import music
+    ps = music.load_catalog().get("presets") or {}
+    if args.json:
+        print_json(ps)
+        return 0
+    for k, v in sorted(ps.items()):
+        print("%-13s shelves %-48s energy %.2f-%.2f  vocals %s" % (k, ",".join(v["shelves"]), v["energy"][0], v["energy"][1],
+                                                                   ",".join(v.get("vocals") or ["any"])))
+    return 0
+
+
+def cmd_music_check(args) -> int:
+    from .audio import music
+    errs = music.validate()
+    bad = []
+    if args.online:
+        import time as _t
+        import urllib.request
+        from .assets import net
+        for t in music.tracks():
+            try:
+                req = urllib.request.Request(t["file_url"], method="HEAD", headers={"User-Agent": net.USER_AGENT})
+                with urllib.request.urlopen(req, timeout=30, context=net._ssl_context()) as r:
+                    size = int(r.headers.get("Content-Length") or -1)
+                if size not in (-1, t["bytes"]):
+                    bad.append("%s: size %d, catalog %d" % (t["id"], size, t["bytes"]))
+            except Exception as e:  # noqa: BLE001
+                bad.append("%s: %s" % (t["id"], e))
+            _t.sleep(float((music.source(t).get("fetch") or {}).get("delay_s", 1.0)))
+    if args.json:
+        print_json({"errors": errs, "unreachable": bad})
+    else:
+        for e in errs + bad:
+            print(e)
+        print("catalog: %d problem(s)%s" % (len(errs), "; %d URL problem(s)" % len(bad) if args.online else ""))
+    return 1 if errs or bad else 0
+
+
+def cmd_music_openverse(args) -> int:
+    from .audio import openverse
+    if args.fetch:
+        r = openverse.fetch(args.fetch, Path(args.output))
+        print_json(r) if args.json else print("%s\n  license: %s\n  credit (written to %s): %s" % (
+            r["path"], r["license"], Path(r["license_file"]).name, r["credit"]))
+        return 0
+    res = openverse.search(" ".join(args.words), category=args.category, licenses=args.license, limit=args.limit,
+                           min_dur=args.min_dur, max_dur=args.max_dur, source=args.source)
+    if args.json:
+        print_json([{k: v for k, v in r.items() if k != "_raw"} for r in res])
+        return 0 if res else 1
+    if not res:
+        print("no CC BY / CC0 results", file=sys.stderr)
+        return 1
+    for r in res:
+        print("%s  %s  %-10s %s%s\n    \u201c%s\u201d by %s  (%s)" % (
+            r["id"], _fmt_dur(r["duration"]), r["license"], r["source"], "  VOCALS" if r["vocals"] else "",
+            r["title"], r["creator"], r["landing_url"]))
+    print("Not curated: preview first. Download one with: showtime audio music openverse --fetch <id> -o <project>/audio")
+    return 0
+
+
+def cmd_packs_list(args) -> int:
+    from .audio import packs
+    have = set(packs.installed_ids())
+    rows = packs.matching(args.words or None, args.category)
+    if args.json:
+        print_json([dict(p, installed=p["id"] in have) for p in rows])
+        return 0
+    from .common import human_size
+    for p in rows:
+        print("%-40s %-10s %4d files %9s  %-10s %s" % (p["id"], p["category"], p.get("files") or 0, human_size(p["bytes"]),
+                                                      p["license"], "installed" if p["id"] in have else ""))
+    print("%d pack(s). Fetch: showtime audio packs fetch <id> (or --category X / --all)" % len(rows))
+    return 0
+
+
+def cmd_packs_fetch(args) -> int:
+    from .audio import packs
+    if args.all:
+        pks = packs.load()["packs"]
+    else:
+        pks = []
+        for w in args.ids:
+            for p in packs.matching([w]):
+                if p not in pks:
+                    pks.append(p)
+        if args.category:
+            pks += [p for p in packs.matching(None, args.category) if p not in pks]
+    if not pks:
+        raise ShowtimeError("no pack matches", hint="list them: showtime audio packs list")
+    rep = packs.install(pks, reason="audio packs fetch", force=args.force)
+    if args.json:
+        print_json(rep)
+    else:
+        print("installed %d, already present %d, failed %d" % (len(rep["installed"]), len(rep["skipped"]), len(rep["failed"])))
+        for f in rep["failed"]:
+            print("  FAILED %s: %s" % (f["id"], f["error"]))
+    return 1 if rep["failed"] and not rep["installed"] else 0
+
+
+def cmd_credits(args) -> int:
+    from .audio import credits as cr
+    from .audio import library, music
+    items = []
+    if args.report:
+        items += cr.items_from_report(args.report)
+    for i in args.ids:
+        try:
+            items.append(music.credit_item(music.get(i)))
+        except ShowtimeError:
+            it = library.get_item(i)
+            items.append({"id": it["id"], "title": it.get("title"), "artist": it.get("artist"), "license": it.get("license"),
+                          "attribution": it.get("attribution"), "attribution_required": it.get("attribution_required"),
+                          "credit_optional": it.get("credit_optional")})
+    extra = cr.lines_from_file(Path(args.merge)) if args.merge else []
+    r = cr.render(items, extra)
+    if args.end_card:
+        print("\n".join(r["end_card"]) or "(no music needs an end-card line)")
+        return 0
+    res = {"required": r["required"], "end_card": r["end_card"], "notes": r["notes"], "description": r["description"]}
+    if args.out_dir:
+        res.update(cr.write(Path(args.out_dir), items, credits_name=args.name, share=not args.no_share, extra_lines=extra))
+    if args.json:
+        print_json(res)
+        return 0
+    if args.out_dir:
+        if res.get("credits_file"):
+            print("credits: %s" % res["credits_file"])
+        if res.get("share_file"):
+            print("share:   %s (credits block updated)" % res["share_file"])
+    else:
+        print(r["credits_txt"].rstrip())
+    for n in r["notes"]:
+        warn(n)
     return 0

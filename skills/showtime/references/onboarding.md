@@ -29,8 +29,8 @@ Group the rows into what they mean for videos, not into package names:
 
 Then one decision, with the default recommended:
 
-> showtime needs a one-time install into `~/.showtime`: about 2.9 GB, usually 3-11 minutes. Nothing
-> outside that folder changes. Install the default now? (recommended)
+> showtime needs a one-time install into `~/.showtime`: about 0.6-0.9 GB of downloads, usually 2-6
+> minutes. Nothing outside that folder changes. Install the default now? (recommended)
 
 Use the numbers `setup --estimate` printed, not the ones in this file. Do not ask about tiers or extras
 up front: the default tier covers every workflow in SKILL.md, and extras are fetched when a feature
@@ -47,7 +47,12 @@ showtime doctor                # full check, including a real browser launch and
 - It needs **uv** and **Node.js 20+**. If either is missing, setup stops and prints the exact
   install command for this OS. Installing system software is the user's call: show them the command
   and let them run it (or run it only after they say yes), then run setup again.
-- A long setup should run in the background with progress checks, not block your turn.
+- A long setup should run in the background with progress checks, not block your turn:
+  `showtime setup --background`, then `showtime status <id> --wait 240` until it ends.
+- Inside an agent's sandbox (doctor fails `home writable` or `network` and names the host setting to
+  change): ask the user to run `showtime setup` once in their own terminal, or to change that setting;
+  or install into the project with `SHOWTIME_HOME=.showtime showtime setup` (showtime then finds
+  `./.showtime` by itself in that project).
 - The first doctor (or render) after a restart can take a few minutes while the OS checks native
   libraries, macOS especially; doctor says so and shows what it is checking. Tell the user it is
   not stuck; later runs take seconds.
@@ -60,13 +65,20 @@ Done when `showtime doctor` shows 0 fail. Warnings each come with a `fix:` line;
 
 Say this in two or three lines so nothing surprises the user later:
 
-| Works right after the core install | Fetched or installed on first use (with a one-line notice) |
+| Works right after the core install | Fetched automatically on first use (a one-line notice with the size) |
 |---|---|
-| HTML and canvas videos, all templates, preview, render, check, snap | the local audio library (`showtime audio lib fetch`, about 249 MB, about 10–15 min) |
-| generated music, all 56 effect types, mixing, mastering | Whisper turbo for the best multilingual transcripts (`showtime setup --with asr-turbo`) |
-| Kokoro voices (English, Spanish, more) with word timings | speaker labels (`--with diarize`), audio event tags (`--with events`) |
-| transcription with small models, footage edits, captions | Supertonic voices (`--with supertonic`), Piper voices, the English aligner (automatic) |
-| site capture, demo recording, auto zoom, fonts, icons, exports | background removal outside macOS (rembg, automatic; its default model is about 170 MB), DeepFilterNet (`--with deepfilter`) |
+| HTML and canvas videos, all templates, preview, render, check, snap | the audio library's starter part (~41 MB) on first library use; category parts, produced-music tracks and extra SFX packs when a mix or search needs them; all of it: `showtime audio lib fetch` (~249 MB) |
+| generated music, all 56 effect types, mixing, mastering | the transcription model, Parakeet v3 (~465 MB), before the first transcription; the Whisper engine + a Whisper model only for languages outside Parakeet's 25; the vocal separator (67 MB) for speech under loud music |
+| Kokoro voices (English, Spanish, more) with word timings | Manim (~60 MB) before the first Manim scene; icons one at a time (a few KB each) |
+| footage edits, captions (transcripts after the first-use fetch) | Piper voices, the English aligner, background removal outside macOS (rembg; its model is about 170 MB) |
+| site capture, demo recording, auto zoom, fonts, exports | a headed browser (`--headed` without Chrome/Edge: full Chromium, ~200 MB) |
+
+Still explicit (`showtime setup --with <name>`): Whisper turbo (`asr-turbo`), speaker labels (`diarize`),
+audio event tags (`events`), Supertonic voices (`supertonic`), DeepFilterNet (`deepfilter`).
+`showtime setup --plan` lists every component with its size, URL, sha256 and when it is fetched. On a
+machine that will be offline later, run `showtime setup --full` while online (everything now, nothing
+fetched later), or copy the files from `showtime setup --plan --urls` and use `--seed DIR`. A
+first-use fetch while offline fails with exit code 3 and says exactly that.
 
 When a feature needs a missing extra, the command fails with exit code 3 and prints the exact
 `showtime setup --with <name>` line and its size. Relay it, ask, install, continue. Setting

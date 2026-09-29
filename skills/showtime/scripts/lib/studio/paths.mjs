@@ -1,8 +1,8 @@
 // Studio folder layout, job resolution (shared with render.mjs) and small file helpers (Node stdlib only).
 //
 //   showtime-out/<job>/studio/
-//     brief.md  decisions.md          Claude's notes (current truth / append-only log)
-//     board.json                      the board Claude authors (schema showtime.studio.board/1)
+//     brief.md  decisions.md          the agent's notes (current truth / append-only log)
+//     board.json                      the board the agent authors (schema showtime.studio.board/1)
 //     feedback.json                   reactions from the page (append-only events + derived state)
 //     board.html                      static copy of the board (works from disk, no server)
 //     media/                          CONTENT: everything the page may load (frames, thumbs, audio, animatic, fonts)

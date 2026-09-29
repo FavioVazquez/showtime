@@ -523,6 +523,9 @@ def align_audio(x: np.ndarray, sr: int, text: str, lang: str = "en", method: str
                 if words is not None and len(words) != len(tokens):
                     words = None
             elif m == "whisper":
+                if method == "whisper" and allow_download:   # asked for by name: fetch it on first use
+                    from .. import lazy
+                    lazy.ensure_asr("whisper", "small.en" if base_lang(lang) == "en" else "*", "Whisper alignment")
                 words = align_whisper(path or "", x, sr, tokens, lang)
             else:
                 words = align_even(x, sr, tokens)

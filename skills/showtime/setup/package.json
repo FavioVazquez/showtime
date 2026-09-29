@@ -1,8 +1,8 @@
 {
   "name": "showtime-runtime",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "Node dependencies for showtime (installed by setup.py into ~/.showtime/node). Versions are pinned exactly.",
+  "description": "Node dependencies for showtime (installed by setup.py into ~/.showtime/node). Versions are pinned exactly. Icon sets are not installed here: they are fetched per icon on first use (manifest.json \"icon_packs\").",
   "license": "MIT",
   "type": "module",
   "engines": {
@@ -25,8 +25,6 @@
     "@fontsource/bebas-neue": "5.3.0",
     "@fontsource/ibm-plex-mono": "5.3.0",
     "@fontsource/instrument-serif": "5.3.0",
-    "@phosphor-icons/core": "2.1.1",
-    "@tabler/icons": "3.48.0",
     "animejs": "4.5.0",
     "culori": "4.0.2",
     "d3": "7.9.0",
@@ -34,11 +32,9 @@
     "flubber": "0.4.2",
     "katex": "0.18.9",
     "lottie-web": "5.13.0",
-    "lucide-static": "1.48.0",
     "playwright": "1.63.0",
     "roughjs": "4.6.6",
     "shiki": "4.4.3",
-    "simple-icons": "16.33.0",
     "three": "0.186.1",
     "world-atlas": "2.0.2"
   }

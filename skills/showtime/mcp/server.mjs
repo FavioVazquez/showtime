@@ -13,6 +13,19 @@
 // user's /config values as SHOWTIME_OPT_* variables (see mcpServers in .claude-plugin/plugin.json). They are saved to
 // ~/.showtime/plugin-settings.json (SHOWTIME_SETTINGS overrides the location), which the launcher
 // reads on every run, so `showtime ...` in a terminal honours the same defaults.
+//
+// Any host: every variable is optional. A value a host left unexpanded (`${CLAUDE_PROJECT_DIR}`,
+// `${user_config.voice}`) counts as unset, and so does an empty one: the project folder then falls back
+// to the working directory (or, when a host starts servers inside the plugin's own folder, to the folder
+// the host was started from) and every option to its built-in default.
+//
+// Long tools (render, transcribe, audio_compose ... every tool marked `long`) run as background runs
+// (lib/st/runs.py, the same as `showtime <cmd> --background`). The call waits for the result as before,
+// but only up to a limit: a host that stops tool calls after a minute gets a task id after about 20 s
+// instead, and the `status` tool with {"task": id} reports progress and, once done, the full result.
+// Claude Code, which waits as long as a tool needs, keeps getting the result in one call.
+// SHOWTIME_MCP_WAIT=<seconds> sets the limit (`none` = always wait); `background: true` on a call returns
+// the task id at once. Progress notifications are sent either way.
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -92,21 +105,73 @@ function readSettings() {
   } catch { return {}; }
 }
 
+/** A `.showtime` inside the project (or a parent below the home folder) that setup has used; see launcher.workspace_home. */
+function workspaceHome(start) {
+  // real, case-folded paths on Windows: a working folder may be spelled `c:\users\...` or with 8.3 short
+  // names (RUNNER~1) while the home folder is not, and the search must still stop at the home folder
+  const same = (p) => { let r = p; try { r = fs.realpathSync.native(p); } catch { /* as given */ } return IS_WIN ? r.toLowerCase() : r; };
+  // every folder that counts as a home folder (see launcher.home_folders): the search stops at each
+  const homes = [userHome(), process.env.USERPROFILE, process.env.HOME];
+  if (process.env.HOMEDRIVE && process.env.HOMEPATH) homes.push(process.env.HOMEDRIVE + process.env.HOMEPATH);
+  try { homes.push(os.userInfo().homedir); } catch { /* no account entry */ }
+  const tops = new Set(homes.filter((h) => h && !isPlaceholder(h)).map((h) => same(path.resolve(h))));
+  let d = path.resolve(start);
+  for (let i = 0; i < 64; i++) {
+    if (tops.has(same(d))) return null;
+    const cand = path.join(d, '.showtime');
+    if (fs.existsSync(path.join(cand, 'skill-path')) || fs.existsSync(path.join(cand, 'state.json'))) return cand;
+    const up = path.dirname(d);
+    if (up === d) return null;
+    d = up;
+  }
+  return null;
+}
+
 export function showtimeHome() {
   const env = process.env.SHOWTIME_HOME;
-  if (env && !isPlaceholder(env)) return path.resolve(expandHome(env));
+  if (env && !isPlaceholder(env)) return path.resolve(baseDir(), expandHome(env.trim()));
+  const ws = workspaceHome(baseDir());
+  if (ws) return ws;
   const s = readSettings().home;
   if (typeof s === 'string' && s.trim()) return path.resolve(expandHome(s.trim()));
   return path.join(userHome(), '.showtime');
 }
 
-function baseDir() {
-  for (const v of [process.env.SHOWTIME_MCP_BASE, process.env.CLAUDE_PROJECT_DIR]) {
-    if (v && !isPlaceholder(v)) {
-      try { if (fs.statSync(v).isDirectory()) return path.resolve(v); } catch { /* try the next */ }
-    }
+// The plugin root when this server runs from an installed plugin (skills/showtime/mcp/server.mjs inside it).
+const PLUGIN_ROOT = path.resolve(SKILL, '..', '..');
+
+function isDir(p) { try { return fs.statSync(p).isDirectory(); } catch { return false; } }
+
+function inside(child, parent) {
+  const rel = path.relative(parent, child);
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
+/** Somewhere the plugin itself lives (a host may start servers there): never a place for the user's videos. */
+function inPluginInstall(dir) {
+  const d = path.resolve(dir);
+  if (inside(d, SKILL)) return true;
+  const isPlugin = ['.claude-plugin', 'plugin.json', '.cursor-plugin', 'gemini-extension.json']
+    .some((f) => fs.existsSync(path.join(PLUGIN_ROOT, f)));
+  return isPlugin && inside(d, PLUGIN_ROOT) && fs.existsSync(path.join(PLUGIN_ROOT, 'skills', 'showtime', 'SKILL.md'));
+}
+
+let BASE_CACHE = null;
+/** The project folder: relative paths and showtime-out/ resolve here. */
+export function baseDir(env = process.env, cwd = process.cwd()) {
+  for (const v of [env.SHOWTIME_MCP_BASE, env.CLAUDE_PROJECT_DIR]) {
+    if (v && !isPlaceholder(v) && isDir(v)) return path.resolve(v);
   }
-  return process.cwd();
+  if (env === process.env && cwd === process.cwd() && BASE_CACHE) return BASE_CACHE;
+  let out = cwd;
+  if (inPluginInstall(cwd)) {
+    // started inside the plugin's own folder (some hosts do that): the folder the host itself was started
+    // from, when it passed that on, else the user's home folder
+    out = [env.PWD, env.INIT_CWD].find((v) => v && !isPlaceholder(v) && path.isAbsolute(v) && isDir(v) && !inPluginInstall(v))
+      || userHome();
+  }
+  if (env === process.env && cwd === process.cwd()) BASE_CACHE = out;
+  return out;
 }
 
 // ------------------------------------------------------------------ plugin settings sync
@@ -115,6 +180,9 @@ function baseDir() {
 export function syncSettings(env = process.env) {
   const keys = ['VOICE', 'LANGUAGE', 'HOME', 'OPEN_BROWSER', 'MAX_WORKERS', 'SOUND'];
   if (!keys.some((k) => `SHOWTIME_OPT_${k}` in env)) return null; // not started by the plugin
+  // Another host that reads the same plugin manifest passes the variables unexpanded (`${user_config.voice}`):
+  // that is no setting at all, and must never wipe what Claude Code saved.
+  if (keys.every((k) => !(`SHOWTIME_OPT_${k}` in env) || String(env[`SHOWTIME_OPT_${k}`]).includes('${'))) return null;
   const raw = (k) => { const v = env[`SHOWTIME_OPT_${k}`]; return isPlaceholder(v) ? '' : v.trim(); };
   const out = {};
   const voice = raw('VOICE');
@@ -306,16 +374,21 @@ const obj = (properties, required = []) => ({ type: 'object', properties, requir
 
 const TOOLS = [
   {
-    name: 'doctor', title: 'Check the showtime installation', annotations: RO,
+    name: 'doctor', title: 'Check the showtime installation', annotations: RO, long: (a) => a.full === true,
     description: 'Check that showtime is installed and working (ffmpeg, Python, Node, browser, models). Returns PASS/WARN/FAIL per ' +
       'item with a one-line fix. Run this first; if setup is missing it says the exact command to run.',
     inputSchema: obj({ full: P('boolean', 'also launch a browser and run a test encode (slower, about 30-60 s). Default false.') }),
     build: (a) => ['doctor', ...(a.full ? [] : ['--quick'])],
   },
   {
-    name: 'status', title: 'Where a job stands', annotations: RO,
-    description: 'Where the newest job (or the given one) stands: stage, what is verified vs assumed, and the next command.',
-    inputSchema: obj({ job: P('string', 'job folder or job name (default: the newest job under showtime-out/)') }),
+    name: 'status', title: 'Where a job or a task stands', annotations: RO,
+    description: 'Where the newest job (or the given one) stands: stage, what is verified vs assumed, and the next command. ' +
+      'With task (the id a long tool such as render or transcribe answered with when it ran past the call\'s time limit): ' +
+      'whether it still runs and its latest progress; once it has finished, its full result. Each task call waits up to about 20 s.',
+    inputSchema: obj({
+      job: P('string', 'job folder or job name (default: the newest job under showtime-out/)'),
+      task: P('string', 'a task id from a long tool call, e.g. render-20260928-141500-a1b2', { pattern: '^[a-z][a-z0-9-]{0,40}-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$' }),
+    }),
     build: (a) => ['status', ...(a.job !== undefined ? [jobRef(a.job)] : [])],
   },
   {
@@ -496,7 +569,8 @@ const TOOLS = [
       'transcripts under <job>/edit/transcripts/ and returns their paths.',
     inputSchema: obj({
       media: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 50, description: 'video/audio files or folders' },
-      model: P('string', 'ASR model (default auto)', { enum: ['auto', 'turbo', 'small', 'small.en', 'base.en', 'medium', 'parakeet', 'parakeet-v3'] }),
+      model: P('string', 'ASR model (default auto = Parakeet v3, verbatim, 25 languages; Whisper for others)', { enum: ['auto', 'parakeet', 'parakeet-v2', 'parakeet-v3', 'turbo', 'small', 'small.en', 'base.en', 'medium'] }),
+      separate: P('string', 'pull the voice out of loud background music first (default auto: only when needed)', { enum: ['auto', 'on', 'off'] }),
       language: P('string', 'language code, e.g. en, es (default: detect)', { pattern: '^[a-z]{2,3}$' }),
       speakers: P('string', 'diarize: number of speakers or "auto"', { pattern: '^([1-9][0-9]?|auto)$' }),
       from: P('number', 'transcribe from this second only (word times stay on the file\'s clock)', { minimum: 0, maximum: 360000 }),
@@ -509,6 +583,7 @@ const TOOLS = [
       if (a.model !== undefined) argv.push(opt('model', str(a.model, 'model', { pattern: /^[a-z0-9.-]+$/ })));
       if (a.language !== undefined) argv.push(opt('language', str(a.language, 'language', { pattern: /^[a-z]{2,3}$/ })));
       if (a.speakers !== undefined) argv.push(opt('speakers', str(a.speakers, 'speakers', { pattern: /^([1-9]\d?|auto)$/ })));
+      if (a.separate !== undefined) argv.push(opt('separate', str(a.separate, 'separate', { pattern: /^(auto|on|off)$/ })));
       if (a.from !== undefined) argv.push(opt('from', num(a.from, 'from', { min: 0, max: 360000 })));
       if (a.to !== undefined) argv.push(opt('to', num(a.to, 'to', { min: 0, max: 360000 })));
       return argv;
@@ -578,8 +653,13 @@ const TOOLS = [
   {
     name: 'audio_search', title: 'Search the audio library', annotations: RO,
     description: 'Search the local audio library (music, sfx, ambience) by words, mood, tempo, length and license. Returns ids, ' +
-      'titles, licenses and file paths.',
+      'titles, licenses and file paths. With catalog=true (or a use) it searches the produced-music catalog instead: real ' +
+      'recordings for launches, trailers and emotional pieces (restrained ones for explainers), fetched on first use by a mix ' +
+      'track {"kind": "music", "catalog": "<id>", "fit": true} and credited automatically.',
     inputSchema: obj({
+      catalog: P('boolean', 'search the produced-music catalog (Scott Buckley, Kevin MacLeod, CC0 ...) instead of the library'),
+      use: P('string', 'catalog preset: launch, trailer, keynote, story, emotional, promo, social, product-demo, tech, explainer, ' +
+        'tutorial, data, documentary, problem, background', { pattern: '^[a-z-]{3,20}$' }),
       words: P('string', 'free-text words, e.g. "whoosh" or "calm piano"', { maxLength: 200 }),
       kind: P('string', 'music, sfx, stinger, ambience (comma list)', { pattern: '^[a-z]+(,[a-z]+)*$' }),
       mood: P('string', 'e.g. uplifting, calm, dark, epic (comma list)', { pattern: '^[a-z-]+(,[a-z-]+)*$' }),
@@ -589,7 +669,21 @@ const TOOLS = [
       limit: P('integer', 'maximum results (default 10)', { minimum: 1, maximum: 50 }),
     }),
     build: (a) => {
-      const argv = ['audio', 'lib', 'search', '--paths', opt('limit', a.limit !== undefined ? num(a.limit, 'limit', { min: 1, max: 50, int: true }) : 10)];
+      const limit = opt('limit', a.limit !== undefined ? num(a.limit, 'limit', { min: 1, max: 50, int: true }) : 10);
+      if (a.catalog === true || a.use !== undefined) {
+        const argv = ['audio', 'music', 'search', limit];
+        if (a.use !== undefined) argv.push(opt('for', str(a.use, 'use', { pattern: /^[a-z-]{3,20}$/ })));
+        if (a.mood !== undefined) argv.push(opt('mood', str(a.mood, 'mood', { pattern: /^[a-z-]+(,[a-z-]+)*$/ })));
+        if (a.duration !== undefined) argv.push(opt('dur', num(a.duration, 'duration', { min: 0.1, max: 3600 })));
+        if (a.license !== undefined) argv.push(opt('license', str(a.license, 'license', { pattern: /^[A-Za-z0-9.,-]+$/ })));
+        if (a.words !== undefined && a.words.trim()) {
+          const words = str(a.words, 'words', { max: 200, pattern: /^[\p{L}\p{N}\s.'-]+$/u }).split(/\s+/).filter(Boolean);
+          if (words.some((w) => w.startsWith('-'))) throw new InputError('words must not start with "-"');
+          argv.push(...words);
+        }
+        return argv;
+      }
+      const argv = ['audio', 'lib', 'search', '--paths', limit];
       if (a.kind !== undefined) argv.push(opt('kind', str(a.kind, 'kind', { pattern: /^[a-z]+(,[a-z]+)*$/ })));
       if (a.mood !== undefined) argv.push(opt('mood', str(a.mood, 'mood', { pattern: /^[a-z-]+(,[a-z-]+)*$/ })));
       if (a.bpm !== undefined) argv.push(opt('bpm', str(a.bpm, 'bpm', { pattern: /^\d{2,3}(-\d{2,3})?$/ })));
@@ -700,6 +794,12 @@ const TOOLS = [
     files: (found) => found.filter((f) => /[\\/]exports[\\/][^\\/]+$/.test(f)),
   },
 ];
+// Long tools may take minutes: every one of them also accepts `background` (answer with a task id at once).
+for (const t of TOOLS) {
+  if (t.long) t.inputSchema.properties.background = P('boolean', 'answer at once with a task id and keep working in the background; ' +
+    'the status tool with {"task": id} reports progress and the result. Default false: wait for the result (a host with a ' +
+    'short tool-call limit gets a task id after about 20 s anyway).');
+}
 const TOOL_BY_NAME = new Map(TOOLS.map((t) => [t.name, t]));
 
 function publicTool(t) {
@@ -812,31 +912,103 @@ function summarize(text, maxLines = 60, maxChars = 7000) {
   return { body, truncated: omitted > 0 };
 }
 
+/** Everything a tool call needs before a command runs: arguments checked, argv built, Python found. */
+function prepare(tool, args) {
+  const ctx = { cleanup: [] };
+  const cleanup = () => { for (const f of ctx.cleanup) { try { fs.rmSync(f, { force: true }); } catch { /* ignore */ } } };
+  const fail = (text) => { cleanup(); return { error: { content: [{ type: 'text', text }], isError: true } }; };
+  let argv;
+  try {
+    checkArgs(tool, args);
+    argv = tool.build(args || {}, ctx);
+  } catch (e) {
+    if (e instanceof InputError) return fail(`invalid input: ${e.message}`);
+    return fail(`could not prepare the command: ${e.message}`);
+  }
+  const py = findPython();
+  if (!py) {
+    return fail('showtime needs Python 3.8+ (or uv) and neither was found.\n' +
+      'fix: install uv (https://docs.astral.sh/uv/getting-started/installation/) or Python 3, then run `showtime setup` in a terminal.\n' +
+      'If you just installed one, restart your agent app so it sees the new PATH.');
+  }
+  const env = { ...process.env, NO_COLOR: '1', PYTHONUNBUFFERED: '1', SHOWTIME_MCP: '1' };
+  for (const k of Object.keys(env)) if (k.startsWith('SHOWTIME_OPT_') || (isPlaceholder(env[k]) && k.startsWith('SHOWTIME_'))) delete env[k];
+  return { argv, py, env, ctx, cleanup };
+}
+
+/** The reply for a finished command: OK/FAILED line, the useful output, Files:, and facts in _meta. */
+function finalResult(tool, argv, text, code, secs, extraMeta = {}) {
+  const ok = code === 0;
+  const { body, truncated } = summarize(text);
+  const logFile = truncated || !ok ? saveLog(tool.name, `$ ${shown(argv)}\n\n${text.replace(ANSI, '')}`) : null;
+  const found = extractFiles(text.replace(ANSI, ''));
+  const files = tool.files ? tool.files(found) : found;
+  const lines = [`${ok ? 'OK' : `FAILED (exit ${code})`}: ${shown(argv)}  [${fmtSecs(secs)}]`];
+  if (tool.preface) lines.push('', tool.preface);
+  lines.push('', body || '(no output)');
+  if (files.length) lines.push('', 'Files:', ...files.map((f) => `  ${f}`));
+  if (logFile) lines.push('', `Full log: ${logFile}`);
+  return {
+    content: [{ type: 'text', text: lines.join('\n') }],
+    // Machine-readable facts go in _meta, not structuredContent: some clients (Claude Code among them)
+    // show the model structuredContent instead of the text, and the text summary is what matters.
+    _meta: { 'showtime/result': { ok, exit_code: code, seconds: Math.round(secs * 10) / 10, command: ['showtime', ...argv], files, ...(logFile ? { log: logFile } : {}), ...extraMeta } },
+    isError: !ok,
+  };
+}
+
+/** Progress notifications for one request: at most one a second, plus a heartbeat after 20 s of quiet. */
+function progressSender(tool, progressToken, isCancelled) {
+  let progressN = 0;
+  let lastSent = 0;
+  const notify = (message, force = false) => {
+    if (progressToken === undefined || isCancelled()) return;
+    const now = Date.now();
+    if (!force && now - lastSent < 1000) return;
+    lastSent = now;
+    progressN += 1;
+    send({ jsonrpc: '2.0', method: 'notifications/progress', params: { progressToken, progress: progressN, message } });
+  };
+  let partial = '';
+  const feed = (s) => {
+    partial += s;
+    const parts = partial.split(/\r?\n|\r/);
+    partial = parts.pop();
+    for (const line of parts) {
+      const m = PROGRESS_RE.exec(line.replace(ANSI, ''));
+      if (m) notify(`${tool.name}: ${m[1].trim()} ${m[2]}/${m[3]} (${m[4]}%)${m[5] && m[5] !== '?' ? `, about ${m[5]} left` : ''}`);
+    }
+  };
+  const beat = (t0) => {
+    const timer = setInterval(() => {
+      if (Date.now() - lastSent > 20000) notify(`${tool.name}: still working (${fmtSecs((Date.now() - t0) / 1000)})`, true);
+    }, 5000);
+    timer.unref();
+    return timer;
+  };
+  return { notify, feed, beat };
+}
+
 function runTool(tool, args, reqId, progressToken) {
   ensureSettings(); // the launcher reads them on every run
+  if (tool.name === 'status') {
+    const ref = taskRef(args);
+    if (ref) return taskStatus(ref, reqId, progressToken);
+  }
+  const prep = prepare(tool, args);
+  if (prep.error) return Promise.resolve(prep.error);
+  if (typeof tool.long === 'function' ? tool.long(args || {}) : tool.long) {
+    const wait = args && args.background === true ? 0 : waitLimitMs();
+    return runLong(tool, prep, reqId, progressToken, wait);
+  }
+  return runDirect(tool, prep, reqId, progressToken);
+}
+
+/** Run the command as a child of this server and answer when it ends (short tools; the fallback for long ones). */
+function runDirect(tool, prep, reqId, progressToken) {
+  const { argv, py, env, cleanup } = prep;
   return new Promise((resolve) => {
-    const ctx = { cleanup: [] };
-    const done = (result) => {
-      for (const f of ctx.cleanup) { try { fs.rmSync(f, { force: true }); } catch { /* ignore */ } }
-      resolve(result);
-    };
-    const toolError = (text) => done({ content: [{ type: 'text', text }], isError: true });
-    let argv;
-    try {
-      checkArgs(tool, args);
-      argv = tool.build(args || {}, ctx);
-    } catch (e) {
-      if (e instanceof InputError) return toolError(`invalid input: ${e.message}`);
-      return toolError(`could not prepare the command: ${e.message}`);
-    }
-    const py = findPython();
-    if (!py) {
-      return toolError('showtime needs Python 3.8+ (or uv) and neither was found.\n' +
-        'fix: install uv (https://docs.astral.sh/uv/getting-started/installation/) or Python 3, then run `showtime setup` in a terminal.\n' +
-        'If you just installed one, restart Claude Code so it sees the new PATH.');
-    }
-    const env = { ...process.env, NO_COLOR: '1', PYTHONUNBUFFERED: '1', SHOWTIME_MCP: '1' };
-    for (const k of Object.keys(env)) if (k.startsWith('SHOWTIME_OPT_') || (isPlaceholder(env[k]) && k.startsWith('SHOWTIME_'))) delete env[k];
+    const done = (result) => { cleanup(); resolve(result); };
     const t0 = Date.now();
     let child;
     try {
@@ -844,76 +1016,276 @@ function runTool(tool, args, reqId, progressToken) {
         cwd: baseDir(), env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, detached: !IS_WIN,
       });
     } catch (e) {
-      return toolError(`could not start showtime: ${e.message}`);
+      return done({ content: [{ type: 'text', text: `could not start showtime: ${e.message}` }], isError: true });
     }
     const rec = { child, cancelled: false };
     running.set(reqId, rec);
     let out = '';
     const MAX = 4 * 1024 * 1024;
     const keep = (s) => { out += s; if (out.length > MAX) out = out.slice(out.length - MAX); };
-    let progressN = 0;
-    let lastSent = 0;
-    const notify = (message, force = false) => {
-      if (progressToken === undefined || rec.cancelled) return;
-      const now = Date.now();
-      if (!force && now - lastSent < 1000) return;
-      lastSent = now;
-      progressN += 1;
-      send({ jsonrpc: '2.0', method: 'notifications/progress', params: { progressToken, progress: progressN, message } });
-    };
-    let partial = '';
-    const onErr = (chunk) => {
-      const s = chunk.toString('utf8');
-      keep(s);
-      partial += s;
-      const parts = partial.split(/\r?\n|\r/);
-      partial = parts.pop();
-      for (const line of parts) {
-        const m = PROGRESS_RE.exec(line.replace(ANSI, ''));
-        if (m) notify(`${tool.name}: ${m[1].trim()} ${m[2]}/${m[3]} (${m[4]}%)${m[5] && m[5] !== '?' ? `, about ${m[5]} left` : ''}`);
-      }
-    };
+    const progress = progressSender(tool, progressToken, () => rec.cancelled);
     child.stdout.on('data', (c) => keep(c.toString('utf8')));
-    child.stderr.on('data', onErr);
-    notify(`${tool.name}: started`, true);
-    const beat = setInterval(() => {
-      if (Date.now() - lastSent > 20000) notify(`${tool.name}: still working (${fmtSecs((Date.now() - t0) / 1000)})`, true);
-    }, 5000);
-    beat.unref();
+    child.stderr.on('data', (c) => { const s = c.toString('utf8'); keep(s); progress.feed(s); });
+    progress.notify(`${tool.name}: started`, true);
+    const beat = progress.beat(t0);
     const finish = (code, errText) => {
       clearInterval(beat);
       running.delete(reqId);
       if (rec.cancelled) return done(null);
-      const secs = (Date.now() - t0) / 1000;
-      const ok = code === 0;
-      const text = out + (errText ? `\n${errText}` : '');
-      const { body, truncated } = summarize(text);
-      const logFile = truncated || !ok ? saveLog(tool.name, `$ ${shown(argv)}\n\n${text.replace(ANSI, '')}`) : null;
-      const found = extractFiles(text.replace(ANSI, ''));
-      const files = tool.files ? tool.files(found) : found;
-      const lines = [
-        `${ok ? 'OK' : `FAILED (exit ${code})`}: ${shown(argv)}  [${fmtSecs(secs)}]`,
-      ];
-      if (tool.preface) lines.push('', tool.preface);
-      lines.push('', body || '(no output)');
-      if (files.length) lines.push('', 'Files:', ...files.map((f) => `  ${f}`));
-      if (logFile) lines.push('', `Full log: ${logFile}`);
-      done({
-        content: [{ type: 'text', text: lines.join('\n') }],
-        // Machine-readable facts go in _meta, not structuredContent: some clients (Claude Code among them)
-        // show the model structuredContent instead of the text, and the text summary is what matters.
-        _meta: { 'showtime/result': { ok, exit_code: code, seconds: Math.round(secs * 10) / 10, command: ['showtime', ...argv], files, ...(logFile ? { log: logFile } : {}) } },
-        isError: !ok,
-      });
+      done(finalResult(tool, argv, out + (errText ? `\n${errText}` : ''), code, (Date.now() - t0) / 1000));
     };
     child.on('error', (e) => finish(127, `could not run showtime: ${e.message}`));
     child.on('close', (code, signal) => finish(code === null ? 128 : code, signal ? `stopped by ${signal}` : ''));
   });
 }
 
+// ------------------------------------------------------------------ long tools: background runs + task ids
+
+const RUN_ID_RE = /^[a-z][a-z0-9-]{0,40}-\d{8}-\d{6}-[0-9a-f]{4}$/;
+const ACTIVE = new Set(['starting', 'running']);
+const handedOff = new Set(); // run folders whose request already answered with a task id: they outlive this server
+
+function runsRoot() { return path.join(showtimeHome(), 'runs'); }
+
+function readJson(file) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; } }
+
+function runDirFor(id) {
+  if (typeof id !== 'string' || !RUN_ID_RE.test(id)) return null;
+  const d = path.join(runsRoot(), id);
+  return fs.existsSync(path.join(d, 'run.json')) ? d : null;
+}
+
+/** A task id in the status tool's arguments: {task}, or a run id given as {job}. */
+function taskRef(args) {
+  if (!args || typeof args !== 'object') return null;
+  if (typeof args.task === 'string') return args.task.trim();
+  if (typeof args.job === 'string' && RUN_ID_RE.test(args.job.trim()) && runDirFor(args.job.trim())) return args.job.trim();
+  return null;
+}
+
+function pidAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
+}
+
+/** run.json, with a dead supervisor turned into state 'lost' (it cannot write an end any more). */
+function runState(dir) {
+  const r = readJson(path.join(dir, 'run.json'));
+  if (!r) return null;
+  if (ACTIVE.has(r.state)) {
+    const age = Date.now() / 1000 - Number(r.created_ts || 0);
+    if ((r.supervisor_pid && !pidAlive(r.supervisor_pid)) || (!r.supervisor_pid && age > 60)) r.state = 'lost';
+  }
+  return r;
+}
+
+function readLog(dir, max = 4 * 1024 * 1024) {
+  try {
+    const f = path.join(dir, 'output.log');
+    const size = fs.statSync(f).size;
+    const fd = fs.openSync(f, 'r');
+    try {
+      const n = Math.min(size, max);
+      const buf = Buffer.alloc(n);
+      fs.readSync(fd, buf, 0, n, size - n);
+      return buf.toString('utf8');
+    } finally { fs.closeSync(fd); }
+  } catch { return ''; }
+}
+
+/** New bytes of a growing log since the last call (tail state kept in `st`). */
+function readNew(file, st) {
+  try {
+    const size = fs.statSync(file).size;
+    if (size <= st.pos) return '';
+    const fd = fs.openSync(file, 'r');
+    try {
+      const n = Math.min(size - st.pos, 1024 * 1024);
+      const buf = Buffer.alloc(n);
+      fs.readSync(fd, buf, 0, n, st.pos);
+      st.pos += n;
+      return buf.toString('utf8');
+    } finally { fs.closeSync(fd); }
+  } catch { return ''; }
+}
+
+function latestLine(text) {
+  const lines = text.replace(ANSI, '').split(/\r?\n/).map((l) => l.split('\r').pop().trim()).filter(Boolean);
+  for (let i = lines.length - 1; i >= Math.max(0, lines.length - 40); i--) {
+    if (/\d+\/\d+\s+\d{1,3}%|\d{1,3}%|ETA/.test(lines[i])) return lines[i];
+  }
+  return lines.length ? lines[lines.length - 1] : '';
+}
+
+function cancelRun(dir) {
+  const r = readJson(path.join(dir, 'run.json')) || {};
+  try { fs.writeFileSync(path.join(dir, 'cancel'), 'mcp cancel\n'); } catch { /* ignore */ }
+  const pid = Number(r.pid);
+  if (!pid) return;
+  try {
+    if (IS_WIN) spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
+    else process.kill(-pid, 'SIGTERM');
+  } catch { try { process.kill(pid, 'SIGTERM'); } catch { /* gone */ } }
+  if (!IS_WIN) setTimeout(() => { try { process.kill(-pid, 'SIGKILL'); } catch { /* gone */ } }, 5000).unref();
+}
+
+/** Start `showtime <argv> --background` and return {id, dir} (or {error}). Takes a fraction of a second. */
+function startRun(prep) {
+  const { argv, py, env } = prep;
+  return new Promise((resolve) => {
+    let out = '';
+    let err = '';
+    let child;
+    try {
+      child = spawn(py.exe, [...py.pre, LAUNCHER, '--background', ...argv], {
+        cwd: baseDir(), env: { ...env, SHOWTIME_BACKGROUND_FORMAT: 'json', SHOWTIME_RUN_SOURCE: 'mcp' },
+        stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
+      });
+    } catch (e) { resolve({ error: e.message }); return; }
+    child.stdout.on('data', (c) => { out += c; });
+    child.stderr.on('data', (c) => { err += c; });
+    child.on('error', (e) => resolve({ error: e.message }));
+    child.on('close', (code) => {
+      const line = out.trim().split(/\r?\n/).pop() || '';
+      let info = null;
+      try { info = JSON.parse(line); } catch { /* not started */ }
+      if (code === 0 && info && info.id && info.dir) resolve({ id: info.id, dir: info.dir });
+      else resolve({ error: (err || out || `exit ${code}`).trim().slice(-800) });
+    });
+  });
+}
+
+function runningResult(tool, argv, id, dir, secs, latest) {
+  const lines = [
+    `RUNNING: ${shown(argv)}  [${fmtSecs(secs)} so far]`,
+    '',
+    `This takes a while, so it keeps running on this machine as task ${id}.`,
+    `Ask for it with the status tool, {"task": "${id}"}: each call waits up to about 20 s and returns the full result once it has finished.`,
+    `From a shell: showtime status ${id} --wait 240`,
+  ];
+  if (latest) lines.push('', `Latest: ${latest}`);
+  lines.push('', `Log: ${path.join(dir, 'output.log')}`);
+  return {
+    content: [{ type: 'text', text: lines.join('\n') }],
+    _meta: { 'showtime/result': { ok: null, running: true, task: id, seconds: Math.round(secs * 10) / 10, command: ['showtime', ...argv], log: path.join(dir, 'output.log') } },
+    isError: false,
+  };
+}
+
+/**
+ * Follow a run until it ends or `waitMs` passes: progress notifications from its log, the final result at
+ * the end, else a RUNNING reply with the task id. `rec` is the cancellation record in `running`.
+ */
+function followRun(tool, argv, dir, id, reqId, progressToken, waitMs, cleanupAtEnd, owner = true) {
+  return new Promise((resolve) => {
+    // owner: this call started the run, so cancelling the call (or closing the server before it answered)
+    // stops the run. A status call only watches: cancelling it never touches the task.
+    const rec = { cancelled: false, dir, owner };
+    running.set(reqId, rec);
+    const r0 = runState(dir) || {};
+    const t0 = r0.started_ts ? Number(r0.started_ts) * 1000 : (r0.created_ts ? Number(r0.created_ts) * 1000 : Date.now());
+    const progress = progressSender(tool, progressToken, () => rec.cancelled);
+    const logFile = path.join(dir, 'output.log');
+    const tail = { pos: 0 };
+    try { tail.pos = Math.max(0, fs.statSync(logFile).size - 64 * 1024); } catch { /* not yet */ }
+    progress.notify(`${tool.name}: ${r0.state === 'starting' ? 'started' : 'running'} (task ${id})`, true);
+    const beat = progress.beat(t0);
+    const deadline = Date.now() + waitMs;
+    const finish = (result) => {
+      clearInterval(timer);
+      clearInterval(beat);
+      running.delete(reqId);
+      resolve(result);
+    };
+    rec.cancel = () => { rec.cancelled = true; if (owner) cancelRun(dir); finish(null); };
+    const tick = () => {
+      const chunk = readNew(logFile, tail);
+      if (chunk) progress.feed(chunk);
+      const r = runState(dir);
+      if (r && !ACTIVE.has(r.state)) {
+        handedOff.delete(dir);
+        for (const f of cleanupAtEnd) { try { fs.rmSync(f, { force: true }); } catch { /* ignore */ } }
+        const code = r.state === 'done' ? 0 : (Number.isInteger(r.exit_code) ? r.exit_code : 1);
+        const secs = Number.isFinite(Number(r.seconds)) ? Number(r.seconds) : (Date.now() - t0) / 1000;
+        let text = readLog(dir);
+        if (r.state === 'lost') text += '\nshowtime: this task stopped without recording an end (the machine restarted, or it was killed)';
+        if (r.state === 'cancelled') text += '\nshowtime: cancelled';
+        return finish(finalResult(tool, argv, text, r.state === 'done' ? 0 : (code || 1), secs, { task: id }));
+      }
+      if (Date.now() >= deadline) {
+        handedOff.add(dir);
+        return finish(runningResult(tool, argv, id, dir, (Date.now() - t0) / 1000, latestLine(readLog(dir, 64 * 1024))));
+      }
+    };
+    const timer = setInterval(tick, 250);
+    tick();
+  });
+}
+
+function toolForRun(dir, argv) {
+  const meta = readJson(path.join(dir, 'mcp.json')) || {};
+  const byName = meta.tool && TOOL_BY_NAME.get(meta.tool);
+  if (byName) return byName;
+  const words = (argv || []).slice(0, 2).join(' ');
+  for (const t of TOOLS) if (t.long && words.startsWith(t.name.replace('_', ' '))) return t;
+  return { name: (argv && argv[0]) || 'task', files: null };
+}
+
+async function runLong(tool, prep, reqId, progressToken, waitMs) {
+  const started = await startRun(prep);
+  if (started.error) {
+    // e.g. a read-only showtime folder (a sandbox): run it the old way, the result arrives when it ends
+    log(`background run did not start (${started.error.split('\n').pop()}); running ${tool.name} directly`);
+    return runDirect(tool, prep, reqId, progressToken);
+  }
+  try {
+    fs.writeFileSync(path.join(started.dir, 'mcp.json'), JSON.stringify({ tool: tool.name, cleanup: prep.ctx.cleanup, pid: process.pid }) + '\n');
+  } catch { /* status falls back to the command words */ }
+  return followRun(tool, prep.argv, started.dir, started.id, reqId, progressToken, waitMs, prep.ctx.cleanup);
+}
+
+async function taskStatus(id, reqId, progressToken) {
+  const dir = runDirFor(id);
+  if (!dir) {
+    return { content: [{ type: 'text', text: `no task ${JSON.stringify(id)} (task ids look like render-20260928-141500-a1b2; ` +
+      'a long tool call returns one when it runs longer than the call may wait). `showtime status --runs` lists them.' }], isError: true };
+  }
+  const r = runState(dir) || {};
+  const tool = toolForRun(dir, r.argv);
+  const meta = readJson(path.join(dir, 'mcp.json')) || {};
+  const limit = waitLimitMs();
+  const waitMs = Math.min(limit === Infinity ? DEFAULT_WAIT_MS : limit, DEFAULT_WAIT_MS);
+  return followRun(tool, r.argv || [], dir, id, reqId, progressToken, waitMs, Array.isArray(meta.cleanup) ? meta.cleanup : [], false);
+}
+
 // ------------------------------------------------------------------ protocol
 
 let legacyVersion = null; // set by `initialize`
+let clientInfo = null;    // {name, title, version} from `initialize` or a request's _meta
+
+function noteClient(info) {
+  if (info && typeof info === 'object' && !clientInfo) clientInfo = { name: String(info.name || ''), title: String(info.title || '') };
+}
+
+/** Claude Code waits as long as a tool call needs (and shows progress): it keeps the one-call result. */
+function clientWaitsForever() {
+  if (clientInfo && (/^claude[- ]code$/i.test(clientInfo.name) || /^claude code$/i.test(clientInfo.title))) return true;
+  // started by the Claude Code plugin: its userConfig values arrive expanded (other hosts leave `${...}`)
+  return Object.keys(process.env).some((k) => k.startsWith('SHOWTIME_OPT_') && process.env[k] && !isPlaceholder(process.env[k]));
+}
+
+const DEFAULT_WAIT_MS = 20000;
+/** How long a long tool call waits before it answers with a task id (Infinity: until it ends). */
+export function waitLimitMs(env = process.env, waitsForever = clientWaitsForever()) {
+  const raw = env.SHOWTIME_MCP_WAIT;
+  if (raw && !isPlaceholder(raw)) {
+    const v = raw.trim().toLowerCase();
+    if (['none', 'inf', 'infinity', 'forever', '-1'].includes(v)) return Infinity;
+    const n = Number(v);
+    if (Number.isFinite(n) && n >= 0) return Math.min(n, 86400) * 1000;
+  }
+  return waitsForever ? Infinity : DEFAULT_WAIT_MS;
+}
 
 function result(id, body, modern) { send({ jsonrpc: '2.0', id, result: modern ? { resultType: 'complete', ...body } : body }); }
 function rpcError(id, code, message, data) { send({ jsonrpc: '2.0', id, error: { code, message, ...(data !== undefined ? { data } : {}) } }); }
@@ -935,7 +1307,8 @@ async function handle(msg) {
   if (id === undefined || id === null) { // notification
     if (method === 'notifications/cancelled') {
       const r = running.get(params.requestId);
-      if (r) { r.cancelled = true; killTree(r.child); }
+      if (r && r.cancel) r.cancel();
+      else if (r) { r.cancelled = true; killTree(r.child); }
     }
     return;
   }
@@ -943,7 +1316,9 @@ async function handle(msg) {
   const requested = meta[META_VERSION];
   const modern = requested !== undefined;
 
+  noteClient(meta['io.modelcontextprotocol/clientInfo']);
   if (method === 'initialize') {
+    noteClient(params.clientInfo);
     const want = params.protocolVersion;
     legacyVersion = LEGACY_VERSIONS.includes(want) ? want : LEGACY_VERSIONS[0];
     afterHandshake();
@@ -1009,7 +1384,12 @@ function main() {
   });
   const shutdown = () => {
     ensureSettings(); // a client that disconnected right after the handshake still gets its settings saved
-    for (const r of running.values()) { r.cancelled = true; killTree(r.child); }
+    // calls still waiting for their command stop it (as before); runs that already answered with a task id
+    // keep going, and a later server (or `showtime status <id>`) reports on them
+    for (const r of running.values()) {
+      r.cancelled = true;
+      if (r.dir) { if (r.owner && !handedOff.has(r.dir)) cancelRun(r.dir); } else killTree(r.child);
+    }
     setTimeout(() => process.exit(0), 200).unref();
   };
   rl.on('close', shutdown);

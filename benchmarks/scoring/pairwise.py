@@ -11,6 +11,7 @@ Blinding
     BA, AB, BA for the next) so each arm is shown first equally often overall; the key is stored only in
     the results file.
   - Every judge is a fresh headless session with only the Read tool.
+  - A judgment counts only with proof that the judge looked at every image (see rank.py and judge.py).
 Output: <bench home>/runs/<run>/pairwise.jsonl (one line per judgment) and pairwise_summary.json
 (win rate per arm with ties = 0.5, Bradley-Terry strengths, first-position win rate as a bias check).
 """
@@ -171,6 +172,8 @@ def main() -> int:
     ap.add_argument("--judges", type=int, default=3)
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("-j", "--jobs", type=int, default=3, help="judgments in parallel (default 3)")
+    ap.add_argument("--attempts", type=int, default=3,
+                    help="a judgment that cannot prove it looked at every frame is asked again, up to N sessions (default 3)")
     a = ap.parse_args()
     root = common.bench_home() / "runs" / a.run
     out_path = root / "pairwise.jsonl"
@@ -200,17 +203,23 @@ def main() -> int:
     def judge_one(job):
         task, arms, x, y, k, (one, two) = job
         task_id = task["id"]
-        pk = common.ws_root() / "judge-packets" / ("pw-" + common.opaque("%s/%s/%s/%s/%d" % (a.run, task_id, x, y, k), 10))
-        if pk.exists():
-            shutil.rmtree(pk)
-        for side, arm in (("video-1", one), ("video-2", two)):
-            build_side(pk / side, arms[arm], html_recording(a.run, task_id, arm) if is_html(arms[arm]) else None)
-        res = judge.ask(pk, PROMPT.format(request=task["prompt"]) + "\n\n" + judge.frames_prompt(pk), SCHEMA)
-        blind = judge.check_seen(res, pk, ["video-1", "video-2"]) if res.get("ok") else None
-        if blind:
-            res.update(ok=False, error=blind)
+        tag = "pw-" + common.opaque("%s/%s/%s/%s/%d" % (a.run, task_id, x, y, k), 10)
+
+        def build() -> Path:
+            pk = common.ws_root() / "judge-packets" / tag
+            if pk.exists():
+                shutil.rmtree(pk)
+            for side, arm in (("video-1", one), ("video-2", two)):
+                build_side(pk / side, arms[arm], html_recording(a.run, task_id, arm) if is_html(arms[arm]) else None)
+            return pk
+
+        # same proof as rank.py: every image opened (tool calls) and its reading-check number reported
+        res, attempts = judge.ask_verified(build, lambda pk: PROMPT.format(request=task["prompt"]) + "\n\n" + judge.frames_prompt(pk),
+                                           SCHEMA, ["video-1", "video-2"], attempts=a.attempts,
+                                           seed="%s/%s/%s/%s/%d/%d" % (a.run, task_id, x, y, k, a.seed))
         rec = {"task": task_id, "a": x, "b": y, "judge": k, "first": one, "ok": res.get("ok"),
-               "cost_usd": res.get("cost_usd"), "error": res.get("error")}
+               "cost_usd": round(sum(z.get("cost_usd") or 0 for z in attempts), 4), "error": res.get("error"),
+               "attempts": attempts}
         if res.get("ok"):
             d = res["data"]
             w = d.get("winner")

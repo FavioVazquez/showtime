@@ -1,0 +1,2 @@
+{ "tool": "qa", "rule": "edit_choppy", "severity": "WARN", "render_args": ["--no-audio"],
+  "why": "A launch film that hard-cuts to a new layout for every feature (8 scenes in 12 s) reads as a slide deck: premium launch films change scene 4-5 times, by camera moves and dissolves." }

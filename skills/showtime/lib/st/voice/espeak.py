@@ -214,9 +214,89 @@ def candidates() -> List[Tuple[str, str, str]]:
     return system + bundled
 
 
+_cleanup_guarded = False
+
+
+def _leftovers_file() -> Path:
+    return home() / "cache" / "voice" / "espeak-tempdirs.txt"
+
+
+def _is_phonemizer_tempdir(path: str) -> bool:
+    """A folder phonemizer made with tempfile.mkdtemp() for its copy of the espeak-ng library."""
+    p = Path(path)
+    try:
+        return (p.parent.resolve() == Path(tempfile.gettempdir()).resolve() and p.name.startswith("tmp")
+                and all("espeak" in c.name.lower() for c in p.iterdir()))
+    except OSError:
+        return False
+
+
+def _sweep_leftovers() -> None:
+    """Remove the library copies earlier runs could not delete (see _guard_windows_cleanup)."""
+    f = _leftovers_file()
+    try:
+        paths = [ln.strip() for ln in f.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    except OSError:
+        return
+    keep = []
+    for d in paths:
+        if Path(d).is_dir() and _is_phonemizer_tempdir(d):
+            shutil.rmtree(d, ignore_errors=True)
+            if Path(d).exists():
+                keep.append(d)   # still loaded by another running process
+    try:
+        if keep:
+            f.write_text("\n".join(keep) + "\n", encoding="utf-8")
+        else:
+            f.unlink()
+    except OSError:
+        pass
+
+
+def _guard_windows_cleanup() -> None:
+    """Keep phonemizer's Windows exit hook from printing a traceback after a successful run.
+
+    phonemizer copies the espeak-ng DLL into a new temporary folder for every EspeakAPI and, on
+    Windows, deletes that folder from an atexit hook. When the copy is still mapped at exit (seen
+    on Windows 11 on Arm, where showtime's x64 Python runs under emulation) the delete fails with
+    PermissionError [WinError 5]: Python prints "Exception ignored in atexit callback" and the
+    copy stays in %TEMP%. The hook is replaced by one that remembers such a folder instead, and
+    the next run removes it. Must run before the first EspeakAPI is created.
+    """
+    global _cleanup_guarded
+    if _cleanup_guarded or not plat.IS_WINDOWS:
+        return
+    _cleanup_guarded = True
+    try:
+        from phonemizer.backend.espeak import api  # type: ignore
+    except Exception:  # noqa: BLE001 - phonemizer missing: nothing to guard
+        return
+    delete = getattr(api.EspeakAPI, "_delete", None)
+    if delete is None or not hasattr(api.EspeakAPI, "_delete_win32"):
+        return   # a phonemizer without this hook
+    _sweep_leftovers()
+
+    def _delete_win32(self) -> None:
+        try:
+            delete(self._library, self._tempdir)
+        except Exception:  # noqa: BLE001 - at interpreter exit: never raise
+            tmp = getattr(self, "_tempdir", None)
+            if tmp and Path(tmp).exists():
+                try:
+                    f = _leftovers_file()
+                    f.parent.mkdir(parents=True, exist_ok=True)
+                    with open(f, "a", encoding="utf-8") as fh:
+                        fh.write(str(tmp) + "\n")
+                except OSError:
+                    pass
+
+    api.EspeakAPI._delete_win32 = _delete_win32
+
+
 def resolve(refresh: bool = False) -> Tuple[str, str, str]:
     """Return a working (lib_path, data_path, source) or raise ShowtimeError."""
     global _ready
+    _guard_windows_cleanup()
     with _lock:
         if _ready and not refresh:
             return _ready

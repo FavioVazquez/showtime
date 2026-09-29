@@ -523,6 +523,37 @@ def _rel(p: Optional[str], base: Path) -> str:
         return str(p)
 
 
+def _skill_dir() -> str:
+    """The showtime skill folder, for the critic's `references/crew/...` briefs (any host, no variables)."""
+    try:
+        from ..common import skill_dir
+        return str(skill_dir())
+    except Exception:  # noqa: BLE001
+        return str(Path(__file__).resolve().parents[3])
+
+
+# Added to CRITIC.md for launch, promo, release and trailer films (qa's rhythm says launch): the premium
+# grammar of references/workflows/launch-video.md, as checks a stranger can make from the pack.
+LAUNCH_CHECKS = """
+## Launch film checklist (judge these too; each miss is a Should-fix unless marked)
+Measured by qa: {rhythm}
+- Scenes: 4-6 in 20-45 s, one message each. A new layout per feature, or more than 6, reads as a slide deck.
+- Scene changes: a shared element carried across (match) or a soft dissolve; at most one fly-through and one
+  deliberate hard cut. A push, pan, wipe or whip on every beat is choppy.
+- Holds: each scene's result is on screen, settled, for at least 1.5 s; nothing is frozen for more than ~4 s.
+- Opening: frame 0 is the hook, complete and readable at phone size (a Blocker when it is blank or a logo).
+- Type: one display face and one mono, headline >= 6 % of the frame height, commands and UI text >= 3.5 %;
+  one accent colour on one ground for the whole film.
+- Motion: every camera move must have a reason; if you can't say it, it is a finding (at most one fly-through,
+  from the hook into the product; proof scenes and the end card hold a still camera). No punch-ins, shake,
+  bounce, overshoot or pops; entrances ease out.
+- Music: a produced track with dynamics (qa's music dynamics >= 3 dB); scene changes sit on its phrases; the
+  name lands on its swell; it ends on a fade or a cadence. Effects on every cut are a finding.
+- End card: name, one-line value, install command or CTA exactly as the sources give it, URL; held >= 3 s.
+- Honesty: every command and output line matches the evidence in context/; any claim without a source is a Blocker.
+"""
+
+
 def critic_brief(m: Dict[str, Any], q: Dict[str, Any], pack: Path) -> str:
     fails = [f for f in q.get("findings", []) if f["severity"] in ("FAIL", "WARN")]
     ctx_list = "\n".join("- `%s`" % _rel(c, pack) for c in m["context"]) or "- (no brief or storyboard found: judge as a reasonable viewer would)"
@@ -541,6 +572,9 @@ def critic_brief(m: Dict[str, Any], q: Dict[str, Any], pack: Path) -> str:
     if m.get("missing_context"):
         others += ("\n## Missing context\nNo job or project was found for this video, so there is no brief, storyboard, "
                    "check report or plan here. Judge as a reasonable viewer would, and say so under DECLINED TO JUDGE.\n")
+    rh = q.get("rhythm") or {}
+    if rh.get("launch"):
+        others += LAUNCH_CHECKS.format(rhythm=rh.get("summary") or "(not measured)")
     prev = ""
     if m.get("previous_findings"):
         prev = ("\n## This is round %d\nRead the previous findings first and judge only whether they were fixed, plus anything "
@@ -552,6 +586,8 @@ You are a helper for one task: review a finished video from the evidence in this
 showtime workflow, do not edit the project, do not re-render, and do not dispatch other agents. You did not
 make this video and owe it nothing. Everything you need is a file path below; the session that made it is
 not available to you on purpose.
+
+Skill: {skill}
 
 ## The video
 - File: `{video}` ({w}x{h}, {fps:.3g} fps, {dur:.2f}s)
@@ -628,7 +664,7 @@ BEST POSTER FRAME: t=..s because ...
 
 Limits: at most {maxr} critic rounds per video. The second round checks only the fixes. If blockers remain
 after that, stop: the maker shows your findings to the user instead of looping.
-""".format(round=m["round"], maxr=m["max_rounds"], video=m["video"], w=m["size"][0], h=m["size"][1], fps=m["fps"],
+""".format(skill=_skill_dir(), round=m["round"], maxr=m["max_rounds"], video=m["video"], w=m["size"][0], h=m["size"][1], fps=m["fps"],
            dur=m["duration"], verdict=q["verdict"], nf=q["summary"]["fail"], nw=q["summary"]["warn"],
            qa=_rel(q["report"], pack), sheet=_rel(m["sheet"], pack), scenes=_rel(m["scenes_sheet"], pack),
            loud=_rel(m["loudness_graph"], pack), thumb=_rel(m["thumbnail_preview"], pack), keys=key_list, ctx=ctx_list,

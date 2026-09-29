@@ -21,7 +21,9 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import shutil
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -164,6 +166,44 @@ class TestCheckersBite(unittest.TestCase):
             checks = sorted(i["check"] for i in f.errors())
             self.assertEqual(checks, ["names", "paths", "paths"], fmt(f.items))
         finally:
+            import shutil
+            shutil.rmtree(str(d), ignore_errors=True)
+
+    def test_moved_doc_links(self):
+        import tempfile
+        d = Path(tempfile.mkdtemp(prefix="st-moved-"))
+        try:
+            doc = d / "doc.md"
+            old = "https://developers." + "openai.com/codex/mcp"     # split: this file ships too
+            doc.write_text("old: %s\nnew: https://learn.chatgpt.com/docs/extend/mcp\n" % old, encoding="utf-8")
+            f = cr.Findings()
+            cr.check_moved_urls(f, [doc])
+            self.assertEqual([(i["check"], i["where"].rsplit(":", 1)[1]) for i in f.errors()], [("links", "1")], fmt(f.items))
+            self.assertIn("learn.chatgpt.com", f.errors()[0]["message"])
+        finally:
+            import shutil
+            shutil.rmtree(str(d), ignore_errors=True)
+
+    def test_registry_names_rule(self):
+        import json
+        import tempfile
+        d = Path(tempfile.mkdtemp(prefix="st-registry-"))
+        real = cr.REPO
+        try:
+            (d / "packages" / "npm").mkdir(parents=True)
+            (d / "server.json").write_text(json.dumps({"name": "io.github.someone/showtime", "description": "x" * 101,
+                                                        "packages": [{"registryType": "npm", "identifier": "other"}]}),
+                                           encoding="utf-8")
+            (d / "packages" / "npm" / "package.json").write_text(json.dumps({"name": "@a/b", "mcpName": "io.github.x/y"}),
+                                                                 encoding="utf-8")
+            cr.REPO = d
+            f = cr.Findings()
+            cr.check_registry_names(f)
+            msgs = " | ".join(i["message"] for i in f.errors())
+            for needle in ("mcpName", "npm package must be", "over 100 characters"):
+                self.assertIn(needle, msgs)
+        finally:
+            cr.REPO = real
             import shutil
             shutil.rmtree(str(d), ignore_errors=True)
 
@@ -414,6 +454,59 @@ class TestRunAllShards(unittest.TestCase):
         for bad in ("0/3", "4/3", "3", "a/b", "1/0"):
             with self.assertRaises(Exception, msg=bad):
                 ra.parse_shard(bad)
+
+
+E2E = REPO / "scripts" / "e2e.py"
+
+
+@unittest.skipIf(not E2E.is_file(), "scripts/e2e.py not found (skill copied without its repository)")
+class TestE2EScript(unittest.TestCase):
+    """scripts/e2e.py (the platform test behind .github/workflows/e2e.yml) judges steps strictly."""
+
+    @classmethod
+    def setUpClass(cls):
+        spec = importlib.util.spec_from_file_location("st_e2e", str(E2E))
+        cls.m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.m)
+
+    def run_step(self, code: str, **kw):
+        out = Path(tempfile.mkdtemp(prefix="st-e2e-test-"))
+        try:
+            r = self.m.Run(out)
+            text = r.cmd("step", [sys.executable, "-c", code], cwd=out, timeout=60, **kw)
+            return text, r.steps[-1]
+        finally:
+            shutil.rmtree(str(out), ignore_errors=True)
+
+    def test_traceback_with_exit_code_0_fails(self):
+        # what phonemizer's exit hook printed on Windows on Arm: rc 0, yet an exception
+        code = ("import atexit, sys\n"
+                "def hook(): raise PermissionError(13, 'Access is denied', 'espeak-ng.dll')\n"
+                "atexit.register(hook)\nprint('done vo.wav')")
+        text, step = self.run_step(code)
+        self.assertIsNone(text)
+        self.assertFalse(step["ok"])
+        self.assertEqual(step["rc"], 0)
+        self.assertIn("PermissionError", step["note"])
+        text, step = self.run_step(code, strict=False)   # the suite step: its exit code decides
+        self.assertTrue(step["ok"])
+
+    def test_clean_step_passes_and_expect_can_fail_it(self):
+        text, step = self.run_step("print('verdict: PASS')")
+        self.assertTrue(step["ok"])
+        self.assertEqual(step["note"], "verdict: PASS")
+        text, step = self.run_step("print('ok')", expect=lambda t: "no final.mp4")
+        self.assertFalse(step["ok"])
+        self.assertEqual(step["note"], "no final.mp4")
+
+    def test_workflow_uses_the_script(self):
+        wf = (REPO / ".github" / "workflows" / "e2e.yml").read_text(encoding="utf-8")
+        self.assertIn("scripts/e2e.py", wf)
+        self.assertIn("e2e-windows.ps1", wf)
+        for label in ("macos-14", "ubuntu-24.04-arm", "windows-11-arm", "windows-2025"):
+            self.assertIn(label, wf)
+        ps1 = (REPO / "scripts" / "e2e-windows.ps1").read_bytes()
+        self.assertTrue(all(b < 128 for b in ps1), "e2e-windows.ps1 must stay ASCII (PowerShell 5.1 reads it as ANSI)")
 
 
 if __name__ == "__main__":

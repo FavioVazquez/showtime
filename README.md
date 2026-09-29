@@ -2,7 +2,7 @@
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/readme/hero-dark.svg">
     <source media="(prefers-color-scheme: light)" srcset="assets/readme/hero-light.svg">
-    <img alt="showtime: velvet curtains open on a lit stage. A local video studio for Claude Code. Describe a video. Claude directs. Your machine renders." src="assets/readme/hero-light.svg" width="100%">
+    <img alt="showtime: velvet curtains open on a lit stage. A local video studio for your coding agent. Describe a video. Your agent directs. Your machine renders." src="assets/readme/hero-light.svg" width="100%">
   </picture>
 </p>
 
@@ -19,21 +19,23 @@ https://github.com/user-attachments/assets/a11e9613-efd3-490b-a3ec-5583ac65a5d2
   <a href="LICENSE"><img alt="license: MIT" src="assets/readme/badges/license.svg" height="24"></a>
   <img alt="runs on your machine" src="assets/readme/badges/local.svg" height="24">
   <img alt="API keys: none" src="assets/readme/badges/keys.svg" height="24">
-  <img alt="Claude Code plugin" src="assets/readme/badges/plugin.svg" height="24">
-  <a href="CHANGELOG.md"><img alt="status: 0.1, early" src="assets/readme/badges/status.svg" height="24"></a>
-  <a href="#requirements"><img alt="tested: Intel Mac · Apple Silicon · Linux x64 · Windows x64" src="assets/readme/badges/tested.svg" height="24"></a>
-  <a href="#requirements"><img alt="not yet run: Windows 10/11 · Linux arm64" src="assets/readme/badges/windows.svg" height="24"></a>
+  <a href="#works-with"><img alt="tested with Claude Code, Codex, Cursor, Devin and OpenCode" src="assets/readme/badges/agents.svg" height="24"></a>
+  <a href="CHANGELOG.md"><img alt="status: 0.2, early" src="assets/readme/badges/status.svg" height="24"></a>
+  <a href="#requirements"><img alt="tested: Intel Mac, Apple Silicon, Linux x64, Linux arm64, Windows x64" src="assets/readme/badges/tested.svg" height="24"></a>
+  <a href="#requirements"><img alt="still to run: Windows 10/11 desktop, Windows 11 on Arm" src="assets/readme/badges/windows.svg" height="24"></a>
 </p>
 
-<h3 align="center">Ask Claude Code for a video in one sentence.<br>showtime makes it on your own machine.</h3>
+<h3 align="center">A local video studio for your coding agent.<br>Describe a video. Your agent directs. Your machine renders.</h3>
 
 <p align="center">
 Motion graphics, voice-over, music, sound design, captions, footage editing and platform exports,
-with no cloud AI services, no API keys and no uploads.
+with no cloud AI services, no API keys and no uploads. Works in Claude Code, Codex, Cursor, Devin,
+OpenCode and any agent that supports <a href="https://agentskills.io">Agent Skills</a>.
 </p>
 
 <p align="center">
   <a href="#quick-start"><b>Quick start</b></a> ·
+  <a href="#works-with"><b>Works with</b></a> ·
   <a href="#now-showing"><b>Gallery</b></a> ·
   <a href="#how-it-works"><b>How it works</b></a> ·
   <a href="#meet-the-crew"><b>The crew</b></a> ·
@@ -53,14 +55,17 @@ with no cloud AI services, no API keys and no uploads.
 
 **1. Install the two prerequisites** (details in [Requirements](#requirements)):
 [uv](https://docs.astral.sh/uv/) and [Node.js](https://nodejs.org) 24 or 22 LTS (20 or newer works).
-Restart Claude Code afterwards so it sees them.
+Restart your coding agent afterwards so it sees them.
 
-**2. Add showtime to Claude Code:**
+**2. Add showtime to your agent.** In Claude Code:
 
 ```text
 /plugin marketplace add FavioVazquez/showtime
 /plugin install showtime@showtime
 ```
+
+Using Codex, Cursor, Devin, OpenCode or another agent? [Works with](#works-with) has the exact
+install for each, and `npx skills add FavioVazquez/showtime` covers any agent that supports Agent Skills.
 
 **3. Ask for a video:**
 
@@ -68,10 +73,11 @@ Restart Claude Code afterwards so it sees them.
 Make a 20-second launch video for this repo, with a voice-over and upbeat music.
 ```
 
-The first time, Claude checks what is missing, tells you the download size and time (about 2.9 GB into
-`~/.showtime`, usually 3 to 11 minutes; nothing outside that folder changes) and runs setup once you say
-yes. After that, a request looks
-like this:
+The first time, your agent checks what is missing, tells you the download size and time (about
+0.6 to 0.8 GB into `~/.showtime`, depending on your system, usually 2 to 6 minutes; nothing outside that
+folder changes) and runs setup once you say yes. Bigger pieces (the transcription model, Manim, music
+tracks) come the first time a video needs them, announced with their size. After that, a request in Claude
+Code looks like this:
 
 <p align="center">
   <picture>
@@ -79,18 +85,230 @@ like this:
     <source media="(prefers-color-scheme: light)" srcset="assets/readme/terminal-light.svg">
     <img alt="A Claude Code session: the request is typed, Claude states its assumptions (quick mode, 20 s, 16:9, English voice, upbeat bed, only claims the README makes), shows a first look, renders on this machine, and showtime prints its completion card: final.mp4 is ready, 20.0 s, 1920x1080, 17.0 MB, qa PASS, the output path and the next step." src="assets/readme/terminal-light.svg" width="100%">
   </picture>
-  <br><sub>An illustration of a session. The card's figures are example 01's; render time depends on your machine.</sub>
+  <br><sub>An illustration of a session in Claude Code; other agents show the same steps in their own style. The card's figures are example 01's; render time depends on your machine.</sub>
 </p>
 
-Claude states its assumptions in one line (it asks only when a request is genuinely open), shows you a
+Your agent states its assumptions in one line (it asks only when a request is genuinely open), shows you a
 first look (stills or a fast draft) before the full-quality render, then checks the result with
 `showtime qa`. Every request gets its own folder, `showtime-out/<name>-<timestamp>/`, with `final.mp4`,
 `poster.jpg`, `share.txt`, `exports/` and `work/`. Nothing is ever overwritten.
 
 > [!TIP]
-> Say **"show me options first"** (or "studio") and Claude opens a local board where you pick a concept,
+> Say **"show me options first"** (or "studio") and your agent opens a local board where you pick a concept,
 > a look, a music bed and a storyboard before anything is built. Say **"no crew"** to keep the whole job in
 > one session.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/readme/divider-dark.svg">
+  <img alt="" src="assets/readme/divider-light.svg" width="100%">
+</picture>
+
+## Works with
+
+showtime is a skill, a command line and an MCP server, so it runs in any coding agent that reads
+[Agent Skills](https://agentskills.io) and can run shell commands. MCP adds typed tools on top, and
+the ten [crew](#meet-the-crew) agents are an optional speed-up for hosts that have custom sub-agents.
+
+**Tested with.** A real run passed: the agent installed showtime from this repository and made a
+5-second test video ("make a 5-second test video that says hello", empty folder), ending in a `final.mp4`
+whose `showtime qa` verdict had no FAIL.
+
+| Agent | Install route | Crew agents | Tested with |
+|---|---|---|---|
+| [Claude Code](#claude-code) | plugin | yes | the primary host |
+| [OpenAI Codex](#other-agents) | plugin | with `showtime install` | CLI 0.158.0, plugin route |
+| [Cursor](#other-agents) | plugin (reads `.claude-plugin/`) | yes | CLI 2026.09.28 |
+| [Devin](#other-agents) | plugin (reads `.claude-plugin/`) | yes (local only) | CLI 3000.11.3 |
+| [OpenCode](#other-agents) | `showtime install` | yes | 1.18.33, a free model |
+
+**Should work with** any agent that supports [Agent Skills](https://agentskills.io): GitHub Copilot
+(CLI and VS Code), Gemini CLI, Antigravity, Cline, Kilo Code, Kiro, Zed, Goose, Amp, Factory Droid and Qwen
+Code. The files each one reads are packaged and were checked with the agent's own tools where possible, but
+no real video has been made in them yet. If you try one, an [issue](https://github.com/FavioVazquez/showtime/issues)
+with what happened helps everyone. Exact steps for every agent, and what the tests covered:
+[docs/agents.md](docs/agents.md).
+
+### Claude Code
+
+```text
+/plugin marketplace add FavioVazquez/showtime
+/plugin install showtime@showtime
+```
+
+Everything is included: the skill, the ten crew agents, the MCP server and the plugin settings (`/config`).
+
+### Any agent that supports Agent Skills
+
+```bash
+npx skills add FavioVazquez/showtime
+```
+
+This installs the skill for the agents you pick. Then run setup once from the installed skill folder
+(`<skills folder>/showtime/bin/showtime setup`), and add the MCP server if you want it ([below](#mcp-only)).
+
+### Other agents
+
+Agents often run in a sandbox that blocks a large download, so run setup yourself once, in a normal terminal
+(it prints the size first and resumes if interrupted):
+
+```bash
+git clone --depth 1 https://github.com/FavioVazquez/showtime ~/showtime
+~/showtime/skills/showtime/bin/showtime setup      # Windows: ~\showtime\skills\showtime\bin\showtime.cmd setup
+~/showtime/skills/showtime/bin/showtime doctor     # every line PASS (SKIP is fine)
+```
+
+Setup also writes the stable command `~/.showtime/bin/showtime` (Windows: `showtime.cmd`), which keeps working
+when a plugin update moves the skill folder. In the commands below, `showtime` means that command.
+`showtime install --agent <name>` links the skill where the agent looks, writes the ten crew agents in the
+agent's own format and adds a `showtime` MCP server entry; it merges config files (one backup, never a
+replacement), and `--print`, `--project` and `--uninstall` are there too.
+
+<details>
+<summary><b>OpenAI Codex</b> · tested</summary>
+
+```bash
+codex plugin marketplace add FavioVazquez/showtime
+codex plugin add showtime@showtime
+showtime install --agent codex --no-skill --no-mcp   # optional: the ten crew agents (~/.codex/agents)
+```
+
+Codex reads the root `plugin.json` and `mcp.json`; the skill appears as `showtime:showtime`. In its default
+sandbox, allow network access and write access to `~/.showtime` (the exact `config.toml` lines are in
+[docs/agents.md](docs/agents.md#openai-codex)). Headless: `codex exec --skip-git-repo-check "make a 5-second test video that says hello"`.
+
+</details>
+
+<details>
+<summary><b>Cursor</b> · tested</summary>
+
+```bash
+git clone --depth 1 https://github.com/FavioVazquez/showtime ~/.cursor/plugins/local/showtime   # then restart Cursor
+agent --plugin-dir ~/.cursor/plugins/local/showtime                                             # the CLI
+```
+
+Cursor reads `.claude-plugin/plugin.json`: the skill, the crew and the MCP server all load. Without the
+plugin: `showtime install --agent cursor`.
+
+</details>
+
+<details>
+<summary><b>Devin</b> · tested</summary>
+
+```bash
+devin plugins install FavioVazquez/showtime        # add --local to keep it off your Devin Cloud plugins
+devin plugins info showtime                         # skill, 10 agents, MCP server "showtime"
+```
+
+Devin reads `.claude-plugin/`. The crew works in the CLI and Devin Desktop, not in Devin Cloud.
+
+</details>
+
+<details>
+<summary><b>OpenCode</b> · tested</summary>
+
+```bash
+showtime install --agent opencode
+```
+
+The skill goes to `~/.agents/skills/showtime`, the crew to `~/.config/opencode/agents` and the MCP server to
+`~/.config/opencode/opencode.json`. Check with `opencode agent list` and `opencode mcp list`.
+
+</details>
+
+<details>
+<summary><b>GitHub Copilot</b> (CLI and VS Code) · should work</summary>
+
+```bash
+copilot plugin marketplace add FavioVazquez/showtime
+copilot plugin install showtime@showtime
+```
+
+VS Code: run **Chat: Install Plugin From Source** with `https://github.com/FavioVazquez/showtime`. Without the
+plugin: `showtime install --agent copilot`.
+
+</details>
+
+<details>
+<summary><b>Gemini CLI</b> · should work</summary>
+
+```bash
+showtime install --agent gemini
+```
+
+Adds the skill, the crew in Gemini's format and the MCP server. The repository is also a Gemini extension
+(`gemini extensions install https://github.com/FavioVazquez/showtime`), which brings the skill and the MCP
+server without the crew.
+
+</details>
+
+<details>
+<summary><b>Antigravity</b> · should work</summary>
+
+```bash
+git clone --depth 1 https://github.com/FavioVazquez/showtime ~/showtime
+agy plugin install ~/showtime                     # skill, crew and MCP server
+```
+
+Or, without the plugin: `showtime install --agent antigravity`.
+
+</details>
+
+<details>
+<summary><b>Cline, Kilo Code, Kiro, Zed, Goose, Amp, Qwen Code</b> · should work</summary>
+
+```bash
+showtime install --agent cline      # skill + MCP server (no crew: Cline's sub-agents cannot use MCP)
+showtime install --agent kilo       # skill; add the MCP server in Kilo's settings with the command it prints
+showtime install --agent kiro       # skill, crew and MCP server
+showtime install --agent zed        # skill; it prints the context_servers entry to paste into settings.json
+showtime install --agent goose      # skill; it prints the extension block for config.yaml
+showtime install --agent amp        # or: amp mcp add showtime -- ~/.showtime/bin/showtime mcp
+showtime install --agent qwen       # Qwen reads skills only from ~/.qwen/skills
+```
+
+In the Cline VS Code extension, add the MCP server under **MCP Servers > Configure MCP Servers** (the command
+prints the entry), or let Cline follow [`llms-install.md`](llms-install.md).
+
+</details>
+
+<details>
+<summary><b>Factory Droid</b> · should work</summary>
+
+```bash
+droid plugin marketplace add FavioVazquez/showtime
+droid plugin install showtime@showtime
+```
+
+Factory translates the `.claude-plugin/` layout. Without the plugin: `showtime install --agent factory`.
+
+</details>
+
+<a id="mcp-only"></a>
+
+### MCP only
+
+Any client that starts local (stdio) servers can use showtime's MCP server on its own, without the skill. After
+setup:
+
+```json
+{
+  "mcpServers": {
+    "showtime": { "command": "/home/<you>/.showtime/bin/showtime", "args": ["mcp"] }
+  }
+}
+```
+
+(Use the full path to that file in your home folder; on Windows it is `showtime.cmd` in `%USERPROFILE%\.showtime\bin`, written out in full.) That works today. Two more routes need no clone and
+**become available once 0.2.0 is published** (the npm package and the GitHub release asset do not exist yet):
+
+```json
+{ "command": "npx", "args": ["-y", "@faviovazquez/showtime-mcp"] }
+```
+
+is the same server from npm (see [`packages/npm/README.md`](packages/npm/README.md)), and `showtime-0.2.0.mcpb`
+on the v0.2.0 release opens in Claude Desktop with a double click. Setup still runs once on your machine: the
+models and tools never travel inside a package. Long tools answer with a task id after about 20 seconds when a
+client stops calls early; the `status` tool reports progress and the result.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/readme/divider-dark.svg">
@@ -206,7 +424,7 @@ changed. Click a preview to open the example. Each one has a card with its promp
 > one from any project with `showtime export html`. On GitHub, download the file to play it.
 
 <details>
-<summary><b>The 22 prompts behind the examples</b>: copy one into Claude Code</summary>
+<summary><b>The 22 prompts behind the examples</b>: copy one into your agent</summary>
 
 | # | Prompt |
 |---|---|
@@ -244,7 +462,7 @@ changed. Click a preview to open the example. Each one has a card with its promp
 
 <p align="center"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/readme/diagrams/pipeline-dark.svg">
-  <img alt="How showtime works. One sentence in Claude Code; Claude directs (assumptions, script, scenes, mix); a first look, and your notes loop back; the render runs on your machine (frames, voice, music, encode); showtime qa checks loudness, frames, captions and platform specs; out come an MP4 and an HTML video with poster, exports, captions and credits." src="assets/readme/diagrams/pipeline-light.svg" width="100%">
+  <img alt="How showtime works. One sentence in your coding agent; your agent directs (assumptions, script, scenes, mix); a first look, and your notes loop back; the render runs on your machine (frames, voice, music, encode); showtime qa checks loudness, frames, captions and platform specs; out come an MP4 and an HTML video with poster, exports, captions and credits." src="assets/readme/diagrams/pipeline-light.svg" width="100%">
 </picture></p>
 
 Motion graphics are written as HTML, CSS and canvas and rendered frame-exactly in headless Chrome: every
@@ -255,12 +473,12 @@ Math scenes use Manim, and real footage is cut by transcript with ffmpeg.
 
 <p align="center"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/readme/diagrams/runs-where-dark.svg">
-  <img alt="What runs where. In your Claude Code session, Claude is the director: it reads your request and sources, states assumptions, writes the script, picks templates, scenes and sound, shows a first look, briefs the crew and checks the result. On your machine, in ~/.showtime, is the studio: headless Chrome, ffmpeg, Kokoro, Piper and Supertonic voices, Whisper transcripts, a composer with 18 styles and 56 effect types, 1,334 licensed sounds, Manim, and showtime qa. The web only when you ask: archive search and site capture fetch pages; nothing of yours is sent. No cloud AI service, no API keys, no uploads." src="assets/readme/diagrams/runs-where-light.svg" width="100%">
+  <img alt="What runs where. In your coding agent, your agent is the director: it reads your request and sources, states assumptions, writes the script, picks templates, scenes and sound, shows a first look, briefs the crew and checks the result. On your machine, in ~/.showtime, is the studio: headless Chrome, ffmpeg, Kokoro, Piper and Supertonic voices, local transcripts, a composer with 18 styles and 56 effect types, 1,334 sounds and 249 music tracks, Manim, and showtime qa. The web only when you ask: archive search and site capture fetch pages; nothing of yours is sent. No cloud AI service, no API keys, no uploads." src="assets/readme/diagrams/runs-where-light.svg" width="100%">
 </picture></p>
 
 showtime adds no cloud service of its own: no API keys, no accounts, nothing you make is uploaded.
-Every model and tool is downloaded once into `~/.showtime`. After that it goes online only when you ask
-for something from the web: public-archive media search (Openverse, Wikimedia Commons, NASA) and website
+Every model and tool is downloaded once into `~/.showtime`, the small ones at setup and the bigger ones the
+first time a video needs them. After that it goes online only when you ask for something from the web: public-archive media search (Openverse, Wikimedia Commons, NASA) and website
 capture fetch pages and files, and send nothing of yours.
 
 <!-- ============================================================================================
@@ -293,7 +511,7 @@ from the files there.
 
 ## Meet the crew
 
-Claude is the director. For studio work and videos you will publish, it can hand parts of the job to
+Your agent is the director. For studio work and videos you will publish, it can hand parts of the job to
 **ten specialist sub-agents** that ship with the plugin. They are optional: a quick video uses none of
 them, except a researcher and a critic when you say it will be published (and scene builders for long
 videos). Each member gets a written brief, works only in its own folder, never asks you anything, never
@@ -308,18 +526,18 @@ uploads, and reports back with a short status.
 
 <p align="center"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/readme/diagrams/crew-handoff-dark.svg">
-  <img alt="How the crew hands work around. The director, Claude in your session, writes a TASK.md brief for each member and merges each RESULT.md. I, pitch, in parallel: creative director (concepts and a wildcard), scriptwriter (facts, claims, hooks), brand designer (a brand kit); you pick a concept. II, plan: scriptwriter (the script), storyboard artist (storyboard and animatic), researcher (checks every claim), creative director (signs off); you sign off. III, build, in parallel: motion designers (one per scene), sound designer (bed, effects, mix), voice director (the voice-over). IV, review: the critic writes findings with frames; fixes go back to the same member. V, deliver: showtime qa, then the MP4 and HTML video. Footage jobs: editor, sound designer, researcher, critic. Members never talk to each other or to you." src="assets/readme/diagrams/crew-handoff-light.svg" width="100%">
+  <img alt="How the crew hands work around. The director, your agent in your session, writes a TASK.md brief for each member and merges each RESULT.md. I, pitch, in parallel: creative director (concepts and a wildcard), scriptwriter (facts, claims, hooks), brand designer (a brand kit); you pick a concept. II, plan: scriptwriter (the script), storyboard artist (storyboard and animatic), researcher (checks every claim), creative director (signs off); you sign off. III, build, in parallel: motion designers (one per scene), sound designer (bed, effects, mix), voice director (the voice-over). IV, review: the critic writes findings with frames; fixes go back to the same member. V, deliver: showtime qa, then the MP4 and HTML video. Footage jobs: editor, sound designer, researcher, critic. Members never talk to each other or to you." src="assets/readme/diagrams/crew-handoff-light.svg" width="100%">
 </picture></p>
 
-**Let Claude cast it** (the usual way). Studio mode brings in the company; for a quick video you will
-publish, Claude adds the researcher and the critic on its own. Say **"no crew"** to keep everything in
+**Let your agent cast it** (the usual way). Studio mode brings in the company; for a quick video you will
+publish, your agent adds the researcher and the critic on its own. Say **"no crew"** to keep everything in
 one session.
 
 ```text
 Let's make a launch trailer for this repo. Show me options first.
 ```
 
-**Or call one member yourself**, by name:
+**Or call one member yourself**, by name (Claude Code syntax; in other agents, ask it to "spawn the researcher agent"):
 
 ```text
 @agent-showtime:researcher check the claims in narration.md against the README
@@ -414,16 +632,16 @@ render. Press <kbd>?</kbd> in the player for the key map.
 <table>
 <tr>
 <td width="33%" valign="top"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/readme/icons/voice-dark.svg"><img src="assets/readme/icons/voice-light.svg" width="44" alt=""></picture><br><b>Voice-over</b><br><sub>Kokoro, Piper and Supertonic voices, English, Spanish and 30+ more languages, with exact word timings for captions and kinetic type.</sub></td>
-<td width="33%" valign="top"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/readme/icons/music-dark.svg"><img src="assets/readme/icons/music-light.svg" width="44" alt=""></picture><br><b>Music and sound</b><br><sub>A procedural composer that hits exact lengths, 56 synthesized effect types, a library of 1,334 permissively licensed sounds, beat grids, ducking, mastering.</sub></td>
+<td width="33%" valign="top"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/readme/icons/music-dark.svg"><img src="assets/readme/icons/music-light.svg" width="44" alt=""></picture><br><b>Music and sound</b><br><sub>249 produced tracks (Scott Buckley, Kevin MacLeod, public-domain recordings) with the credit written for you, a composer that hits exact lengths, 56 synthesized effect types, 1,334 permissively licensed sounds, beat grids, ducking, mastering.</sub></td>
 <td width="33%" valign="top"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/readme/icons/captions-dark.svg"><img src="assets/readme/icons/captions-light.svg" width="44" alt=""></picture><br><b>Captions</b><br><sub>Five styles, burned in or as SRT/VTT, placed inside each platform's safe zone; karaoke from the voice's word times.</sub></td>
 </tr>
 <tr>
-<td width="33%" valign="top"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/readme/icons/footage-dark.svg"><img src="assets/readme/icons/footage-light.svg" width="44" alt=""></picture><br><b>Footage editing</b><br><sub>Word-level local transcripts; cut fillers and pauses by editing text; speakers, scenes, face-tracked 9:16, stabilize, denoise, grade.</sub></td>
+<td width="33%" valign="top"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/readme/icons/footage-dark.svg"><img src="assets/readme/icons/footage-light.svg" width="44" alt=""></picture><br><b>Footage editing</b><br><sub>Word-level local transcripts that keep the ums; cut fillers and pauses by editing text; speakers, scenes, face-tracked 9:16, stabilize, denoise, grade.</sub></td>
 <td width="33%" valign="top"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/readme/icons/manim-dark.svg"><img src="assets/readme/icons/manim-light.svg" width="44" alt=""></picture><br><b>Math with Manim</b><br><sub>Equations, proofs, graphs and grid transforms, timed to the narration, as an optional extra.</sub></td>
 <td width="33%" valign="top"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/readme/icons/studio-dark.svg"><img src="assets/readme/icons/studio-light.svg" width="44" alt=""></picture><br><b>Studio boards</b><br><sub>Concepts, style frames, music beds, a storyboard and an animatic on local pages you click through; picks are logged.</sub></td>
 </tr>
 <tr>
-<td width="33%" valign="top"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/readme/icons/crew-dark.svg"><img src="assets/readme/icons/crew-light.svg" width="44" alt=""></picture><br><b>A crew of ten</b><br><sub>Optional specialist sub-agents from creative director to critic; Claude stays the director and the only one who talks to you.</sub></td>
+<td width="33%" valign="top"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/readme/icons/crew-dark.svg"><img src="assets/readme/icons/crew-light.svg" width="44" alt=""></picture><br><b>A crew of ten</b><br><sub>Optional specialist sub-agents from creative director to critic; your agent stays the director and the only one who talks to you.</sub></td>
 <td width="33%" valign="top"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/readme/icons/html-dark.svg"><img src="assets/readme/icons/html-light.svg" width="44" alt=""></picture><br><b>HTML videos</b><br><sub>One self-contained file per video: chapters, keyboard control, links to a moment, zero network requests.</sub></td>
 <td width="33%" valign="top"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/readme/icons/qa-dark.svg"><img src="assets/readme/icons/qa-light.svg" width="44" alt=""></picture><br><b>QA before done</b><br><sub>Pre-render checks, then <code>showtime qa</code> on the final: loudness, black or frozen frames, captions, platform specs.</sub></td>
 </tr>
@@ -472,13 +690,15 @@ showtime export html my-video                # a single-file interactive HTML vi
 <summary><b>The audio toolkit</b></summary>
 
 Everything is local and license-gated: no sample leaves your machine, and an asset that needs
-attribution writes itself into `credits.txt`.
+attribution writes itself into `credits.txt`. Catalog tracks are downloaded from their creators on first use
+(with the size announced) and never re-hosted here.
 
 | Command | What it does |
 |---|---|
 | `audio compose` | procedural music to an exact length in 18 styles, with stems, MIDI and a beat map; restrained beds for explainers and data, livelier styles on request |
 | `audio sfx` | 56 synthesized effect types (whooshes, hits, UI clicks, risers), with the hit time printed |
-| `audio lib` | the local library, 1,334 sounds: CC0 effects and ambiences, CC-BY music beds credited automatically, and beds rendered on your machine |
+| `audio music` | the produced-music catalog: 249 tracks, each measured for quality and tagged by mood, energy and tempo; `audio music pick --for launch --dur 45` chooses one, and the credit lands in `credits.txt` and the post copy by itself |
+| `audio lib` | the local library, 1,334 sounds: CC0 effects and ambiences, CC-BY music beds credited automatically, and beds rendered on your machine; `audio packs` adds 35 more sound packs (34 CC0, 1 CC BY) on demand |
 | `audio beats` | beats, downbeats, onsets, energy, sections and key, so cuts land on the music |
 | `audio fit` | loops or trims music to a length on bar lines |
 | `audio mix` | one mix file: ducking under the voice, effects aligned to hits, loudness |
@@ -506,23 +726,91 @@ scene files written for it.
   <img alt="" src="assets/readme/divider-light.svg" width="100%">
 </picture>
 
+## New in 0.2.0
+
+- **Works in your coding agent.** One repository for every agent: Claude Code, Codex, Cursor, Devin and OpenCode
+  are tested, and Copilot, Gemini CLI, Antigravity, Cline, Kilo Code, Kiro, Zed, Goose, Amp, Factory Droid and
+  Qwen Code are packaged ([Works with](#works-with)). `showtime install --agent <name>` puts the skill, the crew
+  and the MCP server where an agent looks. A stable `~/.showtime/bin/showtime` command survives plugin updates,
+  long commands can run in the background (`--background`, `showtime status`), and `showtime doctor` knows the
+  sandboxes of the common agents and says which setting to change.
+- **A lighter first run.** The default download is about 770 MB on Linux x64 (about 560 to 610 MB on macOS and
+  Windows) instead of 2.9 GB. `showtime setup --plan` lists every component with its size and when it is
+  fetched, and `showtime setup --full` installs everything up front. Nothing was removed: a piece that left the
+  default install (the transcription model, Manim, the audio library beyond its 41 MB starter, browser and icon
+  extras) is fetched the first time a video needs it, announced with its size. Homes made by 0.1 keep working;
+  `setup --prune` clears what is no longer used.
+- **A real music catalog.** 249 produced tracks (Scott Buckley, Kevin MacLeod and public-domain recordings),
+  each downloaded and measured for hiss, clipping, mono, dead gaps and loudness swings, tagged by mood, energy,
+  tempo and use, and picked with `showtime audio music pick`. Tracks are fetched from their creators on first use
+  and never re-hosted. Every render that uses one writes the credit into `credits.txt` and the post copy by
+  itself, and prints a note. 35 more sound packs (34 CC0) install when a search needs them.
+- **Platforms.** Apple Silicon and Linux arm64 now run end to end in CI, Windows 11 on Arm runs with an x64
+  Python under Windows' emulation ([Requirements](#requirements)), and `scripts/e2e.py` repeats the whole
+  path on any machine.
+- **A safer preview server.** `showtime preview` and `showtime server` answer only requests that carry a
+  random per-session key from the printed link; before, any web page open in your browser could read a
+  project's files over `127.0.0.1`.
+- **Footage edits that hear the ums.** The default transcription is now Parakeet-TDT 0.6B v3 (25 languages
+  including English and Spanish; fetched on first use, 465 MB; Whisper stays for other languages and with
+  `--model`). It keeps "um" and "uh" as words, and a scan after it hears the hesitations no word covers. On a public,
+  human-labelled podcast set (20 episodes, 495 labelled fillers) it found 81% of them at 83% precision against the
+  labels, where 0.1.0's default found 11% at 78%; on the benchmark interview it cuts all five known "uh" (the
+  benchmark's scorer credits 4 of 5; 0.1.0's default commands cut none). Cuts get 20 ms crossfades. Speech under
+  music is heard better because showtime transcribes its own dry narration stem, and separates the voice only when
+  the music is loud: word errors at equal loudness fell from 19.7% to 7.3% on a small test set. These are local
+  evaluations on a few sets, not a guarantee for your footage; label-based precision understates it, since the
+  labels miss some real fillers. CrisperWhisper is available as an opt-in model under its non-commercial licence
+  (not on Intel Macs).
+- **Launch videos by default.** Ask for a launch, promo or release video and the default is a calm short film of
+  four to six scenes: a big still hook, one smooth fly-through into the product, the same window carried across the
+  cuts, and a produced track whose swell lands on the end card. The camera only moves when it has a reason; the
+  motion comes from the product itself. Terminals and code shrink to fit every size, and `showtime check` stops a
+  render when text would be cut off.
+
+The full list is in the [changelog](CHANGELOG.md).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/readme/divider-dark.svg">
+  <img alt="" src="assets/readme/divider-light.svg" width="100%">
+</picture>
+
 ## Requirements
 
-showtime is built for macOS (Apple Silicon and Intel), Windows 10/11 and Linux (x86_64 and arm64).
-So far it has been **tested end to end on an Intel Mac, Linux x86_64 (Ubuntu 24.04) and Windows x64 (Windows Server 2025, as a standard user)**: setup, doctor, a voiced render with qa, HTML export, transcription, captions, the MCP server and the fast test suite.
-**Apple Silicon is tested in CI** on GitHub's macOS 14 arm64 runners: the core setup and the fast test suite, which includes real renders. A run on a physical Apple Silicon Mac is still welcome.
-Windows 10/11 desktop editions run the same code as Windows Server but have not been run on a real machine yet, nor has Linux arm64.
-The CI workflow runs the fast test suite on Linux x64, Windows x64, Apple Silicon and Intel Macs. Expect rough edges on the untested
-platforms, and please [open an issue](https://github.com/FavioVazquez/showtime/issues) when something breaks.
+showtime is built for macOS (Apple Silicon and Intel), Windows 10/11 and Linux (x86_64 and arm64). What has
+actually been run, and where ("end to end" means setup, doctor, a voiced render with qa, HTML export,
+transcription, captions and the MCP server):
+
+- **Intel Mac** (a physical machine): end to end, plus the fast test suite.
+- **Apple Silicon**: end to end on GitHub's `macos-14` (M1) runners, plus the fast suite. A run on a physical
+  Apple Silicon Mac is still welcome.
+- **Linux x86_64**: end to end on Ubuntu 24.04 (AWS), plus the fast suite.
+- **Linux arm64**: end to end on GitHub's `ubuntu-24.04-arm` runners.
+- **Windows Server 2025 x64**: end to end as a standard user (AWS) and on GitHub's `windows-2025` runners.
+- **Windows 11 on Arm**: end to end on GitHub's `windows-11-arm` runners, plus the fast suite. showtime's
+  Python and ffmpeg run as x64 under Windows' emulation there (some packages have no Windows arm64 build, and the
+  native arm64 ffmpeg build did not start on the runner), so it is slower than on x64.
+- **Windows 10/11 x64 desktop as a standard user**: not yet run on a real machine. If you have one,
+  `scripts/e2e-windows.ps1` runs everything and zips the result to attach to an
+  [issue](https://github.com/FavioVazquez/showtime/issues).
+
+CI runs the fast test suite on Linux, Windows and Apple Silicon for every change, and on an Intel Mac
+nightly. Expect rough edges on anything marked not yet run, and please open an issue when something breaks.
 
 | | macOS 14+ | Windows 10/11 (x64) | Linux (glibc 2.28+: Ubuntu 20.04+, Debian 10+) |
 |---|---|---|---|
-| Status | Intel: tested<br>Apple Silicon: tested in CI (macOS 14 arm64) | tested on Server 2025 x64; 10/11 not yet run | x86_64: tested<br>arm64: not yet run |
+| Status | Intel: tested<br>Apple Silicon: tested (CI, end to end) | Server 2025 x64: tested<br>11 on Arm: run in CI, rerun pending<br>10/11 x64 desktop: not yet run | x86_64: tested<br>arm64: tested (CI, end to end) |
 | [uv](https://docs.astral.sh/uv/getting-started/installation/) | install script | install script or winget | install script |
 | [Node.js](https://nodejs.org) 24 or 22 LTS (20+) | installer | installer or winget | fnm or NodeSource |
 
-Chrome, Edge or Chromium is found automatically; if none is installed, setup downloads Playwright's
-Chromium. Disk: about 2.9 GB for the default install plus about 249 MB for the audio library.
+Chrome, Edge or Chromium is found automatically; if none is installed, setup downloads Chrome's headless
+shell (about 100 MB). Disk: the default install is about 770 MB on Linux x64 (700 MB on Linux arm64) and 560 to 610 MB on
+macOS and Windows, with a browser already installed and about 100 MB more without one, instead of 2.9 GB in 0.1; `showtime setup --plan` prints yours,
+component by component. What a video needs only sometimes arrives the first time it is used, with its size
+announced: the transcription model (Parakeet, 465 MB, once),
+Manim (60 MB), the audio library's starter part (41 MB), a music track or a sound pack (each a few MB to a few
+dozen). `showtime setup --full` fetches all of it now, for a machine that will be offline (about 6.6 to 7.2 GB,
+mostly the 2.4 GB music catalog and the 1.6 GB Whisper large-v3-turbo model).
 
 <details>
 <summary><b>Install commands for uv and Node.js</b></summary>
@@ -549,15 +837,15 @@ On Linux, if the browser does not start, install Chromium's system libraries onc
 </details>
 
 ffmpeg is downloaded as a static build, so a system ffmpeg is not needed. Installing uv or Node.js
-updates `PATH` for new terminals only: **restart Claude Code afterwards** (showtime also looks in the
+updates `PATH` for new terminals only: **restart your coding agent afterwards** (showtime also looks in the
 installers' default folders if the new `PATH` has not reached it yet).
 
 <details>
 <summary><b>Setup from a terminal, and what it installs</b></summary>
 
-The first time showtime is used, Claude tells you the size and time and runs the setup once you agree. The first time a video needs library
-music or effects, Claude fetches the audio library (`showtime audio lib fetch`: about 249 MB, about 10–15 min). To run
-setup yourself, use a clone (both share `~/.showtime`).
+The first time showtime is used, your agent tells you the size and time and runs the setup once you agree. The first time a video
+needs a bigger piece (library sounds, a music track, the transcription model, Manim), showtime fetches just that piece and prints its
+size first; `showtime setup --full` fetches everything up front. To run setup yourself, use a clone (both share `~/.showtime`).
 
 macOS and Linux (bash, zsh):
 
@@ -565,7 +853,8 @@ macOS and Linux (bash, zsh):
 git clone https://github.com/FavioVazquez/showtime
 showtime/skills/showtime/bin/showtime setup
 showtime/skills/showtime/bin/showtime doctor
-showtime/skills/showtime/bin/showtime audio lib fetch
+showtime/skills/showtime/bin/showtime setup --plan     # what setup and first use download, with sizes
+showtime/skills/showtime/bin/showtime audio lib fetch  # optional: the whole sound library now (about 249 MB)
 ```
 
 Windows PowerShell (`showtime.cmd` also works from cmd; `showtime.ps1` is there too):
@@ -574,26 +863,31 @@ Windows PowerShell (`showtime.cmd` also works from cmd; `showtime.ps1` is there 
 git clone https://github.com/FavioVazquez/showtime
 & .\showtime\skills\showtime\bin\showtime.cmd setup
 & .\showtime\skills\showtime\bin\showtime.cmd doctor
-& .\showtime\skills\showtime\bin\showtime.cmd audio lib fetch
+& .\showtime\skills\showtime\bin\showtime.cmd setup --plan
+& .\showtime\skills\showtime\bin\showtime.cmd audio lib fetch   # optional: the whole sound library now
 ```
 
-To type `showtime` anywhere, add `skills/showtime/bin` to your `PATH`. On Windows that runs `showtime.cmd`
-(from cmd or PowerShell); call `showtime.ps1` directly only where the PowerShell execution policy allows
-scripts.
+Setup also writes `~/.showtime/bin/showtime` (Windows: `showtime.cmd`), a command that keeps working when a
+plugin update moves the skill folder, and prints how to put it on your `PATH` (it never changes `PATH` itself).
+Without it, `skills/showtime/bin/showtime` is the entry point (the skill's folder, not the plugin's top folder). On
+Windows that runs `showtime.cmd` (from cmd or PowerShell); call `showtime.ps1` directly only where the PowerShell
+execution policy allows scripts.
 
 | In `~/.showtime` (move it with `SHOWTIME_HOME`) | Contents |
 |---|---|
 | `bin/` | static `ffmpeg` / `ffprobe` for your OS and CPU |
 | `venv/` | Python 3.12 environment with pinned packages |
 | `node/` | pinned Node packages: Playwright, animation, charts, math, icons, fonts |
-| `browsers/` | Playwright Chromium, only when no Chrome/Edge/Chromium is installed |
-| `models/` | voices, transcription, face detection and denoise models |
+| `browsers/` | Chrome's headless shell, only when no Chrome/Edge/Chromium is installed |
+| `models/` | the Kokoro voice, face detection and denoise models at setup; transcription models on the first transcription |
 | `soundfonts/` | the FluidR3Mono General MIDI bank (MIT) and its license |
-| `library/` | the audio library: CC0 effects and ambiences, CC-BY music beds (credited automatically), plus effects and beds rendered locally; `showtime audio lib fetch --tier extended` adds about 1 GB more music |
+| `library/` | the audio library, fetched in parts: CC0 effects and ambiences, CC-BY music beds (credited automatically), plus effects and beds rendered locally; `showtime audio lib fetch --tier extended` adds about 200 MB more music |
+| `music/` | produced-music catalog tracks, each fetched from its creator the first time a mix uses it |
 
 Downloads resume after an interruption and are skipped when already present, so re-running setup is
-always safe. Setup's downloads, the optional extras, the core audio library and the models fetched on
-first use (the English aligner, Piper voices) are pinned by URL, size and SHA-256. Two are not pinned
+always safe. Setup's downloads, the optional extras, the core audio library, the music catalog, the sound
+packs and the models fetched on first use (the English aligner, Piper voices) are pinned by URL, size and
+SHA-256. Two are not pinned
 yet: the extended audio-library tier records each file's SHA-256 on its first download and verifies
 every re-download against it (trust on first use), and the background-removal engine used outside
 macOS (rembg, a pinned package version) fetches its model with its own downloader. Features that need
@@ -601,15 +895,20 @@ an optional extra say so and print the exact command; nothing is installed behin
 
 ```bash
 showtime setup --list                     # tiers, extras and their sizes
+showtime setup --plan                     # every component: size, source, when it is fetched (--platform X for another OS)
 showtime setup --estimate                 # what this run would download, and how long it takes
+showtime setup --full                     # everything now, nothing fetched later (offline machines; --seed DIR reuses files)
+showtime setup --prune                    # remove files from older versions that nothing uses any more
 showtime setup --with asr-turbo,diarize   # add extras (keeps what is already installed)
 showtime setup --tier full                # core + the common extras
 ```
 
 | Extra | What it adds |
 |---|---|
-| `asr-turbo` | Whisper large-v3-turbo, the most accurate multilingual transcripts |
-| `parakeet` | Parakeet-TDT 0.6B, very fast English transcription that keeps fillers |
+| `asr-turbo` | Whisper large-v3-turbo, transcripts for languages outside Parakeet's 25 |
+| `parakeet-v3` | Parakeet-TDT 0.6B v3, the default verbatim transcription (25 languages, keeps fillers); fetched on first use anyway |
+| `parakeet` | Parakeet-TDT 0.6B v2, English only; fetched on first use when asked for |
+| `separate` | UVR MDX-Net vocal separator for speech under loud music; fetched when a transcription needs it |
 | `diarize` | speaker labels for interviews and podcasts |
 | `events` | audio event tags (laughter, applause, music) |
 | `supertonic` | Supertonic 3 voices (Spanish and 30 more languages) |
@@ -702,7 +1001,9 @@ link carries a random key.
 | An error needs more detail | re-run with `--debug` for the full traceback; the last one is also saved in `~/.showtime/logs/last-error.log` |
 | You want to report a bug | `showtime doctor --report <job folder>` writes a redacted `bug-report.md` there; read it, then share it if you like. showtime never uploads anything |
 | Linux: the browser does not start | install Chromium's system libraries once: `sudo "$(command -v node)" ~/.showtime/node/node_modules/playwright/cli.js install-deps chromium` |
-| `uv`/`node` not found right after installing them | restart Claude Code (or open a new terminal) so it sees the new `PATH` |
+| `uv`/`node` not found right after installing them | restart your coding agent (or open a new terminal) so it sees the new `PATH` |
+| Your agent's sandbox blocks the download or `~/.showtime` | `showtime doctor` names the setting to change for that agent; or run `showtime setup` yourself once in a normal terminal; or `SHOWTIME_HOME=.showtime showtime setup` to install inside the project |
+| Your agent looks for `bin/showtime` and cannot find it | the entry point is `~/.showtime/bin/showtime` (written by setup) or `<skill folder>/bin/showtime`; the plugin's top folder has no `bin/` |
 | `showtime doctor` takes minutes right after a restart | normal on the first run: the OS (macOS especially) checks the native libraries as they load for the first time. doctor says so and shows what it is checking; later runs take seconds |
 | Claude Code says the showtime MCP server timed out | usually the first start after a reboot, while the OS checks the Node.js binary; run `/mcp` and reconnect, or start Claude Code with `MCP_TIMEOUT=60000`. The `showtime` skill works without it |
 | Setup was interrupted | run it again; downloads resume and finished items are skipped |
@@ -725,9 +1026,10 @@ showtime ships an MCP server (`skills/showtime/mcp/server.mjs`, Node only, no ex
 small set of coarse tools: `doctor`, `new_project`, `render`, `check`, `snap`, `qa`, `voice_say`,
 `voice_script`, `transcribe`, `audio_compose`, `audio_sfx`, `audio_mix`, `audio_search`, `export_html`,
 `studio_open`, `studio_feedback`, `deliver_exports` and `status`. Each runs the matching `showtime`
-command on your machine and answers with a short summary and the paths it wrote. The Claude Code plugin
-registers it for you. For Claude Desktop, Cursor, Codex or any other MCP client, point the client at
-`node /path/to/showtime/skills/showtime/mcp/server.mjs`; the snippet for each client is in
+command on your machine and answers with a short summary and the paths it wrote; a tool that runs longer than about
+20 seconds answers with a task id, and `status` reports progress and the result. The plugins register it for you.
+For Claude Desktop or any other MCP client, run `~/.showtime/bin/showtime mcp` (see [MCP only](#mcp-only) for the
+snippet and the npm and `.mcpb` routes that arrive with the release); the snippet for each client is in
 [references/mcp.md](skills/showtime/references/mcp.md), next to the plugin settings (default voice and
 language, a CPU limit) and the render progress monitor.
 
@@ -745,17 +1047,23 @@ workflows (launch, explainer, tutorial, social, data, footage, trailer) to story
 voice, rendering, and QA. The glossary is in [CONTEXT.md](CONTEXT.md), and what showtime deliberately
 does not do, and why, is in [.out-of-scope/](.out-of-scope/README.md).
 
-The same guides are also a searchable site, with the gallery playing every example:
+Installing in a particular agent: [docs/agents.md](docs/agents.md) has the exact steps for each, and what each
+test covered. The same guides are also a searchable site, with the gallery playing every example:
 **[faviovazquez.github.io/showtime](https://faviovazquez.github.io/showtime/)**.
 
 ## License and credits
 
 showtime's own code is MIT licensed ([LICENSE](LICENSE)). Setup downloads third-party tools and models
 under their own licenses, recorded per item in `skills/showtime/setup/manifest.json`. Notable ones: the
-static ffmpeg builds are GPL; Kokoro is Apache-2.0; Whisper models are MIT; Parakeet and TitaNet are
-CC-BY-4.0; Supertonic weights are OpenRAIL-M; FluidR3Mono and MuseScore General are MIT; GeneralUser GS
+static ffmpeg builds are GPL; Kokoro is Apache-2.0; Whisper models are MIT; Parakeet (NVIDIA) and TitaNet
+are CC-BY-4.0; the vocal separator UVR-MDX-NET-Voc_FT is MIT, by the Ultimate Vocal Remover project (UVR)
+and its developers; CrisperWhisper 2.0 weights (opt-in only, `--model crisper`) are non-commercial and
+ask for your acceptance first; Supertonic weights are OpenRAIL-M; FluidR3Mono and MuseScore General are MIT; GeneralUser GS
 (optional) has its own free license; MusicGen weights (optional) are CC-BY-NC-4.0, non-commercial. The
-brand (Curtain Call) is described in [assets/brand/](assets/brand/BRAND.md). Each example credits its
+brand (Curtain Call) is described in [assets/brand/](assets/brand/BRAND.md). The produced-music catalog is
+by Scott Buckley and Kevin MacLeod (CC BY 4.0) plus CC0 and public-domain recordings; the tracks stay on their
+creators' sites, are fetched on first use, and every render that uses one writes its credit into `credits.txt`
+and the post copy (a track that needs a credit and has none stops the mix). Each example credits its
 sources in its own folder, and example 13 is CC BY-SA 4.0, like the article it adapts. The videos you
 make are yours; when a render uses an asset that needs attribution, showtime writes `credits.txt` next
 to it.
@@ -766,7 +1074,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) and the glossary in [CONTEXT.md](CONTEXT.
 
 ```bash
 python3 skills/showtime/tests/run_all.py --fast     # what CI runs on every pull request (py on Windows)
+python3 skills/showtime/tests/run_all.py --changed  # only the tests your change can affect
 python3 scripts/check_release.py --check            # release hygiene
 ```
 
-<p align="center"><sub>Status: 0.1, early. Commands and file formats may still change before 1.0 (see <a href="CHANGELOG.md">CHANGELOG.md</a>).</sub></p>
+<p align="center"><sub>Status: 0.2, early. Commands and file formats may still change before 1.0 (see <a href="CHANGELOG.md">CHANGELOG.md</a>).</sub></p>

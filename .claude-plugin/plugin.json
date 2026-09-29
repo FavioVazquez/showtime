@@ -1,13 +1,13 @@
 {
   "name": "showtime",
-  "version": "0.1.0",
-  "description": "Local video making for Claude Code: HTML/canvas motion graphics rendered frame-exactly, voice-over, music and sound design, footage editing from transcripts, captions and platform-ready exports. Everything runs on your machine.",
+  "version": "0.2.0",
+  "description": "A local video studio for your coding agent. Describe a video. Your agent directs. Your machine renders. Motion graphics rendered frame-exactly, voice-over, music and sound design, footage editing from transcripts, captions and platform-ready exports. Everything runs on your machine.",
   "author": {
     "name": "Favio Vazquez"
   },
-  "license": "MIT",
   "homepage": "https://faviovazquez.github.io/showtime/",
   "repository": "https://github.com/FavioVazquez/showtime",
+  "license": "MIT",
   "keywords": [
     "video",
     "motion-graphics",

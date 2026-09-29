@@ -25,6 +25,7 @@ import _isolate  # noqa: F401  (run from a scratch folder: never write into the 
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -65,8 +66,10 @@ def clean_env(**extra) -> dict:
     return env
 
 
-def mcp(steps, cwd, mode="legacy", env=None, timeout=300):
+def mcp(steps, cwd, mode="legacy", env=None, timeout=300, client=None):
     plan = {"server": str(SERVER), "cwd": str(cwd), "mode": mode, "env": env or {}, "steps": steps}
+    if client:
+        plan["client_name"] = client
     cp = subprocess.run([NODE, str(CLIENT)], input=json.dumps(plan), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                         encoding="utf-8", errors="replace", timeout=timeout, env=clean_env())
     assert cp.returncode == 0, "client failed: %s\n%s" % (cp.stdout[-2000:], cp.stderr[-2000:])
@@ -78,6 +81,15 @@ def mcp(steps, cwd, mode="legacy", env=None, timeout=300):
 def call(name, arguments, progress=False, timeout_ms=240000):
     return {"method": "tools/call", "params": {"name": name, "arguments": arguments}, "progress": progress,
             "timeout_ms": timeout_ms}
+
+
+def poll_task(task, cwd, env, tries=30):
+    """Call status {task} until the task has finished; returns that step."""
+    for _ in range(tries):
+        step = mcp([call("status", {"task": task}, progress=True)], cwd, env=env)["results"][1]
+        if not text_of(step).startswith("RUNNING:"):
+            return step
+    raise AssertionError("task %s still running after %d status calls" % (task, tries))
 
 
 def text_of(step) -> str:
@@ -128,8 +140,15 @@ class TestProtocol(unittest.TestCase):
         env = {"PATH": "", "HOME": str(home), "USERPROFILE": str(home), "SHOWTIME_HOME": str(home / ".showtime"),
                "SHOWTIME_SETTINGS": str(self.tmp / "settings.json"), "SHOWTIME_OPT_VOICE": "am_michael",
                "SYSTEMROOT": os.environ.get("SYSTEMROOT", "")}
-        best = None
-        for _ in range(3):
+        # Measured in pairs, bare Node then the server, at the same moment: on a loaded runner (other test
+        # files in parallel) Node's own start swings by seconds, so the server is judged by what it adds
+        # to Node, taking the quietest pair. A server that did real work before answering (a child process,
+        # a download, disk scans) adds that to every pair and still fails.
+        best = node_best = overhead = None
+        for _ in range(5):
+            t0 = time.perf_counter()
+            subprocess.run([NODE, "-e", "0"], env=env, cwd=str(self.tmp), check=True)
+            node_dt = time.perf_counter() - t0
             t0 = time.perf_counter()
             p = subprocess.Popen([NODE, str(SERVER)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                  env=env, cwd=str(self.tmp))
@@ -154,18 +173,17 @@ class TestProtocol(unittest.TestCase):
             self.assertEqual({t["name"] for t in tools}, EXPECTED_TOOLS)
             self.assertEqual(p.returncode, 0, err)
             best = dt if best is None else min(best, dt)
-        # what Node itself costs on this machine (a slow CI runner starts Node in 200+ ms)
-        node_only = None
-        for _ in range(3):
-            t0 = time.perf_counter()
-            subprocess.run([NODE, "-e", "0"], env=env, cwd=str(self.tmp), check=True)
-            dt = time.perf_counter() - t0
-            node_only = dt if node_only is None else min(node_only, dt)
-        budget = max(0.3, node_only + 0.2)
-        print("\n  MCP cold start: initialize answered %.0f ms after spawn (best of 3; bare node %.0f ms; budget %.0f ms)"
-              % (best * 1000, node_only * 1000, budget * 1000), file=sys.stderr)
-        self.assertLess(best, budget, "the server should answer initialize at once: %.0f ms after spawn "
-                        "(budget %.0f ms = 300 ms, or Node's own start + 200 ms)" % (best * 1000, budget * 1000))
+            node_best = node_dt if node_best is None else min(node_best, node_dt)
+            overhead = dt - node_dt if overhead is None else min(overhead, dt - node_dt)
+        # the server may add parsing its own file (a few ms) plus scheduling noise; more means it did work
+        allowed = max(0.2, 0.25 * node_best)
+        print("\n  MCP cold start: initialize answered %.0f ms after spawn (best of 5); bare node %.0f ms; the server "
+              "adds %.0f ms (allowed %.0f ms)" % (best * 1000, node_best * 1000, overhead * 1000, allowed * 1000),
+              file=sys.stderr)
+        self.assertLess(overhead, allowed, "the server should answer initialize at once: it adds %.0f ms to Node's own "
+                        "start (allowed %.0f ms)" % (overhead * 1000, allowed * 1000))
+        if node_best < 0.5:   # an idle machine: the product promise itself
+            self.assertLess(best, 2.0, "initialize must be answered within 2 s of spawn")
         # the plugin options were still saved (after the handshake)
         saved = json.loads((self.tmp / "settings.json").read_text(encoding="utf-8"))
         self.assertEqual(saved.get("voice"), "am_michael")
@@ -208,6 +226,16 @@ class TestProtocol(unittest.TestCase):
             self.assertIn(want, text_of(step))
         self.assertFalse(any(self.tmp.iterdir()), "a rejected call must not write anything")
 
+
+    def test_audio_search_produced_catalog(self):
+        """audio_search with catalog=true or a use searches the produced-music catalog (no download)."""
+        out = mcp([call("audio_search", {"catalog": True, "words": "hands", "limit": 3}),
+                   call("audio_search", {"use": "launch", "limit": 3}),
+                   call("audio_search", {"use": "launch; rm -rf ~"})], self.tmp, env=self.env)["results"]
+        self.assertIn("buckley-with-these-hands", text_of(out[1]))
+        rows = [l for l in text_of(out[2]).splitlines() if re.match(r"^[a-z0-9]+(-[a-z0-9]+)+ +\d+:\d\d ", l)]
+        self.assertEqual(len(rows), 3, text_of(out[2]))
+        self.assertTrue(out[3]["response"]["result"]["isError"])
 
     def test_batch2_arguments_and_export_files(self):
         """20.12: render takes page/alpha, export_html controls/autoplay_muted/loop/folder/job, deliver_exports
@@ -301,7 +329,9 @@ class TestFlow(unittest.TestCase):
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="st mcp flow-"))  # a space in the path on purpose
-        self.env = {"SHOWTIME_SETTINGS": str(self.tmp / "settings.json"), "SHOWTIME_MCP_BASE": str(self.tmp)}
+        # the one-call results below (a slow runner may need more than the default 20 s before a task id)
+        self.env = {"SHOWTIME_SETTINGS": str(self.tmp / "settings.json"), "SHOWTIME_MCP_BASE": str(self.tmp),
+                    "SHOWTIME_MCP_WAIT": "none"}
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
@@ -356,6 +386,134 @@ class TestFlow(unittest.TestCase):
         self.assertTrue(gif.is_file(), text_of(lp))
         self.assertEqual(int.from_bytes(gif.read_bytes()[6:8], "little"), 160)
 
+        # the same render as a task: a task id at once, then status until the result (any host)
+        first = mcp([call("render", {"project": "tiny", "preview": True, "background": True}, progress=True)],
+                    self.tmp, env=self.env)["results"][1]
+        res = first["response"]["result"]
+        self.assertTrue(text_of(first).startswith("RUNNING: showtime render"), text_of(first))
+        task = res["_meta"]["showtime/result"]["task"]
+        final = poll_task(task, self.tmp, self.env)
+        fres = final["response"]["result"]
+        self.assertFalse(fres["isError"], text_of(final))
+        self.assertTrue(text_of(final).startswith("OK: showtime render"), text_of(final))
+        self.assertEqual(fres["_meta"]["showtime/result"]["task"], task)
+        self.assertTrue(any(f.endswith(".mp4") for f in fres["_meta"]["showtime/result"]["files"]), text_of(final))
+
+
+@unittest.skipUnless(NODE, "Node.js is not installed")
+class TestAnyHost(unittest.TestCase):
+    """What another host gets: unexpanded variables, a server started in the plugin folder, tool-call
+    limits (task ids from long tools, the status tool), Claude Code keeping one-call results."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="st-mcp-any-")).resolve()
+        self.env = {"SHOWTIME_SETTINGS": str(self.tmp / "settings.json"), "SHOWTIME_HOME": str(self.tmp / "home"),
+                    "SHOWTIME_MCP_BASE": "${CLAUDE_PROJECT_DIR}", "CLAUDE_PROJECT_DIR": "${CLAUDE_PROJECT_DIR}",
+                    "SHOWTIME_OPT_VOICE": "${user_config.voice}", "SHOWTIME_OPT_HOME": "${user_config.home}",
+                    "SHOWTIME_OPT_MAX_WORKERS": "${user_config.max_workers}"}
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def node_eval(self, expr, cwd=None, **env):
+        code = ("import(%s).then((m) => { process.stdout.write(JSON.stringify(%s)); })"
+                % (json.dumps(SERVER.as_uri()), expr))
+        cp = subprocess.run([NODE, "--input-type=module", "-e", code], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            encoding="utf-8", timeout=60, cwd=str(cwd or self.tmp), env=dict(clean_env(), **env))
+        self.assertEqual(cp.returncode, 0, cp.stderr)
+        return json.loads(cp.stdout)
+
+    def test_fallbacks(self):
+        t = json.dumps(str(self.tmp))
+        got = self.node_eval("[m.baseDir({SHOWTIME_MCP_BASE: '${CLAUDE_PROJECT_DIR}', CLAUDE_PROJECT_DIR: ''}, %s),"
+                             " m.baseDir({SHOWTIME_MCP_BASE: %s}, '/'),"
+                             " m.baseDir({PWD: %s}, %s),"
+                             " m.waitLimitMs({}, false), m.waitLimitMs({}, true), m.waitLimitMs({SHOWTIME_MCP_WAIT: '0'}, true),"
+                             " m.waitLimitMs({SHOWTIME_MCP_WAIT: 'none'}, false), m.waitLimitMs({SHOWTIME_MCP_WAIT: '${x}'}, false),"
+                             " m.waitLimitMs({SHOWTIME_MCP_WAIT: '45'}, false)]"
+                             % (t, t, t, json.dumps(str(REPO))))
+        base_ph, base_env, base_plugin, w_def, w_claude, w0, w_none, w_ph, w45 = got
+        self.assertEqual(Path(base_ph), self.tmp, "an unexpanded project variable falls back to the working folder")
+        self.assertEqual(Path(base_env), self.tmp)
+        self.assertEqual(Path(base_plugin), self.tmp, "started inside the plugin: the folder the host started from")
+        self.assertEqual(w_def, 20000)
+        self.assertIsNone(w_claude)            # Infinity: JSON null
+        self.assertEqual((w0, w_ph, w45), (0, 20000, 45000))
+        self.assertIsNone(w_none)
+
+    def test_project_home_inside_the_user_folder(self):
+        """Windows keeps temp folders inside the user's folder: a project's .showtime there is still found."""
+        user = self.tmp / "user"
+        proj = user / "AppData" / "Local" / "Temp" / "proj"
+        (proj / ".showtime").mkdir(parents=True)
+        (proj / ".showtime" / "skill-path").write_text(str(SKILL) + "\n", encoding="utf-8")
+        (proj / "a").mkdir()
+        (user / ".showtime").mkdir()
+        (user / ".showtime" / "skill-path").write_text(str(SKILL) + "\n", encoding="utf-8")
+        env = {"HOME": str(user), "USERPROFILE": str(user)}
+        for k in ("SHOWTIME_HOME", "SHOWTIME_MCP_BASE", "CLAUDE_PROJECT_DIR"):
+            env[k] = ""
+        got = self.node_eval("m.showtimeHome()", cwd=proj / "a", SHOWTIME_SETTINGS=str(self.tmp / "s.json"), **env)
+        self.assertEqual(Path(got).resolve(), (proj / ".showtime").resolve())
+        got = self.node_eval("m.showtimeHome()", cwd=user / "AppData", SHOWTIME_SETTINGS=str(self.tmp / "s.json"), **env)
+        self.assertEqual(Path(got).resolve(), (user / ".showtime").resolve())
+
+    def test_placeholders_start_fast_and_write_nothing(self):
+        env = dict(self.env, PATH="")
+        t0 = time.perf_counter()
+        p = subprocess.Popen([NODE, str(SERVER)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                             env=dict(clean_env(), **env), cwd=str(self.tmp))
+        try:
+            p.stdin.write((json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                                       "params": {"protocolVersion": "2025-11-25"}}) + "\n").encode())
+            p.stdin.flush()
+            line = p.stdout.readline()
+            dt = time.perf_counter() - t0
+        finally:
+            p.stdin.close()
+            p.wait(timeout=30)
+            p.stdout.close()
+            p.stderr.close()
+        self.assertEqual(json.loads(line)["result"]["serverInfo"]["name"], "showtime")
+        self.assertLess(dt, 2.0, "an MCP server must answer within 2 s (some hosts allow 10 s in all)")
+        self.assertFalse((self.tmp / "settings.json").exists(), "unexpanded options are not settings")
+        self.assertFalse((self.tmp / "home").exists(), "starting downloads and writes nothing")
+
+    def test_long_tool_task_ids(self):
+        # background: true -> a task id at once; status {task} (or {job: id}) -> the full result
+        out = mcp([{"method": "tools/list"}, call("doctor", {"full": True, "background": True}, progress=True)],
+                  self.tmp, env=self.env)
+        tools = {t["name"]: t for t in out["results"][1]["response"]["result"]["tools"]}
+        self.assertIn("task", tools["status"]["inputSchema"]["properties"])
+        for name in ("render", "transcribe", "audio_compose", "voice_script", "qa"):
+            self.assertIn("background", tools[name]["inputSchema"]["properties"], name)
+        first = out["results"][2]
+        self.assertFalse(first["response"]["result"]["isError"], text_of(first))
+        self.assertTrue(text_of(first).startswith("RUNNING: showtime doctor"), text_of(first))
+        meta = first["response"]["result"]["_meta"]["showtime/result"]
+        self.assertTrue(meta["running"])
+        task = meta["task"]
+        self.assertTrue((self.tmp / "home" / "runs" / task / "run.json").is_file())
+        self.assertIn('{"task": "%s"}' % task, text_of(first))
+        final = poll_task(task, self.tmp, self.env)
+        self.assertIn("showtime doctor", text_of(final))
+        self.assertRegex(text_of(final), r"^(OK|FAILED \(exit 1\)): showtime doctor")
+        self.assertEqual(final["response"]["result"]["_meta"]["showtime/result"]["task"], task)
+        again = mcp([call("status", {"job": task}), call("status", {"task": "render-20200101-000000-abcd"})],
+                    self.tmp, env=self.env)["results"][1:]
+        self.assertEqual(text_of(again[0]).splitlines()[0], text_of(final).splitlines()[0])
+        self.assertTrue(again[1]["response"]["result"]["isError"])
+        self.assertIn("no task", text_of(again[1]))
+        # a host with a short limit: the call itself turns into a task (SHOWTIME_MCP_WAIT=0 here)
+        step = mcp([call("doctor", {"full": True})], self.tmp, env=dict(self.env, SHOWTIME_MCP_WAIT="0"))["results"][1]
+        self.assertTrue(text_of(step).startswith("RUNNING:"), text_of(step))
+        poll_task(step["response"]["result"]["_meta"]["showtime/result"]["task"], self.tmp, self.env)
+        # Claude Code waits as long as a tool needs: one call, one result, as before
+        step = mcp([call("doctor", {"full": True})], self.tmp, env=dict(self.env, SHOWTIME_MCP_WAIT=""),
+                   client="claude-code")["results"][1]
+        self.assertFalse(text_of(step).startswith("RUNNING:"), text_of(step))
+        self.assertIn("showtime doctor", text_of(step))
+
 
 class TestPluginWiring(unittest.TestCase):
     def test_manifest_files(self):
@@ -381,7 +539,9 @@ class TestPluginWiring(unittest.TestCase):
     def test_skill_shim_and_no_plugin_bin(self):
         # claude.ai and Cowork refuse plugins with a top-level bin/; SKILL.md runs the skill's own shim
         self.assertFalse((REPO / "bin").exists(), "no top-level bin/ in the plugin")
-        self.assertIn('"${CLAUDE_SKILL_DIR}/bin/showtime"', (SKILL / "SKILL.md").read_text(encoding="utf-8"))
+        skill_md = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn('"<folder>/bin/showtime" <cmd>', skill_md)   # any host (test_portable.py runs it)
+        self.assertIn("`${CLAUDE_SKILL_DIR}`", skill_md)              # Claude Code fills the folder in
         if os.name == "nt":
             cmd = ["cmd", "/c", str(SKILL / "bin" / "showtime.cmd"), "version"]
         else:

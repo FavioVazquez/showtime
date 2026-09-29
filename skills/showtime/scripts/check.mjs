@@ -16,7 +16,7 @@ const PROBES = ['black', 'frozen', 'nondeterministic', 'error'];
 // Timing thresholds shared with `showtime qa` and `showtime retime` (runtime/thresholds.json), so a
 // still hold that qa warns about after the render is already a warning here.
 const TH = (() => {
-  const d = { still_hold_s: 2.5, final_hold_max_s: 4.0, frozen_fail_s: 6.0, empty_timeline_s: 1.5 };
+  const d = { still_hold_s: 2.5, launch_hold_s: 5.0, final_hold_max_s: 4.0, frozen_fail_s: 6.0, empty_timeline_s: 1.5 };
   try { Object.assign(d, JSON.parse(fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'runtime', 'thresholds.json'), 'utf8'))); } catch { /* defaults */ }
   return d;
 })();
@@ -201,6 +201,10 @@ async function main() {
     report.transitions = txWin;
     const settledAt = (w) => Math.min(lastT, w.start + w.dur + 2 / fps);
     for (const w of txWin) if (w.start + w.dur < D) times.push(settledAt(w));
+    // camera moves between scenes (through: the camera flies into a portal) are sampled inside the window
+    // too: a headline the zoom cuts at the frame edge ("file2 comes befor") is an error there
+    const CAM_TX = new Set(['through']);
+    for (const w of txWin) if (CAM_TX.has(w.type)) for (const f of [0.15, 0.3, 0.45, 0.6]) times.push(w.start + f * w.dur);
     const inTx = (x) => txWin.find((w) => x >= w.start - 1e-6 && x < w.start + w.dur - 1e-6) || null;
     const txNote = (w) => ` (mid-transition: ${w.type}${w.to ? ` into #${w.to}` : ''}; the settled frame at ${fmtTime(settledAt(w))} is judged on its own)`;
     const q = (x) => Math.min(lastT, Math.floor(x * fps + 1e-9) / fps);
@@ -412,19 +416,38 @@ async function main() {
       const addL = (sev, code, msg, extra) => (tx && sev !== 'info' ? add('info', code, msg + txNote(tx), { ...extra, transition: tx.type }) : add(sev, code, msg, extra));
       // UI-mockup detail (data-st-decor): cropped by a camera push, under a toast, behind a headline: notes
       const addD = (blk, sev, code, msg, extra) => (blk && blk.decor ? add('info', code, msg + ' (UI mockup detail)', extra) : addL(sev, code, msg, extra));
+      if (tx && CAM_TX.has(tx.type)) {
+        // readable text partly outside the frame while the camera flies through a portal: the runtime fades
+        // text before the edge reaches it, so this is text that is not faded (or a page that fades it late).
+        // The portal's own word is exempt: the camera flies into it.
+        for (const lf of snap.leaves || []) {
+          if (lf.portal || lf.decor || lf.opacity * (lf.color ? lf.color[3] : 1) < 0.3) continue;
+          const r = lf.rect;
+          if (!(r.w > 1 && r.h > 1) || lf.fontSize * (lf.scale || 1) < Math.min(W, H) * 0.02) continue;
+          const ix = Math.max(0, Math.min(r.x + r.w, W) - Math.max(r.x, 0)), iy = Math.max(0, Math.min(r.y + r.h, H) - Math.max(r.y, 0));
+          const inside = (ix * iy) / (r.w * r.h);
+          const k2 = `txcrop:${lf.bid}:${lf.lid}`;
+          if (inside > 0.05 && inside < 0.98 && !layoutSeen.has(k2)) {
+            layoutSeen.add(k2);
+            add('error', 'text_cropped_in_move', `"${snip(lf.own || '')}" is cut by the frame edge at ${fmtTime(st)} while the camera flies through #${tx.from || 'the portal'} (${tx.type})`,
+              { t: st, selector: lf.sel, rect: rnd(r), transition: tx.type,
+                fix: 'let the text fade before the zoom reaches it (the runtime does this for text outside the portal word), or keep the other words out of the portal\'s line' });
+          }
+        }
+      }
       for (const blk of snap.blocks) {
         if (!blockSeen.has(blk.bid)) blockSeen.set(blk.bid, blk);
         if (blk.opacity < 0.5) continue;
         const key = (code) => `${tx ? 'tx:' : ''}${code}:${blk.bid}`;
         if (blk.offCanvas && !layoutSeen.has(key('off'))) {
           layoutSeen.add(key('off'));
-          addD(blk, 'warning', 'text_off_canvas', `"${snip(blk.text)}" runs off the frame at ${fmtTime(st)}`, { t: st, selector: blk.sel, rect: rnd(blk.rect),
+          addD(blk, 'error', 'text_off_canvas', `"${snip(blk.text)}" runs off the frame at ${fmtTime(st)}`, { t: st, selector: blk.sel, rect: rnd(blk.rect),
             fix: 'reduce the font size or width, or move it inside the frame' });
         }
         if (blk.clipped && !layoutSeen.has(key('clip'))) {
           layoutSeen.add(key('clip'));
-          addD(blk, 'warning', 'text_clipped', `"${snip(blk.text)}" is cut off by ${blk.clipped.by} (${blk.clipped.px}px) at ${fmtTime(st)}`, { t: st, selector: blk.sel,
-            fix: 'give the container room (or overflow: visible), or shorten the text' });
+          addD(blk, 'error', 'text_clipped', `"${snip(blk.text)}" is cut off by ${blk.clipped.by} (${blk.clipped.px}px) at ${fmtTime(st)}`, { t: st, selector: blk.sel,
+            fix: 'give the container room (or overflow: visible), shorten the text, or let it fit: data-st="fit" on a terminal or code line shrinks its type to the box at every size' });
         }
         if (H > W && blk.onCanvas > 0 && !blk.caption) {
           const kx = W / 1080, ky = H / 1920;
@@ -839,7 +862,10 @@ async function main() {
       // motion / blank frames
       grid.length = 0; grid.push(...okGrid);
       const sigs = tiny.length ? await lab.signatures(tiny, 64, 36) : [];
-      const deadAir = Number(a['dead-air'] || TH.still_hold_s);
+      // launch films hold a settled result or a still hook on purpose (a still camera): a longer limit
+      const LAUNCH_KINDS = ['launch', 'promo', 'trailer', 'teaser', 'release'];
+      const holdS = LAUNCH_KINDS.includes(String((proj.config && proj.config.kind) || '').toLowerCase()) ? TH.launch_hold_s : TH.still_hold_s;
+      const deadAir = Number(a['dead-air'] || holdS);
       let runStart = 0;
       const still = [];
       // a still stretch ends when the picture has changed visibly since the stretch began
@@ -907,7 +933,7 @@ async function main() {
         }
         add('warning', 'dead_air', atEnd
           ? `the last ${len.toFixed(1)}s are a still hold (from ${fmtTime(s)}); qa warns above ${TH.final_hold_max_s}s`
-          : `nothing moves from ${fmtTime(s)} to ${fmtTime(e)} (~${len.toFixed(1)}s; qa flags still holds of ${TH.still_hold_s}s or more)`, { t: s, to: e, seconds: +len.toFixed(2),
+          : `nothing moves from ${fmtTime(s)} to ${fmtTime(e)} (~${len.toFixed(1)}s; qa flags still holds of ${holdS}s or more)`, { t: s, to: e, seconds: +len.toFixed(2),
           fix: atEnd ? 'shorten the end hold (showtime retime) or add subtle motion to the end card'
             : 'add subtle motion (a slow push-in, drift, a progress element), another beat, or shorten the scene (showtime retime)' });
       }

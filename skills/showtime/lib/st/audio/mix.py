@@ -11,7 +11,9 @@ Spec (all times in seconds on the output timeline):
       {"kind": "sfx", "file": "sfx/whoosh.wav", "at": 3.0, "align": "hit", "hit": 0.21, "gain_db": -10, "pan": 0},
       {"kind": "sfx", "synth": {"type": "impact", "key": "D", "intensity": 0.8, "seed": 3}, "at": 17.5, "align": "hit"},
       {"kind": "sfx", "lib": "kenney-interface-sounds/click_001", "at": 2.0},
-      {"kind": "music", "compose": {"style": "upbeat-tech", "bpm": 118, "key": "D", "sections": "0:intro,8:drop"}}
+      {"kind": "music", "compose": {"style": "upbeat-tech", "bpm": 118, "key": "D", "sections": "0:intro,8:drop"}},
+      {"kind": "music", "catalog": "buckley-with-these-hands", "fit": true, "duck": {"under": "voice"}},
+      {"kind": "music", "catalog": {"use": "explainer", "pick": 0}, "fit": true}
     ],
     "sections": [{"name": "intro", "start": 0, "end": 4}, ...],      (optional; for the report)
     ("duration" may be left out inside a project: the showtime.json duration is used)
@@ -19,12 +21,15 @@ Spec (all times in seconds on the output timeline):
 
 Track fields
   kind       music | voice | sfx | ambience   (drives default level and ducking groups)
-  source     one of: file, lib (catalog id), synth (sfx spec), compose (compose spec)
+  source     one of: file, lib (library id), catalog (produced-music id, or {"use": "launch", "pick": 0};
+             fetched on first use and credited, see music.py), synth (sfx spec), compose (compose spec)
   level      "auto" (default): normalise to the kind's reference (voice -16 LUFS,
              music -20, ambience -32, sfx by category) before gain_db; "raw": as is
   gain_db    dB relative to the reference (or to the file with level=raw)
   start/end  timeline window of the clip (end defaults to the source end / mix end)
-  offset     seconds skipped at the start of the source
+  offset     seconds skipped at the start of the source; "highlight" starts a catalog track at its
+             loudest sustained stretch (on a downbeat). Catalog tracks skip their near-silent lead-in by
+             default (offset 0 plays it)
   dur        clip length (alternative to end)
   at, align  place the source's hit|start|end|peak at `at` (hit is measured or given as `hit`)
   loop       true: loop (bar-aligned when a beat grid is known) to fill the window
@@ -359,6 +364,13 @@ def _file_license(p: Path, meta: Dict[str, Any]) -> None:
                     matched_library=True)
         if not meta.get("hit"):
             meta["hit"] = item.get("hit")
+        return
+    from . import music
+    t = music.match_file(p)             # a catalog track copied into the project keeps its credit
+    if t:
+        meta.update(catalog_id=t["id"], title=t["title"], artist=t["artist"], license=t["license"],
+                    attribution=t.get("attribution"), attribution_required=music.needs_attribution(t),
+                    credit=music.credit_item(t), matched_catalog=True)
 
 
 def load_source(tr: dict, idx: int, bases: List[Path], mix_dur: float) -> Source:
@@ -374,9 +386,9 @@ def load_source(tr: dict, idx: int, bases: List[Path], mix_dur: float) -> Source
                                 float(tr.get("rate", 1.0) or 1.0))
         return Source(_click_track(times), {"source": "keystrokes", "path": str(ep), "keystrokes": len(times),
                                             "category": "ui", "license": "generated", "attribution_required": False})
-    kinds = [k for k in ("file", "lib", "synth", "compose") if tr.get(k)]
+    kinds = [k for k in ("file", "lib", "catalog", "synth", "compose") if tr.get(k)]
     if len(kinds) != 1:
-        raise ShowtimeError("track %d: give exactly one source: file, lib, synth, compose, keystrokes or typewriter "
+        raise ShowtimeError("track %d: give exactly one source: file, lib, catalog, synth, compose, keystrokes or typewriter "
                             "(got %s)"
                             % (idx, ", ".join(kinds) or "none"))
     src = kinds[0]
@@ -391,7 +403,9 @@ def load_source(tr: dict, idx: int, bases: List[Path], mix_dur: float) -> Source
                 meta.update(hit=sj.get("hit"), category=sj.get("category"))
             except ShowtimeError:
                 pass
-        speech = _word_segments(p, float(tr.get("offset") or 0.0))
+        off = tr.get("offset")
+        off = 0.0 if isinstance(off, str) and off.strip().lower() == "highlight" else _num(off, "offset", idx, 0.0, 0.0)
+        speech = _word_segments(p, off)       # (a "highlight" offset on a plain file is refused when it is placed)
         if speech:
             meta["speech"] = speech
         mg = p.with_name(p.stem + ".musicgen.json")        # written by `audio musicgen`
@@ -403,16 +417,35 @@ def load_source(tr: dict, idx: int, bases: List[Path], mix_dur: float) -> Source
     if src == "lib":
         from . import library
         ref = tr["lib"]
-        item = library.resolve(ref if isinstance(ref, str) else dict(ref))
+        try:
+            item = library.resolve(ref if isinstance(ref, str) else dict(ref))
+        except ShowtimeError:
+            # an item of an extra sound pack that is not installed yet: fetch the pack (announced), retry
+            from . import packs
+            if not packs.install_for_ref(ref):
+                raise
+            library._SIZES.clear()
+            item = library.resolve(ref if isinstance(ref, str) else dict(ref))
         p = library.item_path(item)
         meta.update(path=str(p), library_id=item["id"], license=item.get("license"),
                     attribution=item.get("attribution"), attribution_required=item.get("attribution_required", False),
-                    hit=item.get("hit"), category=item.get("category"), title=item.get("title"))
+                    hit=item.get("hit"), category=item.get("category"), title=item.get("title"),
+                    artist=item.get("artist"), credit_optional=item.get("credit_optional"),
+                    source_url=item.get("source_url"))
         side = item.get("sidecar")
         if side:
             sp = library.library_dir() / side
             if sp.is_file():
                 meta["beats"] = read_json(sp)
+        return Source(wav.load(p), meta)
+    if src == "catalog":
+        from . import music
+        t = music.resolve(tr["catalog"], dur=float(tr.get("dur") or 0) or None)
+        p = music.fetch(t, purpose="the mix (track %d)" % idx)
+        meta.update(path=str(p), catalog_id=t["id"], title=t["title"], artist=t["artist"], license=t["license"],
+                    attribution=t.get("attribution"), attribution_required=music.needs_attribution(t),
+                    credit=music.credit_item(t), beats=music.beats_for(p), lead_silence_s=t.get("lead_silence_s"),
+                    highlight_s=t.get("highlight_s"))
         return Source(wav.load(p), meta)
     if src == "synth":
         spec = dict(tr["synth"]) if isinstance(tr["synth"], dict) else {"type": str(tr["synth"])}
@@ -633,13 +666,33 @@ def carve(bed: np.ndarray, voice: np.ndarray, strength: float = 0.5) -> Tuple[np
 # ---------------------------------------------------------------------------------------------
 # placement
 # ---------------------------------------------------------------------------------------------
+def source_offset(tr: dict, idx: int, meta: dict) -> Tuple[float, Optional[str]]:
+    """Seconds skipped at the start of a source, and why: the number given; "highlight" (a catalog track's
+    loudest sustained stretch, moved to the nearest downbeat); by default a catalog track's near-silent
+    lead-in (so the music starts with the picture)."""
+    v = tr.get("offset")
+    if isinstance(v, str) and v.strip().lower() == "highlight":
+        h = meta.get("highlight_s")
+        if h is None:
+            raise ShowtimeError('track %d: "offset": "highlight" works for catalog music only' % idx,
+                                hint='give seconds instead, e.g. "offset": 42.5')
+        from . import fit as fitmod
+        return round(max(0.0, fitmod.snap_to_downbeat(meta.get("beats"), float(h))), 4), "highlight"
+    if v is None and meta.get("catalog_id") and float(meta.get("lead_silence_s") or 0) >= 0.5:
+        return round(float(meta["lead_silence_s"]) - 0.1, 4), "lead-in silence"
+    return _num(v, "offset", idx, 0.0, 0.0), None
+
+
 def place(tr: dict, idx: int, src: Source, kind: str, N: int, mix_dur: float) -> Tuple[np.ndarray, Dict]:
     x = src.audio
     meta = src.meta
     info: Dict[str, Any] = {}
-    offset = _num(tr.get("offset"), "offset", idx, 0.0, 0.0)
+    offset, why = source_offset(tr, idx, meta)
     if offset:
         x = x[int(round(offset * SR)):]
+        info["offset"] = offset
+        if why:
+            info["offset_from"] = why
     src_dur = len(x) / SR
     start = _num(tr.get("start"), "start", idx, None)
     at = _num(tr.get("at"), "at", idx, None)
@@ -918,7 +971,7 @@ def render(spec: Any, out_path, spec_path: Optional[Path] = None, root: Optional
             s = load_source(tr, i, bases, 0.0)
             tr["_src"] = s
             st_ = float(tr.get("start") or 0.0) if tr.get("at") is None else float(tr["at"])
-            ends.append(st_ + len(s.audio) / SR - float(tr.get("offset") or 0))
+            ends.append(st_ + len(s.audio) / SR - source_offset(tr, i, s.meta)[0])
         if not ends:
             raise ShowtimeError("mix spec needs a 'duration' (no fixed-length track to infer it from)")
         dur = max(ends)
@@ -948,24 +1001,33 @@ def render(spec: Any, out_path, spec_path: Optional[Path] = None, root: Optional
         tid = str(tr.get("id") or "%s%d" % (kind, i))
         rec = {"id": tid, "index": i, "kind": kind, "source": src.meta.get("source"),
                "path": src.meta.get("path"), "gain_db": round(gain, 2), "level": linfo, **pinfo}
+        if src.meta.get("catalog_id"):
+            rec["catalog_id"] = src.meta["catalog_id"]
+            used_lib["music:" + src.meta["catalog_id"]] = dict(src.meta["credit"])
         if src.meta.get("library_id"):
             rec["library_id"] = src.meta["library_id"]
             used_lib[src.meta["library_id"]] = {"id": src.meta["library_id"], "title": src.meta.get("title"),
+                                                "artist": src.meta.get("artist"), "kind": kind,
                                                 "license": src.meta.get("license"),
                                                 "attribution": src.meta.get("attribution"),
-                                                "attribution_required": src.meta.get("attribution_required")}
+                                                "attribution_required": src.meta.get("attribution_required"),
+                                                "credit_optional": src.meta.get("credit_optional"),
+                                                "source_url": src.meta.get("source_url")}
         if src.meta.get("matched_library"):
             rec["matched_library"] = True
+        if src.meta.get("matched_catalog"):
+            rec["matched_catalog"] = True
         elif kind == "music" and src.meta.get("source") == "file" and not src.meta.get("license"):
             warnings.append("music track %s (%s) has no license information: use \"lib\": \"<id>\" for a library "
                             "track, or put a %s.license.json next to the file, so the credits are right"
                             % (tid, Path(src.meta.get("path") or "?").name, Path(src.meta.get("path") or "?").name))
-        if src.meta.get("license") and not src.meta.get("library_id"):
+        if src.meta.get("license") and not src.meta.get("library_id") and not src.meta.get("catalog_id"):
             rec["license"] = src.meta["license"]
-            if src.meta.get("attribution_required") and src.meta.get("attribution"):
+            if src.meta.get("attribution_required") or src.meta["license"] not in ("generated", "CC0-1.0"):
                 used_lib["file:" + tid] = {"id": "file:" + tid, "title": Path(src.meta.get("path") or "").name,
-                                           "license": src.meta["license"], "attribution": src.meta["attribution"],
-                                           "attribution_required": True}
+                                           "kind": kind, "license": src.meta["license"],
+                                           "attribution": src.meta.get("attribution"),
+                                           "attribution_required": bool(src.meta.get("attribution_required"))}
         if src.meta.get("noncommercial"):
             warnings.append("track %s is MusicGen output (CC-BY-NC-4.0): not for commercial videos" % tid)
         if src.meta.get("synth"):
@@ -980,7 +1042,7 @@ def render(spec: Any, out_path, spec_path: Optional[Path] = None, root: Optional
         bts = src.meta.get("beats") if isinstance(src.meta.get("beats"), dict) else None
         if bts and kind == "music" and not pinfo.get("fit"):
             # musical landmarks on the output timeline: line the logo up with end_hit, cuts with downbeats
-            off = float(pinfo.get("start", 0.0) or 0.0) - float(tr.get("offset") or 0.0)
+            off = float(pinfo.get("start", 0.0) or 0.0) - float(pinfo.get("offset") or 0.0)
             if bts.get("end_hit") is not None:
                 rec["end_hit"] = round(float(bts["end_hit"]) + off, 3)
             if bts.get("sections"):
@@ -1100,6 +1162,17 @@ def render(spec: Any, out_path, spec_path: Optional[Path] = None, root: Optional
             if vm < 8:
                 warnings.append("music is only %.1f dB under the voice while speaking (aim for 10-20 dB): "
                                 "lower the music gain_db or add duck/carve" % vm)
+    # the dry narration stem (before any music): transcription and captions read this instead of the
+    # mix, so speech under a ducked bed is never missed. 16 kHz mono, next to the output.
+    voice_stem = None
+    if "voice" in buses and any(k in buses for k in ("music", "ambience", "sfx")):
+        try:
+            v16 = signal.resample_poly(dsp.to_mono(buses["voice"] * gain_lin), 1, 3).astype(np.float32)
+            voice_stem = out_path.with_name(out_path.stem + ".voice.wav")
+            wav.save(voice_stem, v16, sr=16000, bits=16)
+        except Exception as e:  # noqa: BLE001 - a convenience for transcription, never fails the mix
+            warn("could not write the narration stem: %s" % e)
+            voice_stem = None
     # a hook far under the body sounds broken in a feed (autoplay starts on the quiet part)
     lvl = [r for r in sec_rows if r.get("lufs") is not None]
     if len(lvl) >= 2:
@@ -1115,12 +1188,16 @@ def render(spec: Any, out_path, spec_path: Optional[Path] = None, root: Optional
     for w in minfo.get("warning", "").split("\n") if isinstance(minfo.get("warning"), str) else []:
         if w:
             warnings.append(w)
-    credits = [u for u in used_lib.values() if u.get("attribution_required") and u.get("attribution")]
+    from . import credits as credmod
+    credit_items = credmod.normalize(u for u in used_lib.values() if u.get("license") != "generated")
+    credmod.check(credit_items)        # a CC BY sound without its credit text stops the mix (never a silent omission)
+    credits = [u for u in credit_items if u.get("attribution_required") and u.get("attribution")]
     credits_path = None
     if credits:
         credits_path = credits_file(out_path.parent)
-        lines = ["Audio credits", ""] + [c["attribution"].strip() + "\n" for c in credits]
-        credits_path.write_text("\n".join(lines), encoding="utf-8", newline="\n")
+        credits_path.write_text(credmod.render(credit_items)["credits_txt"], encoding="utf-8", newline="\n")
+    for n in credmod.content_id_notes(credit_items):
+        log("note: " + n)
     rp = Path(report_path) if report_path else out_path.with_name(out_path.stem + ".report.json")
     if report_path is None and spec_path is not None and spec_path.name == "mix.json":
         rp = out_path.with_name("mix.report.json")
@@ -1138,8 +1215,11 @@ def render(spec: Any, out_path, spec_path: Optional[Path] = None, root: Optional
         "short_term_max_lufs": post["short_term_max_lufs"], "sample_peak_dbfs": post["sample_peak_dbfs"],
         "premaster": {"integrated_lufs": pre["integrated_lufs"], "true_peak_dbtp": pre["true_peak_dbtp"]},
         "voice_to_music_db": vm, "sections": sec_rows, "tracks": per_track,
-        "library_items": sorted(k for k in used_lib if not k.startswith("file:")), "credits": [c["attribution"] for c in credits],
+        "library_items": sorted(k for k in used_lib if not k.startswith(("file:", "music:"))), "credits": [c["attribution"] for c in credits],
+        "credit_items": credit_items,
+        "catalog_items": sorted(k[len("music:"):] for k in used_lib if k.startswith("music:")),
         "credits_file": portable_path(credits_path, rp.parent) if credits_path else None, "warnings": warnings,
+        "voice_stem": portable_path(voice_stem, rp.parent) if voice_stem else None,
     }
     if ffmpeg_check:
         report["ffmpeg_ebur128"] = meter.ffmpeg_ebur128(out_path)

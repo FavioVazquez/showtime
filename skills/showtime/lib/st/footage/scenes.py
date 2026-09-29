@@ -1,4 +1,4 @@
-"""Shot detection and contact sheets (so Claude can *see* the footage).
+"""Shot detection and contact sheets (so your agent can *see* the footage).
 
 Detection: PySceneDetect's adaptive detector on the PyAV backend (the
 OpenCV 5 backend is avoided); falls back to ffmpeg's `scdet` filter.

@@ -21,7 +21,9 @@ replaces `TASK.md` for you: it names the video, the pack's images and what to an
    broken); kerning and word spacing are even; no widow (one word alone on a last line) or orphaned
    punctuation. Measure offsets in pixels on the crop and quote them in the finding.
 3. Answer the eight questions in `CRITIC.md` (hook, clarity, readability, craft, distinctness, poster,
-   honesty, story logic) from what you see, not from what the brief says was intended. For story logic,
+   honesty, story logic) from what you see, not from what the brief says was intended. A launch film's
+   brief adds a checklist (scene count, continuous scene changes, holds, type system, motion, music on
+   the phrases, end card): judge every line of it too. For story logic,
    go shot by shot: say what a stranger would think each shot is and what job it does; flag any shot
    that is there only because it looks good.
 4. Write `FINDINGS.md` in the same round folder, in the format `CRITIC.md` gives:

@@ -7,9 +7,9 @@
   "examples_dir": "../showtime-examples/examples",
   "_examples": "The examples (and their media release) live in their own repository. The build reads them from --examples, else examples/ in this checkout, else examples_dir (a sibling clone); CI checks that repository out.",
   "branch": "main",
-  "version": "0.1",
+  "version": "0.2",
   "marketplace": "FavioVazquez/showtime",
-  "description": "A local video studio for Claude Code: describe a video in one sentence, Claude directs, your machine renders. No cloud AI services, no API keys, no uploads.",
+  "description": "A local video studio for your coding agent. Describe a video. Your agent directs. Your machine renders. No cloud AI services, no API keys, no uploads.",
   "hero": {
     "folder": "examples/_launch",
     "film": "launch-16x9.mp4",

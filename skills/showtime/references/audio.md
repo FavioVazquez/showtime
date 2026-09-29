@@ -10,7 +10,8 @@ Everything runs locally. Every command has `--help` with examples, and most acce
 ## 1. The five-minute path
 
 ```bash
-showtime audio lib fetch                                    # once: ~249 MB library (~10-15 min), safe to re-run
+showtime audio music pick --for launch --dur 45             # a produced track (fetched when first mixed)
+showtime audio lib fetch                                    # optional: the whole ~249 MB library (~10-15 min); the starter part comes by itself
 showtime audio compose --style underscore --dur 45 \
     --sections 0:intro,6:verse,24:break,40:outro -o audio/bed.wav     # which style: music.md
 showtime audio sfx whoosh -o audio/whoosh.wav               # prints JSON with "hit"
@@ -26,11 +27,34 @@ changed.
 
 | Need | Command |
 |---|---|
+| A produced track for a launch, trailer or emotional piece | `audio music pick --for launch --dur D` (or `search`, `info <id>`), then `"catalog": "<id>"` in the mix |
 | Music cut exactly to the edit, with section changes on picture changes | `audio compose --style S --dur D --sections "t:name,..."` |
 | A real recording from the library | `audio lib search --kind music --mood calm --min-dur 60` |
 | A library track at exactly the video's length | `audio fit track.opus --dur 42.5 -o bed.wav` (bar-aligned loop or musical ending; `--ending song` keeps the track's own ending) |
+| A short film cut to a produced track: the excerpt and scene changes on its phrases | `audio cuts --for launch --dur 30 --scenes 5` (`--apply <project>` retimes the scenes and sets the track) |
 | The beat grid of any track | `audio beats track.mp3` (writes `track.beats.json`) |
 | Temp music from a text prompt (non-commercial) | `audio musicgen "prompt" --dur 20 -o draft.wav` (optional tier) |
+
+**The produced-music catalog** (`lib/st/audio/music_catalog.json`, 150+ tracks: Scott Buckley and
+Kevin MacLeod under CC BY 4.0, CC0 and public-domain recordings; every track was downloaded, measured
+and passed a quality gate: no muffled old transfers, hiss, crackle, clipping, mono, dead gaps or wild
+loudness swings, thresholds in `music.py`):
+- `audio music search [words] --for USE --shelf S --mood M --energy 0.2-0.5 --dur D --vocals none`
+  ranks tracks; `pick` returns the best one (`--n 1` the next); `presets` lists the uses; `stats` counts.
+  Shelves: cinematic, inspiring, ambient, corporate-tech, upbeat, documentary, tension, playful, lofi,
+  piano, orchestral.
+- Nothing is bundled. A mix (or `audio music fetch <id>`, or `setup --full`) downloads the file from the
+  creator's site on first use, announces it with its size, checks the pinned sha256 and caches it in
+  `~/.showtime/music` (`$SHOWTIME_MUSIC_CACHE`). Cached tracks work with `SHOWTIME_OFFLINE=1`;
+  `--seed DIR` copies from a folder of earlier downloads.
+- A catalog track skips its near-silent lead-in by default. For a short cut of a long track that builds
+  slowly, `"offset": "highlight"` starts at its loudest sustained stretch (on a downbeat; `music info`
+  shows where), or give seconds.
+- `audio music veto <id>` hides a track from `pick` (`--undo`, `--import vetoes.json`).
+- `audio music openverse <words>` is a live CC BY / CC0 search of Freesound and Wikimedia Commons beyond
+  the catalog (about 20 searches a minute, 200 a day); `--fetch openverse:<id> -o <dir>` saves one with its
+  `.license.json`. Jamendo is left out unless you pass `--source jamendo`: its own terms add conditions to
+  commercial use and its licensing program can claim videos, so check the artist's terms first.
 
 `audio compose` details:
 - `--style` is one of 18 styles (`audio styles`; default `underscore`). `--bpm` and `--key` default to the style's own.
@@ -84,12 +108,18 @@ showtime audio lib stats | sources | generate
 showtime audio lib index ~/Sounds/MyPack --name mypack --license "vendor-license"   # your own pack, in place
 ```
 
+- **Library parts:** the first command that reads the library fetches the starter part (~41 MB, about 1.5
+  min: common effects, three ambiences, six stingers, one bed per broad mood). A search that finds
+  fewer than 3 results fetches the category part it points at (`sfx`, `ambience`, `music-upbeat`,
+  `music-calm`, `music-epic`), once, announced with its size. `showtime audio lib fetch --list-parts`
+  shows them; `--part NAME` fetches one now. A library you point `SHOWTIME_LIBRARY` at, or index
+  yourself, is never filled automatically.
 - **Tiers:**
   - `core` (~249 MB) has every Kenney CC0 audio pack, OpenGameArt CC0 packs and ambiences, about 45
     Kevin MacLeod tracks and stings (CC-BY 4.0, stored as Opus), and CC0 music from Komiku, Loyalty
     Freak Music and Musopen (Chopin).
   - `generated` is rendered locally and needs no download: about 160 effect variants and 28 composed beds.
-  - `extended` adds about 1 GB more music. Core sources are pinned (URL, size, sha256); most extended
+  - `extended` adds about 200 MB more music and effects. Core sources are pinned (URL, size, sha256); most extended
     sources are not pinned yet, so their sha256 is recorded in `state.json` on the first download and
     every re-download must match it (trust on first use). Maintainers pin them with
     `showtime audio lib pin --tier extended`.
@@ -108,6 +138,11 @@ showtime audio lib index ~/Sounds/MyPack --name mypack --license "vendor-license
     or tagged as a loop, such as a 7 s water loop in a foley pack), ranked below real ambience items
     and marked "an sfx loop (catalogued as sfx)".
 - **Moving the library:** set `SHOWTIME_LIBRARY=/path` to keep it elsewhere, for example on an external disk.
+- **Extra sound packs** (`audio packs list`): about 25 more CC0 packs (paper, keyboards, a typewriter,
+  cloth, coins, UI, impacts, sci-fi, whooshes, city and crowd ambiences) that are not in the core tier.
+  A mix naming one of their items (`"lib": "oga-keyboard-typing/..."`) fetches the pack first;
+  `audio lib search` says when an uninstalled pack matches; `audio packs fetch <id> | --category C | --all`
+  installs ahead of time. Licenses and sources: `lib/st/audio/sfx_packs.json`.
 
 ## 5. The mix spec (`audio/mix.json`)
 
@@ -129,7 +164,9 @@ showtime audio lib index ~/Sounds/MyPack --name mypack --license "vendor-license
 
 - **Sources:** each track has exactly one.
   - `file`: a path.
-  - `lib`: a catalog id, or `{"search": {...}, "pick": 0}`.
+  - `lib`: a library id, or `{"search": {...}, "pick": 0}`.
+  - `catalog`: a produced-music id (`"buckley-with-these-hands"`), or `{"use": "launch", "mood": "hopeful",
+    "pick": 0}`. Fetched on first use and credited; pair it with `"fit": true`.
   - `synth`: an `audio sfx` spec.
   - `compose`: an `audio compose` spec. The duration defaults to the rest of the mix, and the result
     is cached by content hash.
@@ -188,12 +225,24 @@ showtime audio lib index ~/Sounds/MyPack --name mypack --license "vendor-license
   bed, the `backend_used` and `soundfont_file` (the credit line for the SoundFont): line up the logo
   with `end_hit` from here, not from the cache; for each sfx `above_bed_db`, its loudest 25 ms over
   everything else (under 0 dB it is probably masked, and the report warns)
-- the library items used and their credits
+- the library and catalog items used, their credits (`credits`) and full credit items (`credit_items`:
+  title, artist, license, source, where the credit must go, Content ID status); a CC BY sound
+  without credit text stops the mix with an error
 - warnings (voice too close to the music, a first section more than 6 LU under the loudest, masked
   effects, clipping, heavy limiting, non-commercial sources)
 - paths relative to the report's folder, so a report can be copied or published
 
 Read the report before you listen. Then listen.
+
+### Credits
+
+`showtime render` turns the report's credit items into `credits.txt` beside the video (the exact lines
+each license asks for, courtesy lines for CC0, an optional end-card line) and a block in `share.txt`
+between `--- Credits (keep in the video description) ---` and `--- end credits ---` (replaced on each
+render; the rest of the file is kept). For Scott Buckley tracks it prints a Content ID note: his
+Smart Content ID claims YouTube videos whose description lacks the credit. By hand:
+`showtime audio credits --report <mix.report.json> --out-dir <job>`, or
+`showtime audio credits <id> ... [--end-card]` for a quick look.
 
 ## 6. Analysis and delivery
 

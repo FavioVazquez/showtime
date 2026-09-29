@@ -11,6 +11,7 @@ description: >
   subtitling a video in another language; turning a repo, website, pull request or changelog into a
   video; or when they type /showtime. Not for editing still images, writing a caption for a photo
   post, or code unrelated to a video.
+compatibility: Any Agent Skills client with a shell, on macOS, Linux or Windows. Needs Python 3.8+ (or uv) and Node.js 20+; a one-time `showtime setup` downloads the local tools and models into ~/.showtime (or $SHOWTIME_HOME) and needs the network for that step.
 ---
 
 # showtime
@@ -18,11 +19,11 @@ description: >
 You direct; showtime does the work on this machine: HTML/canvas scenes rendered frame-exactly,
 local voices, music, sound effects, transcript-driven footage edits, captions, QA and exports.
 
-**Running it.** Below, `showtime` means this skill's launcher, called the way the shell needs:
-bash, zsh, sh, Git Bash: `"${CLAUDE_SKILL_DIR}/bin/showtime" <cmd>` (no exec bit: `sh "${CLAUDE_SKILL_DIR}/bin/showtime" <cmd>`);
-PowerShell: `& "${CLAUDE_SKILL_DIR}/bin/showtime.cmd" <cmd>` (the `&` is required);
-cmd: `"${CLAUDE_SKILL_DIR}\bin\showtime.cmd" <cmd>`. Every command has
-`--help` with examples; most take `--json`. Never call a bare `ffmpeg`; use showtime commands.
+**Running it.** Paths are relative to the folder holding this SKILL.md, `<folder>` (Claude Code:
+`${CLAUDE_SKILL_DIR}`; if that reads `${...}`, use the folder you read this from), never the plugin root (no `bin/`).
+`showtime` means `showtime` on PATH, else `"<folder>/bin/showtime" <cmd>` (no exec bit: prefix
+`sh`; Windows: `& "<folder>\bin\showtime.cmd"` in PowerShell, no `&` in cmd). Host kills long commands: `--background`, then
+`showtime status <id> --wait 240`. Never call a bare `ffmpeg`.
 
 **`<job>`** is the folder `showtime job init` prints (`showtime-out/<slug>-<timestamp>/`) or its name
 (`launch` = the newest `launch-*`). Renders never overwrite (`final-2.mp4`); commands given `<job>`
@@ -32,7 +33,7 @@ use its latest file and say which.
 
 - **Quick (default).** Open with one line of assumptions ("Quick mode: 20 s, 16:9, upbeat; no
   voice-over.") and start working; do not wait for a reply. Ask (1-2 questions, each with a
-  recommended answer) only when the request is genuinely ambiguous: nothing to work from, or two
+  recommended answer) only when the request is ambiguous: nothing to work from, or two
   readings that make different videos. Wait for a yes only before something destructive (dropping
   content the user recorded, touching their files) or expensive (a large install, a render over
   ~10 min).
@@ -40,8 +41,7 @@ use its latest file and say which.
   storyboard it first, or wants control. Offer it once, in the opening line, only for high-stakes work
   with an open direction; the offer counts as one question and does not block: continue in quick
   mode unless they take it. Studio settles concept, look, sound and storyboard, then builds with the
-  workflow file (`references/studio.md`, boards: `references/boards.md`).
-  Commands: `showtime studio init|board|frame|font|open|feedback|status|decide|stop|export|serve <job>`.
+  workflow file (`references/studio.md`: every `showtime studio` command; boards: `references/boards.md`).
 - Switching either way, the delivery card and question rules: `references/modes.md`.
 
 ## Pipeline
@@ -133,7 +133,7 @@ Log each stage boundary: `showtime job note <job> --stage <name> --verified ... 
 | "I'll serve the folder with `showtime server` and capture it" | `showtime site capture --serve <dir>`; check the printed title is the product's |
 | "I'll call ffmpeg directly" | `footage trim`, `snap <video>`, `deliver exports --max-mb` (or `--targets gif,webp`); bare ffmpeg may be broken |
 | "A stat or a plausible detail would help" | Only sourced specifics: docs or a saved run (`references/story.md` §6); label sample data |
-| "Upbeat music will make it lively" | Explainers, data, math: restrained bed or none (`references/music.md`) |
+| "Upbeat music will make it lively" | Explainers, data: quiet bed; launches: produced track (`references/music.md`) |
 | "A system font is fine" | Installed font files only (`showtime assets font`) |
 | "I'll guess the scene lengths" | Voice-led: `showtime retime <project> --from-voice`, never hand-edited `data-dur` |
 | "Captions are burned; add sidecars too" | Skip them for Reels, TikTok and Shorts; `showtime captions` says when they are optional |

@@ -130,10 +130,17 @@ def load_manifest(path: Optional[Path] = None) -> dict:
 
 
 def load_catalog(required: bool = True) -> dict:
+    """The catalog. required=True and nothing installed yet: the starter part (~41 MB) is fetched
+    first (announced; offline this raises with the `setup --full` / `--seed` fix)."""
     p = catalog_path()
+    if not p.is_file() and required and not os.environ.get("SHOWTIME_LIBRARY"):
+        from . import libparts
+        libparts.ensure_starter("the audio library")
     if not p.is_file():
         if required:
-            raise ShowtimeError("the audio library is not installed", hint="run `showtime audio lib fetch` (core tier, ~249 MB)")
+            raise ShowtimeError("the audio library is not installed",
+                                hint="run `showtime audio lib fetch` (the core tier, ~249 MB) or "
+                                     "`showtime audio lib fetch --part starter` (~41 MB)")
         return {"schema": "showtime.audio.catalog/1", "items": []}
     return read_json(p)
 
@@ -242,11 +249,49 @@ def _ssl_context():
     return _SSL
 
 
+_SEED_INDEX: Optional[Dict[int, List[Path]]] = None
+
+
+def _seeded(sha256: Optional[str], size: Optional[int]) -> Optional[Path]:
+    """A copy of a pinned file in $SHOWTIME_SEED_DIRS (`showtime setup --seed DIR`), matched by size + sha256."""
+    global _SEED_INDEX
+    dirs = [Path(d) for d in os.environ.get("SHOWTIME_SEED_DIRS", "").split(os.pathsep) if d]
+    if not dirs or not sha256 or not size:
+        return None
+    if _SEED_INDEX is None:
+        _SEED_INDEX = {}
+        for root in dirs:
+            for dirpath, _, names in os.walk(str(root)):
+                for n in names:
+                    p = Path(dirpath) / n
+                    try:
+                        _SEED_INDEX.setdefault(p.stat().st_size, []).append(p)
+                    except OSError:
+                        continue
+    for p in _SEED_INDEX.get(int(size), []):
+        try:
+            if sha256_file(p) == sha256:
+                return p
+        except OSError:
+            continue
+    return None
+
+
 def download(url: str, dest: Path, ua: str, delays: Dict[str, float], sha256: Optional[str] = None,
              size: Optional[int] = None, retries: int = 3) -> Path:
     if dest.is_file() and (not sha256 or sha256_file(dest) == sha256) and (not size or dest.stat().st_size == size):
         return dest
     dest.parent.mkdir(parents=True, exist_ok=True)
+    seed = _seeded(sha256, size)
+    if seed is not None:
+        tmp = dest.with_name(dest.name + ".part")
+        shutil.copyfile(str(seed), str(tmp))
+        os.replace(str(tmp), str(dest))
+        return dest
+    if os.environ.get("SHOWTIME_OFFLINE", "").strip().lower() not in ("", "0", "false", "no"):
+        raise ShowtimeError("%s is not downloaded and showtime is offline" % url,
+                            hint="seed it: `showtime setup --seed DIR --fetch audio-library` with the files from "
+                                 "`showtime setup --plan --urls`", code=3)
     tmp = dest.with_name(dest.name + ".part")
     last_err: Optional[Exception] = None
     for attempt in range(1, retries + 1):

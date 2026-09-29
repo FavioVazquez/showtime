@@ -1,0 +1,42 @@
+{
+  "name": "@faviovazquez/showtime-mcp",
+  "version": "0.2.0",
+  "mcpName": "io.github.FavioVazquez/showtime",
+  "description": "A local video studio for your coding agent: showtime's MCP server and command line. Describe a video. Your agent directs. Your machine renders.",
+  "license": "MIT",
+  "author": "Favio Vazquez",
+  "homepage": "https://faviovazquez.github.io/showtime/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/FavioVazquez/showtime.git"
+  },
+  "bugs": {
+    "url": "https://github.com/FavioVazquez/showtime/issues"
+  },
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "video",
+    "motion-graphics",
+    "voice-over",
+    "music",
+    "captions",
+    "ffmpeg",
+    "local"
+  ],
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "showtime-mcp": "skill/mcp/server.mjs",
+    "showtime": "bin/showtime.mjs"
+  },
+  "files": [
+    "bin/",
+    "skill/",
+    "README.md",
+    "LICENSE"
+  ]
+}

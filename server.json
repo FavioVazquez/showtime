@@ -1,0 +1,50 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.FavioVazquez/showtime",
+  "title": "showtime",
+  "description": "Local video studio for your coding agent: scenes, voice, music and captions, on your machine.",
+  "version": "0.2.0",
+  "websiteUrl": "https://faviovazquez.github.io/showtime/",
+  "repository": {
+    "url": "https://github.com/FavioVazquez/showtime",
+    "source": "github"
+  },
+  "icons": [
+    {
+      "src": "https://raw.githubusercontent.com/FavioVazquez/showtime/main/assets/brand/icon/app-icon-256.png",
+      "mimeType": "image/png",
+      "sizes": ["256x256"]
+    },
+    {
+      "src": "https://raw.githubusercontent.com/FavioVazquez/showtime/main/assets/brand/icon/app-icon.svg",
+      "mimeType": "image/svg+xml",
+      "sizes": ["any"]
+    }
+  ],
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "@faviovazquez/showtime-mcp",
+      "version": "0.2.0",
+      "runtimeHint": "npx",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "SHOWTIME_MCP_BASE",
+          "description": "Folder that relative paths and new video projects resolve against (default: the client's working folder).",
+          "format": "filepath",
+          "isRequired": false
+        },
+        {
+          "name": "SHOWTIME_HOME",
+          "description": "Where showtime keeps its tools, models and caches (default: ~/.showtime).",
+          "format": "filepath",
+          "isRequired": false
+        }
+      ]
+    }
+  ]
+}

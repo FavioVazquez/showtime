@@ -106,6 +106,27 @@ const R = { ok: {}, errors: [] };
 const ok = (name, v) => { R.ok[name] = !!v; };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const fb = () => { try { return JSON.parse(fs.readFileSync(fbPath, 'utf8')); } catch { return { events: [], state: {} }; } };
+// standalone copies (export / artifact / from disk): nothing reaches the agent, so the board must lead the
+// reviewer to "Copy for your agent" and never say "tell your agent you are done"
+async function handoffChecks(pg, tag) {
+  const vis = (sel) => pg.evaluate((q) => { const e = document.querySelector(q); return !!e && !e.hidden && getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().height > 0; }, sel);
+  ok(tag + ': no next-step card before any reaction', !(await vis('#handoff')));
+  await pg.click('.card[data-cid="c2"] [data-act="pick"]');
+  ok(tag + ': next-step card after a pick', await until(() => vis('#handoff')));
+  ok(tag + ': card says copy then paste in your chat', await pg.evaluate(() => /copy this for your agent, then paste it in your chat/i.test(document.querySelector('#handoff').textContent) && document.querySelector('#hoCopy').classList.contains('primary')));
+  // approving copies the digest by itself when the browser allows it
+  await pg.evaluate(() => { window.__copied = null; Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: (t) => { window.__copied = t; return Promise.resolve(); } } }); });
+  await pg.selectOption('#apC', 'c2');
+  await pg.click('[data-act="approve"]');
+  ok(tag + ': approve copies the digest', await until(() => pg.evaluate(() => typeof window.__copied === 'string' && /APPROVED/.test(window.__copied) && window.__copied === window.StudioBoard.digest())));
+  ok(tag + ': approve shows the last step with a copy button', await until(() => vis('#apNext [data-act="handoff"]')));
+  ok(tag + ': never says tell your agent you are done', await pg.evaluate(() => !/you are done/i.test(document.body.innerText + ' ' + document.querySelector('#toasts').textContent)));
+  ok(tag + ': button confirms the copy', await until(() => pg.evaluate(() => /paste it in your chat/i.test(document.querySelector('#hoCopy').textContent))));
+  // clipboard refused: the text is shown selected instead
+  await pg.evaluate(() => { window.__copied = null; Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: () => Promise.reject(new Error('denied')) } }); document.execCommand = () => false; });
+  await pg.click('#hoCopy');
+  ok(tag + ': refused copy falls back to selected text', await until(() => pg.evaluate(() => { const t = document.querySelector('#hoText'); return !document.querySelector('#hoFallback').hidden && t.value === window.StudioBoard.digest() && t.selectionStart === 0 && t.selectionEnd === t.value.length; })));
+}
 async function until(fn, ms = 5000) { const t0 = Date.now(); while (Date.now() - t0 < ms) { try { const v = await fn(); if (v) return v; } catch {} await sleep(80); } return null; }
 const { browser } = await launchBrowser({});
 try {
@@ -194,6 +215,8 @@ try {
   await p.fill('#apNote', 'Go with C2.');
   await p.click('[data-act="approve"]');
   ok('approve', await until(() => fb().state.approved && fb().state.approved.target === 'c2'));
+  // the live studio keeps its wording: the server has every click, the agent only needs telling
+  ok('live: approve says tell your agent you are done, no copy step', await p.evaluate(() => /Tell your agent you are done\./.test(document.querySelector('#apState').textContent) && document.querySelector('#handoff').hidden && document.querySelector('#apNext').hidden));
   R.digest = await p.evaluate(() => window.StudioBoard.digest());
   ok('light/dark toggle', await p.evaluate(() => { document.querySelector('#themeBtn').click(); return document.documentElement.dataset.theme === 'light'; }));
   ok('accessible names', await p.evaluate(() => [...document.querySelectorAll('button')].every((b) => (b.getAttribute('aria-label') || b.textContent).trim().length > 0)));
@@ -212,14 +235,20 @@ try {
   ok('export makes no network requests', blocked.length === 0);
   ok('export offers feedback.json', await s.evaluate(() => !document.querySelector('#dlBtn').hidden));
   R.blocked = blocked;
-  // --target artifact: a host frame blocks downloads, so only "Copy for Claude" is offered
+  await handoffChecks(await (await browser.newContext({ viewport: { width: 1280, height: 860 } })).newPage().then(async (x) => { x.on('pageerror', (e) => R.errors.push('handoff export: ' + e.message)); await x.goto(pathToFileURL(exportPath).href); await until(() => x.evaluate(() => document.querySelector('#conn').dataset.state === 'static')); return x; }), 'export');
+  // --target artifact: a host frame blocks downloads, so only "Copy for your agent" is offered
   if (artifactPath) {
     const a = await desk.newPage();
     a.on('pageerror', (e) => R.errors.push('artifact: ' + e.message));
     await a.goto(pathToFileURL(artifactPath).href);
     ok('artifact static mode', await until(() => a.evaluate(() => document.querySelector('#conn').dataset.state === 'static')));
     ok('artifact has no download', await a.evaluate(() => !document.querySelector('#dlBtn') && !/download/i.test(document.querySelector('#modeNote').textContent)));
-    ok('artifact keeps Copy for Claude', await a.evaluate(() => { const b = document.querySelector('#copyBtn'); return !!b && !b.hidden && getComputedStyle(b).display !== 'none'; }));
+    ok('artifact keeps Copy for your agent', await a.evaluate(() => { const b = document.querySelector('#copyBtn'); return !!b && !b.hidden && getComputedStyle(b).display !== 'none'; }));
+    const a2 = await (await browser.newContext({ viewport: { width: 1280, height: 860 } })).newPage();   // fresh storage: no reactions yet
+    a2.on('pageerror', (e) => R.errors.push('artifact handoff: ' + e.message));
+    await a2.goto(pathToFileURL(artifactPath).href);
+    await until(() => a2.evaluate(() => document.querySelector('#conn').dataset.state === 'static'));
+    await handoffChecks(a2, 'artifact');
   }
 } catch (e) { R.errors.push('driver: ' + (e.stack || e)); }
 finally { await browser.close(); fs.writeFileSync(outPath, JSON.stringify(R, null, 2)); }
@@ -428,7 +457,7 @@ class StudioTests(unittest.TestCase):
         self.assertEqual(art["target"], "artifact")
         html = Path(art["file"]).read_text(encoding="utf-8")
         self.assertIn('<meta name="st-host" content="artifact">', html)
-        self.assertIn("Copy for Claude", html)
+        self.assertIn("Copy for your agent", html)
         # stripped, not just hidden: artifact viewers flag pages that carry file-download code
         for token in ("dlBtn", "downloadFeedback", ".download =", "Download feedback.json", "ST:DL"):
             self.assertNotIn(token, html, "--target artifact must not ship the feedback download (%r)" % token)
@@ -535,7 +564,7 @@ console.log(JSON.stringify(out));
         self.assertEqual(failed, [], json.dumps(r, indent=1)[:3000])
         self.assertEqual(r["errors"], [])
         self.assertGreaterEqual(len(r["ok"]), 28)
-        # "Copy for Claude" text == CLI digest
+        # "Copy for your agent" text == CLI digest
         cli = showtime("studio", "feedback", JOB).stdout.strip()
         self.assertEqual(r["digest"].strip(), cli)
         self.assertIn('APPROVED: C2 "Night shift v2"', cli)
@@ -841,6 +870,48 @@ const { webkit } = require(process.argv[2]);
         self.assertEqual(cp.returncode, 1)
         self.assertIn("showtime studio init no-such-job", cp.stderr)
         self.assertNotIn("Traceback", cp.stderr)
+
+
+class BoardWordingTests(unittest.TestCase):
+    """The board speaks to any coding agent: no "Claude" in what a reviewer reads, and the benchmark's parser
+    takes the digest whichever name the button had."""
+
+    def test_board_strings_are_agent_neutral(self):
+        for name in ("board.html", "board.js"):
+            text = (SKILL / "runtime" / "studio" / name).read_text(encoding="utf-8")
+            # the one legitimate mention: recognising a claude.ai / claudeusercontent.com sandboxed frame
+            text = text.replace("claude\\.ai|claudeusercontent\\.com", "")
+            self.assertNotIn("Claude", text, name)
+        js = (SKILL / "runtime" / "studio" / "board.js").read_text(encoding="utf-8")
+        for s in ("Tell your agent you are done.", "Ask your agent to mix", "Your agent is preparing the first round"):
+            self.assertIn(s, js)
+        # "you are done" is live-studio wording only: every place that says it is guarded by S.live
+        for line in js.splitlines():
+            if "you are done" in line and "toast(" in line or "you are done" in line and "apState" in line:
+                self.assertIn("S.live", line, line)
+        html = (SKILL / "runtime" / "studio" / "board.html").read_text(encoding="utf-8")
+        self.assertNotIn("you are done", html)
+        self.assertIn("copy this for your agent, then paste it in your chat", html.lower())
+        self.assertIn("Note for your agent", (SKILL / "runtime" / "studio" / "board.html").read_text(encoding="utf-8"))
+
+    def test_benchmark_parses_both_wordings(self):
+        bench = SKILL.parent.parent / "benchmarks" / "scoring"
+        if not (bench / "human_board.py").exists():  # a skill-only checkout
+            self.skipTest("benchmarks/ not present")
+        sys.path.insert(0, str(bench.parent / "harness"))
+        sys.path.insert(0, str(bench))
+        try:
+            import human_board
+        finally:
+            sys.path.remove(str(bench)); sys.path.remove(str(bench.parent / "harness"))
+        digest = "STUDIO FEEDBACK (job x)\n\nPicks:\n  - concept: B\n\nAnswers:\n  - A or B: which? -> B\n\nReactions:\n  - A \"Night\": 4/5\n"
+        got = human_board.parse_digest(digest)
+        self.assertEqual(got["pick"], "B")
+        self.assertEqual(got["answers"], [("A", "B", "B")])
+        self.assertEqual(got["ratings"], {"A": 4})
+        # the parser reads the section structure, never a button name
+        self.assertEqual(human_board.parse_digest("Copy for Claude\n" + digest), got)
+        self.assertEqual(human_board.parse_digest("Copy for your agent\n" + digest), got)
 
 
 RESULTS = {}

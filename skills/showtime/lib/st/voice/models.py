@@ -1,7 +1,8 @@
 """Model files the voice module needs, and lazy downloads of the optional ones.
 
-Kokoro and Whisper come from `showtime setup`. Two optional pieces are
-fetched on first use (with a one-line notice), verified by size + sha256:
+Kokoro comes from `showtime setup`; Whisper is fetched before the first
+transcription (st/lazy.py). Two more optional pieces are fetched on first
+use (with a one-line notice), verified by size + sha256:
 
 - the English CTC aligner (wav2vec2-base-960h, ONNX uint8-quantized, 95 MB, Apache-2.0)
 - Piper voices for sherpa-onnx (60-115 MB each; commercially usable ones only)
@@ -47,15 +48,18 @@ W2V_LICENSE = "Apache-2.0 (facebook/wav2vec2-base-960h; ONNX export by onnx-comm
 
 
 def kokoro_files() -> Dict[str, Optional[Path]]:
+    """The Kokoro model to load: the timestamped fp16 export (current installs), else the fp32
+    timestamped or stock exports an older install still has, or $SHOWTIME_KOKORO_MODEL."""
     d = paths()["kokoro"]
-    ts = d / "kokoro-v1.0-timestamped.onnx"
+    candidates = [d / "kokoro-v1.0-timestamped-fp16.onnx", d / "kokoro-v1.0-timestamped.onnx"]
     stock = d / "kokoro-v1.0.onnx"
     voices = d / "voices-v1.0.bin"
+    ts = next((c for c in candidates if c.is_file()), None)
     env_model = os.environ.get("SHOWTIME_KOKORO_MODEL")
-    model = Path(env_model) if env_model else (ts if ts.is_file() else (stock if stock.is_file() else None))
+    model = Path(env_model) if env_model else (ts or (stock if stock.is_file() else None))
     return {"model": model if model and model.is_file() else None,
             "voices": voices if voices.is_file() else None,
-            "timestamped": ts if ts.is_file() else None}
+            "timestamped": ts}
 
 
 def aligner_dir() -> Path:

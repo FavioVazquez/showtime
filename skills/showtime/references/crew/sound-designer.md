@@ -12,8 +12,9 @@ logo, the balance against the voice, and a mix at the target loudness. Reference
 ### A. Sound board (studio)
 
 Three beds, M1 to M3, of equal length (8 to 12 s), each a different style or tempo band, each paired
-with the look it suits. Compose with `showtime audio compose --style <s> --dur <d> ...` (list styles
-with `showtime audio styles`) or search the library with `showtime audio lib search ...` using the
+with the look it suits. Pick produced tracks with `showtime audio music search --for <use> --dur <d>`
+(launch, trailer, story: the default), compose with `showtime audio compose --style <s> --dur <d> ...`
+(list styles with `showtime audio styles`) or search the library with `showtime audio lib search ...` using the
 license filter from `TASK.md`. Write them as WAV into `<own dir>/beds/` and describe each in
 `sound.md` (style, BPM, key, the look it pairs with, license and credit line if any). Recommend one.
 The director masters them onto the board.
@@ -23,8 +24,9 @@ The director masters them onto the board.
 You own the project's `audio/` folder for this phase; nobody else writes there.
 1. Read the frozen cue table from `TASK.md` (scene starts, hit times, VO line times from
    `voice/timeline.json`).
-2. Bed: compose to the exact length with sections on the scene boundaries, or fit a library track with
-   `showtime audio fit ...`. Library tracks: CC0 preferred; CC-BY only with its credit line.
+2. Bed: a catalog track (`"catalog": "<id>", "fit": true`; credited automatically), a composed bed to the
+   exact length with sections on the scene boundaries, or a library track fitted with `showtime audio fit ...`.
+   Library tracks: CC0 preferred; CC-BY only with its credit line.
 3. Effects: one per cue that earns it, not one per cut. `showtime audio sfx <type> ...` prints the hit
    offset; place each with `"align": "hit"` so the transient lands on the frame.
 4. Sound logo for the end card when the storyboard asks: 1 to 2 s, in the bed's key.

@@ -1,11 +1,18 @@
 """Transcript cut algebra: decide which parts of a take to keep.
 
 Removals can be combined freely:
-  - fillers         um / uh / erm ... (bare, case-folded match per language)
+  - fillers         um / uh / erm ... (bare, case-folded match per language, plus
+                    words the filler scan marked "filler": true); extra words or
+                    phrases ("o sea") on request
   - word ids        "w12-w18", "w40"
   - time ranges     (3.2, 4.0)
   - long silences   gaps between kept words longer than `max_pause` are
                     shortened to `keep_pause` (half kept on each side)
+
+Where fillers were cut, the pause left behind is capped at `filler_pause`
+(0.2 s: 0.1 s each side). strict_fillers keeps the fillers whose isolated
+re-decode did not confirm them ("checked": false). With the source audio (`snap_audio`), every cut
+edge moves to the quietest 10 ms within +-40 ms, never into a kept word.
 
 Cuts never land inside a kept word. Each kept word is padded (default 50 ms
 before, 80 ms after; clamped to 30-200 ms) so plosives and breaths are not
@@ -54,7 +61,8 @@ def plan_keep(transcript: Dict[str, Any], *, fillers: bool = True, extra_fillers
               max_pause: Optional[float] = None, keep_pause: float = 0.3,
               pad_before: float = 0.05, pad_after: float = 0.08, lead: float = 0.15, tail: float = 0.35,
               min_keep: float = 0.2, min_cut: float = 0.06, keep_events: bool = True,
-              guard: float = 0.04) -> Dict[str, Any]:
+              guard: float = 0.04, filler_pause: float = 0.2, snap_audio: Optional[Tuple[Any, int]] = None,
+              snap_radius: float = 0.04, strict_fillers: bool = False) -> Dict[str, Any]:
     """Return {"keep": [(s, e)], "removed": [{"text","start","end","why"}], "before": dur, "after": dur}."""
     lang = transcript.get("language") or "en"
     duration = float(transcript.get("duration") or 0.0)
@@ -66,14 +74,24 @@ def plan_keep(transcript: Dict[str, Any], *, fillers: bool = True, extra_fillers
         duration = max(w["end"] for w in toks)
     pad_before, pad_after = _clamp_pad(pad_before), _clamp_pad(pad_after)
     ids = parse_word_ids(remove_ids, toks) if remove_ids else set()
-    extra = {U.bare(x) for x in extra_fillers}
+    extra = {U.bare(x) for x in extra_fillers if len(str(x).split()) == 1}
+    phrases = [[U.bare(p) for p in str(x).split()] for x in extra_fillers if len(str(x).split()) > 1]
+    phrase_hit: Set[int] = set()
+    if fillers and phrases:
+        bw = [U.bare(w["text"]) if w.get("type") == "word" else None for w in toks]
+        for ph in phrases:
+            for i in range(len(toks) - len(ph) + 1):
+                if bw[i:i + len(ph)] == ph:
+                    phrase_hit.update(range(i, i + len(ph)))
 
     removed_why: Dict[int, str] = {}
     for i, w in enumerate(toks):
         why = None
         if w.get("id") in ids:
             why = "word range"
-        elif fillers and w.get("type") == "word" and U.is_filler(w["text"], lang, extra):
+        elif fillers and w.get("type") == "word" and (U.is_filler(w["text"], lang, extra) or w.get("filler")
+                                                       or i in phrase_hit) \
+                and not (strict_fillers and w.get("checked") is False):
             why = "filler"
         elif w.get("type") == "audio_event" and not keep_events:
             why = "event"
@@ -103,6 +121,8 @@ def plan_keep(transcript: Dict[str, Any], *, fillers: bool = True, extra_fillers
         if gap_e <= gap_s:
             continue  # overlapping timestamps: any cut here would clip a kept word
         half = keep_pause / 2.0
+        if between and all(removed_why.get(k) == "filler" for k in range(a_i + 1, b_i)):
+            half = min(half, filler_pause / 2.0)
         if between:
             # Remove the words in between; keep up to keep_pause of the
             # surrounding silence (half on each side) so the join breathes.
@@ -138,11 +158,17 @@ def plan_keep(transcript: Dict[str, Any], *, fillers: bool = True, extra_fillers
             merged[-1] = (merged[-1][0], max(merged[-1][1], e))
         else:
             merged.append((s, e))
+    snapped = 0
+    if snap_audio is not None and len(merged) > 1:
+        from .fillers import snap_edges
+        merged, snapped = snap_edges(merged, snap_audio[0], snap_audio[1], [toks[i] for i in kept_idx],
+                                     radius=snap_radius)
     removed = [{"id": toks[i].get("id"), "text": toks[i]["text"], "start": toks[i]["start"],
                 "end": toks[i]["end"], "why": why} for i, why in sorted(removed_why.items())]
     after = sum(e - s for s, e in merged)
     return {"keep": [(round(s, 3), round(e, 3)) for s, e in merged], "removed": removed,
-            "before": round(duration, 3), "after": round(after, 3), "cuts": max(0, len(merged) - 1)}
+            "before": round(duration, 3), "after": round(after, 3), "cuts": max(0, len(merged) - 1),
+            "snapped_edges": snapped}
 
 
 def invert(cuts: List[Tuple[float, float]], duration: float) -> List[Tuple[float, float]]:

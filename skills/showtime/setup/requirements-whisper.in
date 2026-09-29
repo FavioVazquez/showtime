@@ -1,0 +1,8 @@
+# Whisper transcription engine, installed into ~/.showtime/venv the first time a Whisper model
+# transcribes (showtime lazy component "whisper-engine"; `showtime setup --fetch whisper-engine`
+# installs it up front, `--full` too). Versions stay compatible with requirements.txt (-c).
+# Regenerate the lock (one file, all platforms):
+#   uv pip compile --universal --python-version 3.12 --index-url https://pypi.org/simple \
+#       requirements-whisper.in -c requirements.txt -o requirements-whisper.txt
+faster-whisper==1.2.1
+ctranslate2==4.8.2

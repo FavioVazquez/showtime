@@ -1,16 +1,23 @@
 """Word-level, verbatim, local transcription.
 
 Engines
+  parakeet   NVIDIA Parakeet-TDT 0.6B int8 through sherpa-onnx (the default):
+             v3 covers 25 European languages (English, Spanish, ...), v2 is
+             English only. Verbatim: "um"/"uh" come out as words, no text
+             normalisation. Fetched on first use (~490 MB, asr_models.py).
+             Long files are chunked on pauses (Silero VAD, energy fallback).
   whisper    faster-whisper (CTranslate2, int8 on CPU): large-v3-turbo ("turbo"),
-             small / small.en / base / medium ... Word timestamps, a filler-
-             preserving initial prompt (so "um"/"uh" survive), Silero VAD.
-  parakeet   NVIDIA Parakeet-TDT 0.6B through sherpa-onnx: English, ~3x less
-             CPU than turbo, keeps fillers natively. Long files are chunked on
-             pauses (Silero VAD, energy fallback).
+             small / small.en / base / medium ... for the languages Parakeet
+             lacks, or when asked for. Word timestamps, a filler-preserving
+             initial prompt, Silero VAD.
+  crisper    CrisperWhisper 2.0 (opt-in "max accuracy", non-commercial weights,
+             PyTorch; see crisper.py).
 
-Pipeline per file: probe -> pick the audio track -> 16 kHz mono WAV (cached)
--> refuse silent tracks -> ASR -> token merge -> hallucination guards ->
-energy snap of word edges (refine.py) -> optional diarization and audio
+Pipeline per file: probe -> pick the audio track -> 16 kHz mono WAV (cached;
+the dry narration stem instead when showtime mixed the file itself, or the
+separated vocals when speech sits under loud music) -> refuse silent tracks
+-> ASR -> token merge -> hallucination guards -> filler gap scan (fillers.py)
+-> energy snap of word edges (refine.py) -> optional diarization and audio
 events -> transcript JSON. Results are cached per (source content hash,
 track, options), so re-running is instant unless the media changed.
 """
@@ -30,8 +37,9 @@ from .. import platform as plat
 from ..common import ShowtimeError, debug, info, paths, read_json, warn, write_json
 from . import TRANSCRIPT_VERSION
 from . import util as U
+from .asr_models import PARAKEET_V3_LANGS
 
-ENGINE_REV = 5   # bump when the output of the pipeline changes (invalidates caches)
+ENGINE_REV = 6   # bump when the output of the pipeline changes (invalidates caches)
 
 MODELS: Dict[str, Tuple[str, str]] = {
     "turbo": ("whisper", "large-v3-turbo"),
@@ -44,10 +52,17 @@ MODELS: Dict[str, Tuple[str, str]] = {
     "base": ("whisper", "base"),
     "base.en": ("whisper", "base.en"),
     "tiny.en": ("whisper", "tiny.en"),
-    "parakeet": ("parakeet", "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8"),
+    "parakeet": ("parakeet", "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8"),
     "parakeet-v2": ("parakeet", "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8"),
     "parakeet-v3": ("parakeet", "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8"),
+    "crisper": ("crisper", "small"),
+    "crisper-small": ("crisper", "small"),
+    "crisper-medium": ("crisper", "medium"),
+    "crisper-turbo": ("crisper", "turbo"),
+    "crisper-large": ("crisper", "large"),
 }
+PARAKEET_ITEMS = {"sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8": "parakeet-v2",
+                  "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8": "parakeet-v3"}
 HF_REPOS = {
     "large-v3-turbo": "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
     "large-v3": "Systran/faster-whisper-large-v3",
@@ -56,12 +71,11 @@ HF_REPOS = {
     "base": "Systran/faster-whisper-base", "base.en": "Systran/faster-whisper-base.en",
     "tiny.en": "Systran/faster-whisper-tiny.en",
 }
-SETUP_EXTRA = {"large-v3-turbo": "asr-turbo", "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8": "parakeet"}
+SETUP_EXTRA = {"large-v3-turbo": "asr-turbo", "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8": "parakeet",
+               "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8": "parakeet-v3"}
 # Rough CPU cost (seconds of processing per second of audio on 6 cores, idle machine).
 COST = {"large-v3-turbo": 0.45, "large-v3": 1.2, "medium": 0.6, "medium.en": 0.6, "small": 0.25, "small.en": 0.22,
-        "base": 0.1, "base.en": 0.1, "tiny.en": 0.05, "parakeet": 0.1}
-PARAKEET_V3_LANGS = {"bg", "hr", "cs", "da", "nl", "en", "et", "fi", "fr", "de", "el", "hu", "it", "lv", "lt",
-                     "mt", "pl", "pt", "ro", "sk", "sl", "es", "sv", "ru", "uk"}
+        "base": 0.1, "base.en": 0.1, "tiny.en": 0.05, "parakeet": 0.18}   # parakeet: ASR + filler gap scan
 
 # Disfluent example text that nudges Whisper to write fillers verbatim.
 FILLER_PROMPTS = {
@@ -118,20 +132,33 @@ def _installed(engine: str, name: str) -> bool:
     return (paths()["sherpa"] / name / "encoder.int8.onnx").is_file()
 
 
+def default_model() -> str:
+    """The --model used for 'auto' (SHOWTIME_ASR_MODEL overrides it, e.g. turbo)."""
+    return (os.environ.get("SHOWTIME_ASR_MODEL") or "parakeet").strip()
+
+
 def choose_model(model: str, language: Optional[str]) -> Tuple[str, str]:
-    """(engine, model name) for a --model value ('auto' picks the best installed)."""
+    """(engine, model name) for a --model value.
+
+    'auto': Parakeet-TDT v3 (verbatim, keeps fillers; 25 European languages)
+    unless the language is outside them, then Whisper: turbo when installed,
+    else small (fetched on first use)."""
     m = (model or "auto").strip()
     lang = (language or "").split("-")[0].lower() or None
     if m == "auto":
+        pick = default_model()
+        if pick != "auto" and pick in MODELS and MODELS[pick][0] != "parakeet":
+            return choose_model(pick, language)
+        if lang is None or lang in PARAKEET_V3_LANGS:
+            eng, name = MODELS.get(pick, MODELS["parakeet"]) if pick in MODELS else MODELS["parakeet"]
+            if name.endswith("v2-int8") and lang not in (None, "en"):
+                name = MODELS["parakeet-v3"][1]
+            return eng, name
         if _installed("whisper", "large-v3-turbo"):
+            info("language %r is outside Parakeet's 25; using Whisper large-v3-turbo" % lang)
             return MODELS["turbo"]
-        if lang and lang != "en":
-            return MODELS["small"]
-        if _installed("whisper", "small.en"):
-            if lang is None:
-                info("assuming English speech (model small.en); pass --language xx for other languages, "
-                     "or `showtime setup --with asr-turbo` for the multilingual turbo model")
-            return MODELS["small.en"]
+        info("language %r is outside Parakeet's 25; using Whisper small (for better accuracy: "
+             "`showtime setup --with asr-turbo`)" % lang)
         return MODELS["small"]
     if m in MODELS:
         eng, name = MODELS[m]
@@ -148,15 +175,18 @@ def choose_model(model: str, language: Optional[str]) -> Tuple[str, str]:
         ok_langs = PARAKEET_V3_LANGS if name.endswith("v3-int8") else {"en"}
         if lang not in ok_langs:
             raise ShowtimeError("%s does not support language %r" % (m, lang),
-                                hint="use --model turbo (multilingual)" + (" or parakeet-v3 (25 European languages)"
+                                hint="use --model turbo (99 languages)" + (" or parakeet-v3 (25 European languages)"
                                                                           if lang in PARAKEET_V3_LANGS else ""))
     return eng, name
 
 
 def _ensure_whisper(name: str) -> Path:
+    from .. import lazy
     if os.path.isabs(name):
+        lazy.ensure_asr("whisper", "*")
         return Path(name)
     d = _whisper_dir(name)
+    lazy.ensure_asr("whisper", name)          # engine + pinned model on first use (announced, resumable)
     if (d / "model.bin").is_file():
         return d
     repo = HF_REPOS.get(name)
@@ -187,8 +217,8 @@ def _ensure_whisper(name: str) -> Path:
 def _whisper_model(name: str, threads: int):
     key = "w:%s:%d" % (name, threads)
     if key not in _MODEL_CACHE:
-        from faster_whisper import WhisperModel
         d = _ensure_whisper(name)
+        from faster_whisper import WhisperModel
         device = os.environ.get("SHOWTIME_ASR_DEVICE", "cpu")
         compute = os.environ.get("SHOWTIME_ASR_COMPUTE", "int8" if device == "cpu" else "float16")
         t0 = _announce_load("whisper", name)
@@ -203,9 +233,9 @@ def _parakeet_model(name: str, threads: int):
     if key not in _MODEL_CACHE:
         d = paths()["sherpa"] / name
         if not (d / "encoder.int8.onnx").is_file():
-            extra = SETUP_EXTRA.get(name, "parakeet")
-            raise ShowtimeError("the Parakeet model %s is not installed" % name,
-                                hint="run `showtime setup --with %s`" % extra)
+            # fetched on first use (announced with its size, resumable, sha256-verified): st/lazy.py
+            from . import asr_models
+            d = asr_models.ensure(PARAKEET_ITEMS.get(name, "parakeet-v3"), "transcription")
         import sherpa_onnx
         t0 = _announce_load("parakeet", name)
         _MODEL_CACHE[key] = sherpa_onnx.OfflineRecognizer.from_transducer(
@@ -268,38 +298,58 @@ def _run_whisper(wav: Path, audio, name: str, language: Optional[str], prompt: O
     return toks, meta
 
 
-def _speech_chunks(audio, sr: int, max_len: float = 20.0) -> List[Tuple[float, float]]:
+def vad_spans(audio, sr: int, max_len: float = 30.0, min_silence: float = 0.3,
+              threshold: float = 0.45) -> Optional[List[Tuple[float, float]]]:
+    """Silero VAD speech spans in seconds, or None when the VAD model is missing/fails."""
+    vad_model = paths()["sherpa"] / "silero_vad_v5.onnx"
+    if not vad_model.is_file():
+        return None
+    dur = len(audio) / float(sr)
+    spans: List[Tuple[float, float]] = []
+    try:
+        import numpy as np
+        import sherpa_onnx
+        cfg = sherpa_onnx.VadModelConfig()
+        cfg.silero_vad.model = str(vad_model)
+        cfg.silero_vad.threshold = threshold
+        cfg.silero_vad.min_silence_duration = min_silence
+        cfg.silero_vad.min_speech_duration = 0.1
+        cfg.silero_vad.max_speech_duration = max_len
+        cfg.sample_rate = sr
+        cfg.num_threads = 1
+        vad = sherpa_onnx.VoiceActivityDetector(cfg, buffer_size_in_seconds=int(dur) + 30)
+        ws = cfg.silero_vad.window_size
+        a = np.ascontiguousarray(audio, dtype=np.float32)
+        for i in range(0, len(a) - ws + 1, ws):
+            vad.accept_waveform(a[i:i + ws])
+        vad.flush()
+        while not vad.empty():
+            f = vad.front
+            spans.append((f.start / sr, (f.start + len(f.samples)) / sr))
+            vad.pop()
+    except Exception as e:  # noqa: BLE001
+        debug("VAD failed (%s)" % e)
+        return None
+    return spans
+
+
+def chunk_seconds() -> float:
+    """Longest ASR chunk (s). Parakeet keeps more fillers with some context; 30 s by default."""
+    try:
+        return max(5.0, float(os.environ.get("SHOWTIME_ASR_CHUNK") or 30.0))
+    except ValueError:
+        return 30.0
+
+
+def _speech_chunks(audio, sr: int, max_len: Optional[float] = None,
+                   spans: Optional[List[Tuple[float, float]]] = None) -> List[Tuple[float, float]]:
     """Split long audio on pauses: Silero VAD when installed, else energy minima."""
+    max_len = max_len or chunk_seconds()
     dur = len(audio) / float(sr)
     if dur <= max_len + 5:
         return [(0.0, dur)]
-    vad_model = paths()["sherpa"] / "silero_vad_v5.onnx"
-    spans: List[Tuple[float, float]] = []
-    if vad_model.is_file():
-        try:
-            import numpy as np
-            import sherpa_onnx
-            cfg = sherpa_onnx.VadModelConfig()
-            cfg.silero_vad.model = str(vad_model)
-            cfg.silero_vad.threshold = 0.45
-            cfg.silero_vad.min_silence_duration = 0.3
-            cfg.silero_vad.min_speech_duration = 0.1
-            cfg.silero_vad.max_speech_duration = max_len
-            cfg.sample_rate = sr
-            cfg.num_threads = 1
-            vad = sherpa_onnx.VoiceActivityDetector(cfg, buffer_size_in_seconds=int(dur) + 30)
-            ws = cfg.silero_vad.window_size
-            a = np.ascontiguousarray(audio, dtype=np.float32)
-            for i in range(0, len(a) - ws + 1, ws):
-                vad.accept_waveform(a[i:i + ws])
-            vad.flush()
-            while not vad.empty():
-                f = vad.front
-                spans.append((f.start / sr, (f.start + len(f.samples)) / sr))
-                vad.pop()
-        except Exception as e:  # noqa: BLE001
-            debug("VAD failed (%s); splitting on energy" % e)
-            spans = []
+    if spans is None:
+        spans = vad_spans(audio, sr, max_len=max_len) or []
     if not spans:
         db = U.frame_db(audio, sr, 0.05)
         cuts, t = [0.0], 0.0
@@ -321,10 +371,37 @@ def _speech_chunks(audio, sr: int, max_len: float = 20.0) -> List[Tuple[float, f
     return chunks
 
 
-def _run_parakeet(audio, sr: int, name: str, threads: int) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+def parakeet_decoder(name: str, threads: int, sr: int = 16000):
+    """decode(list of float32 arrays) -> per array [(piece, start_s, dur_s)] with the loaded model."""
     import numpy as np
     rec = _parakeet_model(name, threads)
-    chunks = _speech_chunks(audio, sr)
+
+    def decode(arrays):
+        out = []
+        for b0 in range(0, len(arrays), 16):
+            streams = []
+            for x in arrays[b0:b0 + 16]:
+                st = rec.create_stream()
+                x = np.ascontiguousarray(x, dtype=np.float32)
+                if len(x) < sr // 10:
+                    x = np.concatenate([x, np.zeros(sr // 10 - len(x), np.float32)])
+                st.accept_waveform(sr, x)
+                streams.append(st)
+            rec.decode_streams(streams)
+            for st in streams:
+                r = st.result
+                durs = list(getattr(r, "durations", []) or [])
+                out.append([(t, float(t0), float(durs[i]) if i < len(durs) and durs[i] > 0 else 0.08)
+                            for i, (t, t0) in enumerate(zip(r.tokens, r.timestamps))])
+        return out
+    return decode
+
+
+def _run_parakeet(audio, sr: int, name: str, threads: int,
+                  spans: Optional[List[Tuple[float, float]]] = None) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    import numpy as np
+    rec = _parakeet_model(name, threads)
+    chunks = _speech_chunks(audio, sr, spans=spans)
     toks: List[Dict[str, Any]] = []
     batch = 6
     duration = len(audio) / float(sr)
@@ -349,6 +426,17 @@ def _run_parakeet(audio, sr: int, name: str, threads: int) -> Tuple[List[Dict[st
     pr.set(duration)
     pr.close()
     return toks, {"language": "en" if name.endswith("v2-int8") else None, "chunks": len(chunks)}
+
+
+def _guess_language(words: List[Dict[str, Any]]) -> Optional[str]:
+    """en / es / None from common function words (Parakeet v3 does not report the language)."""
+    en = {"the", "and", "to", "of", "a", "is", "that", "it", "we", "you", "i", "in", "was", "this", "for"}
+    es = {"el", "la", "de", "que", "y", "en", "los", "las", "un", "una", "es", "por", "con", "para", "se", "lo"}
+    b = [U.bare(w["text"]) for w in words if w.get("type") == "word"]
+    ne, ns = sum(1 for x in b if x in en), sum(1 for x in b if x in es)
+    if ne + ns < 5:
+        return None
+    return "en" if ne >= 2 * ns else ("es" if ns >= 2 * ne else None)
 
 
 # --------------------------------------------------------------------------
@@ -386,7 +474,9 @@ def merge_tokens(toks: List[Dict[str, Any]], lang: Optional[str], subword: bool 
         if glue:
             p = out[-1]
             p["text"] += core
-            p["end"] = max(p["end"], t["end"])
+            if not _PUNCT_ONLY.match(core):
+                # punctuation pieces carry late timestamps (a '.' seconds into the next pause)
+                p["end"] = max(p["end"], t["end"])
             if "conf" in t and "conf" in p:
                 p["conf"] = round(min(p["conf"], t["conf"]), 3)
             continue
@@ -551,6 +641,49 @@ def _drop_loops(words: List[Dict[str, Any]], dropped: List[Dict[str, Any]]) -> L
 # Main entry
 # --------------------------------------------------------------------------
 
+def dry_stem(src: Path) -> Optional[Tuple[Path, float, str]]:
+    """(speech-only stem, offset s, what) when showtime rendered `src` itself with music under the speech.
+
+    - an edit render (`edit render`) writes <video>.report.json whose audio.speech_stem is the program
+      audio before the music bed (same timeline);
+    - a motion/voiced render writes render.json (next to the video or in work/) and its mixer writes
+      work/audio/mix.voice.wav, the narration before any music (offset = the rendered range's start).
+    None when there is no such report, the stem is gone, or the report is about another file."""
+    def same(a: Any) -> bool:
+        try:
+            return Path(str(a)).expanduser().resolve() == src
+        except (OSError, ValueError):
+            return False
+    rep = src.with_name(src.stem + ".report.json")
+    if rep.is_file():
+        try:
+            d = read_json(rep)
+        except ShowtimeError:
+            d = {}
+        st_ = ((d.get("audio") or {}).get("speech_stem")) if same(d.get("output")) else None
+        if st_ and Path(st_).is_file():
+            return Path(st_), 0.0, "the edit's speech before the music bed"
+    cands = [src.parent / "render.json", src.parent / "work" / "render.json",
+             src.parent / (src.stem + ".work") / "render.json"]          # render -o <file>: <file stem>.work/
+    cands += [up / "work" / "renders" / (src.stem + ".work") / "render.json" for up in list(src.parents)[:4]]
+    for cand in cands:
+        if not cand.is_file():
+            continue
+        try:
+            d = read_json(cand)
+        except ShowtimeError:
+            continue
+        if not same(d.get("output")):
+            continue
+        stem = d.get("voice_stem")
+        if not stem and d.get("log"):
+            stem = Path(str(d["log"])).parent.parent / "audio" / "mix.voice.wav"
+        if stem and Path(str(stem)).is_file():
+            off = float((d.get("range") or [0.0])[0] or 0.0)
+            return Path(str(stem)), off, "the narration before the music was mixed in"
+    return None
+
+
 def _cache_key(qh: str, track: int, engine: str, name: str, language: Optional[str], opts: Dict[str, Any]) -> str:
     blob = json.dumps({"qh": qh, "t": track, "e": engine, "m": os.path.basename(name), "l": language,
                        "o": opts, "rev": ENGINE_REV, "v": TRANSCRIPT_VERSION}, sort_keys=True)
@@ -560,7 +693,9 @@ def _cache_key(qh: str, track: int, engine: str, name: str, language: Optional[s
 def transcribe(media, *, model: str = "auto", language: Optional[str] = None, speakers: Optional[str] = None,
                events: str = "auto", audio_track: int = 0, vad: bool = True, refine: bool = True,
                prompt: Optional[str] = None, edit_dir=None, force: bool = False, threads: Optional[int] = None,
-               out_path=None, start: Optional[float] = None, end: Optional[float] = None) -> Tuple[Dict[str, Any], Path]:
+               out_path=None, start: Optional[float] = None, end: Optional[float] = None, gap_scan: bool = True,
+               accept_license: bool = False, use_stem: bool = True,
+               separate: str = "auto") -> Tuple[Dict[str, Any], Path]:
     """Transcribe one media file. Returns (transcript, written path).
 
     start/end (seconds) transcribe only that part of the file: word times stay on the source's timeline
@@ -580,16 +715,27 @@ def transcribe(media, *, model: str = "auto", language: Optional[str] = None, sp
     rng = _range(start, end, float(pr.get("duration") or 0.0), src.name)
     lang = (language or "").strip().lower() or None
     engine, name = choose_model(model, lang)
+    if engine == "crisper":
+        from . import crisper
+        crisper.check(accept_license)      # platform + licence, before any work
     threads = threads or int(os.environ.get("SHOWTIME_THREADS") or 0) or plat.cpu_count()
     spk = None if speakers in (None, "", "1", 1) else str(speakers)
     ev_mode = events
     if events == "auto":
         from . import events as E
         ev_mode = "on" if E.available()[0] else "off"
-    opts = {"vad": vad, "refine": refine, "prompt": prompt, "speakers": spk, "events": ev_mode}
+    if separate not in ("auto", "on", "off"):
+        raise ShowtimeError("--separate must be auto, on or off (got %r)" % separate)
+    opts = {"vad": vad, "refine": refine, "prompt": prompt, "speakers": spk, "events": ev_mode, "sep": separate,
+            "gap": bool(gap_scan and engine == "parakeet")}
+    if engine == "parakeet":
+        opts["chunk"] = chunk_seconds()
     if rng:
         opts["range"] = [round(rng[0], 3), round(rng[1], 3)]
     qh = U.quick_hash(src)
+    stem = dry_stem(src) if (audio_track == 0 and use_stem) else None
+    if stem:
+        opts["stem"] = U.quick_hash(stem[0])
     key = _cache_key(qh, audio_track, engine, name, lang, opts)
     edit = Path(edit_dir) if edit_dir else U.default_edit_dir(src, create_job=not out_path)
     dst = Path(out_path) if out_path else U.transcript_path(edit, src, audio_track)
@@ -610,7 +756,15 @@ def transcribe(media, *, model: str = "auto", language: Optional[str] = None, sp
                     info("%s: cached transcript (%d words) -> %s" % (src.name, len(U.words_of(doc)), dst))
                     return doc, dst
 
-    if rng:
+    if stem:
+        info("%s: transcribing %s (%s) instead of the final mix, so speech under the music is not missed"
+             % (src.name, stem[2], stem[0].name))
+        s0 = stem[1] + (rng[0] if rng else 0.0)
+        dur_ = (rng[1] - rng[0]) if rng else float(pr.get("duration") or 0.0)
+        wav = U.cache_dir("transcripts") / ("%s.stem%s.%s-%s.16k.wav" % (qh, opts["stem"][:8], _stamp(s0), _stamp(dur_)))
+        if not wav.is_file():
+            U.extract_wav(stem[0], wav, sr=16000, start=s0 if s0 > 0 else None, duration=dur_ or None)
+    elif rng:
         wav = U.cache_dir("transcripts") / ("%s.t%d.%s-%s.16k.wav" % (qh, audio_track, _stamp(rng[0]), _stamp(rng[1])))
         if not wav.is_file():
             U.extract_wav(src, wav, sr=16000, track=audio_track, start=rng[0], duration=rng[1] - rng[0])
@@ -620,6 +774,33 @@ def transcribe(media, *, model: str = "auto", language: Optional[str] = None, sp
             U.extract_wav(src, wav, sr=16000, track=audio_track)
     audio, sr = U.load_audio(wav, sr=16000)
     duration = len(audio) / float(sr)
+    sep_info: Optional[Dict[str, Any]] = None
+    if separate != "off" and not stem:
+        from . import separate as S
+        sep_info = S.music_likely(audio, sr, vad_spans(audio, sr))
+        if separate == "on" or sep_info["separate"]:
+            voc = wav.with_name(wav.stem + ".vocals.wav")
+            if separate == "on":
+                sep_info["why"] = "asked for (--separate on)"
+            info("%s: %s; separating the voice first (UVR MDX-Net)" % (src.name, sep_info["why"]))
+            if not voc.is_file():
+                S.separate_wav(wav, voc, threads=threads)
+            v_audio, _ = U.load_audio(voc, sr=16000)
+            during = S.speech_time_snr_db(audio, v_audio, sr)
+            sep_info["speech_time_snr_db"] = during
+            if separate == "auto" and during is not None and during >= S.SNR_GATE_DB:
+                # the bed is loud only between phrases (ducked under the voice): separating would only
+                # add artefacts to clean speech
+                sep_info["applied"] = False
+                sep_info["why"] += ", but under the speech itself it is %.1f dB down (ducked): kept the " \
+                                   "original audio" % during
+                info("%s: the music is ducked under the speech (%.1f dB); transcribing the original audio"
+                     % (src.name, during))
+            else:
+                wav, audio = voc, v_audio
+                sep_info["applied"] = True
+        else:
+            sep_info["applied"] = False
     levels = U.audio_levels(audio, sr)
     if levels["peak_db"] < -60 or levels["active_ratio"] < 0.003:
         others = ""
@@ -633,21 +814,43 @@ def transcribe(media, *, model: str = "auto", language: Optional[str] = None, sp
     est = duration * COST.get("parakeet" if engine == "parakeet" else name.split("/")[-1], 0.5) * 6.0 / max(1, threads)
     if ("w:%s:%d" % (name, threads) if engine == "whisper" else "p:%s:%d" % (name, threads)) not in _MODEL_CACHE:
         est += load_seconds(engine, name)
+    if engine == "parakeet":
+        # fetch before the estimate line: a first run downloads the model (announced with its size)
+        _parakeet_model(name, threads)
     if est > 30:
         info("transcribing %s (%s of audio) with %s; estimated %s" % (
             src.name, U.fmt_time(duration), os.path.basename(name), U.fmt_time(est)))
     t0 = time.time()
     report: Dict[str, Any] = {"dropped": [], "warnings": [], "respread": 0}
+    spans = vad_spans(audio, sr, max_len=chunk_seconds()) if engine == "parakeet" else None
     if engine == "whisper":
         toks, meta = _run_whisper(wav, audio, name, lang, prompt, vad, threads, duration)
+    elif engine == "crisper":
+        from . import crisper
+        toks, meta = crisper.run(wav, name, lang, threads, accept_license=accept_license)
     else:
-        toks, meta = _run_parakeet(audio, sr, name, threads)
+        toks, meta = _run_parakeet(audio, sr, name, threads, spans=spans)
     asr_seconds = time.time() - t0
     det_lang = meta.get("language") or lang or "en"
-    words = merge_tokens(toks, det_lang, subword=(engine == "parakeet"))
+    words = merge_tokens(toks, det_lang, subword=(engine in ("parakeet",)))
+    if engine == "parakeet" and not meta.get("language") and not lang:
+        det_lang = _guess_language(words) or "en"
     words = classify(words, report)
     words = guard(words, audio, sr, duration, report)
     stats: Dict[str, Any] = {}
+    if sep_info is not None:
+        stats["separation"] = sep_info
+    if opts["gap"] and words:
+        from . import fillers as F
+        t_gap = time.time()
+        fine = vad_spans(audio, sr, max_len=chunk_seconds(), min_silence=0.1, threshold=0.4)
+        g = F.scan(words, audio, sr, det_lang, parakeet_decoder(name, threads, sr), vad_spans=fine)
+        stats["gap_scan"] = {k: g[k] for k in ("candidates", "elongated", "added", "widened", "added_acoustic", "missed_words", "skipped",
+                                                "asr_fillers", "asr_fillers_checked") if k in g}
+        stats["gap_scan"]["seconds"] = round(time.time() - t_gap, 2)
+        report["gap_events"] = g["events"]
+        if g["added"]:
+            info("%s: filler scan added %d filler(s) the ASR missed" % (src.name, g["added"]))
     if refine and words:
         from .refine import snap_words
         stats["refine"] = snap_words(words, audio, sr)
@@ -686,13 +889,17 @@ def transcribe(media, *, model: str = "auto", language: Optional[str] = None, sp
     doc: Dict[str, Any] = {
         "source": str(src), "duration": round(off + duration, 3), "language": det_lang,
         "language_probability": meta.get("language_probability"),
-        "model": os.path.basename(name), "engine": "faster-whisper" if engine == "whisper" else "sherpa-onnx",
+        "model": os.path.basename(name),
+        "engine": {"whisper": "faster-whisper", "crisper": "crisperwhisper"}.get(engine, "sherpa-onnx"),
         "audio_track": audio_track, "text": _plain_text(word_list), "version": TRANSCRIPT_VERSION,
         "cache_key": key, "source_hash": qh, "created": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "asr_seconds": round(asr_seconds, 2),
         "stats": dict(stats, words=len(word_list), fillers=fillers, events=len([w for w in words if w.get("type") == "audio_event"]),
                       low_confidence=report.get("low_confidence", 0), respread=report["respread"], levels=levels),
         "guards": {"dropped": report["dropped"], "warnings": report["warnings"]},
+        "filler_scan": report.get("gap_events"),
+        "audio_from": (str(stem[0]) if stem else ("separated vocals" if sep_info and sep_info.get("applied")
+                                                   else "source")),
         "words": words,
     }
     if rng:

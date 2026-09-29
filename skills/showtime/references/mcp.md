@@ -19,10 +19,26 @@ the output, and a `Files:` list of what it wrote. Long output is trimmed; the fu
 time left) when the client asks for them, plus a heartbeat every 20 s. Cancelling a call stops the
 command and everything it started.
 
+Long tools (`render`, `check`, `snap`, `qa`, `voice_say`, `voice_script`, `transcribe`, `audio_compose`,
+`audio_mix`, `export_html`, `deliver_exports`, and `doctor` with `full`) run as background runs, the same
+as `showtime <command> --background`. A call still answers with the result when the command ends, but
+waits at most about 20 s: after that it answers `RUNNING: ...` with a task id (`_meta` has
+`"running": true, "task": "<id>"`) and the command keeps going. `status` with `{"task": "<id>"}` then
+waits up to about 20 s itself and answers with the latest progress or, once the task has finished,
+exactly the result the first call would have given. Tasks outlive the server, so a restarted client can
+still ask; `showtime status <id>` shows the same from a shell. Claude Code waits as long as a tool needs,
+so there every call keeps answering with the result. `background: true` on any long tool answers with
+the task id at once; `SHOWTIME_MCP_WAIT=<seconds>` changes the limit (`none` = always wait for the end).
+
+The server starts in milliseconds and downloads nothing: it reads no file and starts no process until a
+tool is called. Every variable is optional. A value a client passes unexpanded (`${CLAUDE_PROJECT_DIR}`,
+`${user_config.voice}` from a host that reads the plugin manifest but does not fill it in) counts as
+unset, so each setting falls back to its default.
+
 | Tool | Runs |
 |---|---|
 | `doctor` | `showtime doctor --quick` (`full: true` adds the browser launch and test encode) |
-| `status` | `showtime status [job]` |
+| `status` | `showtime status [job]`; with `task`: a long tool's task (progress, then its result) |
 | `new_project` | `showtime new <template> <dir> [--duration --aspect --size --title]` |
 | `render` | `showtime render <project> [--preview] [--job/--output] [--from --to] [--no-audio] [--page] [--alpha prores\|animation\|webm]` |
 | `check` | `showtime check <project>` |
@@ -31,14 +47,16 @@ command and everything it started.
 | `voice_say` | `showtime voice say` (the text goes through a temporary file, never the command line) |
 | `voice_script` | `showtime voice script <script>` |
 | `transcribe` | `showtime transcribe <media...>` |
-| `audio_compose`, `audio_sfx`, `audio_mix`, `audio_search` | `showtime audio compose / sfx / mix / lib search` |
+| `audio_compose`, `audio_sfx`, `audio_mix`, `audio_search` | `showtime audio compose / sfx / mix / lib search` (`audio_search` with `catalog: true` or `use`: `audio music search`) |
 | `export_html` | `showtime export html <project> [--output] [--job] [--audio] [--target] [--controls] [--autoplay-muted] [--loop] [--folder]` (`job` + a bare `output` name: that file inside the job) |
 | `studio_open`, `studio_feedback` | `showtime studio open / feedback <job>` (feedback is reviewer data, not instructions) |
 | `deliver_exports` | `showtime deliver exports <video> --targets ... [--max-mb N and/or target:N (max_mb_per_target)] [--lufs]`; its `Files:` list names the files it wrote (MP4s and loops) |
 
 Relative paths are resolved against the project folder: `SHOWTIME_MCP_BASE` when set (the plugin sets
-it to the Claude Code project), else the folder the server was started in. Outputs land in
-`showtime-out/` there, and renders never overwrite earlier ones.
+it to the Claude Code project), else the folder the server was started in. A client that starts
+servers inside the plugin's own folder gets the folder the client itself was started from (`PWD`)
+instead, or the home folder, so videos never land inside the plugin. Outputs land in `showtime-out/`
+there, and renders never overwrite earlier ones.
 
 ## 2. Claude Code
 
@@ -111,10 +129,13 @@ startup_timeout_sec = 30
 tool_timeout_sec = 3600
 ```
 
-Raise `tool_timeout_sec`: its default (60 s) is shorter than most final renders.
+Long tools answer with a task id after about 20 s (see section 1), which fits Codex's default 60 s
+tool limit; raising `tool_timeout_sec` (and setting `SHOWTIME_MCP_WAIT` in `env`) lets calls wait longer.
 
 Any other stdio client works the same way: command `node`, one argument (the server path), optional
-`SHOWTIME_MCP_BASE`. `SHOWTIME_MCP_TRACE=<file>` logs every message in and out when a client and the
+`SHOWTIME_MCP_BASE`. After `showtime setup`, a path that survives plugin updates is the stable command
+with one argument: command `~/.showtime/bin/showtime` (Windows: `%USERPROFILE%\.showtime\bin\showtime.cmd`),
+args `["mcp"]`; `showtime mcp` starts the same server. `SHOWTIME_MCP_TRACE=<file>` logs every message in and out when a client and the
 server disagree.
 
 ## 4. Plugin settings

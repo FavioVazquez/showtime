@@ -1,5 +1,5 @@
 """Timeline views: a PNG with a filmstrip, the waveform, the words and the
-pauses for a time range, so Claude can check a cut without watching it.
+pauses for a time range, so your agent can check a cut without watching it.
 
   view(media, start, end, out)          one range of any video/audio file
   view_edl(edl, rendered, out_dir)      every cut of a rendered edit: a window

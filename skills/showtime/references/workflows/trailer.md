@@ -33,7 +33,9 @@ most: the reveal (name and date) when the request does not give it.
    `showtime new dom <job>/project --duration <len>` (UI and footage); later length changes:
    `showtime retime <job>/project -d <len>`. Use the `cinematic` look (film looks in `film-api.md` section 10;
    the grain component for DOM).
-4. **Music, then picture on it.** Compose to the map so every section change is a downbeat:
+4. **Music, then picture on it.** A produced trailer track sounds real: `showtime audio music pick --for trailer
+   --dur 30` and cut the picture to its downbeats (`music.md` section 0). When every section change must
+   land on a set time, compose to the map instead, so every section change is a downbeat:
    `showtime audio compose --style epic-trailer --dur 30 --sections 0:intro,10:build,20:drop,27:outro
    -o <job>/project/audio/score.wav`. Read `score.beats.json`: `downbeats` for cuts, `events` for riser
    ends and impacts, `end_hit` for the title. Effects: `showtime audio sfx braam --key Cm -o ...`,
@@ -51,6 +53,10 @@ most: the reveal (name and date) when the request does not give it.
 - A feature list with dramatic music is not a trailer. Show the world, withhold the thing.
 - Fading from black at the start: frame 0 must already be a picture (poster baked).
 - Dips to black between every fragment: use one or two, deliberately; they read as dead air otherwise.
+- A new look per fragment, punch-in zooms, shake: premium trailers hold one world and move the camera
+  through it (`through`, `match`, `pan`, the `camera` component); `launch-video.md` has the measured bar.
+- A produced track placed by hand: `showtime audio cuts --for trailer --dur <len> --scenes <n>` finds the
+  excerpt whose swell lands on the title and the phrase starts for the cuts.
 - The title landing off the hit: put it exactly on `end_hit` (or the downbeat before).
 - Invented dates, prices or quotes ("the most anticipated launch of the year"): only what the user said.
 

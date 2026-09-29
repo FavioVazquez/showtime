@@ -208,6 +208,6 @@ When that happens, tell the user in one line and ask for one of:
 ## 8. Cross-platform notes
 
 Everything runs on macOS (Apple Silicon and Intel), Windows 10/11 and Linux through the same
-commands. The browser is system Chrome/Edge/Chromium when present, else Playwright's Chromium
-(`showtime setup --with chromium`). On Linux servers without a display this is headless by
+commands. The browser is system Chrome/Edge/Chromium when present, else the Chrome Headless Shell
+from `showtime setup` (headless) or Playwright's full Chromium for `--headed` (fetched on first use). On Linux servers without a display this is headless by
 default; on Linux, missing system libraries show a hint (`npx playwright install-deps chromium`).

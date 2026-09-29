@@ -112,9 +112,11 @@ text}), `approved` ({target, text}). Each event records the board `rev` the revi
 Text is capped at 2000 characters and every target is checked against the board.
 
 A reviewer on an exported copy has no server: their reactions stay in their browser and come back
-as pasted "Copy for Claude" text, or as a downloaded feedback.json (`studio feedback <job> --import
+as pasted "Copy for your agent" text, or as a downloaded feedback.json (`studio feedback <job> --import
 FILE`). A copy exported with `--target artifact` (or opened in a host's sandboxed frame) offers only
-"Copy for Claude", because such hosts block downloads.
+"Copy for your agent", because such hosts block downloads. On these standalone copies the board shows a
+"copy this for your agent, then paste it in your chat" step (and copies on Approve when the browser allows
+it); it never says "tell your agent you are done", since nothing reaches the agent from the page.
 
 Read it with `showtime studio feedback <job>`: a decision-first digest (approval, picks, answers,
 dials, reactions, mix requests, then timestamped comments; `[NEW]` marks items after `--since` or

@@ -4,15 +4,15 @@
     "name": "Favio Vazquez"
   },
   "metadata": {
-    "description": "showtime: a local video studio skill for Claude Code",
-    "version": "0.1.0"
+    "description": "showtime: a local video studio for your coding agent",
+    "version": "0.2.0"
   },
   "plugins": [
     {
       "name": "showtime",
       "source": "./",
-      "description": "Local video making for Claude Code: motion graphics, voice-over, music, footage editing, captions and exports, all on your machine.",
-      "version": "0.1.0",
+      "description": "A local video studio for your coding agent. Describe a video. Your agent directs. Your machine renders. Motion graphics, voice-over, music, footage editing, captions and platform-ready exports, with no cloud AI services or API keys.",
+      "version": "0.2.0",
       "author": {
         "name": "Favio Vazquez"
       },

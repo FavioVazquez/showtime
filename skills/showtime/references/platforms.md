@@ -159,4 +159,6 @@ hashtag walls, and no claims that aren't in the video. Add variants as needed:
 - **TikTok / Reels:** one line and one question or CTA, 3–5 relevant hashtags.
 - **GitHub README:** a one-line caption under the video plus alt text.
 - If the video uses CC-BY assets, remind the user that the lines in `credits.txt` (written beside the final)
-  must go in the description.
+  must go in the description. Render keeps them in a `--- Credits (keep in the video description) ---`
+  block at the end of `share.txt`: write the post copy above it and leave the block in (a Scott Buckley
+  track without it gets a Content ID claim on YouTube).

@@ -26,7 +26,7 @@ export function audioInputs(aud, dir) {
   return out;
 }
 
-/** Mix the showtime.json "audio" value into out (48 kHz stereo WAV). -> {kind, credits} | null */
+/** Mix the showtime.json "audio" value into out (48 kHz stereo WAV). -> {kind, credits, reportFile, creditItems} | null */
 export async function mixFromConfig(aud, dir, duration, out, audioDir, addWarn) {
   // a plain audio file
   if (typeof aud === 'string' && !/\.json$/i.test(aud)) {
@@ -60,11 +60,19 @@ export async function mixFromConfig(aud, dir, duration, out, audioDir, addWarn) 
       r = await runPyCli(['audio', 'mix', specPath, '-o', out], { cwd: dir, timeout: MIX_TIMEOUT_MS });
       if (r.code === 0 && fs.existsSync(out)) {
         let credits = [];
+        let reportFile = null;
+        let creditItems = 0;
         const rep = out.replace(/\.wav$/i, '.report.json');
         for (const cand of [rep, path.join(path.dirname(out), 'mix.report.json')]) {
-          try { const j = JSON.parse(fs.readFileSync(cand, 'utf8')); credits = (j.credits || []).map((x) => (typeof x === 'string' ? x : x.text || x.credit || JSON.stringify(x))); break; } catch { /* none */ }
+          try {
+            const j = JSON.parse(fs.readFileSync(cand, 'utf8'));
+            credits = (j.credits || []).map((x) => (typeof x === 'string' ? x : x.text || x.credit || JSON.stringify(x)));
+            reportFile = cand;
+            creditItems = (j.credit_items || []).length;   // catalog music, CC BY/CC0 sounds: `audio credits` writes them
+            break;
+          } catch { /* none */ }
         }
-        return { kind: 'mix', credits };
+        return { kind: 'mix', credits, reportFile, creditItems };
       }
       if (/timed out/.test(r.stderr || '')) break;          // a hang does not get a second 20 minutes
     }

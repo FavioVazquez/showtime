@@ -704,7 +704,7 @@ class Progress:
                 pr.update()          # or pr.set(done)
 
     TTY: one line redrawn in place (at most 10 times a second), e.g.
-    `frames 120/450  27%  26.7 fps  ETA 12 s`. Not a TTY (logs, Claude's
+    `frames 120/450  27%  26.7 fps  ETA 12 s`. Not a TTY (logs, an agent's
     tool output): one plain line every `every` seconds and a final line.
     SHOWTIME_PROGRESS=json prints one JSON object per update line instead;
     SHOWTIME_PROGRESS=off silences it. `unit` names the rate ("fps",
@@ -854,10 +854,11 @@ def extra_info(name: str) -> Dict[str, Any]:
     for it in man.get("items", []):
         if it.get("extra") != name:
             continue
-        files = it["platform_files"].get(key) if "platform_files" in it else it.get("files", [])
+        files = plat.pick_for_platform(it["platform_files"], key) if "platform_files" in it else it.get("files", [])
         size += sum(int(f.get("size") or 0) for f in (files or []))
-    return {"name": name, "known": True, "description": ex.get("description", ""), "download_bytes": size,
-            "pip": ex.get("pip", []), "lazy": bool(ex.get("lazy")), "installed": extra_installed(name)}
+    return {"name": name, "known": True, "description": ex.get("description", ""),
+            "download_bytes": size or int(ex.get("approx_bytes") or 0), "pip": ex.get("pip", []),
+            "lazy": bool(ex.get("lazy")), "auto": bool(ex.get("auto")), "installed": extra_installed(name)}
 
 
 def extra_installed(name: str) -> bool:
@@ -874,16 +875,23 @@ def require_extra(name: str, feature: str, available: Optional[bool] = None, ins
 
     available: result of the caller's own check (e.g. an import or model
     file test); when None, the setup state decides. When it is missing:
+      - an extra marked "auto" in the manifest (Manim, ManimGL) is fetched
+        now, announced with its size (`showtime setup --fetch <name>`);
+        offline, the error names `setup --full` / `--seed`;
       - install=True (or SHOWTIME_AUTO_INSTALL=1): print a one-line notice
         with the download size and run `showtime setup --with <name>`;
       - otherwise raise a ShowtimeError whose fix is that exact command
-        (nothing is ever installed silently).
+        (nothing big is ever installed without a notice).
     """
     info = extra_info(name)
     if available is None and info.get("lazy"):
         return   # fetched by its own module on first use (with its own notice)
     ok = extra_installed(name) if available is None else bool(available)
     if ok:
+        return
+    if info.get("auto") and install is not False:
+        from . import lazy
+        lazy.ensure_extra(name, feature)
         return
     size = (" (about %s download)" % human_size(info["download_bytes"])) if info.get("download_bytes") else ""
     cmd = "showtime setup --with %s" % name

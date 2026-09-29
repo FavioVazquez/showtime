@@ -197,7 +197,8 @@ def cmd_new(args: argparse.Namespace) -> int:
         print("next: showtime voice script %s -o %s" % (dst / "narration.md", dst / "voice"))
     print("then: showtime manim check %s   and   showtime manim render %s" % (dst, dst))
     if not info["manim_installed"]:
-        print("note: manim is not installed yet: showtime setup --with manim (about 60 MB, 1-3 min)")
+        print("note: Manim installs itself before the first render (about 60 MB, 1-3 min; "
+              "now: showtime setup --fetch manim)")
     return 0
 
 

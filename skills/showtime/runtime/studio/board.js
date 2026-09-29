@@ -1,9 +1,9 @@
 /* showtime studio board: page script. Plain JS, no dependencies, nothing loaded from the network.
- * Fixed template: Claude fills board.json; this file is never edited per job.
+ * Fixed template: the agent fills board.json; this file is never edited per job.
  *
  * Modes (meta st-mode):
  *   live    served by `showtime studio open`: clicks POST to ./api/feedback, updates arrive over ./api/events (SSE)
- *   static  board.html opened from disk: reactions stay in this browser (localStorage) + "Copy for Claude"
+ *   static  board.html opened from disk: reactions stay in this browser (localStorage) + "Copy for your agent"
  *   export  single-file copy for publishing: like static, never touches the network
  */
 (function () {
@@ -166,7 +166,7 @@
     probe.then(function (live) {
       S.live = live;
       if (!live) return startStatic();
-      $('#modeNote').textContent = 'Live: every click is saved to studio/feedback.json on this computer. Claude reads it when you say you are done (or runs: showtime studio feedback).';
+      $('#modeNote').textContent = 'Live: every click is saved to studio/feedback.json on this computer. Your agent reads it when you say you are done (or runs: showtime studio feedback).';
       return resync().then(function () { setConn('live', 'Live'); flushOutbox(); listen(); });
     });
   }
@@ -175,14 +175,14 @@
     var saved = null; try { saved = JSON.parse(store(localKey()) || 'null'); } catch (e) {}
     renderAll(); setEvents(Array.isArray(saved) ? saved : []);
     setConn('static', META_MODE === 'export' ? 'Shared copy' : 'Static');
-    var note = 'Your reactions are kept in this browser only. When you are done, press "Copy for Claude" and paste the text into your chat.';
+    var note = 'Your reactions are kept in this browser only. When you are done, press "Copy for your agent" and paste the text into your chat.';
     // the marked regions below hold the feedback-file download; `studio export --target artifact` removes them from the file
     /*ST:DL*/
-    if (!HOSTED) note = 'Your reactions are kept in this browser only. Press "Copy for Claude" and paste the text into your chat, or download feedback.json and give it to Claude (showtime studio feedback <job> --import feedback.json).';
+    if (!HOSTED) note = 'Your reactions are kept in this browser only. Press "Copy for your agent" and paste the text into your chat, or download feedback.json and give it to your agent (showtime studio feedback <job> --import feedback.json).';
     if ($('#dlBtn')) $('#dlBtn').hidden = HOSTED;   // downloads do not work inside a host's sandboxed frame
     /*ST:/DL*/
     // a host's frame may not keep this page's storage: then reactions last only until a reload
-    if (HOSTED && !storageWorks()) note = 'This viewer does not keep your reactions if the page reloads: press "Copy for Claude" and paste the text into your chat before you leave.';
+    if (HOSTED && !storageWorks()) note = 'This viewer does not keep your reactions if the page reloads: press "Copy for your agent" and paste the text into your chat before you leave.';
     $('#modeNote').textContent = (META_MODE === 'export' ? 'Shared copy of the board. ' : 'Offline copy. ') + note;
     if (HOSTED) document.documentElement.setAttribute('data-hosted', '');
     if (META_MODE === 'live') banner('The studio server is not running, so this page is a read-only snapshot. Restart it with <code>showtime studio open ' + esc(jobName()) + '</code>');
@@ -291,7 +291,7 @@
     ].filter(function (s) { return s[2]; });
     $('#nav').innerHTML = secs.map(function (s) { return '<a href="#' + s[0] + '" data-sec="' + s[0] + '">' + s[1] + '</a>'; }).join('');
     var html = renderIntro();
-    if (!cs.length && !(b.questions || []).length) html += '<div class="empty-round">' + stMark() + '<h2>Claude is preparing the first round</h2><p>This page updates by itself when the concepts are ready.</p></div>';
+    if (!cs.length && !(b.questions || []).length) html += '<div class="empty-round">' + stMark() + '<h2>Your agent is preparing the first round</h2><p>This page updates by itself when the concepts are ready.</p></div>';
     secs.forEach(function (s) {
       html += ({ concepts: renderConcepts, storyboard: renderStoryboard, animatic: renderAnimatic, sound: renderSound, compare: renderCompare, decide: renderDecide })[s[0]]();
     });
@@ -461,7 +461,7 @@
       '<div class="cmp-bar"><label class="sr" for="cmpA">Left</label><select id="cmpA" data-act="cmpsel" data-side="A">' + opts(S.ui.cmpA) + '</select><span class="muted">vs</span><label class="sr" for="cmpB">Right</label><select id="cmpB" data-act="cmpsel" data-side="B">' + opts(S.ui.cmpB) + '</select></div>' +
       (wipe ? '<div class="wipe" style="--x:' + S.ui.wipe + '%"><img src="' + esc(media(fa.src)) + '" alt="' + esc(A.title) + '"><img class="over" src="' + esc(media(fb.src)) + '" alt="' + esc(B.title) + '"><span class="line"></span><span class="wl">' + esc(tag(A)) + '</span><span class="wr">' + esc(tag(B)) + '</span><input type="range" id="wipe" min="0" max="100" value="' + S.ui.wipe + '" aria-label="Wipe between ' + esc(A.title) + ' and ' + esc(B.title) + '"></div>' : '') +
       '<div class="cmp">' + cmpSide(A) + cmpSide(B) + '</div>' +
-      '<div class="mixbox"><label class="sr" for="cmpNote">What to take from each</label><input id="cmpNote" maxlength="2000" placeholder="Mix these: e.g. story of ' + esc(A ? tag(A) : 'C1') + ', look of ' + esc(B ? tag(B) : 'C2') + '"><button class="btn primary" data-act="cmpmix">' + ICON.mix + 'Ask Claude to mix</button></div></section>';
+      '<div class="mixbox"><label class="sr" for="cmpNote">What to take from each</label><input id="cmpNote" maxlength="2000" placeholder="Mix these: e.g. story of ' + esc(A ? tag(A) : 'C1') + ', look of ' + esc(B ? tag(B) : 'C2') + '"><button class="btn primary" data-act="cmpmix">' + ICON.mix + 'Ask your agent to mix</button></div></section>';
   }
   function renderDecide() {
     var b = S.board;
@@ -475,7 +475,7 @@
     var dials = Core.dialsOf(b).map(function (sl) {
       var d = sl['default'] != null ? sl['default'] : 50;
       return '<div class="dial"><label for="sl-' + esc(sl.id) + '">' + esc(sl.label) + ' <output id="so-' + esc(sl.id) + '">' + d + '</output></label>' +
-        '<div class="rng"><span class="proposed" style="left:calc(' + d + '% + ' + (8 - d * 0.16) + 'px)" title="Claude\'s proposal"></span><input type="range" min="0" max="100" value="' + d + '" id="sl-' + esc(sl.id) + '" data-dial="' + esc(sl.id) + '" aria-describedby="se-' + esc(sl.id) + '"></div>' +
+        '<div class="rng"><span class="proposed" style="left:calc(' + d + '% + ' + (8 - d * 0.16) + 'px)" title="Your agent\'s proposal"></span><input type="range" min="0" max="100" value="' + d + '" id="sl-' + esc(sl.id) + '" data-dial="' + esc(sl.id) + '" aria-describedby="se-' + esc(sl.id) + '"></div>' +
         '<div class="ends" id="se-' + esc(sl.id) + '"><span>' + esc(sl.left || '') + '</span><span>' + esc(sl.right || '') + '</span></div></div>';
     }).join('');
     var copts = concepts().map(function (c) { return '<option value="' + esc(c.id) + '">' + esc(tag(c) + ' · ' + c.title) + '</option>'; }).join('');
@@ -484,7 +484,8 @@
       '<div class="panel"><h3>Dials</h3>' + (dials || '<p class="muted">No dials this round.</p>') +
       (copts ? '<div class="approve"><label for="apC"><b>Ready?</b> <span class="muted">Approve a concept to move on.</span></label><select id="apC">' + copts + '</select>' +
         '<label class="sr" for="apNote">Final notes</label><textarea id="apNote" maxlength="2000" placeholder="Final notes (optional)"></textarea>' +
-        '<button class="btn primary" data-act="approve">' + ICON.check + 'Approve</button><div id="apState" class="muted" style="font-size:13px" role="status"></div></div>' : '') + '</div></div></section>';
+        '<button class="btn primary" data-act="approve">' + ICON.check + 'Approve</button><div id="apState" class="muted" style="font-size:13px" role="status"></div>' +
+        '<div class="next" id="apNext" hidden><span><b>Last step:</b> copy this for your agent, then paste it in your chat. Nothing reaches your agent until you do.</span><button class="btn primary big" data-act="handoff">Copy for your agent</button></div></div>' : '') + '</div></div></section>';
   }
 
   // ---------------------------------------------------------------- state -> DOM (cheap, never re-creates media)
@@ -501,7 +502,12 @@
     $$('[data-act="rate"]').forEach(function (b) { b.dataset.on = String((st.ratings[b.dataset.target] || 0) >= +b.dataset.v); b.setAttribute('aria-pressed', String((st.ratings[b.dataset.target] || 0) === +b.dataset.v)); });
     $$('[data-act="opt"]').forEach(function (b) { var a = st.answers[b.dataset.q]; b.setAttribute('aria-pressed', String(!!a && a.value === b.dataset.o)); });
     $$('[data-dial]').forEach(function (inp) { var v = st.dials[inp.dataset.dial]; if (v != null && document.activeElement !== inp) { inp.value = v; var o = $('#so-' + inp.dataset.dial); if (o) o.textContent = v; } });
-    var ap = $('#apState'); if (ap) ap.textContent = st.approved ? 'Approved: ' + labelOf(st.approved.target) + '. Tell Claude you are done.' : '';
+    // live studio: the server already has every click, so the agent only needs to be told. Anywhere else
+    // (a shared copy, an artifact, a file from disk) nothing reaches the agent: the reviewer copies the text and pastes it.
+    var ap = $('#apState');
+    if (ap) ap.textContent = !st.approved ? '' : 'Approved: ' + labelOf(st.approved.target) + (S.live ? '. Tell your agent you are done.' : '.');
+    var an = $('#apNext'); if (an) an.hidden = S.live || !st.approved;
+    var ho = $('#handoff'); if (ho) { ho.hidden = S.live || !(st.count > 0 || st.approved); if (ho.hidden) $('#hoFallback').hidden = true; }
     if (st.picks.concept && $('#apC') && !st.approved && document.activeElement !== $('#apC')) $('#apC').value = st.picks.concept;
     var n = st.count; $('#fbCount').textContent = n; $('#mFbCount').textContent = n;
     $('#digest').textContent = digestText();
@@ -675,16 +681,41 @@
     if (open) setTimeout(function () { (matchMedia('(pointer: coarse)').matches ? $('#drawerClose') : $('#generalNote')).focus(); }, 50);
     else if (lastFocus && lastFocus.focus) lastFocus.focus();
   }
-  function copyDigest() {
+  // Copy the digest. Returns nothing; `after` (optional) gets the outcome: 'copied' or 'manual'.
+  function copyDigest(auto) {
     var text = digestText();
-    var done = function () { toast('Copied. Paste it into your chat with Claude.'); };
+    function done() {
+      toast(auto === 'approve' ? 'Approved and copied. Now paste it in your chat with your agent.' : 'Copied. Paste it into your chat with your agent.');
+      if (!S.live) { $('#hoFallback').hidden = true; flashCopied(); }
+    }
+    function manual() {
+      if (S.live) { toast('Select the text in the panel and copy it.'); openDrawer(true); return; }
+      showManualCopy(text);
+    }
     function fallback() {
       var ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select();
       var ok = false; try { ok = document.execCommand('copy'); } catch (e) {}
       ta.remove();
-      if (ok) done(); else { toast('Select the text in the panel and copy it.'); openDrawer(true); }
+      if (ok) done(); else manual();
     }
-    if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(done, fallback); else fallback();
+    if (navigator.clipboard && window.isSecureContext) {
+      try { navigator.clipboard.writeText(text).then(done, fallback); } catch (e) { fallback(); }
+    } else fallback();
+  }
+  // the browser refused to copy: show the text, selected, right at the next step
+  function showManualCopy(text) {
+    var ho = $('#handoff'); ho.hidden = false;
+    $('#hoFallback').hidden = false;
+    var ta = $('#hoText'); ta.value = text;
+    ho.scrollIntoView({ block: 'nearest' });
+    ta.focus(); ta.select();
+    toast('Copying was blocked. The text is selected: press Ctrl+C, then paste it in your chat.');
+  }
+  var copiedTimer = null;
+  function flashCopied() {
+    $$('[data-act="handoff"]').forEach(function (b) { b.textContent = 'Copied. Now paste it in your chat'; });
+    clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(function () { $$('[data-act="handoff"]').forEach(function (b) { b.textContent = 'Copy for your agent'; }); }, 6000);
   }
   /*ST:DL*/
   function downloadFeedback() {
@@ -751,8 +782,12 @@
         if (send({ type: 'mix', target: S.ui.cmpA, 'with': S.ui.cmpB, text: $('#cmpNote').value })) { $('#cmpNote').value = ''; toast('Mix request saved'); }
         break;
       case 'approve':
-        if (send({ type: 'approve', target: $('#apC').value, text: $('#apNote').value })) toast('Approved. Tell Claude you are done.');
+        if (send({ type: 'approve', target: $('#apC').value, text: $('#apNote').value })) {
+          if (S.live) toast('Approved. Tell your agent you are done.');
+          else copyDigest('approve');   // still inside the click, so the browser lets it copy; falls back to selected text
+        }
         break;
+      case 'handoff': copyDigest(); break;
     }
   });
   document.addEventListener('change', function (e) {
@@ -814,8 +849,8 @@
   $('#mFb').addEventListener('click', function () { openDrawer(true); });
   $('#drawerClose').addEventListener('click', function () { openDrawer(false); });
   $('#scrim').addEventListener('click', function () { openDrawer(false); });
-  $('#copyBtn').addEventListener('click', copyDigest);
-  $('#mCopy').addEventListener('click', copyDigest);
+  $('#copyBtn').addEventListener('click', function () { copyDigest(); });
+  $('#mCopy').addEventListener('click', function () { copyDigest(); });
   /*ST:DL*/
   if ($('#dlBtn')) $('#dlBtn').addEventListener('click', downloadFeedback);
   /*ST:/DL*/

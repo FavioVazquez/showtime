@@ -7,8 +7,11 @@ Pipeline (each step is cached, so changing one range re-renders one segment):
    square pixels, frame-rate normalisation, fit to the output size (cover /
    contain / blur-pad / face-tracked reframe, optional punch-in zoom),
    stabilisation, grade, BT.709 conversion; audio resampled to 48 kHz stereo
-   (silence for sources without audio), 30 ms fades at both edges, exactly
-   the planned number of samples. Segments keep PCM audio, so no AAC
+   (silence for sources without audio), exactly the planned number of
+   samples. Cuts get a 20 ms equal-power crossfade (audio.crossfade): the
+   incoming segment fades in, and the outgoing source's next 20 ms (its
+   "tail", written beside the segment) fades out over it; the first and last
+   edges keep 30 ms fades. Segments keep PCM audio, so no AAC
    priming gap appears at cuts.
 3. Lossless concat (-c copy) of all segments.
 4. Offsets are recomputed from the frame counts actually written.
@@ -333,13 +336,17 @@ def _segment(seg: Dict[str, Any], ctx: Ctx, quality: str, denoised: Dict[str, Op
           "track": src.get("audio_track", 0)}
     if seg.get("join_in") or seg.get("join_out"):  # only then, so every other segment keeps its cache key
         kd["joins"] = [bool(seg.get("join_in")), bool(seg.get("join_out"))]
+    if seg.get("xf_in") or seg.get("xf_out"):
+        kd["xf"] = [seg.get("xf_in") or 0.0, seg.get("xf_out") or 0.0]
     key = _hash(kd)
     out = ensure_dir(ctx.shared / "segments") / ("seg%03d-%s.mov" % (seg["i"], key))
     sidecar = out.with_suffix(".json")
-    if out.is_file() and sidecar.is_file():
+    tail = out.with_name(out.stem + ".tail.wav") if seg.get("xf_out") else None
+    if out.is_file() and sidecar.is_file() and (tail is None or tail.is_file()):
         try:
             m = json.loads(sidecar.read_text(encoding="utf-8"))
-            return dict(m, meta=dict(m.get("meta") or {}, **meta), path=str(out), cached=True)
+            return dict(m, meta=dict(m.get("meta") or {}, **meta), path=str(out), cached=True,
+                        tail=str(tail) if tail else None)
         except ValueError:
             pass
     args: List[str] = ["-ss", "%.6f" % seg["start"], "-t", "%.6f" % dur_in, "-i", str(src["path"])]
@@ -359,29 +366,83 @@ def _segment(seg: Dict[str, Any], ctx: Ctx, quality: str, denoised: Dict[str, Op
     # joins without the edge fade: a fade there would dip continuous sound for ~2 x 30 ms
     fin = 0.0 if seg.get("join_in") else fade
     fout = 0.0 if seg.get("join_out") else fade
-    achain = ["aresample=48000", "aformat=sample_fmts=fltp:channel_layouts=stereo", "asetpts=PTS-STARTPTS"]
+    curve_in = "tri"
+    if seg.get("xf_in"):
+        fin, curve_in = min(float(seg["xf_in"]), dur_a / 4.0), "qsin"   # equal-power half of the crossfade
+    if seg.get("xf_out"):
+        fout = 0.0                                                      # the tail fades out over the next segment
+    pre = ["aresample=48000", "aformat=sample_fmts=fltp:channel_layouts=stereo", "asetpts=PTS-STARTPTS"]
     if seg.get("mute"):
-        achain.append("volume=0")
+        pre.append("volume=0")
     elif seg.get("volume_db"):
-        achain.append("volume=%.2fdB" % seg["volume_db"])
-    achain += ["apad", "atrim=end_sample=%d" % ns]
+        pre.append("volume=%.2fdB" % seg["volume_db"])
+    pre.append("apad")
+    achain = ["atrim=end_sample=%d" % ns]
     if fin:
-        achain.append("afade=t=in:st=0:d=%.4f" % fin)
+        achain.append("afade=t=in:st=0:d=%.4f:curve=%s" % (fin, curve_in))
     if fout:
         achain.append("afade=t=out:st=%.6f:d=%.4f" % (max(0.0, dur_a - fout), fout))
-    graph_full = graph + ";" + a_in + ",".join(achain) + "[a]"
+    if tail is not None:
+        nt = int(round(float(seg["xf_out"]) * 48000))
+        graph_full = (graph + ";" + a_in + ",".join(pre) + ",asplit=2[am][at];[am]" + ",".join(achain) + "[a];"
+                      "[at]atrim=start_sample=%d:end_sample=%d,asetpts=PTS-STARTPTS[t]" % (ns, ns + nt))
+    else:
+        graph_full = graph + ";" + a_in + ",".join(pre + achain) + "[a]"
     tmp = out.with_name(out.stem + ".part.mov")
     args += ["-filter_complex", graph_full, "-map", "[v]", "-map", "[a]", "-frames:v", str(n),
              "-c:v", "libx264", "-preset", preset, "-crf", str(crf), "-pix_fmt", "yuv420p",
              "-g", str(max(1, int(round(float(ctx.fps) * 2)))), "-bf", "2"] + ff.BT709_TAGS + [
              "-c:a", "pcm_s16le", "-ar", "48000", "-ac", "2", "-video_track_timescale", str(_timescale(ctx.fps)),
              "-f", "mov", str(tmp)]
+    if tail is not None:
+        ttmp = tail.with_name(tail.stem + ".part.wav")
+        args += ["-map", "[t]", "-c:a", "pcm_f32le", "-ar", "48000", "-ac", "2", "-f", "wav", str(ttmp)]
     ff.run_ffmpeg(args)
     os.replace(str(tmp), str(out))
+    if tail is not None:
+        os.replace(str(ttmp), str(tail))
     got = _count_frames(out)
     m = {"i": seg["i"], "frames": got if got else n, "planned": n, "meta": meta}
     sidecar.write_text(json.dumps(m), encoding="utf-8")
-    return dict(m, path=str(out), cached=False)
+    return dict(m, path=str(out), cached=False, tail=str(tail) if tail else None)
+
+
+def _mark_crossfades(segs: List[Dict[str, Any]], xf: float) -> None:
+    """Flag every cut (neighbours that are not a continuous join) for an `xf`-second crossfade (in place)."""
+    if xf <= 0:
+        return
+    for a, b in zip(segs, segs[1:]):
+        if a.get("join_out"):
+            continue
+        a["xf_out"] = b["xf_in"] = round(float(xf), 4)
+
+
+def _apply_tails(program: Path, segs: List[Dict[str, Any]], results: List[Dict[str, Any]]) -> int:
+    """Mix each outgoing tail, faded out with a quarter cosine, over the start of the next segment.
+
+    The incoming segment already fades in with a quarter sine, so the pair is an equal-power
+    crossfade centred just after the cut; the program keeps its exact length. Returns tails mixed."""
+    import numpy as np
+    import soundfile as sf
+    if not any(r.get("tail") for r in results):
+        return 0
+    x, sr = sf.read(str(program), dtype="float32", always_2d=True)
+    pos, done = 0, 0
+    for s, r in zip(segs, results):
+        pos += int(s["audio_samples"])
+        tp = r.get("tail")
+        if not tp or not Path(tp).is_file() or pos >= len(x):
+            continue
+        t, _ = sf.read(str(tp), dtype="float32", always_2d=True)
+        n = min(len(t), len(x) - pos)
+        if n <= 0:
+            continue
+        ramp = np.cos(np.linspace(0.0, np.pi / 2, n, dtype=np.float32))[:, None]
+        ch = min(t.shape[1], x.shape[1])
+        x[pos:pos + n, :ch] += t[:n, :ch] * ramp
+        done += 1
+    sf.write(str(program), x, sr, subtype="FLOAT")
+    return done
 
 
 def _mark_joins(segs: List[Dict[str, Any]], fps: Any) -> None:
@@ -723,6 +784,7 @@ def render(edl_path, out=None, *, preview: bool = False, overwrite: bool = False
 
     denoised = {k: _denoised_audio(k, ctx) for k in {s["source"] for s in segs}}
     _mark_joins(segs, ctx.fps)
+    _mark_crossfades(segs, float(edl["audio"].get("crossfade", 0.02) or 0.0))
     jobs = jobs or max(1, min(3, plat.cpu_count() // 3))
     done = [0]
     t_seg = time.time()
@@ -777,6 +839,7 @@ def render(edl_path, out=None, *, preview: bool = False, overwrite: bool = False
 
     # audio
     program = _premix(base, total, ctx)
+    xfades = _apply_tails(program, segs, results)
     audio_rep: Dict[str, Any]
     if edl["audio"]["tracks"]:
         final_audio, audio_rep = _bed_mix(program, words, total, ctx)
@@ -816,7 +879,12 @@ def render(edl_path, out=None, *, preview: bool = False, overwrite: bool = False
         "frames_ok": frames_out is None or abs(frames_out - expected_frames) <= 1,
         "segments": E.summary(edl, segs)["segments"],
         "segment_meta": [r.get("meta") for r in results], "cached_segments": sum(1 for r in results if r.get("cached")),
-        "captions": cap_rep, "audio": audio_rep, "loudness": loud, "warnings": ctx.warnings,
+        "captions": cap_rep, "audio": dict(audio_rep, crossfades=xfades,
+                                           speech_stem=str(program) if edl["audio"]["tracks"] else None),
+        "loudness": loud, "warnings": ctx.warnings,
+        # what the program was mastered to (qa judges the render against it); "source" = level kept as asked
+        "loudness_target": ({"mode": "master", "lufs": edl["loudness"]["lufs"], "tp": edl["loudness"]["tp"]}
+                            if edl["loudness"] else {"mode": "source"}),
         "work": str(work), "seconds": round(time.time() - t_start, 1),
     }
     if loud and edl["loudness"]:

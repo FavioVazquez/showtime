@@ -1,8 +1,39 @@
 # Music: choosing, composing and syncing it to picture
 
-Read this when you pick or compose music for a video: which style or library track suits the tone,
-tempo and key, how to line sections up with the edit, and how to end. The commands are in
-`audio.md`.
+Read this when you pick or compose music for a video: a produced track from the catalog, a composed
+bed or none; which suits the tone, tempo and key; how to line sections up with the edit; and how to
+end. The commands are in `audio.md`.
+
+## 0. Produced track, composed bed, or none
+
+| The video | Music | How |
+|---|---|---|
+| launch, trailer, keynote opener, story, mission, thank-you, recap | a **produced catalog track** (a real recording) | `showtime audio music pick --for launch --dur <len>`, then `{"kind": "music", "catalog": "<id>", "fit": true}` in `audio/mix.json` |
+| explainer, tutorial, data story, report, math | a restrained underscore: `--for explainer` / `--for data` (no vocals, low energy), a composed `underscore`, or none | same, ducked under the voice |
+| picture that must land on exact beats, a sting on a given frame, stems, an exact length with sections on cuts | **the composer** | `showtime audio compose` (sections 2-4) |
+
+- `--for` is one of launch, trailer, keynote, story, emotional, promo, social, product-demo, tech,
+  explainer, tutorial, data, documentary, problem, background (`audio music presets`). Add `--mood`,
+  `--energy 0.2-0.5` or words (`audio music search hopeful piano`). In a series, vary with `--n 1`, `--n 2`.
+- You cannot listen, so read `audio music info <id>`: moods, energy, vocals, `ending` (clean = ends on a
+  hit and a ring-out; soft = a fade or a quiet outro; cut = still loud at the end), the length, a long
+  quiet intro and the highlight. Every catalog track passed a measured quality gate (no muffled old
+  recordings, hiss, crackle, clipping or dead gaps) and its energy and shelf were checked against the
+  audio. For a video much shorter than a slow-building track, start at its peak:
+  `{"kind": "music", "catalog": "<id>", "offset": "highlight", "fit": true}`.
+  When the user dislikes a track, `audio music veto <id> --reason "..."` and pick again.
+- A track is downloaded from its creator's site the first time it is used ("fetching X (N MB) for Y"),
+  checked against its pinned sha256 and cached; cached tracks work offline.
+- Credits are automatic: the mix records them, and `showtime render` writes `credits.txt`, a
+  "Credits (keep in the video description)" block in `share.txt` and an optional end-card line, and
+  prints a note for Scott Buckley tracks (his Smart Content ID claims YouTube videos whose
+  description lacks the credit). Write the post copy above that block and never delete it.
+- More than the catalog: `audio music openverse <words>` searches CC BY / CC0 audio on Freesound and
+  Wikimedia Commons live (not curated, so preview first); `--fetch <id> -o <project>/audio` saves it with a
+  `.license.json`, so it is credited. Jamendo is excluded by default (`--source jamendo` to ask): its own
+  terms add conditions to commercial use and its licensing program can claim videos.
+- Never use files from Pixabay, Mixkit, Uppbeat, Bensound or the YouTube Audio Library, or anything
+  NC or ND: their licenses forbid this use.
 
 ## 1. Decide the job of the music first
 
@@ -10,8 +41,8 @@ tempo and key, how to line sections up with the edit, and how to end. The comman
 |---|---|---|
 | **Bed under voice-over** (explainer, tutorial, data story, report) | `underscore` (or `minimal-pulse` for tech), steady, no melody | ducked 12 dB under speech (default; `sound-design.md`) |
 | **Air under silent visuals** (a no-voice explainer, math, chart story) | `underscore`, `ambient-pad` or `piano-emotional`; or no music at all | the only sound: keep it slow, dark and sparse |
-| **Driver** (launch reel, hype cut, no voice) | a clear pulse, sections that match the edit | the loudest element: -14 LUFS master, music ≈ everything |
-| **Emotional carrier** (story, testimonial) | piano or strings, slow harmonic motion | under voice, swell in the gaps |
+| **Driver** (launch reel, hype cut, no voice) | a produced track (`--for launch` / `trailer`), or a clear composed pulse with sections that match the edit | the loudest element: -14 LUFS master, music ≈ everything |
+| **Emotional carrier** (story, testimonial) | a produced piano or strings track (`--for story`), slow harmonic motion | under voice, swell in the gaps |
 | **Punctuation** (logo sting, transition, bumper) | a stinger, a jingle, or a composed 3–6 s piece | a short peak at the moment |
 
 **Taste rule: restraint reads as premium.** A viewer forgives no music; they do not forgive cheap
@@ -38,7 +69,7 @@ clip, a kids' game or a DIY stock-music video):
 | data story, chart, report (HTML or MP4) | `underscore` | `minimal-pulse`, `ambient-pad`, none | anything with a drop |
 | math, proof, science | `underscore` or `ambient-pad` at a low bpm | `piano-emotional`, none | pizzicato, 8-bit, claps |
 | dev tool or technical walkthrough | `minimal-pulse` | `lofi-chill` (casual), none | `retro-8bit` unless the brand is retro |
-| launch or promo with no voice | `upbeat-tech` | `cinematic-build`, `minimal-pulse` (premium) | `corporate-minimal` |
+| launch or promo with no voice | a catalog track (`music pick --for launch`) | `upbeat-tech`, `cinematic-build`, `minimal-pulse` (premium) when cuts must hit exact beats | `corporate-minimal` |
 | company intro, upbeat feature tour | `corporate-minimal` | `acoustic-folk`, `minimal-pulse` | |
 | kids, comedy, deliberately silly | `playful-pizzicato` | `retro-8bit`, `acoustic-folk` | |
 
@@ -88,18 +119,31 @@ Tempo:
   above 130 is hyper.
 - Busy visuals want a slower bed. Sparse visuals can take a faster one.
 
-Library first or compose first?
+Catalog, composer or library?
+- **Catalog** (produced recordings, section 0) when the music should sound produced and human, which
+  is most launches, trailers and emotional pieces. `"fit": true` loops or trims it on bar lines; cut
+  the picture to its beats (the mix report lists `downbeats` and `end_hit`).
 - **Compose** when the edit has fixed beats that the music must hit (section changes, a logo at
-  a time, an exact length). Structure is exact, sound is good but synthetic.
-- **Library** (CC0 or CC-BY recordings) when the music should sound produced and human. Fit it with
-  `audio fit` and cut the picture to its `beats.json`.
-- **Both**: a library bed with composed or procedural stingers and risers in the same key.
-- The same taste rule applies to library tracks: for serious work search calm, ambient, cinematic or
-  piano moods (`audio lib search --kind music --mood calm`), read the title and tags of the result
-  before using it, and skip anything tagged or titled quirky, funny, happy, ukulele, whistle, circus
-  or kids. You cannot listen: prefer a composed `underscore` bed to a library track you can't judge.
+  a time, an exact length) or you need stems. Structure is exact, sound is good but synthetic.
+- **Both**: a catalog bed with composed or procedural stingers and risers in the same key.
+- **The installed library** (`audio lib search --kind music`) is mostly light Kevin MacLeod pieces
+  and CC0 game music: for serious work search calm, ambient, cinematic or piano moods, read the title
+  and tags, and skip anything quirky, funny, ukulele, whistle, circus or kids.
 
 ## 3. Sync music to the edit
+
+**A produced track under a short film (launch, promo, trailer, recap): let the music set the cuts.**
+`showtime audio cuts [id|file] --for launch --dur 30 --scenes 5` analyses the track once (beats, bars,
+4-bar phrases, loudness every 0.5 s, the lifts where it steps up), picks the excerpt that starts calm,
+has somewhere to go and swells where the end card starts, and puts each scene change on a phrase
+start (else a half-phrase or a bar line). It prints the plan: the excerpt, the scene starts, how many
+changes sit on phrases or swells, the dynamics. `--apply <project>` also moves the scenes there
+(`retime --cuts`) and writes the excerpt as the project's music track (`offset`, `dur`, fades);
+`--offset` keeps an excerpt you chose; `--end-card` and `--hook` set those lengths. Premium launch
+beds sit quiet with swells (the excerpt's 10th-90th percentile spread of 5-10 dB); `qa` warns when the
+master moves less than 3 dB.
+
+**Composed music or a fixed edit:**
 
 1. Decide the section map from the storyboard: where the hook lands, where the demo builds, where
    the reveal drops, where the call to action sits.

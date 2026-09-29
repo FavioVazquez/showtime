@@ -1,0 +1,8 @@
+{
+  "_comment": "One produced track, no effects: the film is cut to it. `showtime audio cuts --apply <project>` picks the excerpt (offset) whose swell lands on the end card and moves the scene changes onto its phrase starts; run it after every length or scene change. The track is fetched from the composer's site on first use and credited automatically (credits.txt, share.txt). Another track: `showtime audio music pick --for launch --dur <len>`, then `showtime audio cuts <id> --apply <project>`.",
+  "sample_rate": 48000,
+  "tracks": [
+    {"id": "music", "kind": "music", "catalog": "buckley-with-these-hands", "offset": 143.66, "dur": 30.0, "fade_in": 0.15, "fade_out": 2.0}
+  ],
+  "master": {"lufs": -14, "true_peak": -1}
+}

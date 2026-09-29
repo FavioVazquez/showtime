@@ -29,12 +29,23 @@
   </div>
 </header>
 <div class="banner" id="banner" role="alert" hidden></div>
+<section class="handoff" id="handoff" aria-labelledby="hoTitle" hidden>
+  <div class="handoff-in">
+    <div class="ho-text"><strong id="hoTitle">Next step: copy this for your agent, then paste it in your chat.</strong>
+      <span id="hoSub">Nothing reaches your agent from this page until you paste it.</span></div>
+    <button class="btn primary big" id="hoCopy" data-act="handoff">Copy for your agent</button>
+    <div class="ho-fallback" id="hoFallback" hidden>
+      <label for="hoText">Your browser did not allow copying. The text is selected: press Ctrl+C (Cmd+C on a Mac), then paste it in your chat.</label>
+      <textarea id="hoText" readonly rows="8"></textarea>
+    </div>
+  </div>
+</section>
 <nav class="nav" aria-label="Board sections"><div class="nav-in" id="nav"></div></nav>
 <main id="main" tabindex="-1"></main>
 
 <div class="mbar" aria-label="Quick actions">
   <button class="btn" id="mFb">Feedback <span class="count" id="mFbCount">0</span></button>
-  <button class="btn primary" id="mCopy">Copy for Claude</button>
+  <button class="btn primary" id="mCopy">Copy for your agent</button>
 </div>
 
 <div class="scrim" id="scrim"></div>
@@ -45,11 +56,11 @@
     <pre id="digest" aria-label="Feedback summary"></pre>
   </div>
   <div class="dfoot">
-    <label class="sr" for="generalNote">Note for Claude</label>
+    <label class="sr" for="generalNote">Note for your agent</label>
     <textarea id="generalNote" maxlength="2000" placeholder="Anything else? e.g. &quot;shorter intro, and the logo should appear earlier&quot;"></textarea>
     <div class="row">
       <button class="btn primary" id="sendNote">Add note</button>
-      <button class="btn" id="copyBtn">Copy for Claude</button>
+      <button class="btn" id="copyBtn">Copy for your agent</button>
       <!--ST:DL--><button class="btn ghost" id="dlBtn" hidden>Download feedback.json</button><!--ST:/DL-->
     </div>
   </div>

@@ -356,8 +356,9 @@ DIGEST_PICK = re.compile(r'^\s*-\s*concept:\s*([A-Z])\b')
 
 
 def parse_digest(text: str) -> Dict:
-    """Votes from the board's "Copy for Claude" text: the only way back from a board opened as a claude.ai
-    artifact, where downloads are blocked. Returns {answers: [(x, y, winner)], ratings: {letter: n}, pick}."""
+    """Votes from the board's "Copy for your agent" text ("Copy for Claude" before 0.2.0; the digest is the same):
+    the only way back from a board opened as a claude.ai artifact, where downloads are blocked.
+    Returns {answers: [(x, y, winner)], ratings: {letter: n}, pick}."""
     out = {"answers": [], "ratings": {}, "pick": None}
     section = ""
     for line in text.splitlines():
@@ -385,7 +386,7 @@ def tally(run: str) -> Dict:
     out = {"tasks": {}, "pairs": [], "ratings": {}, "picks": {}}
     for task_id, k in keys.items():
         dg = root / "votes" / (task_id + ".txt")
-        if dg.exists():  # "Copy for Claude" digest (artifact-hosted boards)
+        if dg.exists():  # "Copy for your agent" digest (artifact-hosted boards; older boards said "Copy for Claude")
             d = parse_digest(dg.read_text(encoding="utf-8"))
             letters = k["letters"]
             for x, y, w in d["answers"]:
@@ -446,10 +447,10 @@ def main() -> int:
         k = keys[common.load_tasks([a.task])[0]["id"]]
         root = common.bench_home() / "human" / a.run
         text = Path(a.file).read_text(encoding="utf-8", errors="replace")
-        if text.lstrip().startswith("STUDIO FEEDBACK"):  # the board's "Copy for Claude" text
+        if text.lstrip().startswith("STUDIO FEEDBACK"):  # the board's "Copy for your agent" text (or "Copy for Claude" from older boards)
             d = parse_digest(text)
             if not d["answers"] and not d["ratings"] and not d["pick"]:
-                print("no votes found in %s (expected the 'Copy for Claude' text of a blind board)" % a.file)
+                print("no votes found in %s (expected the 'Copy for your agent' text of a blind board)" % a.file)
                 return 1
             (root / "votes").mkdir(parents=True, exist_ok=True)
             (root / "votes" / (k_task := common.load_tasks([a.task])[0]["id"])).with_suffix(".txt").write_text(text, encoding="utf-8")

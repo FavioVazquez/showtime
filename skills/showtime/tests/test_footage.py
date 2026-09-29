@@ -16,8 +16,10 @@ pattern with two hard scene changes. Then drives the real CLI:
   (ducked) and clean captions: same checks
 - captions: every displayed word is on screen while spoken, groups never
   overlap, the caption font is a real TTF libass loads
-- re-transcribe the 16:9 render: no fillers left, word times match the EDL
-  mapping (mean error < 120 ms)
+- re-transcribe the 16:9 render (from the speech stem the render kept, since it
+  has a music bed): no fillers left, word times match the EDL mapping (mean
+  error < 120 ms)
+- the default model (Parakeet v3, when already downloaded): fillers kept, timing
 - unit checks: cut algebra, frame plan without drift at 29.97 fps, caption
   grouping rules, WOFF/WOFF2 -> TTF conversion
 
@@ -87,18 +89,16 @@ def bare(t: str) -> str:
 
 
 def match_words(ref, got):
-    """Greedy in-order text matching -> list of (ref_word, got_word)."""
-    i = j = 0
+    """In-order text matching (longest common subsequence blocks) -> list of (ref_word, got_word).
+
+    A word only one side has (a filler one transcript keeps and the other drops) must not throw the
+    rest out of step, which a greedy walk does when that word comes first."""
+    import difflib
+    a = [bare(w["text"]) for w in ref]
+    b = [bare(w["text"]) for w in got]
     pairs = []
-    while i < len(ref) and j < len(got):
-        if bare(ref[i]["text"]) == bare(got[j]["text"]):
-            pairs.append((ref[i], got[j]))
-            i += 1
-            j += 1
-        elif len(ref) - i > len(got) - j:
-            i += 1
-        else:
-            j += 1
+    for i, j, n in difflib.SequenceMatcher(None, a, b, autojunk=False).get_matching_blocks():
+        pairs += [(ref[i + k], got[j + k]) for k in range(n)]
     return pairs
 
 
@@ -214,6 +214,31 @@ class FootageTest(unittest.TestCase):
         res2 = js("transcribe", self.video, "--model", "small.en", "--no-events", "--json")
         self.assertEqual(res2["words"], res["words"])
         self.assertLess(time.time() - t1, 20)
+
+    def test_01c_transcribe_default_parakeet(self):
+        """The default model (Parakeet v3, verbatim) keeps the fillers and times words like Whisper does."""
+        if self.speech_kind == "tones":
+            self.skipTest("no Kokoro speech on this machine")
+        from st.footage import asr_models
+        if not asr_models.present("parakeet-v3"):
+            self.skipTest("Parakeet v3 not downloaded here (fetched on first use; tests never download)")
+        ed = self.tmp / "edit-pk"
+        res = js("transcribe", self.video, "--no-events", "--json", "--edit-dir", ed, "--force")
+        self.assertIn("parakeet-tdt-0.6b-v3", res["model"])
+        self.assertGreaterEqual(res["words"], 30)
+        self.assertGreaterEqual(res["fillers"], 3, "Parakeet writes um/uh as words")
+        self.assertIsNotNone(res.get("filler_scan"))
+        self.assertEqual(res["audio_from"], "source")
+        self.assertFalse((res.get("separation") or {}).get("applied"), "clean speech is never separated")
+        doc = json.loads(Path(res["transcript"]).read_text(encoding="utf-8"))
+        words = [w for w in doc["words"] if w["type"] == "word"]
+        if self.speech_words:
+            pairs = match_words(self.speech_words, words)
+            self.assertGreaterEqual(len(pairs), 0.85 * len(self.speech_words))
+            mae = statistics.mean(abs(a["start"] - b["start"]) for a, b in pairs)
+            print("parakeet: %d words, %d fillers, start MAE vs Kokoro %.0f ms" % (len(words), res["fillers"], 1000 * mae),
+                  file=sys.stderr)
+            self.assertLess(mae, 0.15)
 
     def test_01b_transcribe_range(self):
         if self.speech_kind == "tones":
@@ -371,8 +396,10 @@ class FootageTest(unittest.TestCase):
         from st.footage import edl as E
         qa = self.tmp / "qa"
         st("transcribe", rep["output"], "--model", "small.en", "--no-events", "--edit-dir", qa, "--force")
-        got = [w for w in json.loads((qa / "transcripts" / "final169.json").read_text(encoding="utf-8"))["words"]
-               if w["type"] == "word"]
+        qdoc = json.loads((qa / "transcripts" / "final169.json").read_text(encoding="utf-8"))
+        # the render has a music bed: transcription reads the speech stem the render kept, not the mix
+        self.assertTrue(str(qdoc.get("audio_from", "")).endswith("program.wav"), qdoc.get("audio_from"))
+        got = [w for w in qdoc["words"] if w["type"] == "word"]
         self.assertFalse([w["text"] for w in got if bare(w["text"]) in ("um", "uh", "umm", "uhm")],
                          "fillers left in the edit")
         ed = E.load(rep["edl"])
@@ -1065,6 +1092,87 @@ class Batch2FootageTest(unittest.TestCase):
             self.assertIsNotNone(reps[0]["removed_db"])
         cp = st("footage", "denoise", src, "--method", "afftdn", "--strength", "0.5", "-o", self.tmp / "t.wav")
         self.assertIn("strength 0.5", cp.stderr)
+
+    # ------------------------------------------------------------------ edit loudness (mastered like every delivery)
+    def _quiet_talk(self):
+        """A 12 s clip of speech-like tone bursts at about -24 LUFS, with a matching transcript (two fillers)."""
+        import numpy as np
+        import soundfile as sf
+        ed = self.tmp / "loud-edit"
+        (ed / "transcripts").mkdir(parents=True, exist_ok=True)
+        sr, words, t = 48000, [], 0.3
+        x = np.zeros(int(12.5 * sr), np.float32)
+        rng = np.random.default_rng(5)
+        for w in "so um this is a quiet recording uh that still needs to come out at the delivery level".split():
+            d = 0.25
+            words.append({"text": w, "start": round(t, 3), "end": round(t + d, 3), "type": "word"})
+            a, b = int(t * sr), int((t + d) * sr)
+            n = np.arange(b - a) / sr
+            x[a:b] += 0.06 * np.sin(2 * np.pi * (150 + 50 * rng.random()) * n) * np.hanning(b - a)
+            t += d + 0.15
+        wav = ed / "quiet.wav"
+        sf.write(str(wav), x[: int((t + 0.4) * sr)], sr)
+        vid = ed / "quiet.mp4"
+        ffrun(["-f", "lavfi", "-i", "testsrc2=s=160x90:r=15:d=%.2f" % (t + 0.4), "-i", wav, "-map", "0:v", "-map", "1:a",
+               "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", "-b:a", "128k", "-shortest", vid])
+        (ed / "transcripts" / "quiet.json").write_text(json.dumps(
+            {"source": str(vid), "duration": t + 0.4, "language": "en", "model": "synthetic", "words": words}), encoding="utf-8")
+        return ed, vid
+
+    @staticmethod
+    def _lufs(path):
+        from st.audio import meter
+        from st.qa import media
+        return meter.measure(media.decode_audio(Path(path)))["integrated_lufs"]
+
+    def test_edit_render_masters_to_delivery_loudness(self):
+        ed, vid = self._quiet_talk()
+        src_lufs = self._lufs(vid)
+        self.assertLess(src_lufs, -19.0, "the source must be far from -14 for this test to mean anything")
+        edl = ed / "edl.json"
+        js("edit", "cut", ed / "transcripts" / "quiet.json", "-o", edl, "--overwrite", "--json")
+        self.assertNotIn("loudness", json.loads(edl.read_text(encoding="utf-8")))     # the default lives in the renderer
+        rep = js("edit", "render", edl, "--preview", "--json", "--overwrite")
+        self.assertAlmostEqual(rep["loudness"]["integrated_lufs"], -14.0, delta=1.0, msg=rep["loudness"])
+        self.assertLessEqual(rep["loudness"]["true_peak_dbtp"], -0.7)
+        self.assertEqual(rep["loudness_target"], {"mode": "master", "lufs": -14.0, "tp": -1.0})
+        # qa judges it against the same -14
+        q = json.loads(st("qa", rep["output"], "--no-sheet", "--json", check=False).stdout)
+        self.assertEqual(q["loudness"]["target_lufs"], -14.0)
+        self.assertFalse([f for f in q["findings"] if f["rule"] == "loudness"], q["findings"])
+        # asked for another level
+        r2 = js("edit", "render", edl, "--preview", "--lufs", "-18", "--json", "--overwrite")
+        self.assertAlmostEqual(r2["loudness"]["integrated_lufs"], -18.0, delta=1.0)
+        self.assertEqual(r2["loudness_target"]["lufs"], -18.0)
+        q2 = json.loads(st("qa", r2["output"], "--no-sheet", "--json", check=False).stdout)
+        self.assertEqual(q2["loudness"]["target_lufs"], -18.0)      # the render's own target, nothing else named one
+        self.assertFalse([f for f in q2["findings"] if f["rule"] == "loudness"], q2["findings"])
+        # keep the source level: not mastered, said so in the report, noted (not failed) by qa
+        r3 = js("edit", "render", edl, "--preview", "--keep-loudness", "--json", "--overwrite")
+        self.assertEqual(r3["loudness_target"], {"mode": "source"})
+        self.assertLess(r3["loudness"]["integrated_lufs"], -19.0, r3["loudness"])
+        q3 = json.loads(st("qa", r3["output"], "--no-sheet", "--json", check=False).stdout)
+        lf = [f for f in q3["findings"] if f["rule"] == "loudness"]
+        self.assertEqual([f["severity"] for f in lf], ["INFO"], lf)
+        self.assertIn("keeps the source level", lf[0]["message"])
+        # the same choice can be made when cutting; the EDL says so
+        edl2 = ed / "edl-keep.json"
+        js("edit", "cut", ed / "transcripts" / "quiet.json", "--keep-loudness", "-o", edl2, "--overwrite", "--json")
+        self.assertIs(json.loads(edl2.read_text(encoding="utf-8"))["loudness"], False)
+        bad = st("edit", "render", edl, "--preview", "--keep-loudness", "--lufs", "-16", check=False)
+        self.assertNotEqual(bad.returncode, 0)
+        self.assertIn("contradict", bad.stderr)
+
+    def test_edl_loudness_forms(self):
+        from st.footage import edl as E
+        clip = self.tmp / "a.mp4"
+        ffrun(["-f", "lavfi", "-i", "testsrc2=s=160x90:r=10:d=1.5", "-f", "lavfi", "-i", "sine=f=300:d=1.5", "-shortest",
+               "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", clip])
+        base = {"sources": {"a": str(clip)}, "ranges": [{"source": "a", "start": 0, "end": 1}]}
+        for val, want in ((None, {"lufs": -14.0, "tp": -1.0}), (-16, {"lufs": -16.0, "tp": -1.0}), (False, None),
+                          ("source", None), ({"lufs": -12, "tp": -2}, {"lufs": -12.0, "tp": -2.0})):
+            doc = dict(base) if val is None else dict(base, loudness=val)
+            self.assertEqual(E.normalize(doc, self.tmp, "t", check_files=False)["loudness"], want, val)
 
     def test_probe_vp9_alpha(self):
         from st import ff

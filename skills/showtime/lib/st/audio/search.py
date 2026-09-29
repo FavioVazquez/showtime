@@ -119,9 +119,25 @@ def search(query: Optional[str] = None, kind: Any = None, mood: Any = None, tags
            tier: Any = None, distinct: bool = False, limit: int = 20, catalog: Optional[dict] = None,
            exclude: Iterable[str] = ()) -> List[Dict[str, Any]]:
     from . import library
-    cat = catalog or library.load_catalog()
     kinds = _set(kind)
     moods = _set(mood)
+    if catalog is None:
+        args = dict(query=query, kind=kind, mood=mood, tags=tags, bpm=bpm, key=key, min_dur=min_dur, max_dur=max_dur,
+                    duration=duration, energy=energy, license=license, source=source, category=category,
+                    loopable=loopable, rhythmic=rhythmic, tier=tier, distinct=distinct, limit=limit, exclude=exclude)
+        found = search(catalog=library.load_catalog(), **args)     # first use: fetches the starter part
+        from . import libparts
+        if len(found) >= min(limit, libparts.MIN_HITS):
+            return found
+        fetched = False
+        try:
+            for p in libparts.parts_for_query(re.split(r"[^a-z0-9]+", (query or "").lower()), kinds, moods):
+                fetched = bool(libparts.ensure(p, "this search", required=False).get("fetched")) or fetched
+        except ShowtimeError as e:
+            from ..common import warn
+            warn("library part not fetched (%s); searching what is installed" % e)
+        return search(catalog=library.load_catalog(), **args) if fetched else found
+    cat = catalog
     mood_x = set(moods)
     for m in moods:
         mood_x |= set(MOOD_SYNONYMS.get(m, []))

@@ -16,12 +16,21 @@
 //   /_st/project   JSON: config, audio file for the player, title
 //   /_st/events    server-sent events: `reload` when a project file changes (with watch)
 //   /_st/lab       blank page used by check/snap for image analysis
+//
+// Session key (`key: true`, used by `showtime preview` and `showtime server`): every request must carry
+// the server's random key, first as `?k=<key>` in the printed link (answered with an HttpOnly,
+// SameSite=Strict cookie named per port) and then as that cookie, `?k=` or the X-Showtime-Key header.
+// Anything else gets a 403 that says where the link is. Without it any web page open in the browser
+// could read the project over http://127.0.0.1. The short-lived servers inside render/check/snap/export
+// (random port, gone when the command ends) run without a key.
 import http from 'node:http';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { skillDir, nodeModulesDir, showtimeHome } from './lib/deps.mjs';
+import { iconFile } from './lib/iconcache.mjs';
+import { newKey, isKey, sameKey, cookieKey, keyCookie } from './lib/sessionkey.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -147,6 +156,22 @@ async function sendFile(req, res, file, { inject = false } = {}) {
   fs.createReadStream(file).on('error', () => res.destroy()).pipe(res);
 }
 
+/** The 403 body for a request without the session key: what happened, why, and how to get in. */
+export const KEY_NEEDED = [
+  '403 forbidden: this showtime preview server needs its session key.',
+  '',
+  'Open the full link that `showtime preview` (or `showtime server`) printed: it ends in k=<key>.',
+  'Lost it? Run `showtime preview <project> --status` to print it again.',
+  'The key keeps other web pages open in your browser from reading your project files.',
+  '',
+].join('\n');
+
+/** `url` (absolute, or a path with or without a query) with the session key appended as k=. */
+export function withKey(url, key) {
+  if (!key) return url;
+  return `${url}${url.includes('?') ? '&' : '?'}k=${key}`;
+}
+
 function notFound(res, url) {
   res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
   res.end(`404 not found: ${url}\n`);
@@ -160,6 +185,7 @@ function notFound(res, url) {
  * @param {string} [o.host='127.0.0.1']
  * @param {boolean} [o.watch=false] emit `reload` events when project files change
  * @param {boolean} [o.inject=true] add /_st/stage.js to HTML pages that lack it
+ * @param {boolean|string} [o.key]  require a session key: true = a fresh random one, or a key to reuse
  * @param {(file:string)=>boolean|Promise<boolean>} [o.onChange] called on a change (with watch); return true to skip the reload
  * @param {(line:string)=>void} [o.log]
  */
@@ -172,6 +198,9 @@ export async function startServer(o) {
   const clients = new Set();
   const log = o.log || (() => {});
   const inject = o.inject !== false;
+  const key = o.key ? (isKey(o.key) ? o.key : newKey()) : null;
+  let port = null;
+  const cookieName = () => `st_preview_${port}`;
 
   const server = http.createServer(async (req, res) => {
     try {
@@ -184,6 +213,18 @@ export async function startServer(o) {
       const u = new URL(req.url, 'http://127.0.0.1');
       let p;
       try { p = decodeURIComponent(u.pathname); } catch { res.writeHead(400); return res.end('bad path\n'); }
+      if (key) {
+        const q = u.searchParams.get('k');
+        const viaQuery = q !== null && sameKey(q, key);
+        const viaCookie = sameKey(cookieKey(req, cookieName()), key);
+        if (!viaQuery && !viaCookie && !sameKey(req.headers['x-showtime-key'], key)) {
+          res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+          return res.end(req.method === 'HEAD' ? undefined : KEY_NEEDED);
+        }
+        // the printed link carries the key once; the cookie covers the page's own requests after it
+        if (viaQuery && !viaCookie) res.setHeader('Set-Cookie', keyCookie(cookieName(), key));
+        res.setHeader('Referrer-Policy', 'no-referrer');   // never leak ?k= to a site the page links to
+      }
       if (p === '/_st/ping') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({ app: 'showtime', root }));
@@ -228,7 +269,11 @@ export async function startServer(o) {
       }
       let file = null;
       if (p.startsWith('/_st/')) file = safeJoin(runtimeDir, p.slice(5));
-      else if (p.startsWith('/_lib/')) file = safeJoin(libDir, p.slice(6));
+      else if (p.startsWith('/_lib/')) {
+        file = safeJoin(libDir, p.slice(6));
+        // icon packages are fetched per file on first use (lib/iconcache.mjs), not installed
+        if (file && !fs.existsSync(file)) file = (await iconFile(p.slice(6))) || file;
+      }
       else if (p.startsWith('/_assets/')) file = safeJoin(assetsDir, p.slice(9));
       else file = safeJoin(root, p === '/' ? 'index.html' : p);
       if (!file) { res.writeHead(403); return res.end('forbidden path\n'); }
@@ -248,7 +293,6 @@ export async function startServer(o) {
     server.once('listening', onOk);
     server.listen(port, host);
   });
-  let port = null;
   const want = Number(o.port || 0);
   if (!want) port = await listen(0);
   else {
@@ -284,9 +328,11 @@ export async function startServer(o) {
   const heartbeat = setInterval(() => { for (const c of clients) { try { c.write(': ping\n\n'); } catch { /* gone */ } } }, 20000);
   heartbeat.unref();
 
+  const url = `http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${port}`;
   return {
-    url: `http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${port}`,
-    port, root,
+    url, port, root, key,
+    /** `pathAndQuery` on this server as a link that opens it (with k= when the server has a key). */
+    link(pathAndQuery = '/') { return withKey(url + pathAndQuery, key); },
     notify(file) { for (const c of clients) { try { c.write(`event: reload\ndata: ${JSON.stringify({ file })}\n\n`); } catch { /* gone */ } } },
     close() {
       clearInterval(heartbeat);
@@ -308,6 +354,7 @@ if (isMain) {
     options: {
       port: { type: 'string', default: '4800', help: 'first port to try (default 4800; 0 = any free port)' },
       host: { type: 'string', default: '127.0.0.1', help: 'interface to bind (default 127.0.0.1, local only)' },
+      key: { type: 'string', help: 'session key to require (default: a fresh random one, printed in the links)' },
       watch: { type: 'boolean', help: 'send live-reload events to open preview players' },
       json: { type: 'boolean', help: 'print {url, port, root} as JSON' },
     },
@@ -324,12 +371,17 @@ if (isMain) {
     throw e;
   }
   if (notProject) console.error(`not a showtime project: ${siteHint}`);
-  const srv = await startServer({ root: proj.dir, port: Number(args.port), host: args.host, watch: args.watch, log: (l) => console.error(l) }).catch((e) => fail(e.message));
-  if (args.json) console.log(JSON.stringify({ url: srv.url, port: srv.port, root: srv.root, page: srv.url + '/' + proj.page }));
+  if (args.key && !isKey(args.key)) fail('--key must be 64 hex characters', 'leave it out and a fresh key is made for you');
+  const srv = await startServer({ root: proj.dir, port: Number(args.port), host: args.host, watch: args.watch, key: args.key || true,
+    log: (l) => console.error(l) }).catch((e) => fail(e.message));
+  const page = srv.link('/' + proj.page);
+  const preview = srv.link(`/_st/preview?page=/${proj.page}`);
+  if (args.json) console.log(JSON.stringify({ url: srv.url, port: srv.port, root: srv.root, key: srv.key, page, preview }));
   else {
     console.log(`serving ${proj.dir}`);
-    console.log(`  page:    ${srv.url}/${proj.page}`);
-    console.log(`  preview: ${srv.url}/_st/preview?page=/${proj.page}`);
+    console.log(`  page:    ${page}`);
+    console.log(`  preview: ${preview}`);
+    console.log('  the links carry this session\'s key (k=...); requests without it are refused');
     console.log('press Ctrl+C to stop');
   }
   const stop = () => { srv.close().then(() => process.exit(0)); };

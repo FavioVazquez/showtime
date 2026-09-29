@@ -434,6 +434,50 @@ print(json.dumps(res))
         self.assertIn("--fit", st("voice", "script", "--help").stdout)
 
 
+    def test_09_windows_espeak_cleanup_is_quiet(self):
+        """phonemizer's Windows exit hook fails when its DLL copy is still mapped (Windows on Arm): no
+        traceback, the folder is remembered and the next run removes it; other temp folders are left alone."""
+        out = py(r"""
+import json, os, sys, tempfile
+from pathlib import Path
+os.environ["SHOWTIME_HOME"] = sys.argv[2]
+sys.path.insert(0, sys.argv[1])
+try:
+    from phonemizer.backend.espeak import api
+except Exception:
+    print(json.dumps({"skip": True})); sys.exit(0)
+from st import platform as plat
+plat.IS_WINDOWS = True
+from st.voice import espeak as E
+calls = []
+def locked(library, tempdir):
+    calls.append(tempdir)
+    raise PermissionError(13, "Access is denied", os.path.join(tempdir, "espeak-ng.dll"))
+api.EspeakAPI._delete = staticmethod(locked)
+E._guard_windows_cleanup()
+tmp = tempfile.mkdtemp()
+Path(tmp, "espeak-ng.dll").write_bytes(b"MZ")
+obj = object.__new__(api.EspeakAPI)
+obj._library, obj._tempdir = None, tmp
+obj._delete_win32()                      # must not raise
+recorded = E._leftovers_file().read_text(encoding="utf-8").split()
+other = tempfile.mkdtemp()
+Path(other, "notes.txt").write_text("keep")
+E._leftovers_file().write_text("\n".join(recorded + [other]) + "\n", encoding="utf-8")
+E._sweep_leftovers()
+print(json.dumps({"calls": calls, "recorded": recorded, "tmp": tmp, "tmp_gone": not Path(tmp).exists(),
+                  "other_kept": Path(other).exists(), "list_gone": not E._leftovers_file().exists()}))
+import shutil; shutil.rmtree(other, ignore_errors=True); shutil.rmtree(tmp, ignore_errors=True)
+""", SKILL / "lib", self.tmp / "home-espeak")
+        d = json.loads(out.strip().splitlines()[-1])
+        if d.get("skip"):
+            self.skipTest("phonemizer is not installed in this Python")
+        self.assertEqual(d["calls"], [d["tmp"]])
+        self.assertEqual(d["recorded"], [d["tmp"]])
+        self.assertTrue(d["tmp_gone"])
+        self.assertTrue(d["other_kept"])
+        self.assertTrue(d["list_gone"])
+
 if __name__ == "__main__":
     argv = [a for a in sys.argv if a != "--fast"]
     t0 = time.time()

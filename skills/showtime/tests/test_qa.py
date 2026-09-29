@@ -160,7 +160,7 @@ class QATests(unittest.TestCase):
         names = {d.name for d, _ in defects()}
         for want in ("black-first-frame", "text-outside-safe-zone", "low-contrast", "clipping-audio",
                      "unseeded-random", "realtime-timer", "missing-font", "system-font", "overflow-text",
-                     "frozen-segment", "silent-gap", "missing-credits"):
+                     "frozen-segment", "silent-gap", "missing-credits", "clipped-text", "choppy-launch"):
             self.assertIn(want, names)
         for d, spec in defects():
             self.assertIn(spec["tool"], ("check", "qa"), d.name)

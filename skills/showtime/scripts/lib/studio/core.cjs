@@ -6,7 +6,7 @@
  *   index(board)                -> {id: {kind, label, concept?, group?, question?}}
  *   makeEvent(input, meta)      -> event (validated, normalised; throws Error with .status = 422)
  *   reduce(events)              -> state (feedback is an append-only event log; state is derived)
- *   digest(board, fb, opts)     -> string (what Claude reads; identical in the CLI and "Copy for Claude")
+ *   digest(board, fb, opts)     -> string (what the agent reads; identical in the CLI and "Copy for your agent")
  */
 (function (root) {
   'use strict';

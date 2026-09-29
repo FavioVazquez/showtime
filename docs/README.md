@@ -9,15 +9,15 @@
 # showtime documentation
 
 showtime's guides live next to the skill, in
-[`skills/showtime/references/`](../skills/showtime/references/), because Claude reads them while it works.
-They are written for Claude first and for you second: each one opens with a "Read this when" line, so
+[`skills/showtime/references/`](../skills/showtime/references/), because your coding agent reads them while it works.
+They are written for your agent first and for you second: each one opens with a "Read this when" line, so
 you can tell in one sentence whether it is the page you need. This map puts them in running order.
 
 New here? Start with the [README](../README.md), then come back for the act you need. The map below is
 the whole programme at a glance; the tables under it link every guide.
 
 > [!TIP]
-> You never have to read these to make a video: ask Claude Code in one sentence and it picks the right
+> You never have to read these to make a video: ask your agent in one sentence and it picks the right
 > guide itself. Read them when you want to know **why** a video came out the way it did, change a
 > default, or build a project by hand.
 
@@ -28,7 +28,7 @@ the whole programme at a glance; the tables under it link every guide.
 
 ## Choose your path
 
-What are you making? Each card opens the workflow guide Claude follows; the preview is an example made with it.
+What are you making? Each card opens the workflow guide your agent follows; the preview is an example made with it.
 
 <table>
 <tr>
@@ -60,8 +60,9 @@ What are you making? Each card opens the workflow guide Claude follows; the prev
 
 | Guide | Read it when |
 |---|---|
-| [onboarding](../skills/showtime/references/onboarding.md) | it is your first run, setup is missing, or you want to know what showtime needs |
-| [modes](../skills/showtime/references/modes.md) | you want to know how much Claude asks, quick versus studio, and what the delivery card says |
+| [showtime in your coding agent](agents.md) | you want the exact install for Claude Code, Codex, Cursor, Devin, OpenCode or another agent, and to know which were tested |
+| [onboarding](../skills/showtime/references/onboarding.md) | it is your first run, setup is missing, or you want to know what showtime needs and downloads |
+| [modes](../skills/showtime/references/modes.md) | you want to know how much your agent asks, quick versus studio, and what the delivery card says |
 | [studio](../skills/showtime/references/studio.md) | you want options first: concepts, looks, beds, storyboard and animatic on local boards |
 | [boards](../skills/showtime/references/boards.md) | you are writing or changing a studio board (`board.json`) |
 | [crew](../skills/showtime/references/crew.md) | you want to know how the ten specialist sub-agents are used ([their briefs](../skills/showtime/references/crew/)) |
@@ -130,8 +131,8 @@ These guides are also a searchable site: **[faviovazquez.github.io/showtime/docs
 
 | Page | What it is |
 |---|---|
-| [SKILL.md](../skills/showtime/SKILL.md) | the skill itself: what Claude reads first on every request |
-| [references/index.md](../skills/showtime/references/index.md) | the same map in Claude's own words |
+| [SKILL.md](../skills/showtime/SKILL.md) | the skill itself: what your agent reads first on every request |
+| [references/index.md](../skills/showtime/references/index.md) | the same map in the agent's own words |
 | [CONTEXT.md](../CONTEXT.md) | the glossary: the words showtime uses and the ones it avoids |
 | [.out-of-scope/](../.out-of-scope/README.md) | what showtime deliberately does not do, and why |
 | [CONTRIBUTING.md](../CONTRIBUTING.md) | tests, release checks, how to send a change |

@@ -5,7 +5,7 @@ import crypto from 'node:crypto';
 import http from 'node:http';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { startServer } from './server.mjs';
+import { startServer, withKey } from './server.mjs';
 import { parseCli, runMain, resolveProject, info, warn, c, openDefault, UserError } from './lib/cli.mjs';
 import { findSystemBrowsers } from './lib/chrome.mjs';
 import { showtimeHome } from './lib/deps.mjs';
@@ -24,6 +24,8 @@ const SPEC = {
     'work/mix.wav. Saving any project file reloads the page at the same time position.',
     'When the output is not a terminal (e.g. run by an agent), the server starts in the background and',
     'the command returns; stop it with --stop.',
+    'The server listens on 127.0.0.1 only and needs a per-session key: open the printed link (it ends in',
+    'k=...); requests without the key get a 403. --status prints the link again.',
   ].join('\n'),
   options: {
     port: { help: 'first port to try (default 4800)' },
@@ -51,9 +53,10 @@ function sessionFile(root) {
   return path.join(d, `${h}.json`);
 }
 
-function ping(url) {
+function ping(url, key) {
   return new Promise((resolve) => {
-    const req = http.get(`${url}/_st/ping`, { timeout: 800 }, (res) => {
+    const headers = key ? { 'X-Showtime-Key': key } : {};
+    const req = http.get(`${url}/_st/ping`, { timeout: 800, headers }, (res) => {
       let body = '';
       res.on('data', (d) => { body += d; if (body.length > 4096) req.destroy(); });
       res.on('end', () => { try { resolve(JSON.parse(body)); } catch { resolve(null); } });
@@ -68,7 +71,7 @@ async function running(root) {
   if (!fs.existsSync(f)) return null;
   let rec;
   try { rec = JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; }
-  const p = await ping(rec.url);
+  const p = await ping(rec.url, rec.key);
   if (p && p.app === 'showtime' && path.resolve(p.root) === path.resolve(root)) return rec;
   fs.rmSync(f, { force: true });
   return null;
@@ -115,10 +118,12 @@ async function main() {
   const a = parseCli(SPEC);
   const proj = resolveProject(a._[0] || '.', { page: a.page });
   const rec = await running(proj.dir);
+  // the player link, with the server's session key (a server started before keys existed has none)
+  const playerUrl = (r) => withKey(`${r.url}/_st/preview?page=/${encodeURI(proj.page)}`, r.key);
 
   if (a.status) {
-    if (a.json) console.log(JSON.stringify(rec || { running: false }));
-    else console.log(rec ? `running: ${rec.url}/_st/preview?page=/${proj.page} (pid ${rec.pid}, log ${rec.log})` : 'not running');
+    if (a.json) console.log(JSON.stringify(rec ? { running: true, ...rec, player: playerUrl(rec) } : { running: false }));
+    else console.log(rec ? `running: ${playerUrl(rec)} (pid ${rec.pid}, log ${rec.log})` : 'not running');
     return 0;
   }
   if (a.stop) {
@@ -129,9 +134,8 @@ async function main() {
     return 0;
   }
 
-  const playerUrl = (base) => `${base}/_st/preview?page=/${encodeURI(proj.page)}`;
   if (rec) {
-    const url = playerUrl(rec.url);
+    const url = playerUrl(rec);
     const how = a['no-open'] ? null : openBrowserWindow(url, a.browser);
     if (a.json) console.log(JSON.stringify({ url, pid: rec.pid, log: rec.log, reused: true }));
     else console.log(`preview already running: ${url}${how ? `  (opened in ${how})` : ''}\n  stop: showtime preview ${quote(proj.dir)} --stop`);
@@ -164,7 +168,7 @@ async function main() {
       return 0;
     }
     if (!r2) throw new UserError(`the preview server did not start; see ${logFile}`);
-    const url = playerUrl(r2.url);
+    const url = playerUrl(r2);
     const how = a['no-open'] ? null : openBrowserWindow(url, a.browser);
     if (a.json) console.log(JSON.stringify({ url, pid: r2.pid, log: logFile }));
     else {
@@ -189,10 +193,14 @@ async function main() {
     }
     return false;
   };
-  srv = await startServer({ root: proj.dir, port: Number(a.port || 4800), watch: true, onChange, log: (l) => info(c.dim(`  ${l}`)) });
-  fs.writeFileSync(sessionFile(proj.dir), JSON.stringify({ pid: process.pid, url: srv.url, port: srv.port, root: proj.dir,
-    log: sessionFile(proj.dir).replace(/\.json$/, '.log'), started: new Date().toISOString() }));
-  const url = playerUrl(srv.url);
+  srv = await startServer({ root: proj.dir, port: Number(a.port || 4800), watch: true, key: true, onChange,
+    log: (l) => info(c.dim(`  ${l}`)) });
+  // the session file holds the key so --status and a second `preview` can print the link: owner-only
+  const sf = sessionFile(proj.dir);
+  fs.writeFileSync(sf, JSON.stringify({ pid: process.pid, url: srv.url, port: srv.port, key: srv.key, root: proj.dir,
+    log: sf.replace(/\.json$/, '.log'), started: new Date().toISOString() }), { mode: 0o600 });
+  try { fs.chmodSync(sf, 0o600); } catch { /* Windows: the file sits in the user's own profile */ }
+  const url = playerUrl(srv);
   const how = a['no-open'] ? null : openBrowserWindow(url, a.browser);
   console.log(`preview: ${url}${how ? `  (opened in ${how})` : ''}`);
   console.log('  live reload on save; press Ctrl+C to stop');

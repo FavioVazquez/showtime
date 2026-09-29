@@ -1,5 +1,5 @@
 // Assemble the board page from the fixed templates in runtime/studio/ plus a board snapshot.
-// Claude never edits the templates: it writes board.json and the page renders it.
+// The agent never edits the templates: it writes board.json and the page renders it.
 //
 //   buildPage(board, {mode, nonce, target})   mode 'live' (served by the studio server; scripts carry a CSP nonce),
 //                                     'static' (board.html next to board.json; media are relative files),

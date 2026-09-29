@@ -41,5 +41,5 @@ done
 echo "showtime: no Python 3.8+ found." >&2
 echo "  Install uv (https://docs.astral.sh/uv/getting-started/installation/) or Python 3," >&2
 echo "  then run: $bin_dir/showtime setup" >&2
-echo "  If you just installed one, restart Claude Code (or open a new terminal) so it sees the new PATH." >&2
+echo "  If you just installed one, restart your coding agent (or open a new terminal) so it sees the new PATH." >&2
 exit 127

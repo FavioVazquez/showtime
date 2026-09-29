@@ -5,9 +5,7 @@ anyio==4.15.1
 attrs==26.1.0
     # via phonemizer
 av==18.1.0
-    # via
-    #   -r requirements.in
-    #   faster-whisper
+    # via -r requirements.in
 certifi==2026.7.22
     # via
     #   httpcore
@@ -27,18 +25,12 @@ colorama==0.4.6 ; sys_platform == 'win32'
     # via tqdm
 coloredlogs==15.0.1 ; platform_machine == 'x86_64' and sys_platform == 'darwin'
     # via onnxruntime
-ctranslate2==4.8.2
-    # via
-    #   -r requirements.in
-    #   faster-whisper
 decorator==5.3.1
     # via librosa
 dlinfo==2.0.0
     # via phonemizer
 espeakng-loader==0.2.4
     # via kokoro-onnx
-faster-whisper==1.2.1
-    # via -r requirements.in
 filelock==4.0.3
     # via huggingface-hub
 flatbuffers==25.12.19
@@ -54,10 +46,7 @@ httpcore==1.0.9
 httpx==0.28.1
     # via huggingface-hub
 huggingface-hub==1.33.0
-    # via
-    #   -r requirements.in
-    #   faster-whisper
-    #   tokenizers
+    # via -r requirements.in
 humanfriendly==10.0 ; platform_machine == 'x86_64' and sys_platform == 'darwin'
     # via coloredlogs
 idna==3.20
@@ -65,8 +54,6 @@ idna==3.20
     #   anyio
     #   httpx
     #   requests
-imageio-ffmpeg==0.6.0
-    # via -r requirements.in
 importlib-resources==7.1.0
     # via pretty-midi
 joblib==1.6.0
@@ -113,7 +100,6 @@ numba==0.67.0 ; platform_machine != 'x86_64' or sys_platform != 'darwin'
 numpy==2.3.5
     # via
     #   -r requirements.in
-    #   ctranslate2
     #   kokoro-onnx
     #   librosa
     #   numba
@@ -129,12 +115,10 @@ numpy==2.3.5
 onnxruntime==1.23.2 ; platform_machine == 'x86_64' and sys_platform == 'darwin'
     # via
     #   -r requirements.in
-    #   faster-whisper
     #   kokoro-onnx
 onnxruntime==1.30.0 ; platform_machine != 'x86_64' or sys_platform != 'darwin'
     # via
     #   -r requirements.in
-    #   faster-whisper
     #   kokoro-onnx
 opencv-python==4.14.0.94
     # via
@@ -189,9 +173,7 @@ pyobjc-framework-vision==12.2.2 ; sys_platform == 'darwin'
 pypdfium2==5.13.0
     # via -r requirements.in
 pyyaml==6.0.3
-    # via
-    #   ctranslate2
-    #   huggingface-hub
+    # via huggingface-hub
 requests==2.34.2
     # via
     #   -r requirements.in
@@ -222,11 +204,8 @@ sympy==1.14.0 ; platform_machine == 'x86_64' and sys_platform == 'darwin'
     # via onnxruntime
 threadpoolctl==3.7.0
     # via scikit-learn
-tokenizers==0.23.2
-    # via faster-whisper
 tqdm==4.70.1
     # via
-    #   faster-whisper
     #   huggingface-hub
     #   scenedetect
 typing-extensions==4.16.0

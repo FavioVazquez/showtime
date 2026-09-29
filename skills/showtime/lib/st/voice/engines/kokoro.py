@@ -1,4 +1,4 @@
-"""Kokoro-82M through kokoro-onnx (fp32 ONNX, CPU), with exact word timings.
+"""Kokoro-82M through kokoro-onnx (timestamped fp16 ONNX export, CPU), with exact word timings.
 
 Word timings come from the timestamped export's per-phoneme durations. The
 text is phonemized here (not inside kokoro-onnx) so that:
@@ -48,6 +48,19 @@ def _threads() -> int:
     return 0  # onnxruntime default (physical cores)
 
 
+def _model_source(path):
+    """What onnxruntime loads: the file path, or for a half-precision export the
+    in-memory model with its 0/0 phase guard (see voice/onnx_patch.py)."""
+    name = os.path.basename(str(path)).lower()
+    if "fp16" not in name and "f16" not in name:
+        return str(path)
+    from ..onnx_patch import guard_nan_atan
+    with open(str(path), "rb") as fh:
+        data, n = guard_nan_atan(fh.read())
+    debug("kokoro: %d half-precision phase guard(s) added to %s" % (n, name))
+    return data
+
+
 class KokoroEngine(Engine):
     name = "kokoro"
     speed_range = (0.5, 2.0)
@@ -81,7 +94,7 @@ class KokoroEngine(Engine):
             return self._k
         ok, why = self.available()
         if not ok:
-            raise ShowtimeError("Kokoro is not ready: " + why, hint="run `showtime setup` (installs Kokoro, ~360 MB)")
+            raise ShowtimeError("Kokoro is not ready: " + why, hint="run `showtime setup` (installs Kokoro, ~190 MB)")
         f = models.kokoro_files()
         import onnxruntime as rt
         from kokoro_onnx import Kokoro
@@ -91,7 +104,9 @@ class KokoroEngine(Engine):
             so.intra_op_num_threads = n
         so.log_severity_level = 3
         providers = [os.environ["ONNX_PROVIDER"]] if os.environ.get("ONNX_PROVIDER") else ["CPUExecutionProvider"]
-        sess = rt.InferenceSession(str(f["model"]), sess_options=so, providers=providers)
+        sess = rt.InferenceSession(_model_source(f["model"]), sess_options=so, providers=providers)
+        if not getattr(sess, "_model_path", None):
+            sess._model_path = str(f["model"])   # loaded from bytes: kokoro-onnx still checks the file exists
         k = Kokoro.from_session(sess, str(f["voices"]), espeak_config=espeak.config())
         outputs = {o.name for o in sess.get_outputs()}
         # The timestamped export names its second output "durations".

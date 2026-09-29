@@ -314,14 +314,29 @@ def audio_levels(x, sr: int) -> Dict[str, float]:
 
 FILLERS = {
     "en": {"um", "umm", "ummm", "uh", "uhh", "uhm", "uhmm", "erm", "er", "err", "ah", "ahh", "hmm", "hm", "hmmm",
-           "mm", "mmm", "mhm", "eh"},
-    "es": {"eh", "ehh", "em", "emm", "este", "mmm", "mm", "ah", "eeh", "ehm"},
+           "mm", "mmm", "eh"},
+    # "este" / "o sea" are also real words ("este libro"): opt-in only, see DISCOURSE_FILLERS
+    "es": {"eh", "ehh", "em", "emm", "mmm", "mm", "ah", "eeh", "ehm"},
     "fr": {"euh", "euhh", "heu", "bah", "hum", "mmm", "ben"},
     "de": {"äh", "ähm", "öhm", "hm", "hmm", "mhm", "ähh"},
     "pt": {"é", "hã", "hum", "ahn", "eh", "éh", "tipo"},
     "it": {"ehm", "eh", "mmm", "uhm", "cioè"},
 }
-_FILLER_RE = re.compile(r"(?i)^(u+m+|u+h+m*|e+r+m*|a+h+|h+m+|m+h*m+|e+h+m*)$")
+# Discourse markers used as fillers, removed only when asked (`edit cut --filler-set es-discourse`):
+# they are real words too, so cutting them by default would cut speech.
+DISCOURSE_FILLERS = {
+    "en-discourse": ["you know", "i mean", "like"],
+    "es-discourse": ["este", "o sea", "pues", "bueno"],
+}
+_FILLER_RE = re.compile(r"(?i)^(u+m+|u+h+m*|e+r+m*|a+h+|h+m+|m{2,}|e+h+m*)$")
+# Backchannels mean "yes, go on" (a listener's mm-hmm): words, never cut as fillers.
+BACKCHANNELS = {"mhm", "mmhm", "mmhmm", "mhmm", "mmmhmm", "uhhuh", "uhuh", "mmkay"}
+# Hesitation sounds proper: the only kinds the gap scan adds (hmm/mm there are too often a reply).
+_HESITATION_RE = re.compile(r"(?i)^(u+m+|u+h+m*|e+r+m*|e+h+m*|e+m+|e+h+)$")
+
+
+def is_hesitation(text: str) -> bool:
+    return bool(_HESITATION_RE.match(bare(text).replace("-", "")))
 
 
 def bare(text: str) -> str:
@@ -335,6 +350,8 @@ def is_filler(text: str, lang: Optional[str] = None, extra: Iterable[str] = ()) 
         return False
     if b in extra:
         return True
+    if b.replace("-", "") in BACKCHANNELS:
+        return False
     lang = (lang or "en").split("-")[0].lower()
     if b in FILLERS.get(lang, set()) or (lang != "en" and b in FILLERS["en"] and b not in ("er",)):
         return True
@@ -419,9 +436,11 @@ def normalize_transcript(data: Any, origin: str = "") -> Dict[str, Any]:
                 pass
         if w.get("id"):
             item["id"] = str(w["id"])
-        for k in ("estimated", "filler", "line", "br"):
+        for k in ("estimated", "filler", "detected", "line", "br"):
             if w.get(k):
                 item[k] = w[k]
+        if "checked" in w:
+            item["checked"] = bool(w["checked"])
         if w.get("cue") is not None:   # imported SRT/VTT: the cue each word came from
             item["cue"] = w["cue"]
         if typ == "word" and not item["text"]:

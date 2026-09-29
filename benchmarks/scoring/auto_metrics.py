@@ -49,9 +49,13 @@ def lcs_len(a: List[str], b: List[str]) -> int:
     return prev[-1]
 
 
-def transcribe(video: Path, out_dir: Path) -> Optional[Dict]:
+def transcribe(video: Path, out_dir: Path, model: Optional[str] = None) -> Optional[Dict]:
+    """Local transcription with showtime's default model, or `model` (e.g. turbo) when given."""
     out_dir.mkdir(parents=True, exist_ok=True)
-    r = common.run([common.SHOWTIME, "transcribe", str(video), "--edit-dir", str(out_dir), "--json"], cwd=str(out_dir))
+    cmd = [common.SHOWTIME, "transcribe", str(video), "--edit-dir", str(out_dir), "--json"]
+    if model:
+        cmd += ["--model", model]
+    r = common.run(cmd, cwd=str(out_dir))
     js = sorted((out_dir / "transcripts").glob("*.json"))
     if r.returncode != 0 or not js:
         return {"error": (r.stderr or r.stdout)[-600:]}
@@ -224,7 +228,7 @@ def content(words: List[Dict]) -> List[Dict]:
     return out
 
 
-def footage_metrics(task: Dict, words: List[Dict], sd: Path) -> Dict:
+def footage_metrics(task: Dict, words: List[Dict], sd: Path, model: Optional[str] = None) -> Dict:
     """Footage edit (t4): known fillers removed, content kept in order, long pauses left.
 
     Transcribed fillers are not trusted (ASR often folds an 'uh' into the next word), so each known filler
@@ -233,9 +237,9 @@ def footage_metrics(task: Dict, words: List[Dict], sd: Path) -> Dict:
     spec = common.read_json(common.BENCH / "fixtures" / "media" / "interview.source.json") or {}
     gt = spec.get("ground_truth", {})
     src = common.BENCH / "fixtures" / "media" / "interview.mp4"
-    cache = common.bench_home() / "cache" / "asr-source"
+    cache = common.bench_home() / "cache" / ("asr-source-" + model if model else "asr-source")
     js = sorted((cache / "transcripts").glob("*.json")) if (cache / "transcripts").exists() else []
-    ref = json.loads(js[0].read_text(encoding="utf-8")) if js else transcribe(src, cache)
+    ref = json.loads(js[0].read_text(encoding="utf-8")) if js else transcribe(src, cache, model)
     rw, ow = content((ref or {}).get("words") or []), content(words)
     rk, ok = [w["k"] for w in rw], [w["k"] for w in ow]
     align = lcs_align(rk, ok)
@@ -303,6 +307,26 @@ def score_run(rdir: Path, asr_on: bool = True) -> Dict:
     return res
 
 
+def rescore_footage(rdir: Path, model: str) -> Optional[Dict]:
+    """Footage metrics again with another transcription model, kept next to the first as auto.json
+    "footage_<model>" (rounds 1 and 2 scored the filler cut with Whisper turbo: this makes a later round
+    comparable with them while the default model, which writes fillers verbatim, does the rest)."""
+    auto = common.read_json(rdir / "score" / "auto.json") or {}
+    src = rdir / "score" / "qa-input"
+    vids = sorted(src.glob("deliverable.*")) if src.exists() else []
+    task = common.load_tasks([auto.get("task")])[0] if auto.get("task") else None
+    if not (task and task.get("expect", {}).get("footage") and vids and auto.get("produced")):
+        return None
+    sd = rdir / "score"
+    asr = transcribe(vids[0], sd / ("asr-" + model), model)
+    words = (asr or {}).get("words") or []
+    res = footage_metrics(task, words, sd, model)
+    res["asr_model"] = model
+    auto["footage_" + model] = res
+    common.write_json(sd / "auto.json", auto)
+    return res
+
+
 def run_dirs(run: str, task: Optional[str], arm: Optional[str]) -> List[Path]:
     root = common.bench_home() / "runs" / run
     out = []
@@ -320,8 +344,19 @@ def main() -> int:
     ap.add_argument("--task")
     ap.add_argument("--arm")
     ap.add_argument("--no-asr", action="store_true", help="skip local transcription (faster)")
+    ap.add_argument("--footage-model", metavar="MODEL",
+                    help="only re-score the footage task with this transcription model (e.g. turbo, what rounds 1 and 2 used) "
+                         "and keep it as auto.json footage_<MODEL>; nothing else is recomputed")
     a = ap.parse_args()
     common.wait_for_round(a.run)
+    if a.footage_model:
+        for rd in run_dirs(a.run, a.task, a.arm):
+            r = rescore_footage(rd, a.footage_model)
+            if r:
+                print("%-18s %-14s fillers removed %s/%s, words kept %s, longest pause %s (%s)" % (
+                    rd.parent.name, rd.name, r["fillers_removed"], r["fillers_known"], r["content_kept_ratio"],
+                    r["longest_pause_s"], a.footage_model))
+        return 0
     for rd in run_dirs(a.run, a.task, a.arm):
         r = score_run(rd, not a.no_asr)
         qa = r.get("qa") or {}

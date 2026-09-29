@@ -6,7 +6,11 @@ runs things: ffmpeg/ffprobe (plus a tiny encode), the venv's imports, Node
 and Playwright, a headless browser launch with a WebGL page, and checks
 every model file the installed tier needs.
 
-usage: showtime doctor [--json] [--quick] [--verify] [--no-browser] [--report [JOB]]
+It also checks what an agent's sandbox can take away (writing the showtime folder, the network) and
+names the setting to change in that agent (st.sandbox), and it keeps the stable <home>/bin/showtime
+command installed and pointing at this skill (st.shim).
+
+usage: showtime doctor [--json] [--quick] [--verify] [--no-browser] [--offline] [--report [JOB]]
 """
 from __future__ import annotations
 
@@ -29,15 +33,55 @@ from .common import ShowtimeError, fmt_duration, paint, paths, read_json, use_co
 
 PASS, WARN, FAIL, SKIP = "pass", "warn", "fail", "skip"
 
-REQUIRED_MODULES = ["numpy", "scipy", "soundfile", "PIL", "cv2", "av", "scenedetect", "faster_whisper",
-                    "ctranslate2", "onnxruntime", "kokoro_onnx", "sherpa_onnx", "librosa", "mido",
-                    "pretty_midi", "pyloudnorm", "requests", "huggingface_hub", "pypdfium2"]
-OPTIONAL_MODULES = ["tinysoundfont", "rich", "imageio_ffmpeg"]
+REQUIRED_MODULES = ["numpy", "scipy", "soundfile", "PIL", "cv2", "av", "scenedetect", "onnxruntime", "kokoro_onnx",
+                    "sherpa_onnx", "librosa", "mido", "pretty_midi", "pyloudnorm", "requests", "huggingface_hub",
+                    "pypdfium2"]
+OPTIONAL_MODULES = ["tinysoundfont", "rich"]
+# fetched on first use (st/lazy.py), so "missing" is normal and never a warning
+FIRST_USE_MODULES = {"faster_whisper": "whisper-engine", "ctranslate2": "whisper-engine",
+                     "imageio_ffmpeg": "imageio-ffmpeg"}
 MAC_MODULES = ["Vision", "Quartz"]
 DIST_NAMES = {"PIL": "pillow", "cv2": "opencv-python", "faster_whisper": "faster-whisper",
               "kokoro_onnx": "kokoro-onnx", "sherpa_onnx": "sherpa-onnx",
               "imageio_ffmpeg": "imageio-ffmpeg", "huggingface_hub": "huggingface-hub",
               "Vision": "pyobjc-framework-Vision", "Quartz": "pyobjc-framework-Quartz"}
+
+
+# Where each agent keeps the plugins it installs: a folder name in the skill's path tells which agent runs
+# this copy (doctor says "a Codex plugin", not "a Claude Code plugin"). Order matters: first match wins.
+PLUGIN_HOST_DIRS = ((".claude", "Claude Code"), (".codex", "Codex"), (".cursor", "Cursor"), (".devin", "Devin"),
+                    (".gemini", "Gemini CLI or Antigravity"), (".copilot", "GitHub Copilot"), (".factory", "Factory"),
+                    (".kiro", "Kiro"), (".qwen", "Qwen Code"), (".opencode", "OpenCode"), ("opencode", "OpenCode"))
+
+
+def plugin_host(skill_path: str, host: Optional[str] = None) -> str:
+    """The name of the agent whose plugin folder holds `skill_path`, or '' when it cannot tell.
+    The path decides; `host` (st.sandbox.detect_host: the agent running this command) is the fallback."""
+    parts = [p.lower() for p in str(skill_path).replace("\\", "/").split("/") if p]
+    for token, name in PLUGIN_HOST_DIRS:
+        if any(p == token or p.startswith(token + "-") or p.startswith(token + ".") for p in parts):
+            return name
+    try:
+        from . import sandbox
+        if host and host != "generic" and host in sandbox.HOST_NAMES:
+            return sandbox.HOST_NAMES[host]
+    except ImportError:
+        pass
+    return ""
+
+
+def skill_install_line(skill_path: str, linked: bool, link: str, plugin_env: bool,
+                       host: Optional[str] = None) -> Tuple[str, str]:
+    """(status, message) for the 'agent skill' row: a personal skill link, a plugin of some agent, or neither."""
+    skill_s = str(skill_path).replace("\\", "/")
+    if linked:
+        return PASS, "personal skill link %s -> %s" % (link, skill_path)
+    if "/plugins/" in skill_s or plugin_env:
+        who = plugin_host(skill_s, host)
+        return PASS, "installed as a plugin for %s (%s)" % (who, skill_path) if who \
+            else "installed as an agent plugin (%s)" % skill_path
+    return SKIP, ("running from %s (install it in your coding agent: "
+                  "https://github.com/FavioVazquez/showtime/blob/main/docs/agents.md)" % skill_path)
 
 
 SLOW_NOTE_AFTER = 10.0   # seconds a check may take before the "first run after a restart" note appears
@@ -58,7 +102,7 @@ class Live:
     """What doctor is doing right now, on stderr, so a slow check never looks frozen.
 
     TTY: one line redrawn in place (`  - checking python imports (cv2, 7/22)  45 s`), cleared when the
-    check ends. Not a TTY (Claude's tool output, logs): quiet for fast checks, then one line every 15 s
+    check ends. Not a TTY (an agent's tool output, logs): quiet for fast checks, then one line every 15 s
     while a check keeps running. The restart note appears once, up front when the machine booted less
     than 30 minutes ago, otherwise as soon as a check has run for 10 s. SHOWTIME_PROGRESS=off silences it.
     """
@@ -164,8 +208,11 @@ class Doctor:
         self.live = Live()
 
     # ------------------------------------------------------------ plumbing
-    def add(self, name: str, status: str, detail: str = "", hint: str = "", **data: Any) -> None:
-        self.rows.append({"check": name, "status": status, "detail": detail, "hint": hint, "data": data})
+    def add(self, name: str, status: str, detail: str = "", hint: str = "", note: str = "", **data: Any) -> None:
+        row = {"check": name, "status": status, "detail": detail, "hint": hint, "data": data}
+        if note:
+            row["note"] = note
+        self.rows.append(row)
 
     def guard(self, name: str, fn: Callable[[], None], label: str = "") -> None:
         self.live.step(label or name)
@@ -202,6 +249,59 @@ class Doctor:
                                                                           s["cpus"], s["python"]),
                  **s)
 
+    def check_sandbox(self) -> None:
+        """Can showtime write its folder and the working folder, and reach its download hosts?"""
+        from . import sandbox
+        h = self.p["home"]
+        host = sandbox.detect_host()
+        self.host = host
+        signals = sandbox.sandbox_signals()
+        ok, where, err = sandbox.writable(h)
+        self.home_writable = ok
+        if not ok:
+            self.add("home writable", FAIL, "cannot write to %s (%s)%s" % (where, err, (" [%s]" % ", ".join(signals)) if signals else ""),
+                     " ".join(sandbox.fix_lines(host, "write", h, self.p["skill"])), host=host)
+        else:
+            self.add("home writable", PASS, "%s" % (h if h.is_dir() else "%s (will be created)" % h))
+        cwd = Path.cwd()
+        ok_cwd, _where, err = sandbox.writable(cwd)
+        if not ok_cwd:
+            self.add("work folder", WARN, "cannot write to the current folder %s (%s)" % (cwd, err),
+                     "showtime writes showtime-out/ here: run it from a writable folder (your workspace), or set "
+                     "SHOWTIME_OUT to one")
+        if os.environ.get("SHOWTIME_OFFLINE") == "1" or getattr(self.args, "offline", False):
+            self.add("network", SKIP, "not checked (offline)")
+            return
+        reachable, detail = sandbox.probe_network()
+        installed = bool(self.state.get("installed"))
+        if reachable:
+            self.add("network", PASS, detail)
+        else:
+            what = ("setup needs it" if not installed else
+                    "only features that fetch on first use need it (extra voices, media search, lazy models)")
+            self.add("network", FAIL if not installed else WARN,
+                     "no network: %s; %s%s" % (detail, what, (" [%s]" % ", ".join(signals)) if signals else ""),
+                     " ".join(sandbox.fix_lines(host, "network", h, self.p["skill"])), host=host)
+
+    def check_shim(self) -> None:
+        """The stable <home>/bin/showtime command: present, current, pointing at a live skill (repaired here)."""
+        from . import shim
+        h = self.p["home"]
+        if not h.is_dir() or not getattr(self, "home_writable", True):
+            st = shim.status(h)
+            if st["ok"]:
+                self.add("showtime command", PASS, "%s -> %s" % (st["shim"], st["skill"]))
+            else:
+                self.add("showtime command", SKIP, "not installed yet (setup writes %s)" % st["shim"])
+            return
+        code, detail = shim.repair(h, self.p["skill"])
+        if code == "fail":
+            self.add("showtime command", WARN, detail, "run `showtime setup` (it writes the command)")
+            return
+        hint = shim.path_hint(h)
+        self.add("showtime command", PASS, ("%s: " % code if code in ("repaired", "installed") else "") + detail,
+                 note="\n".join(hint) if hint else "")
+
     def check_home(self) -> None:
         h = self.p["home"]
         if not h.is_dir():
@@ -230,7 +330,7 @@ class Doctor:
         else:
             self.add("uv", WARN, "not found (only needed to install/update)",
                      "install: https://docs.astral.sh/uv/getting-started/installation/ ; if you just installed it, "
-                     "restart Claude Code (or open a new terminal)")
+                     "restart your coding agent (or open a new terminal)")
 
     def check_python(self) -> None:
         vpy = self.p["venv_python"]
@@ -281,7 +381,7 @@ class Doctor:
             self.add("python packages", PASS, "%d required imports OK in %.1fs (%s)" % (
                 len(REQUIRED_MODULES), time.time() - t0, vers), versions={m: res[m].get("version") for m in res
                                                                             if isinstance(res[m], dict)})
-        opt = [m for m in mods if m not in REQUIRED_MODULES]
+        opt = [m for m in mods if m not in REQUIRED_MODULES and m not in FIRST_USE_MODULES]
         missing_opt = [m for m in opt if not res.get(m, {}).get("ok")]
         if missing_opt:
             notes = []
@@ -334,10 +434,14 @@ class Doctor:
         except ShowtimeError as e:
             self.add("ffmpeg", FAIL, str(e).splitlines()[0], "run `showtime setup` (installs a static ffmpeg)")
             return
+        hint = "" if info.source != "imageio" else "fallback build without ffprobe/libass; run `showtime setup`"
+        ours = Path(self.p["home"]) / "bin" / plat.exe("ffmpeg")
+        if info.source != "showtime" and ours.is_file():
+            # showtime's own build is there but was passed over: say why
+            hint = ("%s does not run (%s); run `showtime setup --force` to reinstall it"
+                    % (ours, ff._run_version(str(ours))[1] or "unknown reason"))
         self.add("ffmpeg", PASS if info.source in ("showtime", "system", "env") else WARN,
-                 "%s (%s) %s" % (info.version, info.source, info.ffmpeg),
-                 "" if info.source != "imageio" else "fallback build without ffprobe/libass; run `showtime setup`",
-                 **info.as_dict())
+                 "%s (%s) %s" % (info.version, info.source, info.ffmpeg), hint, **info.as_dict())
         if info.ffprobe:
             self.add("ffprobe", PASS, info.ffprobe)
         else:
@@ -394,7 +498,7 @@ class Doctor:
         node, ver = self._node()
         if not node:
             self.add("node", FAIL, "Node.js not found", "install Node.js 24 or 22 LTS (20+) from https://nodejs.org"
-                     "%s; if you just installed it, restart Claude Code (or open a new terminal)"
+                     "%s; if you just installed it, restart your coding agent (or open a new terminal)"
                      % (" (on Linux: fnm or NodeSource; distribution packages are often too old)" if plat.os_name() == "linux" else ""))
             return
         vs = ".".join(map(str, ver or ()))
@@ -432,7 +536,7 @@ class Doctor:
         browsers = plat.find_browsers(self.p["browsers"])
         if not browsers:
             self.add("browser", FAIL, "no Chrome, Edge or Chromium found",
-                     "install Google Chrome, or run `showtime setup --with chromium`")
+                     "run `showtime setup` (installs the Chrome Headless Shell, ~100-120 MB) or install Google Chrome")
             return
         b = browsers[0]
         self.add("browser", PASS, "%s: %s%s" % (b["kind"], b["path"],
@@ -487,6 +591,13 @@ class Doctor:
             if st == "unsupported":
                 self.add("model " + it["id"], SKIP, detail)
                 continue
+            if st == "legacy":   # an earlier release's file still does the job: works now, upgrade when convenient
+                ok_count += 1
+                size = setup.item_size(it, key)
+                self.add("model " + it["id"], WARN, "works as is: %s" % detail,
+                         "optional upgrade: `showtime setup` (downloads the current file, %.0f MB), then "
+                         "`showtime setup --prune` removes the old one" % (size / 1e6))
+                continue
             required = it.get("tier") in base_tiers
             self.add("model " + it["id"], FAIL if required else WARN, "%s: %s" % (st, detail),
                      "run `showtime setup%s`" % ((" --with " + it["extra"]) if it.get("extra") else ""))
@@ -504,7 +615,9 @@ class Doctor:
                 n = -1
             self.add("audio library", PASS if n != -1 else WARN, "%s (%s entries)" % (lib, n if n >= 0 else "unreadable"))
         else:
-            self.add("audio library", WARN, "not fetched yet", "run `showtime audio lib fetch`")
+            self.add("audio library", SKIP, "not fetched yet: the starter part (~41 MB) arrives on first use",
+                     "optional now: `showtime audio lib fetch` (the whole core library, ~249 MB)")
+        self.check_first_use()
         self.check_espeak()
         self.check_manim()
         link = (Path(os.environ["CLAUDE_CONFIG_DIR"]) if os.environ.get("CLAUDE_CONFIG_DIR")
@@ -513,16 +626,33 @@ class Doctor:
             linked = link.exists() and os.path.samefile(str(link), str(self.p["skill"]))
         except OSError:
             linked = False
-        skill_s = str(self.p["skill"]).replace("\\", "/")
-        if linked:
-            self.add("claude skill", PASS, "personal skill link %s -> %s" % (link, self.p["skill"]))
-        elif "/plugins/" in skill_s or os.environ.get("CLAUDE_PLUGIN_ROOT"):
-            self.add("claude skill", PASS, "installed as a Claude Code plugin (%s)" % self.p["skill"])
-        else:
-            self.add("claude skill", SKIP, "running from %s (install as a Claude Code plugin; see README)"
-                     % self.p["skill"])
+        try:
+            from . import sandbox
+            host = sandbox.detect_host()
+        except ImportError:
+            host = "generic"
+        status, msg = skill_install_line(str(self.p["skill"]), linked, str(link),
+                                         bool(os.environ.get("CLAUDE_PLUGIN_ROOT")), host)
+        self.add("agent skill", status, msg)
         self.add("chrome flags", PASS, "gpu=%s: %s" % (self.args.gpu, " ".join(
             f for f in plat.chrome_flags(self.args.gpu) if "angle" in f or "gpu" in f or "swiftshader" in f)))
+
+    def check_first_use(self) -> None:
+        """What the default install leaves for first use, and how to get it now (offline machines)."""
+        try:
+            from . import lazy
+            comps = lazy.components()
+        except Exception as e:  # noqa: BLE001 - informational only
+            self.add("first-use components", SKIP, "not listed (%s)" % str(e)[:120])
+            return
+        todo = [c for c in comps if not c["ready"]]
+        hint = ""
+        if todo:
+            hint = ("normal: each one is fetched (with its size) the first time a feature needs it. Offline machine? "
+                    "run `showtime setup --full` while online (or `--seed DIR`); one now: `showtime setup --fetch %s`"
+                    % todo[0]["id"])
+        self.add("first-use components", PASS if not todo else SKIP, lazy.status_line(comps), hint,
+                 components=comps)
 
     def check_espeak(self) -> None:
         """Ask the voice module which espeak-ng it would use (it self-tests each candidate)."""
@@ -603,6 +733,8 @@ class Doctor:
         try:
             self.guard("platform", self.check_platform)
             self.guard("home", self.check_home, "the showtime home folder")
+            self.guard("sandbox", self.check_sandbox, "writes and network")
+            self.guard("showtime command", self.check_shim, "the showtime command")
             self.guard("uv", self.check_uv)
             self.guard("ffmpeg", self.check_ffmpeg, "ffmpeg (test encode)" if not self.args.quick else "ffmpeg")
             self.guard("python", self.check_python, "python imports")
@@ -648,6 +780,8 @@ class Doctor:
             out.append("  %s  %s  %s" % (tag(r["status"]), r["check"].ljust(w), r["detail"]))
             if r["hint"] and r["status"] in (WARN, FAIL):
                 out.append("  %s  %s  %s %s" % (" " * 4, " " * w, paint("fix:", "green", force=color), r["hint"]))
+            for line in (r.get("note") or "").splitlines():
+                out.append("  %s  %s  %s" % (" " * 4, " " * w, paint(line, "dim", force=color)))
         out.append("")
         out.append("%d pass, %d warn, %d fail%s  (%.1fs)" % (
             counts[PASS], counts[WARN], counts[FAIL], (", %d skipped" % counts[SKIP]) if counts[SKIP] else "", secs))
@@ -777,16 +911,21 @@ def build_parser() -> argparse.ArgumentParser:
                                  epilog="Examples:\n"
                                         "  showtime doctor                      # full check (about 10-60 s)\n"
                                         "  showtime doctor --quick              # no test encode, no browser launch\n"
-                                        "  showtime doctor --json               # for scripts and Claude\n"
+                                        "  showtime doctor --json               # for scripts and agents\n"
                                         "  showtime doctor --report showtime-out/launch-20260926-101500\n"
                                         "                                       # write bug-report.md into that job\n\n"
                                         "The first run after a restart can take a few minutes while the OS checks the\n"
                                         "native libraries (macOS especially); a live line on stderr shows what is being\n"
-                                        "checked. SHOWTIME_PROGRESS=off hides it.")
+                                        "checked. SHOWTIME_PROGRESS=off hides it.\n\n"
+                                        "Inside an agent's sandbox, doctor says what blocks showtime (no network, a\n"
+                                        "read-only showtime folder) and which setting of that agent to change. It also\n"
+                                        "repairs the stable command <home>/bin/showtime when it is missing or points at a\n"
+                                        "skill folder that moved (a plugin update).")
     ap.add_argument("--json", action="store_true", help="machine-readable output")
     ap.add_argument("--quick", action="store_true", help="skip the test encode and the browser launch")
     ap.add_argument("--no-browser", action="store_true", help="skip only the browser launch")
     ap.add_argument("--verify", action="store_true", help="also sha256-check every model file (slow)")
+    ap.add_argument("--offline", action="store_true", help="skip the network check (same as SHOWTIME_OFFLINE=1)")
     ap.add_argument("--gpu", default="auto", choices=["auto", "off"], help="GPU mode for the browser probe")
     ap.add_argument("-v", "--verbose", action="store_true", help="list every model item, not only problems")
     ap.add_argument("--report", nargs="?", const="", metavar="JOB",

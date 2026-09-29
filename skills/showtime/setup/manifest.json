@@ -1,10 +1,10 @@
 {
   "schema": 1,
-  "about": "Pinned downloads for showtime setup. Every file has a sha256 and size; setup verifies both. Regenerate hashes when bumping a version.",
+  "about": "Pinned downloads for showtime setup. Every file has a sha256 and size; setup verifies both. Regenerate hashes when bumping a version. `showtime setup --plan` prints this as a table.",
   "tiers": {
-    "minimal": "ffmpeg, Python venv, Node deps, Kokoro (timestamped) + voices, whisper small.en (CI tier)",
-    "core": "minimal + stock Kokoro, Silero VAD, YuNet, arnndn models, FluidR3Mono SoundFont (MIT)",
-    "full": "core + asr-turbo, parakeet, diarize, events, supertonic, deepfilter"
+    "minimal": "ffmpeg, Python venv, Node deps, Kokoro (timestamped fp16) + voices, a browser (CI tier)",
+    "core": "minimal + Silero VAD, YuNet, arnndn models, FluidR3Mono SoundFont (MIT): the default install",
+    "full": "core + every component fetched on first use (Parakeet v3, the vocal separator, Whisper small.en, Manim, the audio library, the produced-music catalog, SFX packs, icon packs, full Chromium) + asr-turbo, parakeet, diarize, events, supertonic, deepfilter"
   },
   "full_extras": [
     "asr-turbo",
@@ -12,14 +12,16 @@
     "diarize",
     "events",
     "supertonic",
-    "deepfilter"
+    "deepfilter",
+    "music-catalog",
+    "sfx-packs"
   ],
   "extras": {
     "asr-turbo": {
       "description": "Whisper large-v3-turbo (multilingual, highest accuracy; ~1.6 GB)"
     },
     "parakeet": {
-      "description": "Parakeet-TDT 0.6B v2 via sherpa-onnx (fast English ASR; ~480 MB)"
+      "description": "Parakeet-TDT 0.6B v2 via sherpa-onnx (English-only verbatim ASR; ~480 MB); `--model parakeet-v2` also fetches it on first use"
     },
     "diarize": {
       "description": "speaker diarization models (pyannote segmentation + TitaNet; ~50 MB)"
@@ -42,21 +44,46 @@
     "deepfilter": {
       "description": "DeepFilterNet3 denoiser binary (~30 MB)"
     },
+    "music-catalog": {
+      "description": "every produced-music catalog track (Scott Buckley, Kevin MacLeod, CC0/public domain; 249 tracks, about 2.4 GB), pre-fetched for offline use; otherwise each track downloads the first time a mix uses it",
+      "first_use": true,
+      "when": "each track the first time a mix uses it"
+    },
+    "sfx-packs": {
+      "description": "the extra CC0 sound-effect packs (foley, UI, impacts, ambience, crowd, weather; about 77 MB), pre-fetched; otherwise each pack downloads the first time it is needed",
+      "first_use": true,
+      "when": "each pack the first time a mix or search needs it"
+    },
     "rife": {
       "description": "RIFE frame interpolation, ncnn/Vulkan GPU binary (430 MB download, 80 MB installed)"
     },
     "chromium": {
-      "description": "Playwright's pinned Chromium (installed automatically when no Chrome/Edge is found)"
+      "description": "Playwright's full Chromium, only needed for --headed captures when no Chrome/Edge is installed (fetched automatically then; renders use Chrome or the headless shell)",
+      "when": "first --headed capture without a system browser",
+      "download_bytes": {
+        "linux-x64": 195836009,
+        "linux-arm64": 195926016,
+        "mac-x64": 201663099,
+        "mac-arm64": 190970181,
+        "win-x64": 205123748
+      },
+      "url": "https://cdn.playwright.dev/builds/cft/153.0.8010.12/{platform}/chrome-{platform}.zip (via `playwright install --no-shell chromium`)"
     },
     "musicgen": {
       "description": "MusicGen-small draft music in a separate venv (~3.5 GB). Weights are CC-BY-NC-4.0: non-commercial use only",
       "license_warning": "MusicGen weights are CC-BY-NC-4.0: output is for personal/demo/temp-track use only, not for commercial videos."
     },
     "manim": {
-      "description": "Manim Community 0.21 (math and diagram animation, `showtime manim`) into the main venv (about 60 MB); macOS/Linux build pycairo against system cairo/pango; LaTeX is optional (equations)"
+      "description": "Manim Community 0.21 (math and diagram animation, `showtime manim`) into the main venv (about 60 MB), installed automatically before the first Manim scene; macOS/Linux build pycairo against system cairo/pango; LaTeX is optional (equations)",
+      "auto": true,
+      "when": "first Manim scene",
+      "approx_bytes": 60000000
     },
     "manimgl": {
-      "description": "ManimGL 1.7.2 (optional OpenGL engine for scene files written with `from manimlib import *`) in its own venv ~/.showtime/venv-manimgl (about 150 MB); needs OpenGL 3.3"
+      "description": "ManimGL 1.7.2 (optional OpenGL engine for scene files written with `from manimlib import *`) in its own venv ~/.showtime/venv-manimgl (about 150 MB); needs OpenGL 3.3",
+      "auto": true,
+      "when": "first ManimGL scene (from manimlib import *)",
+      "approx_bytes": 150000000
     },
     "imagegen": {
       "description": "local image generation (not implemented yet; see references)",
@@ -162,6 +189,26 @@
       }
     ],
     "win-x64": [
+      {
+        "id": "btbn-n9.0.2-win64-gpl-shared",
+        "version": "9.0.2",
+        "license": "GPL-3.0-or-later",
+        "source": "https://github.com/BtbN/FFmpeg-Builds",
+        "notes": "shared-library GPL build (86 MB zip instead of 115 MB): ffmpeg/ffprobe + their DLLs; includes libass, zimg (zscale), vid.stab, rubberband, soxr, libx264 (all required and recommended features probed 2026-09-28)",
+        "files": [
+          {
+            "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-27-13-04/ffmpeg-n9.0.2-12-gc867e13549-win64-gpl-shared-9.0.zip",
+            "sha256": "e10564f2de0080d05875b4e6354d6e721cf269b2523b55da6883db996737e73e",
+            "size": 86315945,
+            "archive": "zip",
+            "pick": [
+              "ffmpeg",
+              "ffprobe",
+              "*.dll"
+            ]
+          }
+        ]
+      },
       {
         "id": "gyan-9.0.2-essentials",
         "version": "9.0.2",
@@ -303,15 +350,22 @@
       "id": "kokoro-timestamped",
       "tier": "minimal",
       "group": "voice",
-      "description": "Kokoro-82M v1.0 fp32 ONNX export that also outputs phoneme durations (exact word timings)",
+      "description": "Kokoro-82M v1.0 fp16 ONNX export that also outputs phoneme durations (exact word timings); loaded with a guard for half-precision 0/0 phase bins",
       "license": "Apache-2.0",
       "source": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX-timestamped",
       "files": [
         {
-          "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX-timestamped/resolve/dd4401a9add81ac692d20e240d22ec9dda82cc29/onnx/model.onnx",
-          "sha256": "651ea8291843a92276a4a003581a215cb07d15e47dde6fcfb1b768f9a1682054",
+          "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX-timestamped/resolve/dd4401a9add81ac692d20e240d22ec9dda82cc29/onnx/model_fp16.onnx",
+          "sha256": "220724d5c5e0cc01be30f38faa6cf0c895a7cde6e7773e91db2973c8c7e5123c",
+          "size": 163232776,
+          "dest": "models/kokoro/kokoro-v1.0-timestamped-fp16.onnx"
+        }
+      ],
+      "legacy": [
+        {
+          "dest": "models/kokoro/kokoro-v1.0-timestamped.onnx",
           "size": 325532171,
-          "dest": "models/kokoro/kokoro-v1.0-timestamped.onnx"
+          "note": "the fp32 timestamped export a showtime 0.1 install has; voice keeps using it until `showtime setup` adds the fp16 file"
         }
       ]
     },
@@ -332,10 +386,102 @@
       ]
     },
     {
+      "id": "chromium-headless-shell",
+      "tier": "core",
+      "group": "browser",
+      "version": "153.0.8010.12",
+      "description": "Chrome Headless Shell 153 (the renderer Playwright 1.63 pins), installed only when no Chrome, Edge or Chromium is found",
+      "license": "BSD-3-Clause and others (Chromium; see ABOUT and LICENSE files in the archive)",
+      "source": "https://googlechromelabs.github.io/chrome-for-testing/",
+      "when": "setup, only if no compatible Chrome/Edge/Chromium is installed (or first render if the system browser fails)",
+      "platform_files": {
+        "linux-x64": [
+          {
+            "url": "https://cdn.playwright.dev/builds/cft/153.0.8010.12/linux64/chrome-headless-shell-linux64.zip",
+            "sha256": "a9da028861a0cf789ff25c2fed45f5f1aaf969ed9247835b6a7821a4f7af9d1d",
+            "size": 119809080,
+            "archive": "zip",
+            "dest": "browsers/chromium_headless_shell-1243",
+            "executables": [
+              "chrome-headless-shell"
+            ],
+            "markers": [
+              "browsers/chromium_headless_shell-1243/INSTALLATION_COMPLETE"
+            ],
+            "creates": "browsers/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell"
+          }
+        ],
+        "linux-arm64": [
+          {
+            "url": "https://cdn.playwright.dev/builds/cft/153.0.8010.12/linux-arm64/chrome-headless-shell-linux-arm64.zip",
+            "sha256": "d433c45172c7836e38124fe545f767b02210bfb43a6262f08a297473a8e91c99",
+            "size": 120278638,
+            "archive": "zip",
+            "dest": "browsers/chromium_headless_shell-1243",
+            "executables": [
+              "chrome-headless-shell"
+            ],
+            "markers": [
+              "browsers/chromium_headless_shell-1243/INSTALLATION_COMPLETE"
+            ],
+            "creates": "browsers/chromium_headless_shell-1243/chrome-headless-shell-linux-arm64/chrome-headless-shell"
+          }
+        ],
+        "mac-x64": [
+          {
+            "url": "https://cdn.playwright.dev/builds/cft/153.0.8010.12/mac-x64/chrome-headless-shell-mac-x64.zip",
+            "sha256": "5c2eaa1aad62111bb5a70dd0889dd3093f3142277b8f78957a238257ee85f009",
+            "size": 104060463,
+            "archive": "zip",
+            "dest": "browsers/chromium_headless_shell-1243",
+            "executables": [
+              "chrome-headless-shell"
+            ],
+            "markers": [
+              "browsers/chromium_headless_shell-1243/INSTALLATION_COMPLETE"
+            ],
+            "creates": "browsers/chromium_headless_shell-1243/chrome-headless-shell-mac-x64/chrome-headless-shell"
+          }
+        ],
+        "mac-arm64": [
+          {
+            "url": "https://cdn.playwright.dev/builds/cft/153.0.8010.12/mac-arm64/chrome-headless-shell-mac-arm64.zip",
+            "sha256": "89d80a6d26ccd0ccfd51e22d9e1297283862af2b0cd91dce07459b35ca0059f2",
+            "size": 98831293,
+            "archive": "zip",
+            "dest": "browsers/chromium_headless_shell-1243",
+            "executables": [
+              "chrome-headless-shell"
+            ],
+            "markers": [
+              "browsers/chromium_headless_shell-1243/INSTALLATION_COMPLETE"
+            ],
+            "creates": "browsers/chromium_headless_shell-1243/chrome-headless-shell-mac-arm64/chrome-headless-shell"
+          }
+        ],
+        "win-x64": [
+          {
+            "url": "https://cdn.playwright.dev/builds/cft/153.0.8010.12/win64/chrome-headless-shell-win64.zip",
+            "sha256": "7aec872f3090e639c4237467624ea863c20fe2878914c93a6556bdbb52aa6c4c",
+            "size": 120200717,
+            "archive": "zip",
+            "dest": "browsers/chromium_headless_shell-1243",
+            "executables": [
+              "chrome-headless-shell.exe"
+            ],
+            "markers": [
+              "browsers/chromium_headless_shell-1243/INSTALLATION_COMPLETE"
+            ],
+            "creates": "browsers/chromium_headless_shell-1243/chrome-headless-shell-win64/chrome-headless-shell.exe"
+          }
+        ]
+      }
+    },
+    {
       "id": "whisper-small.en",
-      "tier": "minimal",
+      "tier": "lazy",
       "group": "asr",
-      "description": "faster-whisper small.en (CTranslate2), default English ASR",
+      "description": "faster-whisper small.en (CTranslate2), English Whisper model",
       "license": "MIT",
       "source": "https://huggingface.co/Systran/faster-whisper-small.en",
       "files": [
@@ -363,23 +509,9 @@
           "size": 422309,
           "dest": "models/whisper/small.en/vocabulary.txt"
         }
-      ]
-    },
-    {
-      "id": "kokoro-v1.0",
-      "tier": "core",
-      "group": "voice",
-      "description": "Kokoro-82M v1.0 fp32 ONNX (stock export; fallback if the timestamped export misbehaves)",
-      "license": "Apache-2.0",
-      "source": "https://github.com/thewh1teagle/kokoro-onnx",
-      "files": [
-        {
-          "url": "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx",
-          "sha256": "7d5df8ecf7d4b1878015a32686053fd0eebe2bc377234608764cc0ef3636a6c5",
-          "size": 325532387,
-          "dest": "models/kokoro/kokoro-v1.0.onnx"
-        }
-      ]
+      ],
+      "when": "first transcription with Whisper",
+      "for": "transcription"
     },
     {
       "id": "silero-vad-v5",
@@ -558,7 +690,7 @@
       "id": "parakeet-tdt-0.6b-v2-int8",
       "extra": "parakeet",
       "group": "asr",
-      "description": "NVIDIA Parakeet-TDT 0.6B v2 int8 via sherpa-onnx (fast English ASR, keeps fillers)",
+      "description": "NVIDIA Parakeet-TDT 0.6B v2 int8 via sherpa-onnx (English verbatim ASR, keeps fillers)",
       "license": "CC-BY-4.0 (model), Apache-2.0 (sherpa-onnx)",
       "attribution": "Parakeet-TDT-0.6B-v2 by NVIDIA, CC-BY-4.0",
       "source": "https://github.com/k2-fsa/sherpa-onnx/releases/tag/asr-models",
@@ -569,9 +701,57 @@
           "size": 482468385,
           "archive": "tar.bz2",
           "dest": "models/sherpa",
-          "creates": "models/sherpa/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8"
+          "creates": "models/sherpa/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8",
+          "include": [
+            "*.onnx",
+            "*tokens.txt"
+          ]
         }
       ]
+    },
+    {
+      "id": "parakeet-tdt-0.6b-v3-int8",
+      "tier": "lazy",
+      "group": "asr",
+      "description": "NVIDIA Parakeet-TDT 0.6B v3 int8 via sherpa-onnx (25 European languages, keeps fillers)",
+      "license": "CC-BY-4.0 (model), Apache-2.0 (sherpa-onnx)",
+      "attribution": "Parakeet-TDT-0.6B-v3 by NVIDIA, CC-BY-4.0",
+      "source": "https://github.com/k2-fsa/sherpa-onnx/releases/tag/asr-models",
+      "files": [
+        {
+          "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2",
+          "sha256": "5793d0fd397c5778d2cf2126994d58e9d56b1be7c04d13c7a15bb1b4eafb16bf",
+          "size": 487170055,
+          "archive": "tar.bz2",
+          "dest": "models/sherpa",
+          "creates": "models/sherpa/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8",
+          "include": [
+            "*.onnx",
+            "*tokens.txt"
+          ]
+        }
+      ],
+      "when": "first transcription",
+      "for": "transcription"
+    },
+    {
+      "id": "uvr-mdx-net-voc-ft",
+      "tier": "lazy",
+      "group": "asr",
+      "description": "UVR-MDX-NET-Voc_FT vocal/music separator (ONNX), used only when speech sits under loud music",
+      "license": "MIT (Ultimate Vocal Remover; credit UVR and its developers)",
+      "attribution": "Vocal separation model UVR-MDX-NET-Voc_FT by the Ultimate Vocal Remover (UVR) project, MIT",
+      "source": "https://github.com/TRvlvr/model_repo/releases/tag/all_public_uvr_models",
+      "files": [
+        {
+          "url": "https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/UVR-MDX-NET-Voc_FT.onnx",
+          "sha256": "534b2070fcc7df514b13ef660dc8cbb328679c2374d04354a5c42bb14ecce111",
+          "size": 66762490,
+          "dest": "models/separate/UVR-MDX-NET-Voc_FT.onnx"
+        }
+      ],
+      "when": "a transcription with speech under loud music",
+      "for": "speech under music"
     },
     {
       "id": "pyannote-segmentation-3-0",
@@ -883,5 +1063,138 @@
         ]
       }
     }
-  ]
+  ],
+  "lazy_about": "Items with \"tier\": \"lazy\" are not part of the default install: showtime fetches them the first time a feature needs them (announced with their size, resumable, sha256-verified). `showtime setup --full` installs them up front; `--seed DIR` reuses copies from DIR.",
+  "superseded": [
+    {
+      "dest": "models/kokoro/kokoro-v1.0-timestamped.onnx",
+      "by": "kokoro-timestamped",
+      "why": "fp32 timestamped export, replaced by the fp16 file (same durations and word timings)"
+    },
+    {
+      "dest": "models/kokoro/kokoro-v1.0.onnx",
+      "by": "kokoro-timestamped",
+      "why": "stock fp32 export without timings, no longer used"
+    }
+  ],
+  "lazy_pip": {
+    "whisper-engine": {
+      "description": "faster-whisper + CTranslate2 (the Whisper transcription engine)",
+      "requirements": "requirements-whisper.txt",
+      "import": "faster_whisper",
+      "when": "first Whisper transcription",
+      "for": "transcription",
+      "download_bytes": {
+        "mac-arm64": 5492115,
+        "mac-x64": 16199478,
+        "win-x64": 23204214,
+        "linux-x64": 44061660,
+        "linux-arm64": 21530367
+      }
+    },
+    "imageio-ffmpeg": {
+      "description": "imageio-ffmpeg's bundled ffmpeg (last resort when no static or system ffmpeg works)",
+      "requirements": "requirements-imageio-ffmpeg.txt",
+      "import": "imageio_ffmpeg",
+      "fallback_only": true,
+      "when": "setup, only if neither the static nor a system ffmpeg works",
+      "for": "video encoding",
+      "download_bytes": {
+        "mac-arm64": 21113891,
+        "mac-x64": 24932969,
+        "win-x64": 31246824,
+        "linux-x64": 29498237,
+        "linux-arm64": 25632706
+      }
+    }
+  },
+  "icon_packs": [
+    {
+      "set": "lucide",
+      "package": "lucide-static",
+      "version": "1.48.0",
+      "url": "https://registry.npmjs.org/lucide-static/-/lucide-static-1.48.0.tgz",
+      "sha256": "3c2ecda3d25f6a9692d83f8036d9a526f7da584a51af74cd16eda4498c5c33d8",
+      "size": 6806864,
+      "license": "ISC"
+    },
+    {
+      "set": "tabler",
+      "package": "@tabler/icons",
+      "version": "3.48.0",
+      "url": "https://registry.npmjs.org/@tabler/icons/-/icons-3.48.0.tgz",
+      "sha256": "28447dcf6f0bb2b8d92c59a1b3d30900a180de2e97d7db4d267e6320dc68f449",
+      "size": 1257051,
+      "license": "MIT"
+    },
+    {
+      "set": "phosphor",
+      "package": "@phosphor-icons/core",
+      "version": "2.1.1",
+      "url": "https://registry.npmjs.org/@phosphor-icons/core/-/core-2.1.1.tgz",
+      "sha256": "313332be6190b724da24107addd781799b48bf76b13963f24501112ffe1baadd",
+      "size": 1443064,
+      "license": "MIT"
+    },
+    {
+      "set": "simple-icons",
+      "package": "simple-icons",
+      "version": "16.33.0",
+      "url": "https://registry.npmjs.org/simple-icons/-/simple-icons-16.33.0.tgz",
+      "sha256": "11e1ab7c25fd0acbf0014c4a88745c33fe0f87341e6d94c7ba1e62334b2d2375",
+      "size": 6510097,
+      "license": "CC0-1.0"
+    },
+    {
+      "set": "heroicons",
+      "package": "heroicons",
+      "version": "2.2.0",
+      "url": "https://registry.npmjs.org/heroicons/-/heroicons-2.2.0.tgz",
+      "sha256": "6c3e9d04b8495c9512a91b0b08804f2c3614a8e5d7df39bbfe02b6450fb7c640",
+      "size": 166699,
+      "license": "MIT"
+    }
+  ],
+  "packages": {
+    "about": "Download sizes of the Python wheels uv installs (requirements.txt + tinysoundfont) and the Node tarballs (package-lock.json), computed 2026-09-28 from PyPI / the npm registry for each platform; python_download is the uv-managed Python 3.12, fetched only when no Python 3.12 is installed. disk: measured on a fresh Linux x64 install.",
+    "python": {
+      "mac-arm64": {
+        "download": 218146675,
+        "python_download": 25017789
+      },
+      "mac-x64": {
+        "download": 234876778,
+        "python_download": 24719239
+      },
+      "win-x64": {
+        "download": 243007812,
+        "python_download": 22052624
+      },
+      "linux-x64": {
+        "download": 317041149,
+        "python_download": 34270188
+      },
+      "linux-arm64": {
+        "download": 284034725,
+        "python_download": 29199580
+      }
+    },
+    "node": {
+      "mac-arm64": {
+        "download": 41451373
+      },
+      "mac-x64": {
+        "download": 41451373
+      },
+      "win-x64": {
+        "download": 41451373
+      },
+      "linux-x64": {
+        "download": 41451373
+      },
+      "linux-arm64": {
+        "download": 41451373
+      }
+    }
+  }
 }

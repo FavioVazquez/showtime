@@ -115,7 +115,7 @@ ready. It gives numbers to aim for and how to verify them with `showtime audio m
 
 ## 6. Measure instead of guessing
 
-Claude cannot listen. These are the checks that stand in for ears:
+An agent cannot listen. These are the checks that stand in for ears:
 
 1. `showtime audio meter final.mp4 --ffmpeg`
    - Pass: integrated -14 ± 0.5 LUFS and true peak ≤ -1 dBTP, from our meter and ffmpeg's.

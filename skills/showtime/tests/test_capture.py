@@ -197,7 +197,9 @@ class T1Site(unittest.TestCase):
                         "--no-assets", "--dpr", "1", "--json"))
         self.assertTrue(r["ok"])
         s = json.loads((out / "site.json").read_text(encoding="utf-8"))
-        self.assertTrue(any("Example Domain" in h["text"] for h in s["headings"]))
+        # the live page's wording changes over time (its h1 was dropped in 2026); the title is the stable part
+        texts = [(s.get("meta") or {}).get("title") or ""] + [h.get("text", "") for h in s.get("headings", [])]
+        self.assertTrue(any("Example Domain" in t for t in texts), texts)
 
 
 TITLE = "Nimbus - Deploy previews in seconds"
@@ -279,13 +281,20 @@ class T1bServe(unittest.TestCase):
         p = subprocess.Popen([sys.executable, str(LAUNCHER), "server", SITE, "--port", "0", "--json"], env=env,
                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, encoding="utf-8")
         try:
-            line = p.stdout.readline()
-            url = json.loads(line)["url"] + "/"
+            info = json.loads(p.stdout.readline())
+            url = info["page"]                                     # the printed link (it carries the session key)
             cp = showtime("site", "capture", url, TMP / "wrong", "--dpr", "1", "--max-shots", "1", "--no-full",
                           "--no-sections", "--no-assets", "--dark", "off", check=False)
             self.assertNotEqual(cp.returncode, 0, cp.stdout[-800:])
             self.assertIn("preview player", cp.stderr)
             self.assertIn("--serve", cp.stderr)
+            # the bare address (no key) gets the server's 403: still named as showtime's server, not a bot check
+            cp = showtime("site", "capture", info["url"] + "/", TMP / "wrong-nokey", "--dpr", "1", "--max-shots", "1",
+                          "--no-full", "--no-sections", "--no-assets", "--dark", "off", check=False)
+            self.assertNotEqual(cp.returncode, 0, cp.stdout[-800:])
+            self.assertIn("session key", cp.stderr)
+            self.assertIn("--serve", cp.stderr)
+            self.assertNotIn("bot check", cp.stderr)
             cp = showtime("site", "record", url, TMP / "wrong-rec", "--duration", "0.2", "--fps", "5", "--hold", "0",
                           "--no-mp4", "--force", "--json")
             self.assertGreaterEqual(sj(cp)["frames"], 1)           # --force keeps going (with a warning)

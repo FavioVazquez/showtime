@@ -51,6 +51,9 @@ the style asks for it (retro, glitch aesthetics, irony).
 | glitch | css | 0.35 | high | cheap | stepped RGB split + slice displacement, cut at the middle |
 | flash | css | 0.4 | high | accent | to white (`color`) and cut at the peak; max 1-2 per video |
 | stagger | css | 0.9 | medium | premium | items leave in reading order, new items arrive (`items` selector, default `[data-stagger-item]`) |
+| through | css | 1.5 | calm | premium | one camera move: fly into a portal element of this scene (`data-portal`: a window, a screen, a card; `data-portal="counter"` on one letter: its enclosed hole) and the next scene is what was inside it; `inverse` pulls back out of a portal of the next scene; the launch hook's handoff |
+| match | css | 0.9 | calm | premium | shared elements (`data-match="name"` in both scenes) fly from their old place to their new one while the rest dissolves; the product window carrying across feature beats |
+| pan | css | 1.2 | medium | premium | the camera travels to the next scene laid beside this one (`dir`, a 6 % pull-back `arc`, a `gap`); one direction per video |
 | domain-warp | webgl | 0.9 | calm | premium | the new scene seeps in along a warped fractal front with an accent glow |
 | ridged-burn | webgl | 0.8 | high | accent | film-burn front with a hot rim, charring and sparks (`a` = sideways bias) |
 | sdf-iris | webgl | 0.65 | medium | premium | anti-aliased iris with a lit rim and echoes (`a`,`b` = centre 0..1) |
@@ -69,8 +72,14 @@ the style asks for it (retro, glitch aesthetics, irony).
   on the beat, a hard cut is the most premium transition there is). Repetition reads as intent.
 - **Energy.** Calm pieces: blur-dissolve / crossfade, 0.6-0.9 s, shaders domain-warp, morph-warp,
   light-leak. Medium (product, explainer): push / stagger / slide, 0.4-0.6 s, shader sdf-iris or
-  cross-zoom for the reveal. High (launch, music): zoom-through / whip-pan / hard cuts, 0.3-0.5 s,
-  shader cross-zoom, ridged-burn, chromatic-split.
+  cross-zoom for the reveal. High (music video, hype reel): zoom-through / whip-pan / hard cuts,
+  0.3-0.5 s, shader cross-zoom, ridged-burn, chromatic-split.
+- **Launch, promo, release, trailer: match cuts and dissolves, one motivated camera move at most.**
+  `match` while the product window carries across the feature beats, a `blur-dissolve` or `dip`
+  (0.8-1 s) onto the end card, and at most one `through` (hook into the product, when the product
+  appears inside the hook's big key word). Every camera move needs a reason you can say; premium launch
+  films change scene 4-5 times and keep the camera still (`workflows/launch-video.md`). No push, pan,
+  flash, glitch or shader in a launch film.
 - **Position in the story.** Opening: the most distinctive. Related points: the primary, short.
   Topic change: something different. Climax / reveal: the boldest (a shader). Outro: the simplest
   and slowest (dip or crossfade, 0.6-1 s).
@@ -97,6 +106,23 @@ the style asks for it (retro, glitch aesthetics, irony).
   accent glow: on an end card with a logo, use `dip`.
 - **Strength.** `ripple` takes `a` (wave strength, default 1): `data-transition-options='{"a":0.6}'`
   is 40 % calmer; a shorter window alone still swirls.
+
+**Camera moves in detail.**
+- `through`: the portal is measured on screen every frame (the scene's own camera can move it). The
+  zoom runs in log space (as even from 1x to 40x as from 1x to 2x), the portal drifts to the frame
+  centre over the first 75 %, and the opening grows to the full frame over the last 45 %. The incoming
+  scene plays from the window's start, so what shows through the portal is already alive. A letter
+  counter needs a closed glyph (o a e d g p q b 0 6 8 9) in a font with a real hole; the counter is
+  found by drawing the glyph once. `inverse`: the outgoing scene shrinks into the incoming scene's
+  `[data-portal]` and dissolves into it over the last 20 % (`keep` skips that), so the portal should
+  show what the outgoing scene ends on (the same clip, the same screen).
+- `match`: pairs every `[data-match]` of the incoming scene with the same name in the outgoing scene,
+  measured each frame; the incoming copy fades in over the outgoing one along the same path, the rest of
+  the outgoing scene fades out in the first half, the rest of the incoming scene fades in from 35 %, and
+  the incoming ground fades in on its own layer. Do not give a matched element an entrance animation in
+  the incoming scene. Same ground on both sides.
+- `pan`: both scenes are placed in one world, the next one `dir`-wards (default: to the right), and the
+  camera travels with a small pull-back; the page background shows in the gap, so keep one ground.
 
 ## 4. How the WebGL transitions work (and on which machines)
 

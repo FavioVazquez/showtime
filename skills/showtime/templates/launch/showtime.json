@@ -1,0 +1,14 @@
+{
+  "title": "Launch film",
+  "kind": "launch",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "duration": 30.0,
+  "background": "#0c0d10",
+  "poster": 0,
+  "audio": "audio/mix.json",
+  "subtitle": "SLOT: the one-line value",
+  "kicker": "Launch",
+  "startTitle": false
+}

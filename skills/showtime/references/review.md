@@ -37,6 +37,11 @@ Self-review questions (also what a critic weighs):
    a Blocker. Walk the scene list in order and name the job of each shot (show the product, prove a
    claim, set up the next beat); a shot with no job gets cut or replaced.
 
+Launch, promo, release and trailer films add the premium grammar's checklist
+(`workflows/launch-video.md`, "Checklist"): 4-6 scenes, continuous scene changes, settled holds, one type
+system and accent, no punch-ins or bounce, a produced track whose phrases carry the cuts and whose swell
+carries the name. `review-pack` writes it into `CRITIC.md` with qa's measured rhythm line.
+
 ## 2. Build the pack
 
 ```

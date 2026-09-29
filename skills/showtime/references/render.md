@@ -7,7 +7,7 @@ slow, fails, or looks different from the preview; or when you need the exact fla
 ## The loop
 
 ```
-showtime new dom my-video -d 20     # or film / short / data / tutorial; the whole timeline fits 20 s
+showtime new dom my-video -d 20     # or launch / film / short / data / tutorial; the whole timeline fits 20 s
 showtime preview my-video            # player with scrubber and audio; reloads on save
 showtime check my-video              # QA gate: fix every error, read every warning
 showtime snap my-video               # contact sheet (look at it) or --at 2.5,7 for stills
@@ -128,7 +128,8 @@ exactly like the renderer and reports findings with the time they happen and a f
 | `font_load_failed` | error | an `@font-face` file failed |
 | `low_contrast` | warning (error below 2:1) | WCAG contrast of text against the real pixels behind it: 4.5:1, or 3:1 for text >= 24px (>= 18.7px bold). Measured where each text is fully faded in, not blurred and outside scene transitions; a text seen only mid-transition gets an info note naming the transition. |
 | `font_not_embedded` | warning | text is painted with a system font (differs between Mac, Windows and Linux) |
-| `text_off_canvas`, `text_clipped`, `text_overlap` | warning | layout problems at the sample times; overlaps are measured on the painted glyphs (not line boxes, so big display type with tall leading is not a false alarm) and say how deep they are; `text_overlap` also covers text hidden under a badge, callout or pill ("X is hidden under Y"), in canvas films too (an `F.callout` card over readable text drawn before it). Found only mid-transition, they are info notes naming the transition ("mid-transition: push into #demo; the settled frame at 0:04.43 is judged on its own"): check samples the settled frame 2 frames after every transition too |
+| `text_off_canvas`, `text_clipped` | error | readable text runs off the frame or is cut by a container at a sample time (decor: info) |
+| `text_overlap` | warning | layout problems at the sample times; overlaps are measured on the painted glyphs (not line boxes, so big display type with tall leading is not a false alarm) and say how deep they are; `text_overlap` also covers text hidden under a badge, callout or pill ("X is hidden under Y"), in canvas films too (an `F.callout` card over readable text drawn before it). Found only mid-transition, they are info notes naming the transition ("mid-transition: push into #demo; the settled frame at 0:04.43 is judged on its own"): check samples the settled frame 2 frames after every transition too |
 | `labels_crowded` | warning | SVG labels (chart values and axes, map names) whose painted glyphs touch or sit closer than 0.15em side by side or stacked (`label_gap_em` in `runtime/thresholds.json`); one finding per graphic naming the worst pair. While a chart is still growing or morphing it is an info note. Fix: fewer bars, the default `valueLabels` (auto-thinning), a larger plot, or a line chart |
 | `callout_off_target` | warning | canvas film: an `F.callout` card is on screen but its anchor is off the frame (the camera moved away from what it points at), or the card itself runs off the frame |
 | `safe_zone` | warning | vertical video: text outside the box that feed UIs leave free (x 64-916, y 220-1440 at 1080x1920); the message names the edge ("top at y 185 < 220") |
@@ -182,12 +183,16 @@ Before/after proof for a fix: `showtime snap final-3.mp4 --at 4.2,9.5 --compare 
 Serves the project on `http://127.0.0.1:4800` (next free port) and opens the player in a Chrome
 or Edge app window (`--browser default` for the system browser, `--no-open` to only print the URL).
 From a terminal it runs until Ctrl+C; when started by an agent (output not a terminal) it goes to
-the background and the command returns: `--status`, `--stop`. Keys and audio: see
+the background and the command returns: `--status`, `--stop`. The server answers only on
+127.0.0.1 and only with its per-session key: give the user the printed link as is (it ends in
+`k=...`); a request without the key gets a 403 that says so, and `--status` prints the link again.
+Keyboard and audio: see
 [stage-api.md](stage-api.md#preview-mode). The `audio` mix is built into `work/mix.wav` first and
 rebuilt when showtime.json or audio files change.
 
 `showtime server <project> [--port N] [--watch] [--json]` serves a project without the player
-(same mounts: `/_st/`, `/_lib/<package>/`, `/_assets/`; byte ranges; local connections only). Its
+(same mounts: `/_st/`, `/_lib/<package>/`, `/_assets/`; byte ranges; local connections only; the
+printed links carry the session key, `--json` gives `key` for the `X-Showtime-Key` header). Its
 page URL redirects to the preview player, so it is not a way to capture a static site: use
 `showtime site capture --serve <dir>` (`capture.md`); on a folder without `showtime.json` it says so
 and prints that command.
@@ -266,7 +271,7 @@ Rules of thumb:
 
 | Symptom | Fix |
 |---|---|
-| `no Chrome, Edge or Chromium found` | install Google Chrome, or `showtime setup --with chromium` |
+| `no Chrome, Edge or Chromium found` | `showtime setup` (installs the Chrome Headless Shell, ~100-120 MB), or install Google Chrome |
 | `no working ffmpeg found` | `showtime setup` (installs a static ffmpeg into `~/.showtime/bin`) |
 | `the page never became ready (still waiting for: ...)` | a `ST.waitFor` promise never settles, or a script failed first: `showtime check` |
 | `seek to ...s timed out` | an async `onSeek` never resolves, or a `<video>` cannot seek (use VP9) |
@@ -283,8 +288,14 @@ Rules of thumb:
 Works the same on macOS (Apple Silicon and Intel), Windows 10/11 and Linux: the scripts are Node,
 all processes are started with argument lists, paths go through `path`/`pathlib`, and ffmpeg is
 always the one resolved by showtime (`$SHOWTIME_FFMPEG`, then `~/.showtime/bin/ffmpeg(.exe)`,
-then a working one on PATH). The browser is the system Chrome, then Edge, then Chromium, then the
-Chromium installed by `showtime setup --with chromium`; override with `SHOWTIME_CHROME=/path`.
+then a working one on PATH). The browser is the system Chrome, then Edge, then Chromium (version 120
+or newer), then the Chrome Headless Shell that `showtime setup` installs when none is found (headless
+runs), then a full Chromium (`showtime setup --with chromium`, fetched automatically for `--headed`
+captures). Override with `SHOWTIME_CHROME=/path`; `SHOWTIME_SYSTEM_BROWSER=0` ignores installed
+browsers. The headless shell draws the same frames as Chrome except the antialiasing of small text
+edges (bit-identical on the dom, data and short templates; 37-45 dB PSNR, under 1% of pixels, on the
+text-heavy film and tutorial templates, measured 2026-09-28); `SHOWTIME_HEADLESS_SHELL=0` renders with
+full Chromium instead.
 GPU drawing uses Metal on macOS, Direct3D 11 on Windows and the default GL (SwiftShader
 fallback) on Linux; if the GPU path fails to start, rendering retries in software. Pixels can
 differ slightly between machines and GPUs (antialiasing), never in timing or layout.

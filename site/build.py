@@ -434,7 +434,7 @@ def shell(site: Site, page: str, title: str, body: str, active: str = "", desc: 
 {body}
 </main>
 <footer class="site"><div class="wrap">
-<span><span class="word">showtime</span>&nbsp; {version}, MIT licensed. A local video studio for Claude Code.</span>
+<span><span class="word">showtime</span>&nbsp; {version}, MIT licensed. A local video studio for your coding agent.</span>
 <nav aria-label="Footer"><a href="{gallery}">Examples</a><a href="{crew}">Crew</a><a href="{docs}">Docs</a>{exrepo}</nav>
 <span>No trackers, no cookies. Fonts are served from this site. Launch film music: \u201cWith These Hands\u201d by Scott Buckley, CC BY 4.0.</span>
 </div></footer>
@@ -659,7 +659,8 @@ def doc_sources() -> List[Tuple[Path, str, str]]:
         out.append((p, "docs/crew/%s.html" % p.stem, "crew"))
     extra = [(REPO / "CONTEXT.md", "docs/glossary.html"), (REPO / ".out-of-scope/README.md", "docs/out-of-scope.html"),
              (REPO / "skills/showtime/SKILL.md", "docs/skill.html"), (REPO / "assets/brand/BRAND.md", "docs/brand.html"),
-             (REPO / "CONTRIBUTING.md", "docs/contributing.html"), (REPO / "CHANGELOG.md", "docs/changelog.html")]
+             (REPO / "CONTRIBUTING.md", "docs/contributing.html"), (REPO / "CHANGELOG.md", "docs/changelog.html"),
+             (REPO / "docs" / "agents.md", "docs/agents.html")]
     for p, o in extra:
         if p.is_file():
             out.append((p, o, "backstage"))
@@ -701,7 +702,7 @@ def sidebar_groups(site: Site) -> List[Tuple[str, List[Tuple[str, str]]]]:
     groups.append(["The crew's briefs", crew])
     back = [("Glossary", "docs/glossary.html"), ("Out of scope", "docs/out-of-scope.html"), ("SKILL.md", "docs/skill.html"),
             ("Brand", "docs/brand.html"), ("Contributing", "docs/contributing.html"), ("Changelog", "docs/changelog.html"),
-            ("Claude's own map", "docs/index-claude.html")]
+            ("The agent's own map", "docs/index-claude.html")]
     groups.append(["Backstage", [b for b in back if (site.out / b[1]).exists() or b[1] in site.pages.values()]])
     return [(g[0], g[1]) for g in groups]
 
@@ -720,8 +721,9 @@ def docs_frame(site: Site, page: str, groups, content: str, heads, prev_next) ->
             ICON_SEARCH, '<input id="q" type="search" placeholder="Search the docs" autocomplete="off"><span class="key" aria-hidden="true">/</span>',
             '<div class="results" hidden></div></div>',
             '<button class="side-toggle" type="button" aria-expanded="false"><span>Browse the guides</span><span aria-hidden="true">+</span></button>',
-            '<div class="groups"><h4>Start</h4><ul><li><a href="%s"%s>The map</a></li></ul>' % (
-                rel(page, "docs/index.html"), ' aria-current="page"' if page == "docs/index.html" else "")]
+            '<div class="groups"><h4>Start</h4><ul><li><a href="%s"%s>The map</a></li><li><a href="%s"%s>Works with your agent</a></li></ul>' % (
+                rel(page, "docs/index.html"), ' aria-current="page"' if page == "docs/index.html" else "",
+                rel(page, "docs/agents.html"), ' aria-current="page"' if page == "docs/agents.html" else "")]
     for name, items in groups:
         side.append("<h4>%s</h4><ul>" % esc(name))
         for label, target in items:
@@ -822,7 +824,7 @@ def build_crew(site: Site) -> None:
                         rel(page, site.pages.get(brief.resolve(), "docs/crew.html"))))
     body = """<div class="wrap">
 <header class="room-head"><h1 class="title">Ten specialists, one director</h1>
-<p class="lede">Claude directs every video. For studio work and videos you will publish, it can hand parts of the job to ten
+<p class="lede">Your agent directs every video. For studio work and videos you will publish, it can hand parts of the job to ten
 sub-agents that ship with the plugin. They are optional: a quick video uses none of them, except a researcher and a critic when
 it will be published, and scene builders for long videos.</p></header>
 <div style="margin-top:48px">{cast}</div>
@@ -833,8 +835,8 @@ back to the member who made the part.</p></div>{handoff}</section>
 <p class="lede">Each member reads its brief, works only in its own folder, never uploads, and reports back with a short status.</p></div>
 <div class="roster">{cards}</div></section>
 <section class="section"><div class="split" style="margin-top:0"><div><h2 class="title" style="font-size:clamp(1.9rem,3.4vw,2.75rem)">Casting</h2>
-<p style="margin-top:16px">Let Claude cast the company: ask for options first and studio mode brings it in. Call one member by name
-when you want just that job done. Or say "no crew" and Claude does everything in one session.</p>
+<p style="margin-top:16px">Let your agent cast the company: ask for options first and studio mode brings it in. Call one member by name
+when you want just that job done. Or say "no crew" and your agent does everything in one session.</p>
 <p><a class="link-arrow" href="{guide}">When each member is dispatched, and what it costs <span>→</span></a></p></div>
 <div class="copy install"><pre><code># the whole company, in studio mode
 Let's make a launch trailer for this repo. Show me options first.
@@ -870,9 +872,10 @@ def build_landing(site: Site, exs) -> None:
             '<source src="%s" type="video/webm"><source src="%s" type="video/mp4"></video>%s</div>' % (poster, twebm, tmp4, watch))
     teaser = [e for e in exs if e["num"] in ("02", "12", "17", "19")]
     body = """<section class="house"><div class="wrap">
-<div class="hero-head"><div><h1 class="title">Describe a video. Claude directs. Your machine renders.</h1>
-<p class="lede">showtime is a local video studio for Claude Code: motion graphics, voice-over, music, captions and footage editing
-from one sentence, with no cloud AI services, no API keys and no uploads.</p></div>
+<div class="hero-head"><div><h1 class="title">Describe a video. Your agent directs. Your machine renders.</h1>
+<p class="lede">showtime is a local video studio for your coding agent: motion graphics, voice-over, music, captions and footage editing
+from one sentence, with no cloud AI services, no API keys and no uploads. It works in Claude Code, Codex, Cursor, Devin and OpenCode,
+and in any agent that supports <a href="https://agentskills.io">Agent Skills</a>.</p></div>
 <div class="actions"><a class="btn primary" href="#start">Get started</a><a class="link-arrow" href="gallery.html">See the examples <span>→</span></a></div></div>
 {hero}
 <p class="credit">The launch film: every frame is from a real showtime example. Music: \u201cWith These Hands\u201d by Scott Buckley,
@@ -881,16 +884,21 @@ from one sentence, with no cloud AI services, no API keys and no uploads.</p></d
 
 <section class="section" id="start"><div class="wrap">
 <div class="section-head"><h2 class="title">One sentence in, a finished video out</h2>
-<p class="lede">Claude states its assumptions, shows you a first look, renders on your machine and checks the result before it
+<p class="lede">Your agent states its assumptions, shows you a first look, renders on your machine and checks the result before it
 calls the video done.</p></div>
 {pipeline}
-<div class="split"><div><h3>Install it in Claude Code</h3>
+<div class="split" id="works-with"><div><h3>Install it in your agent</h3>
 <p>You need <a href="https://docs.astral.sh/uv/">uv</a> and <a href="https://nodejs.org">Node.js</a> 24 or 22 LTS (20 or newer works).
-The first request checks what is missing and tells you the size and time, about 2.9 GB into <code>~/.showtime</code> and 3 to 11
-minutes, then runs setup once you say yes.</p>
-<p>Every request gets its own folder with <code>final.mp4</code>, a poster, captions, exports and share copy. Nothing is overwritten.</p></div>
-<div class="copy install"><pre><code>/plugin marketplace add {market}
+The first request checks what is missing and tells you the size and time, about 0.6 to 0.8 GB into <code>~/.showtime</code> and 2 to 6
+minutes, then runs setup once you say yes. Bigger pieces, like Whisper for transcripts, come the first time a video needs them.</p>
+<p>Every request gets its own folder with <code>final.mp4</code>, a poster, captions, exports and share copy. Nothing is overwritten.</p>
+<p><a class="link-arrow" href="docs/agents.html">Exact steps for Claude Code, Codex, Cursor, Devin, OpenCode and more <span>→</span></a></p></div>
+<div class="copy install"><pre><code># Claude Code
+/plugin marketplace add {market}
 /plugin install showtime@showtime
+
+# any agent that supports Agent Skills
+npx skills add {market}
 
 Make a 20-second launch video for this repo, with a voice-over and upbeat music.</code></pre></div></div>
 </div></section>
@@ -904,7 +912,7 @@ Make a 20-second launch video for this repo, with a voice-over and upbeat music.
 
 <section class="section"><div class="wrap">
 <div class="section-head"><h2 class="title">A crew, when you want one</h2>
-<p class="lede">For studio work and videos you will publish, Claude can cast ten specialist sub-agents. Quick videos stay lean.</p></div>
+<p class="lede">For studio work and videos you will publish, your agent can cast ten specialist sub-agents. Quick videos stay lean.</p></div>
 {cast}
 <p class="more"><a class="link-arrow" href="crew.html">Meet the crew <span>→</span></a></p>
 </div></section>
@@ -920,11 +928,11 @@ when you ask for something from the web.</p></div>
 <p class="more"><a class="link-arrow" href="docs/index.html">Read the docs <span>→</span></a></p>
 </div></section>
 """.format(hero=hero, market=esc(site.repo or CONFIG.get("marketplace", "FavioVazquez/showtime")),
-           pipeline=art(site, page, "diagrams/pipeline", "How showtime works: one sentence, Claude directs, a first look, a local render, showtime qa, an MP4 and an HTML video."),
+           pipeline=art(site, page, "diagrams/pipeline", "How showtime works: one sentence, your agent directs, a first look, a local render, showtime qa, an MP4 and an HTML video."),
            teaser="".join(card(site, page, e, show_what=False) for e in teaser),
-           runs=art(site, page, "diagrams/runs-where", "What runs where: the director in your Claude Code session, the studio on your machine; the web only when you ask."),
+           runs=art(site, page, "diagrams/runs-where", "What runs where: the director in your coding agent, the studio on your machine; the web only when you ask."),
            cast=art(site, page, "crew/cast", "The crew: ten illustrated cards, all optional."))
-    write(site, page, shell(site, page, "showtime · a local video studio for Claude Code", body, "home"))
+    write(site, page, shell(site, page, "showtime · a local video studio for your coding agent", body, "home"))
 
 
 # ----------------------------------------------------------------------------------------------- main

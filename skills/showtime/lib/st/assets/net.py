@@ -27,7 +27,8 @@ from ..common import ShowtimeError, debug, home
 
 # Wikimedia and others ask for a descriptive agent; SHOWTIME_CONTACT (an email or URL)
 # is appended when set so API operators can reach the person running the tool.
-USER_AGENT = "showtime/%s (open-source local video tool%s)" % (
+# The project URL is the contact Wikimedia's User-Agent policy asks for (plain agents get HTTP 429 there).
+USER_AGENT = "showtime/%s (open-source local video tool; +https://github.com/FavioVazquez/showtime%s)" % (
     __version__, ("; " + os.environ["SHOWTIME_CONTACT"]) if os.environ.get("SHOWTIME_CONTACT") else "")
 # A browser-like UA for hosts that refuse unknown agents (sent only where needed).
 BROWSER_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "

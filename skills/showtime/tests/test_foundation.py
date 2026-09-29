@@ -109,6 +109,72 @@ class TestPlatform(unittest.TestCase):
         self.assertEqual(plat.exe("ffmpeg"), "ffmpeg.exe" if os.name == "nt" else "ffmpeg")
         self.assertEqual(plat.exe("x.exe"), "x.exe")
 
+    def test_windows_on_arm_uses_x64_binaries(self):
+        # Windows 11 on Arm runs x64 programs through its emulation: ffmpeg, tools and the venv come from win-x64
+        self.assertEqual(plat.binary_key("win-arm64"), "win-x64")
+        for key in ("win-x64", "mac-arm64", "mac-x64", "linux-x64", "linux-arm64"):
+            self.assertEqual(plat.binary_key(key), key)
+        table = {"win-x64": ["x64 build"], "mac-arm64": ["mac build"]}
+        self.assertEqual(plat.pick_for_platform(table, "win-arm64"), ["x64 build"])
+        self.assertEqual(plat.pick_for_platform(table, "mac-arm64"), ["mac build"])
+        self.assertIsNone(plat.pick_for_platform(table, "linux-arm64"))   # no emulation fallback on Linux
+        self.assertEqual(plat.pick_for_platform({"win-arm64": ["native"], "win-x64": ["x64"]}, "win-arm64"), ["native"])
+        if os.name != "nt":
+            self.assertFalse(plat._win_native_arm64())
+
+    def test_ffmpeg_does_not_run_reason(self):
+        # setup and doctor say why an ffmpeg does not start instead of "(does not run)"
+        v, why = ff._run_version(str(Path(tempfile.gettempdir()) / "no-such-ffmpeg-w9.exe"))
+        self.assertIsNone(v)
+        self.assertIn("cannot start", why)
+        self.assertEqual(ff.exit_reason(-1073741515, windows=True), "exit code 0xC0000135 (a DLL it needs is missing)")
+        self.assertEqual(ff.exit_reason(3221225501, windows=True), "exit code 0xC000001D (illegal instruction: CPU too old)")
+        self.assertEqual(ff.exit_reason(3, windows=True), "exit code 3")
+        self.assertEqual(ff.exit_reason(-11, windows=False), "exit code -11")
+        if os.name != "nt":
+            d = Path(tempfile.mkdtemp(prefix="st-ffwhy-"))
+            try:
+                bad = d / "ffmpeg"
+                bad.write_text("#!/bin/sh\necho 'cannot load libfoo' >&2\nexit 3\n")
+                bad.chmod(0o755)
+                v, why = ff._run_version(str(bad))
+                self.assertIsNone(v)
+                self.assertEqual(why, "exit code 3: cannot load libfoo")
+                slow = d / "ffslow"
+                slow.write_text("#!/bin/sh\nsleep 5\n")
+                slow.chmod(0o755)
+                self.assertIn("no answer within 1 s", ff._run_version(str(slow), timeout=1)[1])
+            finally:
+                shutil.rmtree(str(d), ignore_errors=True)
+
+    def test_setup_on_windows_arm64(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("st_setup_w9", str(SKILL / "setup" / "setup.py"))
+        setup = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(setup)
+        self.assertEqual(setup.python_request("win-arm64"), "cpython-%s-windows-x86_64-none" % setup.PY_VERSION)
+        for key in ("win-x64", "mac-arm64", "linux-arm64", "linux-x64"):
+            self.assertEqual(setup.python_request(key), setup.PY_VERSION)
+        self.assertEqual(setup.VENV_PLATFORM.get("win-arm64"), "win-amd64")
+        man = setup.load_manifest()
+        # every platform the README lists gets an ffmpeg build (Windows on Arm has a native one)
+        for key in ("mac-arm64", "mac-x64", "win-x64", "win-arm64", "linux-x64", "linux-arm64"):
+            self.assertTrue(plat.pick_for_platform(man["ffmpeg"], key), key)
+        item = {"id": "t", "platform_files": {"win-x64": [{"url": "https://x/y.exe", "size": 7, "dest": "bin/y.exe"}]}}
+        self.assertEqual(setup.item_size(item, "win-arm64"), 7)
+        self.assertEqual(man["ffmpeg"]["win-arm64"][0]["id"], plat.pick_for_platform(man["ffmpeg"], "win-arm64")[0]["id"])
+        self.assertIsNone(setup.item_files(item, "linux-arm64"))
+        # ffmpeg: Windows on Arm tries its native build first, then the x64 builds (run under emulation)
+        ids = [c["id"] for c in setup.ffmpeg_candidates(man, "win-arm64")]
+        self.assertEqual(ids[:len(man["ffmpeg"]["win-arm64"])], [c["id"] for c in man["ffmpeg"]["win-arm64"]])
+        self.assertEqual(ids[len(man["ffmpeg"]["win-arm64"]):], [c["id"] for c in man["ffmpeg"]["win-x64"]])
+        for key in ("win-x64", "linux-arm64", "mac-arm64"):
+            self.assertEqual(setup.ffmpeg_candidates(man, key), man["ffmpeg"][key])
+        # every default-tier item installs on every listed platform (no platform-only models in core)
+        for key in ("mac-arm64", "mac-x64", "win-x64", "win-arm64", "linux-x64", "linux-arm64"):
+            for it in setup.select_items(man, "core", []):
+                self.assertIsNotNone(setup.item_files(it, key), "%s has no files for %s" % (it["id"], key))
+
     def test_chrome_flags(self):
         for mode in ("auto", "off"):
             flags = plat.chrome_flags(mode)
@@ -390,7 +456,7 @@ class TestLauncher(TempDirCase):
         cp = subprocess.run(["/bin/sh", str(SKILL / "bin" / "showtime"), "--version"], env=dict(env, PATH=str(tools)),
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8")
         if cp.returncode == 127:   # no uv in /opt/homebrew/bin or /usr/local/bin either
-            self.assertIn("restart Claude Code", cp.stderr)
+            self.assertIn("restart your coding agent", cp.stderr)
 
     def test_default_tool_dirs(self):
         from st import platform as plat
@@ -973,12 +1039,14 @@ class TestUX(TempDirCase):
                                 stderr=subprocess.PIPE, encoding="utf-8", timeout=120)
             self.assertEqual(cp.returncode, 2, cp.stderr)
             self.assertIn("showtime setup", cp.stderr)
-            self.assertRegex(cp.stderr, r"about [\d.]+ GB")
+            self.assertRegex(cp.stderr, r"about [\d.]+ [MG]B")
             self.assertRegex(cp.stderr, r"\d+-\d+ min")
         est = subprocess.run([sys.executable, str(SKILL / "setup" / "setup.py"), "--estimate", "--json"], env=env,
                              stdout=subprocess.PIPE, encoding="utf-8", timeout=120)
         self.assertEqual(est.returncode, 0)
-        self.assertGreater(json.loads(est.stdout)["total_bytes"], 10 ** 9)
+        total = json.loads(est.stdout)["total_bytes"]
+        self.assertGreater(total, 3 * 10 ** 8)          # ffmpeg, packages, Kokoro ...
+        self.assertLess(total, 13 * 10 ** 8)            # ... but no longer 2.9 GB (first-use parts come later)
 
     def test_progress_and_estimate(self):
         import io

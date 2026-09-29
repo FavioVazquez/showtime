@@ -5,8 +5,12 @@
     showtime assets icon simple-icons github --color brand --png --size 512
     showtime assets icons deploy --set lucide              # search names + tags
 
-Files come from the pinned npm packages installed by setup (~/.showtime/node),
-falling back to the same pinned versions on jsDelivr when a package is missing.
+Icons are fetched one at a time on first use from the pinned package versions on
+jsDelivr and kept in ~/.showtime/cache/icons/<package>@<version>/ (a few KB each),
+instead of installing ~175 MB of icon packages up front. An older install that still
+has the packages in ~/.showtime/node is used first. Offline machines pre-seed the
+cache with the pinned npm tarballs: `showtime setup --fetch icons` (or --full, or
+--seed DIR with the tarballs from `showtime setup --plan --urls`).
 Licenses: Lucide ISC, Phosphor MIT, Tabler MIT, Heroicons MIT, simple-icons CC0
 (brand logos are trademarks: only use them to depict that brand).
 """
@@ -33,7 +37,7 @@ SETS: Dict[str, Dict[str, Any]] = {
                  "home": "https://phosphoricons.com/?q={name}"},
     "tabler": {"pkg": "@tabler/icons", "version": "3.48.0", "license": "MIT", "kind": "stroke",
                "variants": ["outline", "filled"], "home": "https://tabler.io/icons/icon/{name}"},
-    "simple-icons": {"pkg": "simple-icons", "version": "16.32.0", "license": "CC0-1.0", "kind": "brand",
+    "simple-icons": {"pkg": "simple-icons", "version": "16.33.0", "license": "CC0-1.0", "kind": "brand",
                      "variants": ["default"], "home": "https://simpleicons.org/?q={name}"},
     "heroicons": {"pkg": "heroicons", "version": "2.2.0", "license": "MIT", "kind": "stroke",
                   "variants": ["outline", "solid", "mini", "micro"], "home": "https://heroicons.com"},
@@ -50,10 +54,31 @@ def norm_set(name: str) -> str:
     return n
 
 
-def _pkg_dir(pkg: str) -> Path:
+def _node_pkg_dir(pkg: str) -> Path:
     env = os.environ.get("SHOWTIME_NODE_MODULES")
     base = Path(env) if env else paths()["node_modules"]
     return base.joinpath(*pkg.split("/"))
+
+
+def cache_dir(set_name: str) -> Path:
+    """~/.showtime/cache/icons/<package>@<version>: icons fetched one by one, or a seeded package."""
+    s = SETS[set_name]
+    return paths()["cache"] / "icons" / ("%s@%s" % (s["pkg"].replace("/", "+"), s["version"]))
+
+
+def _pkg_dir(pkg: str) -> Path:
+    """The package folder to read from: node_modules when an older install has it, else the icon cache."""
+    d = _node_pkg_dir(pkg)
+    if d.is_dir():
+        return d
+    for name, s in SETS.items():
+        if s["pkg"] == pkg:
+            return cache_dir(name)
+    return d
+
+
+def _seeded(set_name: str) -> bool:
+    return (cache_dir(set_name) / ".seeded").is_file() or _node_pkg_dir(SETS[set_name]["pkg"]).is_dir()
 
 
 def _rel_path(set_name: str, name: str, variant: Optional[str]) -> str:
@@ -76,6 +101,8 @@ def _rel_path(set_name: str, name: str, variant: Optional[str]) -> str:
 
 def _names_local(set_name: str, variant: Optional[str] = None) -> Optional[List[str]]:
     s = SETS[set_name]
+    if not _seeded(set_name):
+        return None                  # a cache of single icons is not a full listing
     d = _pkg_dir(s["pkg"])
     if not d.is_dir():
         return None
@@ -110,18 +137,40 @@ def names(set_name: str, variant: Optional[str] = None) -> List[str]:
 
 def _tags(set_name: str) -> Dict[str, List[str]]:
     """Keyword tags per icon where the package ships them (lucide tags.json, simple-icons titles)."""
-    s = SETS[set_name]
-    d = _pkg_dir(s["pkg"])
     try:
-        if set_name == "lucide" and (d / "tags.json").is_file():
-            return json.loads((d / "tags.json").read_text(encoding="utf-8"))
-        if set_name == "simple-icons" and (d / "data" / "simple-icons.json").is_file():
-            data = json.loads((d / "data" / "simple-icons.json").read_text(encoding="utf-8"))
+        if set_name == "lucide":
+            return json.loads(_pkg_file(set_name, "tags.json", max_bytes=8 << 20).decode("utf-8"))
+        if set_name == "simple-icons":
+            data = json.loads(_pkg_file(set_name, "data/simple-icons.json", max_bytes=16 << 20).decode("utf-8"))
             return {x["slug"]: [x.get("title", "")] + list((x.get("aliases") or {}).get("aka", [])) for x in data
                     if x.get("slug")}
-    except (OSError, ValueError, KeyError):
-        pass
+    except (OSError, ValueError, KeyError, ShowtimeError) as e:
+        debug("no tags for %s (%s)" % (set_name, e))
     return {}
+
+
+def _pkg_file(set_name: str, rel: str, max_bytes: int = 2 << 20) -> bytes:
+    """One file of a pinned icon package: node_modules, then the icon cache, then jsDelivr (cached)."""
+    s = SETS[set_name]
+    for base in (_node_pkg_dir(s["pkg"]), cache_dir(set_name)):
+        f = base / rel
+        if f.is_file():
+            return f.read_bytes()
+    url = "%s/%s@%s/%s" % (CDN, s["pkg"], s["version"], rel)
+    if net.offline():
+        raise ShowtimeError("%s %s is not cached yet and showtime is offline" % (s["pkg"], rel),
+                            why="icons are fetched one at a time on first use",
+                            hint="on a connected machine run `showtime setup --fetch icons` (all icon sets, ~16 MB) or "
+                                 "`showtime setup --full`; or copy the tarballs from `showtime setup --plan --urls` "
+                                 "into a folder and run `showtime setup --seed DIR --fetch icons`", code=3)
+    body, _ = net.get_bytes(url, max_bytes=max_bytes)
+    dest = cache_dir(set_name) / rel
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    from ..common import part_path
+    tmp = part_path(dest)
+    tmp.write_bytes(body)
+    os.replace(str(tmp), str(dest))
+    return body
 
 
 def search(query: str, set_name: Optional[str] = None, limit: int = 30) -> List[Dict[str, Any]]:
@@ -155,13 +204,8 @@ def search(query: str, set_name: Optional[str] = None, limit: int = 30) -> List[
 
 
 def brand_hex(slug: str) -> Optional[str]:
-    d = _pkg_dir(SETS["simple-icons"]["pkg"]) / "data" / "simple-icons.json"
     try:
-        if d.is_file():
-            data = json.loads(d.read_text(encoding="utf-8"))
-        else:
-            s = SETS["simple-icons"]
-            data = net.get_json("%s/%s@%s/data/simple-icons.json" % (CDN, s["pkg"], s["version"]), ttl=30 * 86400)
+        data = json.loads(_pkg_file("simple-icons", "data/simple-icons.json", max_bytes=16 << 20).decode("utf-8"))
         for x in data:
             if x.get("slug") == slug:
                 return "#" + x["hex"]
@@ -175,14 +219,9 @@ def raw_svg(set_name: str, name: str, variant: Optional[str] = None) -> str:
     name = name.strip().lower().replace(" ", "-")
     if not re.match(r"^[a-z0-9][a-z0-9._-]*$", name):
         raise ShowtimeError("invalid icon name: %r" % name)
-    s = SETS[set_name]
     rel = _rel_path(set_name, name, variant)
-    local = _pkg_dir(s["pkg"]) / rel
-    if local.is_file():
-        return local.read_text(encoding="utf-8")
-    url = "%s/%s@%s/%s" % (CDN, s["pkg"], s["version"], rel)
     try:
-        body, _ = net.get_bytes(url, max_bytes=2 << 20)
+        body = _pkg_file(set_name, rel)
     except net.HTTPStatusError as e:
         if e.status == 404:
             import difflib
@@ -298,3 +337,56 @@ def rasterize(svg: Path, png: Path, size: int = 512, background: Optional[str] =
         raise ShowtimeError("could not rasterize %s:\n%s" % (Path(svg).name, tail),
                             hint="run `showtime doctor` to check the browser")
     return Path(png)
+
+
+# ------------------------------------------------------------------ offline pre-seed
+
+def seed_all(sets: Optional[List[str]] = None) -> Dict[str, Any]:
+    """Unpack the pinned npm tarballs of the icon sets into the icon cache (offline use, `setup --fetch icons`).
+
+    Tarballs are listed in setup/manifest.json ("icon_packs": url, size, sha256) and go through the
+    installer's resumable, verified, seedable fetcher; only SVGs and the tag files are kept."""
+    import importlib.util
+    import tarfile
+    from ..common import info
+    man = json.loads((paths()["setup"] / "manifest.json").read_text(encoding="utf-8"))
+    spec = importlib.util.spec_from_file_location("showtime_setup_icons", str(paths()["setup"] / "setup.py"))
+    su = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+    spec.loader.exec_module(su)  # type: ignore[union-attr]
+    seeds = su.Seeds([d for d in os.environ.get("SHOWTIME_SEED_DIRS", "").split(os.pathsep) if d])
+    out: Dict[str, Any] = {}
+    for pk in man.get("icon_packs", []):
+        name = pk["set"]
+        if sets and name not in sets:
+            continue
+        if SETS[name]["version"] != pk["version"]:
+            raise ShowtimeError("icon pack %s: manifest pins %s, icons.py %s" % (name, pk["version"], SETS[name]["version"]))
+        dest = cache_dir(name)
+        if (dest / ".seeded").is_file():
+            out[name] = "present"
+            continue
+        arc = paths()["downloads"] / pk["url"].rsplit("/", 1)[-1]
+        info("fetching icon pack %s %s (%.1f MB)" % (SETS[name]["pkg"], pk["version"], pk["size"] / 1e6))
+        how = su.fetch(pk["url"], arc, pk["sha256"], pk["size"], seeds, arc.name, verify=True)
+        n = 0
+        with tarfile.open(str(arc), "r:gz") as tf:
+            for m in tf:
+                rel = m.name.split("/", 1)[1] if "/" in m.name else m.name
+                if not m.isfile() or ".." in rel.split("/") or not (
+                        rel.endswith(".svg") or rel in ("tags.json", "data/simple-icons.json", "package.json")):
+                    continue
+                t = dest / rel
+                t.parent.mkdir(parents=True, exist_ok=True)
+                src = tf.extractfile(m)
+                if src is None:
+                    continue
+                with src:
+                    t.write_bytes(src.read())
+                n += 1
+        (dest / ".seeded").write_text("%s %s\n" % (pk["url"], pk["sha256"]), encoding="utf-8")
+        try:
+            arc.unlink()
+        except OSError:
+            pass
+        out[name] = "%s, %d files" % (how, n)
+    return out

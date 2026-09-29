@@ -56,6 +56,8 @@
   color: var(--cap-ink, #fff); line-height: 1.14; letter-spacing: -0.01em;
   --o: var(--cap-outline, #000);
 }
+/* every glow and drop shadow below is made from the outline colour, not black: on a light theme (dark
+   ink, light outline) a black shadow under dark words read as a muddy smudge */
 .st-cap-upper { text-transform: uppercase; letter-spacing: 0.005em; }
 .st-cap-card { position: relative; transform-origin: 50% 50%; }
 .st-cap-line { position: relative; display: inline-block; max-width: 100%; text-wrap: balance; word-spacing: 0.12em; }
@@ -66,33 +68,33 @@
    accent colour (no scale: nothing moves but the colour), an emphasised word keeps it once said */
 .st-cap-clean-pop .st-cap-w {
   text-shadow: 0.03em 0 0 var(--o), -0.03em 0 0 var(--o), 0 0.03em 0 var(--o), 0 -0.03em 0 var(--o),
-    0 0.06em 0.22em rgb(0 0 0 / 0.55), 0 0 0.7em rgb(0 0 0 / 0.25);
+    0 0.06em 0.22em color-mix(in srgb, var(--o) 55%, transparent), 0 0 0.7em color-mix(in srgb, var(--o) 25%, transparent);
 }
 .st-cap-clean-pop .st-cap-w[data-state="active"], .st-cap-clean-pop .st-cap-emph:not([data-state="upcoming"]) { color: var(--cap-accent, #ffd43b); }
 /* bold-pop: heavy outlined words, spoken word pops in the accent colour */
 .st-cap-bold-pop .st-cap-w {
   text-shadow: 0.055em 0 0 var(--o), -0.055em 0 0 var(--o), 0 0.055em 0 var(--o), 0 -0.055em 0 var(--o),
     0.04em 0.04em 0 var(--o), -0.04em 0.04em 0 var(--o), 0.04em -0.04em 0 var(--o), -0.04em -0.04em 0 var(--o),
-    0 0.09em 0.16em rgb(0 0 0 / 0.45);
+    0 0.09em 0.16em color-mix(in srgb, var(--o) 45%, transparent);
 }
 .st-cap-bold-pop .st-cap-w[data-state="active"], .st-cap-bold-pop .st-cap-emph { color: var(--cap-accent, #ffd43b); }
 /* highlight-box: a rounded accent box glides behind the spoken word */
-.st-cap-highlight-box .st-cap-w { text-shadow: 0 0.06em 0.18em rgb(0 0 0 / 0.5); }
+.st-cap-highlight-box .st-cap-w { text-shadow: 0 0.06em 0.18em color-mix(in srgb, var(--o) 50%, transparent); }
 .st-cap-highlight-box .st-cap-w[data-state="active"] { color: var(--cap-active-ink, #111); text-shadow: none; }
 .st-cap-highlight-box .st-cap-marker { background: var(--cap-accent, #ffd43b); border-radius: 0.16em; box-shadow: 0 0 0 0.1em var(--cap-accent, #ffd43b); }
 .st-cap-highlight-box .st-cap-emph:not([data-state="active"]) { color: var(--cap-accent, #ffd43b); }
 /* underline-sweep: a bar sweeps under the spoken word as it is said */
-.st-cap-underline-sweep .st-cap-w { text-shadow: 0 0.06em 0.2em rgb(0 0 0 / 0.55); }
+.st-cap-underline-sweep .st-cap-w { text-shadow: 0 0.06em 0.2em color-mix(in srgb, var(--o) 55%, transparent); }
 .st-cap-underline-sweep .st-cap-w[data-state="upcoming"] { opacity: 0.62; }
 .st-cap-underline-sweep .st-cap-marker { background: linear-gradient(var(--cap-accent, #ffd43b), var(--cap-accent, #ffd43b)) left bottom / 100% 0.11em no-repeat; margin-top: 0.06em; }
 .st-cap-underline-sweep .st-cap-emph { color: var(--cap-accent, #ffd43b); }
 /* minimal: clean subtitle, upcoming words dimmed */
 .st-cap-minimal { font-weight: 600; font-family: var(--font-body, var(--cap-font, system-ui)); text-transform: none; }
-.st-cap-minimal .st-cap-w { text-shadow: 0 0.05em 0.25em rgb(0 0 0 / 0.6); }
+.st-cap-minimal .st-cap-w { text-shadow: 0 0.05em 0.25em color-mix(in srgb, var(--o) 60%, transparent); }
 .st-cap-minimal .st-cap-w[data-state="upcoming"] { opacity: 0.5; }
 .st-cap-minimal .st-cap-emph { color: var(--cap-accent, #ffd43b); }
 /* boxed-pill: the card sits on a rounded plate, spoken word in the accent */
-.st-cap-boxed-pill .st-cap-line { background: var(--cap-plate, rgb(0 0 0 / 0.72)); padding: 0.26em 0.62em 0.3em; border-radius: 0.62em; box-shadow: 0 0.2em 0.6em rgb(0 0 0 / 0.25); }
+.st-cap-boxed-pill .st-cap-line { background: var(--cap-plate, color-mix(in srgb, var(--o) 72%, transparent)); padding: 0.26em 0.62em 0.3em; border-radius: 0.62em; box-shadow: 0 0.2em 0.6em color-mix(in srgb, var(--o) 25%, transparent); }
 .st-cap-boxed-pill .st-cap-w[data-state="upcoming"] { opacity: 0.55; }
 .st-cap-boxed-pill .st-cap-w[data-state="active"], .st-cap-boxed-pill .st-cap-emph { color: var(--cap-accent, #ffd43b); }
 /* fill: each word fills with the accent from left to right as it is spoken */

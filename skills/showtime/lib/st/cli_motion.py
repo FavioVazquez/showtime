@@ -34,6 +34,8 @@ SUMMARY = {
     "device-frame": "phone / tablet / laptop body around a screenshot, video or live DOM; scroll, zoom, tilt",
     "count-up": "animated statistic with tabular digits, landing pulse, optional ring or bar",
     "lower-third": "name + role identification: bar, card, kicker, pill variants",
+    "fit": "shrink type so the longest line fits its box at every frame size (terminals, code, command pills); wraps with a hanging indent only below the minimum",
+    "camera": "scene camera: eased pushes, pulls and pans over the scene's content in log-zoom space, drift on holds, parallax depth layers",
     "code-block": "editor-style code panel from `showtime code` tokens: line or typed reveal, highlight, diff, focus scroll",
 }
 

@@ -1,0 +1,145 @@
+name: e2e
+
+# End-to-end platform test, started by hand (Actions > e2e > Run workflow) or by pushing a branch named e2e/*
+# (a workflow_dispatch workflow can only be started by hand once it is on the default branch).
+# On each runner image, from nothing: a fresh `showtime setup` (default tier), doctor, a short voiced render
+# with qa, HTML export, transcription, captions (SRT/VTT and burned), the MCP server handshake and the fast
+# test suite, all through the user's entry point (bin/showtime, or showtime.cmd on Windows). The work is in
+# scripts/e2e.py; its logs, summary and the rendered videos are uploaded as one artifact per image.
+# There is deliberately no runtime cache: setup is part of what is tested.
+#   macos-14          Apple Silicon (M1, arm64)
+#   ubuntu-24.04-arm  Linux arm64
+#   windows-11-arm    Windows 11 on Arm (arm64; showtime's venv and ffmpeg are x64 there, run by Windows' emulation)
+#   windows-2025      Windows Server 2025 x64
+# Hosted runners are free on a public repository; a private one pays for the minutes (macOS 10x, Windows 2x).
+on:
+  push:
+    branches: ['e2e/**']
+  workflow_dispatch:
+    inputs:
+      os:
+        description: 'Runner images as a JSON list, e.g. ["windows-11-arm"] (empty: macos-14, ubuntu-24.04-arm, windows-11-arm, windows-2025)'
+        type: string
+        default: ""
+      suite:
+        description: "Also run the fast test suite"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHONUTF8: "1"
+  NO_COLOR: "1"
+  SHOWTIME_PROGRESS: "plain"
+
+jobs:
+  # which runner images: the dispatch input, else the branch e2e/<image>/... runs that one image only
+  # (e2e/windows-11-arm/fix), else all four
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      os: ${{ steps.p.outputs.os }}
+    steps:
+      - id: p
+        env:
+          OS_INPUT: ${{ inputs.os }}
+          REF: ${{ github.ref_name }}
+        run: |
+          all='["macos-14", "ubuntu-24.04-arm", "windows-11-arm", "windows-2025"]'
+          if [ -n "$OS_INPUT" ]; then os="$OS_INPUT"; else
+            first="${REF#e2e/}"; first="${first%%/*}"
+            case "$first" in
+              macos-*|ubuntu-*|windows-*) os="[\"$first\"]" ;;
+              *) os="$all" ;;
+            esac
+          fi
+          echo "os=$os" >> "$GITHUB_OUTPUT"
+  e2e:
+    needs: plan
+    name: e2e (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(needs.plan.outputs.os) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0   # immutable releases: no floating major tag
+        with:
+          enable-cache: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Machine
+        shell: bash
+        run: |
+          python -c "import platform, os; print(platform.platform(), platform.machine(), os.cpu_count(), 'cpus')"
+          node -p "process.platform + ' ' + process.arch + ' node ' + process.version"
+          uv --version
+
+      # the output folder has a space in its name on purpose (paths with spaces must work everywhere)
+      - name: End-to-end test (macOS, Linux)
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          SUITE: ${{ inputs.suite }}
+        run: |
+          args=(--out "$RUNNER_TEMP/e2e out" --browser-deps --suite-args "-j 2")
+          [ "$SUITE" = "false" ] && args+=(--no-suite)
+          python scripts/e2e.py "${args[@]}"
+
+      # Windows: the desktop test script under Windows PowerShell 5.1 (it runs scripts/e2e.py through uv's
+      # Python and adds the Windows entry-point checks); runners are administrators, hence -AllowAdmin
+      - name: End-to-end test (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        env:
+          SUITE: ${{ inputs.suite }}
+        run: |
+          $extra = @()
+          if ($env:SUITE -eq 'false') { $extra += '-NoSuite' }
+          & powershell -NoProfile -ExecutionPolicy Bypass -File scripts\e2e-windows.ps1 -Out (Join-Path $env:RUNNER_TEMP 'e2e out') -AllowAdmin -SuiteArgs '-j 2' @extra
+          exit $LASTEXITCODE
+
+      - name: Collect the render, exports and logs
+        if: always()
+        shell: bash
+        run: |
+          set +e   # collect whatever exists
+          src="$RUNNER_TEMP/e2e out"; dst="$RUNNER_TEMP/e2e-artifact"
+          mkdir -p "$dst"
+          cp "$src"/summary.* "$src"/windows-facts.txt "$dst"/ 2>/dev/null || true
+          cp -R "$src/logs" "$dst/" 2>/dev/null || true
+          for job in "$src"/work/showtime-out/e2e-*; do
+            [ -d "$job" ] || continue
+            mkdir -p "$dst/job"
+            for f in final.mp4 final.captioned.mp4 poster.jpg subs.srt subs.vtt subs.ass job.json SHOWTIME.md credits.txt; do
+              [ -f "$job/$f" ] && cp "$job/$f" "$dst/job/"
+            done
+            [ -d "$job/exports" ] && cp -R "$job/exports" "$dst/job/"
+            [ -f "$job/edit/transcripts/final.json" ] && cp "$job/edit/transcripts/final.json" "$dst/job/transcript.json"
+            [ -f "$job/work/qa/final/sheet.jpg" ] && cp "$job/work/qa/final/sheet.jpg" "$dst/job/qa-sheet.jpg"
+            [ -f "$job/final.work/logs/render.log" ] && cp "$job/final.work/logs/render.log" "$dst/job/"
+          done
+          [ -f "$dst/summary.md" ] && cat "$dst/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          ls -la "$dst" "$dst/job" 2>/dev/null || true
+
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-${{ matrix.os }}
+          path: ${{ runner.temp }}/e2e-artifact
+          retention-days: 14
+          if-no-files-found: warn

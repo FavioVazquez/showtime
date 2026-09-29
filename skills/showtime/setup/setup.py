@@ -55,13 +55,16 @@ UA = "showtime-setup/%s (+python urllib)" % __version__
 MANIFEST_PATH = SETUP_DIR / "manifest.json"
 TIER_ORDER = ["minimal", "core", "full"]
 PY_VERSION = "3.12"
+# Windows on Arm: showtime's venvs use x64 CPython, which Windows 11 runs through its built-in
+# emulation, because ctranslate2, opencv-python, av and numba publish no Windows arm64 wheels.
+VENV_PLATFORM = {"win-arm64": "win-amd64"}
 MIN_NODE = 20
 KEY_PACKAGES = ["numpy", "scipy", "onnxruntime", "ctranslate2", "faster-whisper", "kokoro-onnx",
                 "sherpa-onnx", "opencv-python", "av", "librosa", "numba", "llvmlite", "scenedetect",
                 "soundfile", "pillow", "tinysoundfont", "supertonic", "imageio-ffmpeg", "pypdfium2"]
-IMPORT_CHECK = ["numpy", "scipy", "soundfile", "PIL", "cv2", "av", "scenedetect", "faster_whisper",
-                "ctranslate2", "onnxruntime", "kokoro_onnx", "sherpa_onnx", "librosa", "mido",
-                "pretty_midi", "pyloudnorm", "requests", "pypdfium2"]
+# faster-whisper/ctranslate2 and imageio-ffmpeg are first-use components (manifest "lazy_pip"), not checked here
+IMPORT_CHECK = ["numpy", "scipy", "soundfile", "PIL", "cv2", "av", "scenedetect", "onnxruntime", "kokoro_onnx",
+                "sherpa_onnx", "librosa", "mido", "pretty_midi", "pyloudnorm", "requests", "pypdfium2"]
 
 
 # ==========================================================================
@@ -161,18 +164,51 @@ def load_manifest() -> Dict[str, Any]:
         return json.load(f)
 
 
+def ffmpeg_candidates(man: Dict[str, Any], key: Optional[str] = None) -> List[Dict[str, Any]]:
+    """ffmpeg builds to try in order: this platform's own, then (Windows on Arm) the x64 builds,
+    which Windows runs through its emulation when the native one does not start."""
+    key = key or plat.platform_key()
+    table = man.get("ffmpeg", {})
+    out = list(table.get(key) or [])
+    fallback = plat.binary_key(key)
+    if fallback != key:
+        out += [c for c in table.get(fallback) or [] if c not in out]
+    return out
+
+
+def python_request(key: Optional[str] = None) -> str:
+    """The interpreter `uv venv --python` asks for on this platform (see VENV_PLATFORM)."""
+    if (key or plat.platform_key()) == "win-arm64":
+        return "cpython-%s-windows-x86_64-none" % PY_VERSION
+    return PY_VERSION
+
+
 def item_files(item: Dict[str, Any], key: str) -> Optional[List[Dict[str, Any]]]:
     """Files for this platform, or None if the item does not support it."""
     if "platform_files" in item:
-        return item["platform_files"].get(key)
+        return plat.pick_for_platform(item["platform_files"], key)
     return item.get("files", [])
 
 
 def select_items(man: Dict[str, Any], tier: str, extras: Iterable[str]) -> List[Dict[str, Any]]:
-    tiers = TIER_ORDER[:TIER_ORDER.index(tier) + 1]
+    """Manifest items a tier (+ extras) installs. The full tier also takes every first-use
+    ("lazy") item; the browser item is the browser step's business, not the models loop's."""
+    tiers = TIER_ORDER[:TIER_ORDER.index(tier) + 1] + (["lazy"] if tier == "full" else [])
     ex = set(extras)
-    return [it for it in man["items"]
-            if (it.get("tier") in tiers) or (it.get("extra") and it["extra"] in ex)]
+    return [it for it in man["items"] if it.get("group") != "browser"
+            and ((it.get("tier") in tiers) or (it.get("extra") and it["extra"] in ex))]
+
+
+def browser_item(man: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """The pinned Chrome Headless Shell (installed only when no system browser is found)."""
+    return next((it for it in man["items"] if it.get("group") == "browser"), None)
+
+
+def system_browsers() -> List[Dict[str, str]]:
+    """Installed Chrome / Edge / Chromium (or $SHOWTIME_CHROME), best first.
+
+    SHOWTIME_SYSTEM_BROWSER=0 ignores them (tests, or a system Chrome that misbehaves)."""
+    return [b for b in plat.find_browsers(None) if b["source"] in ("system", "env")]
 
 
 def resolve_extras(man: Dict[str, Any], tier: str, with_: Sequence[str]) -> List[str]:
@@ -216,12 +252,18 @@ class Seeds:
                         n = p.stat().st_size
                     except OSError:
                         continue
-                    if n >= 1024:
+                    if n > 0:     # small files too: model configs and tokenizers are a few hundred bytes
                         idx.setdefault(n, []).append(p)
         return idx
 
-    def find(self, size: Optional[int], sha: Optional[str]) -> Optional[Path]:
-        if not self.dirs or not size or not sha:
+    def find(self, size: Optional[int], sha: Optional[str], url: Optional[str] = None) -> Optional[Path]:
+        if not size or not sha:
+            return None
+        if url:
+            hit = hf_cache_find(url, sha, size)
+            if hit is not None:
+                return hit
+        if not self.dirs:
             return None
         if self._index is None:
             self._index = self._build()
@@ -232,6 +274,72 @@ class Seeds:
             except OSError:
                 continue
         return None
+
+
+# --------------------------------------------------------------------------
+# Shared Hugging Face cache (read-only reuse, sha256-verified)
+# --------------------------------------------------------------------------
+
+_HF_URL = re.compile(r"^https://huggingface\.co/(?P<repo>[^/]+/[^/]+)/resolve/(?P<rev>[^/]+)/(?P<path>.+)$")
+
+
+def hf_cache_dirs() -> List[Path]:
+    """Hugging Face hub caches other tools filled (~/.cache/huggingface/hub, $HF_HUB_CACHE ...).
+
+    showtime keeps its own HF_HOME under ~/.showtime, but a model file another tool already
+    downloaded is reused instead of fetched again (verified by size and sha256, then hard-linked
+    when possible, else copied). Opt out with SHOWTIME_SHARED_HF_CACHE=0."""
+    if os.environ.get("SHOWTIME_SHARED_HF_CACHE", "1").strip().lower() in ("0", "false", "no", "off"):
+        return []
+    own = Path(os.path.expanduser(os.environ.get("SHOWTIME_HOME") or "~/.showtime")).resolve()
+    cands: List[Path] = []
+    for var in ("SHOWTIME_USER_HF_HUB_CACHE", "HF_HUB_CACHE"):
+        if os.environ.get(var):
+            cands.append(Path(os.path.expanduser(os.environ[var])))
+    for var in ("SHOWTIME_USER_HF_HOME", "HF_HOME"):
+        if os.environ.get(var):
+            cands.append(Path(os.path.expanduser(os.environ[var])) / "hub")
+    xdg = os.environ.get("XDG_CACHE_HOME")
+    if xdg:
+        cands.append(Path(xdg) / "huggingface" / "hub")
+    cands.append(plat.user_home() / ".cache" / "huggingface" / "hub")
+    out: List[Path] = []
+    for c in cands:
+        try:
+            r = c.resolve()
+        except OSError:
+            continue
+        if r.is_dir() and r not in out and own not in r.parents and r != own:
+            out.append(r)
+    return out
+
+
+def hf_cache_find(url: str, sha: str, size: int) -> Optional[Path]:
+    """A verified copy of this pinned Hugging Face file in a shared hub cache, or None.
+
+    LFS files live in blobs/<sha256>, so a hit needs no scan; small non-LFS files are looked up
+    in snapshots/<revision>/<path>. Any repository's blob with the same sha256 counts (the same
+    weights are often mirrored under several repos)."""
+    m = _HF_URL.match(url)
+    dirs = hf_cache_dirs()
+    if not dirs:
+        return None
+    for hub in dirs:
+        cands: List[Path] = []
+        if m:
+            repo_dir = hub / ("models--" + m.group("repo").replace("/", "--"))
+            cands += [repo_dir / "blobs" / sha, repo_dir / "snapshots" / m.group("rev") / m.group("path")]
+        try:
+            cands += [d / "blobs" / sha for d in hub.iterdir() if d.name.startswith("models--")]
+        except OSError:
+            pass
+        for c in cands:
+            try:
+                if c.is_file() and c.stat().st_size == size and sha256_file(c) == sha:
+                    return c
+            except OSError:
+                continue
+    return None
 
 
 def _ssl_context() -> Optional[ssl.SSLContext]:
@@ -263,7 +371,8 @@ class Progress:
             say(msg)
 
 
-def _download_urllib(url: str, part: Path, total: Optional[int], label: str) -> None:
+def _download_urllib(url: str, part: Path, total: Optional[int], label: str,
+                     progress: Optional[Callable[[int, Optional[int]], None]] = None) -> None:
     ctx = _ssl_context()
     have = part.stat().st_size if part.exists() else 0
     if total and have > total:
@@ -278,7 +387,7 @@ def _download_urllib(url: str, part: Path, total: Optional[int], label: str) -> 
         mode = "ab"
         if have and code != 206:
             mode, have = "wb", 0  # server ignored the range: restart
-        prog = Progress(label, total)
+        prog = Progress(label, total) if progress is None else None
         done = have
         with open(part, mode) as f:
             while True:
@@ -287,8 +396,12 @@ def _download_urllib(url: str, part: Path, total: Optional[int], label: str) -> 
                     break
                 f.write(chunk)
                 done += len(chunk)
-                prog.update(done)
-        prog.update(done, final=True)
+                if prog is not None:
+                    prog.update(done)
+                else:
+                    progress(done, total)
+        if prog is not None:
+            prog.update(done, final=True)
 
 
 def _download_curl(url: str, part: Path) -> None:
@@ -302,26 +415,39 @@ def _download_curl(url: str, part: Path) -> None:
 
 
 def fetch(url: str, dest: Path, sha: Optional[str], size: Optional[int], seeds: Seeds,
-          label: str, verify: bool = False) -> str:
-    """Ensure `dest` holds the file. Returns 'present' | 'seeded' | 'downloaded'."""
+          label: str, verify: bool = False,
+          progress: Optional[Callable[[int, Optional[int]], None]] = None) -> str:
+    """Ensure `dest` holds the file. Returns 'present' | 'seeded' | 'downloaded'.
+
+    Seeds come first (a --seed folder, or a verified copy in a shared Hugging Face cache);
+    downloads resume from `<dest>.part`. `progress(done, total)` replaces the built-in
+    progress line (the runtime's lazy fetches report through showtime's own Progress)."""
     dest.parent.mkdir(parents=True, exist_ok=True)
     if dest.is_file() and (size is None or dest.stat().st_size == size):
         if not verify or not sha or sha256_file(dest) == sha:
             return "present"
         say("  %s: checksum mismatch, re-downloading" % dest.name)
         dest.unlink()
-    seeded = seeds.find(size, sha)
+    seeded = seeds.find(size, sha, url)
     if seeded is not None:
         tmp = dest.with_name(dest.name + ".part")
-        shutil.copyfile(str(seeded), str(tmp))
+        if tmp.exists():
+            tmp.unlink()
+        try:
+            os.link(str(seeded), str(tmp))      # same filesystem: no second copy on disk
+        except OSError:
+            shutil.copyfile(str(seeded), str(tmp))
         replace_file(tmp, dest)
         return "seeded"
+    if os.environ.get("SHOWTIME_OFFLINE", "") not in ("", "0", "false", "no"):
+        raise IOError("%s is not downloaded and SHOWTIME_OFFLINE is set (seed it with --seed DIR, "
+                      "or run `showtime setup --full` on a connected machine)" % label)
     part = dest.with_name(dest.name + ".part")
     last_err: Optional[BaseException] = None
     for attempt in range(1, 5):
         try:
             try:
-                _download_urllib(url, part, size, label)
+                _download_urllib(url, part, size, label, progress)
             except (ssl.SSLError, urllib.error.URLError) as e:
                 if isinstance(e, urllib.error.HTTPError) and e.code in (403, 404, 410):
                     raise
@@ -374,12 +500,13 @@ def extract(archive: Path, kind: str, dest: Path, strip: int = 0,
     matches (flattened into dest). Returns the written file paths."""
     dest.mkdir(parents=True, exist_ok=True)
     written: List[Path] = []
-    picks = {plat.exe(p) for p in (pick or [])} | set(pick or [])
+    picks = {plat.exe(p) for p in (pick or []) if "*" not in p} | set(pick or [])
     exe_names = set(executables or [])
 
     def wanted(rel: str) -> bool:
         if pick is not None:
-            return rel.rsplit("/", 1)[-1] in picks
+            base = rel.rsplit("/", 1)[-1]
+            return base in picks or any("*" in p and fnmatch.fnmatch(base.lower(), p.lower()) for p in picks)
         if not include:
             return True
         return any(fnmatch.fnmatch(rel, pat) for pat in include)
@@ -460,9 +587,11 @@ class State:
 
 def item_status(item: Dict[str, Any], home: Path, key: str, state: Optional[Dict[str, Any]] = None,
                 verify: bool = False) -> Tuple[str, str]:
-    """('ok'|'missing'|'unsupported'|'corrupt', detail) for an installed item.
+    """('ok'|'missing'|'legacy'|'unsupported'|'corrupt', detail) for an installed item.
 
-    Shared with `showtime doctor` (imported from this file)."""
+    'legacy': the current files are missing but an older release's equivalent (manifest "legacy",
+    e.g. the fp32 Kokoro of showtime 0.1) is here and still works. Setup treats it as missing (it
+    upgrades); doctor reports it as a note, never a failure. Shared with `showtime doctor`."""
     files = item_files(item, key)
     if files is None:
         return "unsupported", "not available for %s" % key
@@ -484,6 +613,10 @@ def item_status(item: Dict[str, Any], home: Path, key: str, state: Optional[Dict
         elif verify and f.get("sha256") and sha256_file(p) != f["sha256"]:
             return "corrupt", "%s fails its sha256 check" % f["dest"]
     if missing:
+        old = item.get("legacy") or []
+        if old and all((home / o["dest"]).is_file() and (not o.get("size") or (home / o["dest"]).stat().st_size == o["size"])
+                       for o in old):
+            return "legacy", "using %s from an earlier release" % ", ".join(o["dest"] for o in old)
         return "missing", ", ".join(missing[:3]) + (" ..." if len(missing) > 3 else "")
     return "ok", ""
 
@@ -492,8 +625,66 @@ def item_size(item: Dict[str, Any], key: str) -> int:
     return sum(int(f.get("size") or 0) for f in (item_files(item, key) or []))
 
 
-# Rough sizes of what uv/npm install (not in the manifest): measured on macOS/Linux.
-PACKAGES_BYTES = {"python": int(1.5 * 1024 ** 3), "node": 250 * 1024 ** 2}
+def install_files(item: Dict[str, Any], home: Path, key: str, seeds: "Seeds", state: Dict[str, Any],
+                  force: bool = False, verify: bool = False,
+                  progress: Optional[Callable[[int, Optional[int]], None]] = None) -> Tuple[str, str]:
+    """Download (or seed), verify and unpack one manifest item into `home`.
+
+    Shared by setup and the runtime's first-use fetches (st/lazy.py). `state` is the
+    state.json dict; the item's record is updated in place (the caller saves it).
+    `progress(done, total)` gets cumulative bytes over all of the item's files."""
+    files = item_files(item, key)
+    if files is None:
+        return "skip", "not available on %s" % key
+    status, _ = item_status(item, home, key, state, verify=verify)
+    if status == "ok" and not force:
+        return "ok", "present"
+    hows = []
+    base = [0]
+
+    def cb(done: int, total: Optional[int]) -> None:
+        if progress is not None:
+            progress(base[0] + done, None)
+
+    for f in files:
+        name = f["url"].rsplit("/", 1)[-1]
+        if f.get("archive"):
+            arc = home / "cache" / "downloads" / ("%s-%s" % (item["id"], name))
+            how = fetch(f["url"], arc, f.get("sha256"), f.get("size"), seeds, name, verify=True,
+                        progress=cb if progress else None)
+            dest = home / f["dest"]
+            extract(arc, f["archive"], dest, strip=int(f.get("strip", 0)), include=f.get("include"),
+                    executables=f.get("executables"))
+            if f.get("executables"):
+                unquarantine(dest / e for e in f["executables"])
+            for marker in f.get("markers", []):
+                (home / marker).parent.mkdir(parents=True, exist_ok=True)
+                (home / marker).write_text("", encoding="utf-8")
+            arc.unlink()
+            state.setdefault("items", {})[item["id"]] = {"archive_sha256": f.get("sha256"),
+                                                          "installed": time.strftime("%Y-%m-%d")}
+            hows.append(how)
+        else:
+            dest = home / f["dest"]
+            how = fetch(f["url"], dest, f.get("sha256"), f.get("size"), seeds, name, verify=verify,
+                        progress=cb if progress else None)
+            if f.get("executable") and os.name != "nt":
+                dest.chmod(0o755)
+                unquarantine([dest])
+            hows.append(how)
+            state.setdefault("items", {}).setdefault(item["id"], {"installed": time.strftime("%Y-%m-%d")})
+        base[0] += int(f.get("size") or 0)
+        if progress is not None:
+            progress(base[0], None)
+    summary = ", ".join("%d %s" % (hows.count(h), h) for h in ("downloaded", "seeded", "present") if hows.count(h))
+    return "ok", "%s (%s)" % (summary, human(item_size(item, key)))
+
+
+def packages_bytes(man: Dict[str, Any], kind: str, key: str, what: str = "download") -> int:
+    """Measured size of the Python or Node packages for a platform (manifest `packages`)."""
+    rec = (man.get("packages") or {}).get(kind) or {}
+    per = rec.get(key) or rec.get("linux-x64") or {}
+    return int(per.get(what) or 0)
 
 
 def install_estimate(tier: str = "core", extras: Sequence[str] = (), home: Optional[Path] = None,
@@ -513,14 +704,21 @@ def install_estimate(tier: str = "core", extras: Sequence[str] = (), home: Optio
     dl = sum(item_size(it, key) for it in todo)
     ff_have = (home / "bin" / plat.exe("ffmpeg")).is_file()
     if not ff_have:
-        cands = man.get("ffmpeg", {}).get(key) or []
+        cands = plat.pick_for_platform(man.get("ffmpeg", {}), key) or []
         if cands:
             dl += sum(int(f.get("size") or 0) for f in cands[0].get("files", []))
+    browser = browser_item(man)
+    if browser is not None and not system_browsers() and item_status(browser, home, key)[0] != "ok":
+        dl += item_size(browser, key)
+    if tier == "full":   # --full also takes the first-use parts that are not manifest items
+        ids = {it["id"] for it in man["items"]}
+        dl += sum(r["size"] for r in plan_rows(man, key, home) if r["tier"] == "first-use"
+                  and r["component"] not in ids and not r["component"].startswith("Chrome Headless Shell"))
     pk = 0
     if not plat.venv_python(home / "venv").exists():
-        pk += PACKAGES_BYTES["python"]
+        pk += packages_bytes(man, "python", key)
     if not (home / "node" / "node_modules" / "playwright").is_dir():
-        pk += PACKAGES_BYTES["node"]
+        pk += packages_bytes(man, "node", key)
     total = dl + pk
     mb = total / 1024.0 ** 2
     low = mb / 50.0 / 60.0 + (2 if pk else 0.2)
@@ -557,9 +755,11 @@ class Installer:
         prev = self.state.data.get("installed") or {}
         # Re-running setup (e.g. `--with X` later) keeps what is already installed:
         # the previous tier is the default and previous extras stay in the plan.
-        self.tier = args.tier or (prev.get("tier") if prev.get("tier") in TIER_ORDER else "core")
+        self.tier = "full" if getattr(args, "full", False) else (
+            args.tier or (prev.get("tier") if prev.get("tier") in TIER_ORDER else "core"))
         keep = [e for e in prev.get("extras", []) if e in self.man["extras"]]
-        self.extras = resolve_extras(self.man, self.tier, keep + list(args.with_))
+        auto = [e for e, ex in self.man["extras"].items() if ex.get("auto")] if getattr(args, "full", False) else []
+        self.extras = resolve_extras(self.man, self.tier, keep + list(args.with_) + auto)
         self.carried = set(keep) - set(args.with_)
         self.report = Report()
         seed_dirs = list(args.seed or []) + [d for d in os.environ.get("SHOWTIME_SEED_DIRS", "").split(os.pathsep) if d]
@@ -648,7 +848,7 @@ class Installer:
                     self.report.add("os", "warn", "%s: glibc 2.28+ is needed (Ubuntu 20.04+ / Debian 10+)" % libc)
             except (ValueError, OSError, AttributeError):
                 pass
-        if self.key not in self.man["ffmpeg"]:
+        if plat.pick_for_platform(self.man["ffmpeg"], self.key) is None:
             self.report.add("os", "warn", "platform %s has no prebuilt downloads; using system tools" % self.key)
         self.home.mkdir(parents=True, exist_ok=True)
         free = shutil.disk_usage(str(self.home)).free
@@ -664,12 +864,12 @@ class Installer:
             pass
 
     # --------------------------------------------------------------- ffmpeg
-    def _ff_check(self, ffmpeg: str) -> Tuple[bool, List[str], List[str], str]:
+    def _ff_check(self, ffmpeg: str, timeout: float = 30) -> Tuple[bool, List[str], List[str], str]:
         from st.ff import (REQUIRED_ENCODERS, REQUIRED_FILTERS, RECOMMENDED_FILTERS,
-                           RECOMMENDED_ENCODERS, _list_names, _version_of)
-        v = _version_of(ffmpeg)
+                           RECOMMENDED_ENCODERS, _list_names, _run_version)
+        v, why = _run_version(ffmpeg, timeout)
         if not v:
-            return False, ["(does not run)"], [], ""
+            return False, ["(does not run: %s)" % why], [], ""
         filters, encoders = set(_list_names(ffmpeg, "filters")), set(_list_names(ffmpeg, "encoders"))
         miss_req = [f for f in REQUIRED_FILTERS if f not in filters] + [e for e in REQUIRED_ENCODERS if e not in encoders]
         miss_rec = [f for f in RECOMMENDED_FILTERS if f not in filters] + [e for e in RECOMMENDED_ENCODERS if e not in encoders]
@@ -705,7 +905,7 @@ class Installer:
                     "missing: " + ", ".join((req + rec)[:6])))
             if mode == "system":
                 return "fail", "no capable system ffmpeg found (use --ffmpeg static)"
-        cands = self.man["ffmpeg"].get(self.key, [])
+        cands = ffmpeg_candidates(self.man, self.key)
         if not cands:
             return "warn", "no static ffmpeg for %s; install ffmpeg with libass/libx264 yourself" % self.key
         errors = []
@@ -731,9 +931,12 @@ class Installer:
                         target.chmod(0o755)
                 shutil.rmtree(str(self.home / "cache" / ("ffstage-" + cand["id"])), ignore_errors=True)
                 unquarantine([bindir / plat.exe("ffmpeg"), bindir / plat.exe("ffprobe")])
-                ok, req, rec, v = self._ff_check(str(ours))
+                # the first start of a freshly unpacked binary can wait on a virus scan
+                ok, req, rec, v = self._ff_check(str(ours), timeout=180)
                 if not ok:
                     errors.append("%s: missing %s" % (cand["id"], ", ".join(req)))
+                    if len(cands) > 1:
+                        say("  ffmpeg candidate %s not usable (%s); trying the next one" % (cand["id"], ", ".join(req)))
                     continue
                 for f in cand["files"]:
                     (dl / ("%s-%s" % (cand["id"], f["url"].rsplit("/", 1)[-1]))).unlink()
@@ -754,7 +957,7 @@ class Installer:
     # --------------------------------------------------------------- python
     def _req_hash(self, extra: Sequence[str]) -> str:
         h = hashlib.sha256((SETUP_DIR / "requirements.txt").read_bytes())
-        h.update(("|".join(sorted(extra)) + "|" + PY_VERSION).encode())
+        h.update(("|".join(sorted(extra)) + "|" + python_request(self.key)).encode())
         return h.hexdigest()[:16]
 
     def step_python(self) -> Tuple[str, str]:
@@ -768,11 +971,21 @@ class Installer:
         if self.vpy.exists():
             cp = run([str(self.vpy), "-c", "import sys; print('%d.%d' % sys.version_info[:2])"])
             pyv = cp.stdout.strip() if cp.returncode == 0 else None
-        if self.args.force or pyv != PY_VERSION:
+        why = "--force" if self.args.force else ("python %s" % pyv if pyv != PY_VERSION else "")
+        want_plat = VENV_PLATFORM.get(self.key)
+        if not why and want_plat:
+            cp = run([str(self.vpy), "-c", "import sysconfig; print(sysconfig.get_platform())"])
+            have = cp.stdout.strip()
+            if have != want_plat:
+                why = "%s Python, %s needed" % (have or "unknown", want_plat)
+        if why:
             if venv.exists():
-                say("  recreating venv (%s)" % ("--force" if self.args.force else "python %s" % pyv))
+                say("  recreating venv (%s)" % why)
                 rmtree(venv)
-            cp = run([uv, "venv", "--python", PY_VERSION, str(venv)], env=env, timeout=1800)
+            if want_plat:
+                say("  %s: using x64 Python %s, run by Windows' emulation (some packages have no arm64 wheels)"
+                    % (self.key, PY_VERSION))
+            cp = run([uv, "venv", "--python", python_request(self.key), str(venv)], env=env, timeout=1800)
             if cp.returncode != 0:
                 return "fail", "uv venv failed:\n" + tail(cp.stdout)
         pip_extras = []
@@ -865,64 +1078,53 @@ class Installer:
 
     # -------------------------------------------------------------- browser
     def step_browser(self) -> Tuple[str, str]:
-        browsers = plat.find_browsers(self.home / "browsers")
-        system = [b for b in browsers if b["source"] in ("system", "env")]
-        want_pw = "chromium" in self.extras or not system
-        if not want_pw:
+        """An installed Chrome / Edge / Chromium costs nothing; otherwise the pinned Chrome Headless
+        Shell (~100-120 MB). Full Chromium only for --with chromium, or --full without a system browser
+        (headed captures); otherwise a --headed run fetches it on first use."""
+        system = system_browsers()
+        want_full = "chromium" in self.extras or (self.tier == "full" and not system)
+        notes = []
+        if system and not want_full:
             self.state.data["browser"] = system[0]
-            return "ok", "%s: %s" % (system[0]["kind"], system[0]["path"])
-        node, _ = self.find_node()
-        cli = self.home / "node" / "node_modules" / "playwright" / "cli.js"
-        if not node or not cli.is_file():
-            return "fail", "Playwright is not installed (Node step failed), and no Chrome/Edge was found"
-        say("  installing Playwright Chromium into %s ..." % (self.home / "browsers"))
-        # --no-shell: showtime always drives the full browser in new-headless mode
-        # (channel "chromium"), the same headless path system Chrome uses.
-        cp = run([node, str(cli), "install", "--no-shell", "chromium"], env=self.env_common, timeout=3600)
-        if cp.returncode != 0:
-            return "fail", "playwright install chromium failed:\n" + tail(cp.stdout)
-        pw = plat.playwright_chromium(self.home / "browsers")
-        self.state.data["browser"] = {"kind": "playwright", "path": str(pw) if pw else None}
-        detail = "Playwright Chromium at %s" % pw
-        if plat.os_name() == "linux":
-            detail += " (if it fails to start: sudo \"%s\" \"%s\" install-deps chromium)" % (node, cli)
+            return "ok", "%s: %s (0 MB; if it cannot render, the headless shell is fetched on first use)" % (
+                system[0]["kind"], system[0]["path"])
+        shell = browser_item(self.man)
+        if not system and shell is not None:
+            st, detail = install_files(shell, self.home, self.key, self.seeds, self.state.data,
+                                       force=self.args.force, verify=self.args.verify)
+            if st == "skip":
+                notes.append("no pinned headless shell for %s" % self.key)
+                want_full = True
+            else:
+                exe = self.home / (item_files(shell, self.key) or [{}])[0].get("creates", "")
+                self.state.data["browser"] = {"kind": "headless-shell", "path": str(exe), "source": "showtime"}
+                notes.append("Chrome Headless Shell %s at %s (%s)" % (shell.get("version", ""), exe.parent, detail))
+        if want_full:
+            node, _ = self.find_node()
+            cli = self.home / "node" / "node_modules" / "playwright" / "cli.js"
+            if not node or not cli.is_file():
+                return "fail", "Playwright is not installed (Node step failed), and no Chrome/Edge was found"
+            say("  installing Playwright Chromium (full browser, for headed captures) into %s ..." % (self.home / "browsers"))
+            cp = run([node, str(cli), "install", "--no-shell", "chromium"], env=self.env_common, timeout=3600)
+            if cp.returncode != 0:
+                return "fail", "playwright install chromium failed:\n" + tail(cp.stdout)
+            pw = plat.playwright_chromium(self.home / "browsers")
+            if not notes:
+                self.state.data["browser"] = {"kind": "playwright", "path": str(pw) if pw else None}
+            notes.append("Playwright Chromium at %s" % pw)
         if system:
-            detail += "; system browser also available: %s" % system[0]["path"]
+            notes.append("system browser also available: %s" % system[0]["path"])
+        detail = "; ".join(notes)
+        if plat.os_name() == "linux" and not system:
+            node, _ = self.find_node()
+            detail += " (if it fails to start: sudo \"%s\" \"%s\" install-deps chromium)" % (
+                node or "node", self.home / "node" / "node_modules" / "playwright" / "cli.js")
         return "ok", detail
 
     # --------------------------------------------------------------- models
     def install_item(self, item: Dict[str, Any]) -> Tuple[str, str]:
-        files = item_files(item, self.key)
-        if files is None:
-            return "skip", "not available on %s" % self.key
-        status, _ = item_status(item, self.home, self.key, self.state.data, verify=self.args.verify)
-        if status == "ok" and not self.args.force:
-            return "ok", "present"
-        hows = []
-        for f in files:
-            name = f["url"].rsplit("/", 1)[-1]
-            if f.get("archive"):
-                arc = self.home / "cache" / "downloads" / ("%s-%s" % (item["id"], name))
-                how = fetch(f["url"], arc, f.get("sha256"), f.get("size"), self.seeds, name, verify=True)
-                dest = self.home / f["dest"]
-                extract(arc, f["archive"], dest, strip=int(f.get("strip", 0)), include=f.get("include"),
-                        executables=f.get("executables"))
-                if f.get("executables"):
-                    unquarantine(dest / e for e in f["executables"])
-                arc.unlink()
-                self.state.data["items"][item["id"]] = {"archive_sha256": f.get("sha256"),
-                                                         "installed": time.strftime("%Y-%m-%d")}
-                hows.append(how)
-            else:
-                dest = self.home / f["dest"]
-                how = fetch(f["url"], dest, f.get("sha256"), f.get("size"), self.seeds, name, verify=self.args.verify)
-                if f.get("executable") and os.name != "nt":
-                    dest.chmod(0o755)
-                    unquarantine([dest])
-                hows.append(how)
-                self.state.data["items"].setdefault(item["id"], {"installed": time.strftime("%Y-%m-%d")})
-        summary = ", ".join("%d %s" % (hows.count(h), h) for h in ("downloaded", "seeded", "present") if hows.count(h))
-        return "ok", "%s (%s)" % (summary, human(item_size(item, self.key)))
+        return install_files(item, self.home, self.key, self.seeds, self.state.data,
+                             force=self.args.force, verify=self.args.verify)
 
     # ------------------------------------------------------------ extras
     def step_musicgen(self) -> Tuple[str, str]:
@@ -935,7 +1137,7 @@ class Installer:
         vpy = plat.venv_python(venv)
         env = dict(self.env_common)
         if not vpy.exists():
-            cp = run([uv, "venv", "--python", PY_VERSION, str(venv)], env=env, timeout=1800)
+            cp = run([uv, "venv", "--python", python_request(self.key), str(venv)], env=env, timeout=1800)
             if cp.returncode != 0:
                 return "fail", "uv venv failed:\n" + tail(cp.stdout)
         if plat.os_name() == "linux":
@@ -977,6 +1179,28 @@ class Installer:
             else "no LaTeX: Text, shapes and graphs work; equations need it (showtime doctor prints the install line)"
         return "ok", "manim %s in the main venv; %s" % (ver, tex)
 
+    def step_audio_extra(self, name: str) -> Tuple[str, str]:
+        """Pre-fetch what is otherwise downloaded on first use: every produced-music catalog track
+        (music-catalog) or every extra sound-effect pack (sfx-packs), for offline machines."""
+        if not self.vpy.exists():
+            return "fail", "needs the main venv (run setup without --skip python first)"
+        if name == "music-catalog":
+            cmd = ["audio", "music", "fetch", "--all", "--json"] + sum((["--seed", d] for d in (self.args.seed or [])), [])
+        else:
+            cmd = ["audio", "packs", "fetch", "--all", "--json"]
+        env = dict(self.env_common, SHOWTIME_HOME=str(self.home))
+        cp = run([str(self.vpy), str(LIB_DIR / "st" / "launcher.py")] + cmd, env=env, timeout=6 * 3600)
+        try:
+            rep = json.loads((cp.stdout or "")[(cp.stdout or "").index("{"):])
+        except ValueError:
+            return "fail", "exit %d\n%s" % (cp.returncode, tail(cp.stdout, 8))
+        done = len(rep.get("fetched", rep.get("installed", [])))
+        have = len(rep.get("cached", rep.get("skipped", [])))
+        failed = rep.get("failed") or []
+        msg = "%d downloaded, %d already present%s" % (done, have, ", %d failed (first: %s)" % (
+            len(failed), failed[0].get("error", "")[:120]) if failed else "")
+        return ("warn" if failed else "ok"), msg
+
     def step_manimgl(self) -> Tuple[str, str]:
         uv = self.find_uv()
         if not uv:
@@ -984,7 +1208,7 @@ class Installer:
         venv = self.home / "venv-manimgl"
         vpy = plat.venv_python(venv)
         if not vpy.exists():
-            cp = run([uv, "venv", "--python", PY_VERSION, str(venv)], env=self.env_common, timeout=1800)
+            cp = run([uv, "venv", "--python", python_request(self.key), str(venv)], env=self.env_common, timeout=1800)
             if cp.returncode != 0:
                 return "fail", "uv venv failed:\n" + tail(cp.stdout)
         cp = run([uv, "pip", "install", "--python", str(vpy), "-r", str(SETUP_DIR / "requirements-manimgl.in")],
@@ -1008,14 +1232,119 @@ class Installer:
         return link_skill(force=self.args.force)
 
     # ------------------------------------------------------------------ run
+    # ----------------------------------------------------- first-use parts
+    def venv_lazy(self, names: Sequence[str]) -> Tuple[str, str]:
+        """Fetch runtime components that need the venv (Python packages, icons, audio packs)."""
+        if not self.vpy.exists():
+            return "fail", "needs the Python environment first: run `showtime setup`"
+        env = dict(self.env_common, PYTHONPATH=str(LIB_DIR), SHOWTIME_SKILL=str(SKILL_DIR))
+        if self.seeds.dirs:
+            env["SHOWTIME_SEED_DIRS"] = os.pathsep.join(str(d) for d in self.seeds.dirs)
+        cp = run([str(self.vpy), "-m", "st.lazy", "fetch"] + list(names), env=env, capture=False, timeout=6 * 3600)
+        return ("ok", "fetched %s" % ", ".join(names)) if cp.returncode == 0 else (
+            "fail", "fetching %s failed (exit %d); re-run to resume" % (", ".join(names), cp.returncode))
+
+    def step_imageio_fallback(self) -> Tuple[str, str]:
+        """Last-resort ffmpeg when neither the static build nor a system ffmpeg works."""
+        return self.venv_lazy(["imageio-ffmpeg"])
+
+    def install_full_chromium(self) -> Tuple[str, str]:
+        node, _ = self.find_node()
+        cli = self.home / "node" / "node_modules" / "playwright" / "cli.js"
+        if not node or not cli.is_file():
+            return "fail", "Playwright is not installed (run `showtime setup` first)"
+        size = ((self.man["extras"].get("chromium") or {}).get("download_bytes") or {}).get(self.key)
+        say("  installing Playwright Chromium (full browser%s) into %s ..." % (
+            ", %s" % human(size) if size else "", self.home / "browsers"))
+        cp = run([node, str(cli), "install", "--no-shell", "chromium"], env=self.env_common, timeout=3600)
+        if cp.returncode != 0:
+            return "fail", "playwright install chromium failed:\n" + tail(cp.stdout)
+        return "ok", "Playwright Chromium at %s" % plat.playwright_chromium(self.home / "browsers")
+
+    def fetch_one(self, name: str) -> Tuple[str, str]:
+        man = self.man
+        item = next((it for it in man["items"] if it["id"] == name), None)
+        if name in ("browser", "chromium-headless-shell"):
+            item = browser_item(man)
+        if item is not None:
+            return install_files(item, self.home, self.key, self.seeds, self.state.data,
+                                 force=self.args.force, verify=self.args.verify)
+        if name == "chromium":
+            return self.install_full_chromium()
+        if name in man["extras"]:
+            steps = {"musicgen": self.step_musicgen, "manim": self.step_manim, "manimgl": self.step_manimgl,
+                     "music-catalog": lambda: self.step_audio_extra("music-catalog"),
+                     "sfx-packs": lambda: self.step_audio_extra("sfx-packs")}
+            if name in steps:
+                st, detail = steps[name]()
+            else:
+                its = [it for it in man["items"] if it.get("extra") == name]
+                if not its:
+                    return "skip", "nothing to fetch for %s" % name
+                res = [install_files(it, self.home, self.key, self.seeds, self.state.data,
+                                     force=self.args.force, verify=self.args.verify) for it in its]
+                st = "fail" if any(r[0] == "fail" for r in res) else "ok"
+                detail = "; ".join(r[1] for r in res)
+            if st in ("ok", "warn"):
+                inst = self.state.data.setdefault("installed", {"tier": "core", "extras": [], "platform": self.key})
+                inst["extras"] = sorted(set(inst.get("extras", [])) | {name})
+            return st, detail
+        if name in (man.get("lazy_pip") or {}) or name in ("icons", "audio-library", "library") or name.startswith("library:"):
+            return self.venv_lazy([name])
+        raise SystemExit("setup: unknown component %r (see `showtime setup --plan`)" % name)
+
+    def run_fetch(self, names: Sequence[str]) -> None:
+        say("showtime setup --fetch %s  |  %s  |  home %s" % (",".join(names), self.key, self.home))
+        for n in names:
+            self.timed(n, lambda n=n: self.fetch_one(n))
+
+    def fetch_first_use(self) -> None:
+        """--full: everything the default install leaves for first use."""
+        self.timed("first-use components", lambda: self.venv_lazy(
+            [n for n, spec in (self.man.get("lazy_pip") or {}).items() if not spec.get("fallback_only")]
+            + ["icons", "audio-library"]))
+
+    def prune(self) -> Tuple[str, str]:
+        """Remove files a newer manifest replaced (listed in manifest "superseded"), once their replacement is here."""
+        gone, freed = [], 0
+        for sup in self.man.get("superseded", []):
+            p = self.home / sup["dest"]
+            by = next((it for it in self.man["items"] if it["id"] == sup.get("by")), None)
+            if not p.is_file() or by is None or item_status(by, self.home, self.key)[0] != "ok":
+                continue
+            env_model = os.environ.get("SHOWTIME_KOKORO_MODEL")
+            if env_model and os.path.abspath(env_model) == os.path.abspath(str(p)):
+                continue
+            freed += p.stat().st_size
+            p.unlink()
+            gone.append(sup["dest"])
+        return "ok", ("removed %s (%s freed)" % (", ".join(gone), human(freed))) if gone else "nothing to remove"
+
+    def superseded_note(self) -> None:
+        old = [self.home / s["dest"] for s in self.man.get("superseded", []) if (self.home / s["dest"]).is_file()]
+        if old:
+            say("  note: %d file(s) from an older version are no longer used (%s): `showtime setup --prune` removes them"
+                % (len(old), human(sum(p.stat().st_size for p in old))))
+
     def run(self) -> int:
         lock = acquire_lock(self.home)
         try:
+            if self.args.fetch or self.args.prune:
+                if self.args.fetch:
+                    self.run_fetch(self.args.fetch)
+                if self.args.prune:
+                    self.timed("prune", self.prune)
+                self.state.save()
+                return self.finish()
             self.preflight()
+            ffmpeg_ok = True
             if "ffmpeg" not in self.skip:
                 self.timed("ffmpeg", self.step_ffmpeg)
+                ffmpeg_ok = self.report.rows[-1]["status"] != "fail"
             if "python" not in self.skip:
                 self.timed("python", self.step_python)
+                if not ffmpeg_ok:
+                    self.timed("imageio-ffmpeg", self.step_imageio_fallback)
             if "node" not in self.skip:
                 self.timed("node", self.step_node)
             if "browser" not in self.skip:
@@ -1036,10 +1365,15 @@ class Installer:
                     self.timed("manim", self.step_manim)
                 elif e == "manimgl":
                     self.timed("manimgl", self.step_manimgl)
+                elif e in ("music-catalog", "sfx-packs"):
+                    self.timed(e, lambda e=e: self.step_audio_extra(e))
                 elif e == "imagegen":
                     self.report.add("imagegen", "skip", "not implemented yet (planned optional extra)")
+            if self.tier == "full" and "models" not in self.skip:
+                self.fetch_first_use()
             if self.args.link:
                 self.timed("skill link", self.step_link)
+            self.superseded_note()
             prev = self.state.data.get("installed", {})
             tiers = [prev.get("tier"), self.tier]
             best = max((t for t in tiers if t in TIER_ORDER), key=TIER_ORDER.index)
@@ -1050,9 +1384,16 @@ class Installer:
                 "platform": self.key,
             }
             self.state.save()
+            self.timed("showtime command", self.step_shim)
         finally:
             release_lock(lock)
         return self.finish()
+
+    def step_shim(self) -> Tuple[str, str]:
+        """The stable <home>/bin/showtime (+ .cmd/.ps1 on Windows) that runs this skill (st/shim.py)."""
+        from st import shim
+        code, detail = shim.install(self.home, SKILL_DIR)
+        return ("ok" if code == "ok" else "warn"), detail
 
     def finish(self) -> int:
         rows = self.report.rows
@@ -1060,6 +1401,10 @@ class Installer:
             print(json.dumps({"ok": not self.report.failed, "home": str(self.home), "platform": self.key,
                               "tier": self.tier, "extras": self.extras, "results": rows,
                               "state": self.state.data}, indent=2))
+        elif self.args.fetch or self.args.prune:
+            # a first-use fetch (often inside another command): the step lines above say it all
+            if self.report.failed:
+                say("fetch failed: fix the issue above and run it again (downloads resume where they stopped)")
         else:
             say("")
             say("showtime setup summary (%s, tier %s)" % (self.key, self.tier))
@@ -1074,11 +1419,19 @@ class Installer:
                 say("\nSome steps failed. Fix the issues above and re-run setup (it resumes where it stopped).")
             else:
                 say("\nDone. Check everything with: showtime doctor")
-                say("Next: ask Claude for a video, or try `showtime new dom my-video` then `showtime preview my-video`.")
+                try:
+                    from st import shim
+                    for line in shim.path_hint(self.home):
+                        say(line)
+                except Exception:  # noqa: BLE001 - advice only
+                    pass
+                say("Next: ask your coding agent for a video, or try `showtime new dom my-video` then `showtime preview my-video`.")
                 in_plugin = "/plugins/" in str(SKILL_DIR).replace("\\", "/") or os.environ.get("CLAUDE_PLUGIN_ROOT")
                 if not self.args.link and not skill_linked() and not in_plugin:
-                    say("Claude Code: install the showtime plugin (see README). Developers can link this checkout "
-                        "instead: showtime setup --link")
+                    say("To use showtime in your coding agent, install it there: the steps for Claude Code, Codex, Cursor, "
+                        "Devin, OpenCode and more are at "
+                        "https://github.com/FavioVazquez/showtime/blob/main/docs/agents.md . Developers can link this "
+                        "checkout for Claude Code instead: showtime setup --link")
         return 1 if self.report.failed else 0
 
 
@@ -1213,7 +1566,7 @@ def release_lock(lock: Optional[Path]) -> None:
 # Hints
 # ==========================================================================
 
-RESTART_HINT = ("If you just installed it, restart Claude Code (or open a new terminal) so it sees the new PATH; "
+RESTART_HINT = ("If you just installed it, restart your coding agent (or open a new terminal) so it sees the new PATH; "
                 "showtime also looks in the installers' default folders.")
 
 
@@ -1252,7 +1605,8 @@ def list_plan(man: Dict[str, Any], home: Path, as_json: bool) -> int:
         its = [i for i in man["items"] if i.get("extra") == name]
         st = [item_status(i, home, key, state)[0] for i in its]
         out["extras"][name] = {"description": ex["description"], "download_bytes": sum(item_size(i, key) for i in its),
-                               "installed": bool(st) and all(s == "ok" for s in st), "lazy": bool(ex.get("lazy"))}
+                               "installed": bool(st) and all(s == "ok" for s in st), "lazy": bool(ex.get("lazy")),
+                               "auto": bool(ex.get("auto"))}
     if as_json:
         print(json.dumps(out, indent=2))
         return 0
@@ -1262,9 +1616,175 @@ def list_plan(man: Dict[str, Any], home: Path, as_json: bool) -> int:
         print("  %-8s %-9s %s" % (t, human(d["download_bytes"]), d["description"]))
     print("\nextras (--with a,b):")
     for n, d in out["extras"].items():
-        size = human(d["download_bytes"]) if d["download_bytes"] else ("auto" if d.get("lazy") else "")
+        size = human(d["download_bytes"]) if d["download_bytes"] else ("auto" if d.get("lazy") or d.get("auto") else "")
         print("  %-15s %-9s %s%s" % (n, size, d["description"], "  [installed]" if d["installed"] else ""))
-    print("\n(sizes are downloads; the Python venv adds about 1.5 GB and Node packages about 250 MB)")
+    print("\n(sizes are downloads; `showtime setup --plan` shows every component, its URL, sha256 and when it is fetched)")
+    return 0
+
+
+# ==========================================================================
+# Plan: every component, its tier, URL, size, sha256 and when it is fetched
+# ==========================================================================
+
+PLATFORMS = ["mac-arm64", "mac-x64", "win-x64", "linux-x64", "linux-arm64"]
+
+
+def _mb(n: Optional[int]) -> str:
+    return "-" if not n else ("%.1f MB" % (n / 1e6))
+
+
+def plan_rows(man: Dict[str, Any], key: str, home: Optional[Path] = None,
+              system_browser: Optional[bool] = None) -> List[Dict[str, Any]]:
+    """One row per component for platform `key`: {component, tier, url, size, sha256, when, files}.
+
+    tier: default (the first `showtime setup`), first-use (fetched when a feature needs it, or
+    by --full), extra (`--with NAME`), full (only with --full / --tier full). `files` lists every
+    pinned file ({url, sha256, size}) for pre-seeding offline machines."""
+    rows: List[Dict[str, Any]] = []
+    here = key == plat.platform_key()
+    if system_browser is None:
+        system_browser = bool(system_browsers()) if here else False
+
+    def add(component: str, tier: str, when: str, files: List[Dict[str, Any]], url: str = "", size: int = 0,
+            sha: str = "", note: str = "") -> None:
+        if files and not url:
+            url = files[0]["url"] + ((" (+%d more)" % (len(files) - 1)) if len(files) > 1 else "")
+        if files and not size:
+            size = sum(int(f.get("size") or 0) for f in files)
+        if files and not sha:
+            sha = files[0].get("sha256") or ""
+        row = {"component": component, "tier": tier, "url": url, "size": int(size or 0), "sha256": sha, "when": when,
+               "files": [{"url": f["url"], "sha256": f.get("sha256"), "size": f.get("size")} for f in files]}
+        if note:
+            row["note"] = note
+        rows.append(row)
+
+    ff = (man.get("ffmpeg") or {}).get(key) or []
+    if ff:
+        add("ffmpeg + ffprobe (%s)" % ff[0]["id"], "default", "setup (skipped when a capable system ffmpeg is found)",
+            ff[0]["files"], note=ff[0].get("notes", ""))
+    pk = man.get("packages") or {}
+    py = (pk.get("python") or {}).get(key) or {}
+    add("Python packages", "default", "setup", [], url="PyPI via uv (setup/requirements.txt, exact versions)",
+        size=int(py.get("download") or 0), sha="versions pinned in requirements.txt",
+        note="%s on disk" % _mb(py.get("disk")) if py.get("disk") else "")
+    if py.get("python_download"):
+        add("Python 3.12 (uv-managed)", "default", "setup, only if no Python 3.12 is installed", [],
+            url="https://github.com/astral-sh/python-build-standalone (via uv)", size=int(py["python_download"]),
+            sha="checked by uv")
+    nd = (pk.get("node") or {}).get(key) or {}
+    add("Node packages", "default", "setup", [], url="registry.npmjs.org (setup/package-lock.json)",
+        size=int(nd.get("download") or 0), sha="sha512 per package in package-lock.json",
+        note="%s on disk" % _mb(nd.get("disk")) if nd.get("disk") else "")
+    shell = browser_item(man)
+    if shell is not None and item_files(shell, key):
+        add("Chrome Headless Shell %s" % shell.get("version", ""), "default" if not system_browser else "first-use",
+            "setup when no Chrome/Edge/Chromium is installed%s" % (
+                " (this machine has one: fetched only if it cannot render)" if system_browser else ""),
+            item_files(shell, key) or [])
+    for it in man["items"]:
+        if it.get("group") == "browser":
+            continue
+        files = item_files(it, key)
+        if files is None:
+            continue
+        if it.get("tier") in ("minimal", "core"):
+            tier, when = "default", "setup"
+        elif it.get("tier") == "lazy":
+            tier, when = "first-use", it.get("when", "first use")
+        elif it.get("extra") in man.get("full_extras", []):
+            tier, when = "full", "--full, or `showtime setup --with %s`" % it["extra"]
+        else:
+            tier, when = "extra", "`showtime setup --with %s`" % it.get("extra")
+        add(it["id"], tier, when, files)
+    for cid, spec in (man.get("lazy_pip") or {}).items():
+        b = spec.get("download_bytes") or {}
+        add(cid, "fallback" if spec.get("fallback_only") else "first-use", spec.get("when", "first use"), [],
+            url="PyPI via uv (setup/%s)" % spec["requirements"], size=int(b.get(key) or b.get("linux-x64") or 0),
+            sha="versions pinned in setup/%s" % spec["requirements"])
+    for name, ex in man["extras"].items():
+        if ex.get("auto"):
+            add(name, "first-use", ex.get("when", "first use"), [], url="PyPI via uv (setup/requirements-%s.in)" % name,
+                size=int(ex.get("approx_bytes") or 0), sha="resolved by uv", note="size approximate")
+    ch = man["extras"].get("chromium") or {}
+    if ch.get("download_bytes"):
+        add("chromium (full)", "first-use" if not system_browser else "extra", ch.get("when", ""), [],
+            url=str(ch.get("url", "")).replace("{platform}", {"linux-x64": "linux64", "win-x64": "win64"}.get(key, key)),
+            size=int((ch["download_bytes"] or {}).get(key) or 0), sha="checked by Playwright")
+    packs_file = SKILL_DIR / "lib" / "st" / "audio" / "library_manifest.json"
+    try:
+        lib = json.loads(packs_file.read_text(encoding="utf-8"))
+        from st.audio import libparts as _parts  # stdlib only
+        for name, desc in _parts.PARTS.items():
+            srcs = [x for x in lib["sources"] if _parts.part_of(x) == name]
+            files = [{"url": x["url"], "sha256": x.get("sha256"), "size": x.get("bytes")} for x in srcs]
+            when = ("first use of the audio library" if name == "starter" else
+                    "`showtime audio lib fetch --tier extended`" if name == "extended" else
+                    "a search that needs it (or `showtime audio lib fetch --part %s`)" % name)
+            add("library part %s" % name, "first-use" if name != "extended" else "extra", when, files,
+                url="%d pinned files (lib/st/audio/library_manifest.json)" % len(files),
+                sha="sha256 per file" if name != "extended" else "sha256 recorded on first download")
+    except Exception as e:  # noqa: BLE001 - the plan never fails on the library
+        say("  (audio library parts not listed: %s)" % e)
+    from st import lazy as _lazy
+    for name, ex in man["extras"].items():
+        if ex.get("first_use"):
+            files = _lazy.audio_extra_files(name)
+            add(name, "first-use", "%s; all now: `showtime setup --fetch %s` (or --full)" % (ex.get("when", "first use"), name),
+                files, url="%d pinned files (%s)" % (len(files), {"music-catalog": "lib/st/audio/music_catalog.json",
+                                                                 "sfx-packs": "lib/st/audio/sfx_packs.json"}.get(name, name)),
+                sha="sha256 per file")
+    icons = man.get("icon_packs") or []
+    if icons:
+        add("icons", "first-use", "per icon on first use (a few KB each, pinned versions on jsDelivr); "
+            "`--fetch icons` unpacks all sets for offline use", icons,
+            url="cdn.jsdelivr.net/npm/<set>@<version>/<icon>.svg, or %d npm tarballs" % len(icons))
+    return rows
+
+
+def plan_totals(rows: List[Dict[str, Any]]) -> Dict[str, int]:
+    """Bytes per tier; "full" = what `setup --full` downloads (default + first-use + full-tier extras)."""
+    t: Dict[str, int] = {}
+    for r in rows:
+        t[r["tier"]] = t.get(r["tier"], 0) + r["size"]
+    t["full"] = sum(r["size"] for r in rows if r["tier"] in ("default", "first-use", "full")
+                    and not r["component"].startswith("Chrome Headless Shell")) + sum(
+        r["size"] for r in rows if r["component"].startswith("Chrome Headless Shell") and r["tier"] == "default")
+    return t
+
+
+def print_plan(man: Dict[str, Any], key: str, as_json: bool, urls: bool) -> int:
+    rows = plan_rows(man, key)
+    if urls:
+        seen = set()
+        for r in rows:
+            for f in r["files"]:
+                if f["url"] in seen:
+                    continue
+                seen.add(f["url"])
+                print("%s  %12s  %s" % (f.get("sha256") or "-" * 64, f.get("size") or "?", f["url"]))
+        return 0
+    tot = plan_totals(rows)
+    if as_json:
+        print(json.dumps({"platform": key, "rows": rows, "totals": tot}, indent=2))
+        return 0
+    print("showtime setup --plan  (platform %s; sizes are downloads, MB = 1,000,000 bytes)\n" % key)
+    w = max(len(r["component"]) for r in rows)
+    print("%-*s  %-9s  %9s  %-16s  %s" % (w, "component", "tier", "size", "sha256", "when / from"))
+    for r in rows:
+        print("%-*s  %-9s  %9s  %-16s  %s" % (w, r["component"], r["tier"], _mb(r["size"]),
+                                            (r["sha256"][:16] if re.match(r"^[0-9a-f]{64}$", r["sha256"] or "") else
+                                             (r["sha256"] or "")[:16]), r["when"]))
+        print("%-*s  %s" % (w, "", r["url"]))
+    shell = next((r for r in rows if r["component"].startswith("Chrome Headless Shell")), None)
+    sb = shell["size"] if shell else 0
+    with_browser = tot.get("default", 0) - (sb if shell and shell["tier"] == "default" else 0)
+    print("\ndefault install: %s with a Chrome/Edge/Chromium on the machine, %s without one (headless shell)"
+          % (_mb(with_browser), _mb(with_browser + sb)))
+    print("fetched on first use, only when a feature needs it: up to %s   everything now (--full): %s"
+          % (_mb(tot.get("first-use")), _mb(tot.get("full"))))
+    print("offline machines: `showtime setup --plan --urls` lists every pinned file (sha256, bytes, URL); download "
+          "them anywhere into one folder, then `showtime setup --full --seed FOLDER`")
     return 0
 
 
@@ -1277,6 +1797,9 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
                "  showtime setup --list                 # tiers, extras, sizes\n"
                "  showtime setup --with asr-turbo,diarize\n"
                "  showtime setup --tier minimal         # smallest working install (CI)\n"
+               "  showtime setup --plan                 # every download: tier, URL, size, sha256, when\n"
+               "  showtime setup --full                 # everything now, nothing fetched later (offline use)\n"
+               "  showtime setup --fetch whisper-small.en,whisper-engine   # one first-use component now\n"
                "  showtime setup --estimate             # size and time, installs nothing\n"
                "  showtime setup --link                 # dev only: personal skill link to this checkout")
     ap.add_argument("--tier", choices=TIER_ORDER, default=None,
@@ -1284,10 +1807,21 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     ap.add_argument("--with", dest="with_", default="", metavar="EXTRAS",
                     help="comma-separated extras, e.g. asr-turbo,parakeet,diarize,events,supertonic (see --list)")
     ap.add_argument("--list", action="store_true", help="show tiers, extras and sizes, then exit")
+    ap.add_argument("--plan", action="store_true",
+                    help="print every component: tier, URL, size, sha256 and when it is fetched, then exit")
+    ap.add_argument("--platform", choices=PLATFORMS, help="with --plan: show another platform's downloads")
+    ap.add_argument("--urls", action="store_true", help="with --plan: only the pinned files (sha256, bytes, URL)")
+    ap.add_argument("--full", action="store_true",
+                    help="install everything now, including what is otherwise fetched on first use "
+                         "(for offline machines; add --seed DIR to reuse downloaded files)")
+    ap.add_argument("--fetch", default="", metavar="NAMES",
+                    help="fetch only these first-use components now, e.g. whisper-small.en,whisper-engine,icons "
+                         "(names from --plan)")
+    ap.add_argument("--prune", action="store_true", help="remove files from older versions that nothing uses any more")
     ap.add_argument("--estimate", action="store_true", help="print download size and time for this plan, then exit")
     ap.add_argument("--link", action="store_true",
                     help="development only: link ~/.claude/skills/showtime to this checkout (junction or copy on "
-                         "Windows); the supported install is the Claude Code plugin")
+                         "Windows); to use showtime in an agent, install it there (https://github.com/FavioVazquez/showtime/blob/main/docs/agents.md)")
     ap.add_argument("--ffmpeg", choices=["auto", "static", "system"], default="auto",
                     help="auto: keep ours or reuse a capable system ffmpeg, else download (default)")
     ap.add_argument("--skip", action="append", choices=["ffmpeg", "python", "node", "browser", "models"],
@@ -1300,6 +1834,9 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     ap.add_argument("--json", action="store_true", help="print the final summary as JSON on stdout")
     a = ap.parse_args(argv)
     a.with_ = [x.strip() for x in a.with_.split(",") if x.strip()]
+    a.fetch = [x.strip() for x in a.fetch.split(",") if x.strip()]
+    if a.full and a.tier and a.tier != "full":
+        ap.error("--full and --tier %s disagree" % a.tier)
     return a
 
 
@@ -1309,10 +1846,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     home = Path(os.path.expanduser(args.home or os.environ.get("SHOWTIME_HOME") or "~/.showtime"))
     if args.list:
         return list_plan(man, home, args.json)
+    if args.plan:
+        return print_plan(man, args.platform or plat.platform_key(), args.json, args.urls)
     if args.estimate:
         try:
             prev = (State(home).data.get("installed") or {})
-            tier = args.tier or prev.get("tier") or "core"
+            tier = "full" if args.full else (args.tier or prev.get("tier") or "core")
             est = install_estimate(tier, resolve_extras(man, tier, list(prev.get("extras", [])) + args.with_), home, man)
         except SystemExit as e:
             say(str(e))

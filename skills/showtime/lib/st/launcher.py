@@ -5,6 +5,9 @@ whatever Python they find. It prepares the environment and routes:
 
   showtime setup ...        -> setup/setup.py (works before anything is installed)
   showtime doctor ...       -> st.doctor (stdlib; works before the venv exists)
+  showtime mcp              -> node mcp/server.mjs (the MCP server on stdio)
+  showtime status <run> ... -> st.runs (a background run; stdlib)
+  showtime <cmd> ... --background -> st.runs.start: a detached run, its id printed at once
   showtime <name> ...       -> node scripts/<name>.mjs ...   if that file exists
   showtime <name> ...       -> <venv python> -m st.cli <name> ...   otherwise
 
@@ -15,6 +18,10 @@ Environment exported to every child process:
   NODE_PATH, SUPERTONIC_CACHE_DIR, U2NET_HOME, PYTHONUTF8=1, and the saved plugin
   settings (SHOWTIME_VOICE, SHOWTIME_LANG, SHOWTIME_OPEN_BROWSER, SHOWTIME_MAX_WORKERS,
   SHOWTIME_THREADS, SHOWTIME_SOUND) unless those are already set; see settings_file().
+
+Every run also keeps <home>/skill-path current for the stable <home>/bin/showtime command (st.shim),
+and, when stderr is not a terminal, prints a short "still running" line every 45 s while a long command
+works (st.launcher._heartbeat): some agent hosts stop a command that stays silent for a few minutes.
 """
 import os
 import sys
@@ -41,9 +48,10 @@ BUILTINS = {
     "setup": "Install or update everything showtime needs (~/.showtime)",
     "doctor": "Check the installation: PASS/WARN/FAIL with a one-line fix each",
     "version": "Print the showtime version (--json for details)",
+    "mcp": "Run showtime's MCP server on stdio (for agent configs: <home>/bin/showtime mcp)",
     "help": "Show this help, or `showtime help <command>`",
 }
-STDLIB_CLI = ("paths", "new", "retime", "data")   # stdlib-only commands that also run without the venv
+STDLIB_CLI = ("paths", "new", "retime", "data", "install")   # stdlib-only commands that also run without the venv
 
 # Top-level help: groups in the order a video gets made. A command a module
 # adds later shows up under "more" until it is listed here. Examples are only
@@ -93,10 +101,12 @@ GROUPS = [
      ["showtime deliver exports final.mp4 --targets youtube,reels,square",
       "showtime deliver poster final.mp4 --bake"]),
     ("setup", "Install, check and locate things",
-     ["setup", "doctor", "report", "paths", "version", "help"],
+     ["setup", "doctor", "install", "report", "paths", "version", "mcp", "help"],
      ["showtime setup                 # core install, once",
       "showtime doctor",
-      "showtime setup --with asr-turbo"]),
+      "showtime render my-launch --background   # long work in hosts with short command timeouts",
+      "showtime setup --with asr-turbo",
+      "showtime install --agent codex  # skill, crew and MCP config for another agent"]),
 ]
 INSTALL_DOC = "https://github.com/faviovazquez/showtime#install"
 
@@ -151,14 +161,162 @@ def settings_env(settings: dict) -> dict:
     return out
 
 
-def showtime_home() -> Path:
+def _unset(v) -> bool:
+    """An empty value, or a placeholder a host left unexpanded (`${user_config.home}`)."""
+    return not isinstance(v, str) or not v.strip() or "${" in v
+
+
+def home_folders() -> list:
+    """Every folder that counts as the user's home folder here, resolved: the one Python's expanduser
+    uses (USERPROFILE on Windows, HOME elsewhere), USERPROFILE, HOME, HOMEDRIVE+HOMEPATH, the account's
+    own (the password database on POSIX; <SystemDrive>\\Users\\<USERNAME> on Windows). They differ when
+    one variable is overridden (a test, a sandbox with its own HOME), and the project search must stop
+    at each of them: a home folder's .showtime is a default home, never a project's."""
+    env = os.environ
+    cands = [plat.user_home()]
+    for var in ("USERPROFILE", "HOME"):
+        if env.get(var):
+            cands.append(Path(env[var]))
+    if env.get("HOMEDRIVE") and env.get("HOMEPATH"):
+        cands.append(Path(env["HOMEDRIVE"] + env["HOMEPATH"]))
+    if os.name == "nt":
+        prof = _windows_profile()
+        if prof:
+            cands.append(Path(prof))
+        if env.get("USERNAME"):
+            cands.append(Path((env.get("SystemDrive") or "C:") + "\\") / "Users" / env["USERNAME"])
+    else:
+        try:
+            import pwd
+            cands.append(Path(pwd.getpwuid(os.getuid()).pw_dir))
+        except (ImportError, KeyError, OSError):
+            pass
+    out = []
+    for c in cands:
+        try:
+            r = c.resolve()
+        except OSError:
+            continue
+        if r not in out:
+            out.append(r)
+    return out
+
+
+def _windows_profile():
+    """The account's real profile folder (FOLDERID_Profile), whatever USERPROFILE says; None elsewhere."""
+    try:
+        import ctypes
+        import uuid
+        from ctypes import wintypes
+
+        class _GUID(ctypes.Structure):
+            _fields_ = [("Data1", wintypes.DWORD), ("Data2", wintypes.WORD), ("Data3", wintypes.WORD),
+                        ("Data4", ctypes.c_ubyte * 8)]
+        guid = _GUID()
+        ctypes.memmove(ctypes.byref(guid), uuid.UUID("5E6C858F-0E22-4760-9AFE-EA3317B67173").bytes_le, 16)
+        out = ctypes.c_wchar_p()
+        if ctypes.windll.shell32.SHGetKnownFolderPath(ctypes.byref(guid), 0, None, ctypes.byref(out)) != 0:  # type: ignore[attr-defined]
+            return None
+        try:
+            return out.value
+        finally:
+            ctypes.windll.ole32.CoTaskMemFree(out)  # type: ignore[attr-defined]
+    except Exception:  # noqa: BLE001 - not Windows, or no shell32
+        return None
+
+
+def workspace_home(start=None, homes=None):
+    """A showtime folder inside the current project: `.showtime` in this folder or a parent (below the
+    user's home folder) that setup has used (it holds skill-path or state.json). Made by
+    `SHOWTIME_HOME=.showtime showtime setup` where a sandbox allows writes only inside the workspace;
+    from then on every showtime command run in that project uses it without any variable.
+    The search stops at any home folder (home_folders): their .showtime is the default home."""
+    try:
+        d = Path(start or os.getcwd()).resolve()
+        tops = list(homes) if homes is not None else home_folders()
+        tops = [Path(t).resolve() for t in tops]
+    except OSError:
+        return None
+    for _ in range(64):
+        if d in tops:
+            return None   # ~/.showtime is the default home anyway
+        cand = d / ".showtime"
+        if (cand / "skill-path").is_file() or (cand / "state.json").is_file():
+            return cand
+        if d.parent == d:
+            return None
+        d = d.parent
+    return None
+
+
+def home_and_source():
+    """(home, how it was chosen): SHOWTIME_HOME, else a project `.showtime` (workspace_home), else the
+    plugin's `home` setting, else ~/.showtime. `showtime version --json` prints both."""
     env = os.environ.get("SHOWTIME_HOME")
+    if not _unset(env):
+        return Path(os.path.expanduser(env.strip())).absolute(), "SHOWTIME_HOME"
     if env:
-        return Path(os.path.expanduser(env))
+        note = "SHOWTIME_HOME=%r ignored (unexpanded); " % env
+    else:
+        note = ""
+    ws = workspace_home()
+    if ws is not None:
+        return ws, note + "project folder .showtime"
     configured = load_settings().get("home")
-    if isinstance(configured, str) and configured.strip():
-        return Path(os.path.expanduser(configured.strip()))
-    return plat.user_home() / ".showtime"
+    if not _unset(configured):
+        return Path(os.path.expanduser(configured.strip())).absolute(), note + "plugin setting home (%s)" % settings_file()
+    return plat.user_home() / ".showtime", note + "default: the user's home folder (%s)" % plat.user_home()
+
+
+_HOME_SOURCE = ""   # how main() chose the home (before it exports SHOWTIME_HOME to its children)
+
+
+def showtime_home() -> Path:
+    """SHOWTIME_HOME, else a workspace `.showtime` (workspace_home), else the plugin's `home` setting,
+    else ~/.showtime. Absolute: a relative SHOWTIME_HOME (`.showtime`) is resolved once, here, so every
+    child process sees the same folder whatever its working directory."""
+    return home_and_source()[0]
+
+
+def _writable(p: Path) -> bool:
+    """Can a file really be created in p, else in its nearest existing parent? A real write: sandboxes
+    (Seatbelt, Landlock) refuse writes that the permission bits, and so os.access, allow."""
+    p = Path(p)
+    while not p.is_dir():
+        if p.parent == p or p.exists():
+            return False
+        p = p.parent
+    probe = p / (".showtime-write-test-%d" % os.getpid())
+    try:
+        with open(str(probe), "w") as fh:
+            fh.write("")
+        os.remove(str(probe))
+        return True
+    except OSError:
+        return False
+
+
+def cache_redirects(home: Path, env: dict) -> dict:
+    """Tool caches that live outside the showtime home (uv, npm) and cannot be written here (a sandbox
+    that allows writes only inside the workspace, where SHOWTIME_HOME then points): move them into
+    <home>/cache. Only when the default location is not writable and the variable is unset, so a normal
+    machine keeps sharing the usual caches."""
+    out = {}
+    h = plat.user_home()
+    if plat.IS_WINDOWS:
+        local = Path(env.get("LOCALAPPDATA") or (h / "AppData" / "Local"))
+        uv_cache, uv_py = local / "uv" / "cache", Path(env.get("APPDATA") or h) / "uv" / "python"
+        npm_cache = local / "npm-cache"
+    else:
+        xdg_cache = Path(env.get("XDG_CACHE_HOME") or (h / ".cache"))
+        xdg_data = Path(env.get("XDG_DATA_HOME") or (h / ".local" / "share"))
+        uv_cache, uv_py, npm_cache = xdg_cache / "uv", xdg_data / "uv" / "python", h / ".npm"
+    for var, default, target in (("UV_CACHE_DIR", uv_cache, home / "cache" / "uv"),
+                                 ("UV_PYTHON_INSTALL_DIR", uv_py, home / "python"),
+                                 ("npm_config_cache", npm_cache, home / "cache" / "npm")):
+        if not env.get(var) and not _writable(default) and _writable(home):
+            out[var] = str(target)
+    return out
 
 
 def build_env(home: Path) -> dict:
@@ -169,6 +327,7 @@ def build_env(home: Path) -> dict:
     if vpy.exists():
         path_parts.append(str(plat.venv_bin(venv)))
     old_path = env.get("PATH", "")
+    env.setdefault("SHOWTIME_USER_PATH", old_path)   # PATH as the user has it (st.shim.on_path)
     tail = []
     # uv / Node.js installed after this app started are not on its PATH yet: use their default folders
     for tool in ("node", "uv"):
@@ -177,6 +336,8 @@ def build_env(home: Path) -> dict:
     env["PATH"] = os.pathsep.join(path_parts + ([old_path] if old_path else []) + tail)
     env["SHOWTIME_HOME"] = str(home)
     env["SHOWTIME_SKILL"] = str(SKILL_DIR)
+    for k in [k for k, v in env.items() if k.startswith("SHOWTIME_") and "${" in v]:
+        del env[k]   # a host's unexpanded placeholder is no value
     for var, val in settings_env(load_settings()).items():
         if not env.get(var):
             env[var] = val
@@ -189,7 +350,17 @@ def build_env(home: Path) -> dict:
     env["NODE_PATH"] = str(nm) + ((os.pathsep + env["NODE_PATH"]) if env.get("NODE_PATH") else "")
     pp = env.get("PYTHONPATH")
     env["PYTHONPATH"] = str(LIB_DIR) + ((os.pathsep + pp) if pp else "")
-    env["HF_HOME"] = str(home / "models" / "hf")
+    # a Hugging Face cache the user already has is reused read-only for pinned model files (setup.hf_cache_find)
+    own_hf = str(home / "models" / "hf")
+    if env.get("HF_HOME") and env["HF_HOME"] != own_hf and not env.get("SHOWTIME_USER_HF_HOME"):
+        env["SHOWTIME_USER_HF_HOME"] = env["HF_HOME"]
+    if env.get("HF_HUB_CACHE") and not env.get("SHOWTIME_USER_HF_HUB_CACHE"):
+        env["SHOWTIME_USER_HF_HUB_CACHE"] = env["HF_HUB_CACHE"]
+    env["HF_HOME"] = own_hf
+    # one ffmpeg: anything using imageio-ffmpeg runs showtime's build instead of a second bundled copy
+    ours = home / "bin" / plat.exe("ffmpeg")
+    if ours.is_file():
+        env.setdefault("IMAGEIO_FFMPEG_EXE", str(ours))
     env.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
     env.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
     env.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(home / "browsers"))
@@ -304,11 +475,11 @@ def _write(text: str) -> None:
 def print_help(home: Path, verbose: bool = False) -> None:
     w = _write
     cmds = all_commands()
-    head = _brand_header("showtime %s" % __version__, "make videos on your own machine, with Claude as the director")
+    head = _brand_header("showtime %s" % __version__, "make videos on your own machine, with your coding agent as the director")
     if head:
         w(head + "\n\n")
     else:
-        w("%s %s: make videos on your own machine, with Claude as the director\n\n"
+        w("%s %s: make videos on your own machine, with your coding agent as the director\n\n"
           % (_paint("showtime", "bold"), __version__))
     w("usage: showtime <command> [args...]      showtime <command> --help   (details and examples)\n")
     w("       --debug  full tracebacks     --json  machine output (where offered)     NO_COLOR=1  plain text\n\n")
@@ -374,6 +545,8 @@ def first_run_message(cmd: str, home: Path, what: str = "the showtime environmen
 
 def print_version(as_json: bool, home: Path) -> int:
     info = {"version": __version__, "skill": str(SKILL_DIR), "home": str(home),
+            "home_source": _HOME_SOURCE or home_and_source()[1],
+            "home_folders": [str(p) for p in home_folders()],
             "platform": plat.platform_key(), "python": sys.version.split()[0],
             "installed": plat.venv_python(home / "venv").exists(),
             "settings": {"file": str(settings_file()), "saved": load_settings(),
@@ -478,7 +651,7 @@ def _base_python() -> str:
     return sys.executable
 
 
-RESTART_HINT = "if you just installed it, restart Claude Code (or open a new terminal) so it sees the new PATH"
+RESTART_HINT = "if you just installed it, restart your coding agent (or open a new terminal) so it sees the new PATH"
 
 
 def _node_hint() -> str:
@@ -540,11 +713,219 @@ def utf8_stdio(streams=None) -> None:
             pass
 
 
+# --------------------------------------------------------------------------
+# Background runs, the heartbeat, the stable shim
+# --------------------------------------------------------------------------
+
+NO_BACKGROUND = ("help", "version", "status", "mcp", "-h", "--help", "-V", "--version")
+# Commands that finish in seconds, print their own progress (doctor), or serve until stopped: no heartbeat.
+QUIET_COMMANDS = {"help", "version", "paths", "install", "status", "new", "retime", "data", "job", "clean", "brand", "report",
+                  "doctor", "mcp", "server", "preview", "studio"}
+HEARTBEAT_DEFAULT = 45.0
+SUBCOMMAND_GROUPS = {"audio", "voice", "edit", "deliver", "export", "site", "demo", "doc", "assets", "manim",
+                     "footage", "motion"}
+
+
+def take_flag(args: list, flag: str):
+    """(was the flag given, args without it); only arguments before a `--` separator count."""
+    cut = args.index("--") if "--" in args else len(args)
+    head = [a for a in args[:cut] if a != flag]
+    return len(head) != cut, head + args[cut:]
+
+
+def remember_skill(home: Path) -> None:
+    """Keep <home>/skill-path pointing at a live (the newest) skill, for <home>/bin/showtime."""
+    try:
+        from st import shim
+        shim.remember(home, SKILL_DIR)
+    except Exception:  # noqa: BLE001 - never in the way of a command
+        pass
+
+
+def mark_home(home: Path) -> None:
+    """Record the skill in <home>/skill-path before a first setup (or a background run) writes anything
+    else, so a project's `.showtime` is found by `workspace_home` from the start: `showtime status <run>`
+    right after `SHOWTIME_HOME=.showtime showtime setup --background` needs no variable either."""
+    try:
+        from st import shim
+        if not shim.record_file(home).is_file():
+            home.mkdir(parents=True, exist_ok=True)
+            shim._update_record(home, SKILL_DIR)  # noqa: SLF001
+    except Exception:  # noqa: BLE001 - the command itself reports an unwritable home
+        pass
+
+
+def start_background(args: list, env: dict) -> int:
+    from st import runs
+    try:
+        data = runs.start(args, cwd=os.getcwd(), env=env, source=os.environ.get("SHOWTIME_RUN_SOURCE", "cli"))
+    except OSError as e:
+        sys.stderr.write("%s could not start a background run: %s\n  why: showtime keeps runs in %s\n"
+                         "  fix: check that folder is writable (`showtime doctor`), or run the command without "
+                         "--background\n" % (_paint("error:", "red", sys.stderr), e, Path(env["SHOWTIME_HOME"]) / "runs"))
+        return 1
+    if "--json" in args or os.environ.get("SHOWTIME_BACKGROUND_FORMAT") == "json":
+        import json as _json
+        print(_json.dumps({"id": data["id"], "dir": data["dir"], "log": data["log"], "command": data["command"],
+                           "state": data.get("state"), "status": "showtime status %s" % data["id"]}))
+    else:
+        print(runs.started_text(data))
+    return 0
+
+
+def is_run_status(rest: list) -> bool:
+    if "--runs" in rest:
+        return True
+    from st import runs
+    pos = [a for a in rest if not a.startswith("-")]
+    return bool(pos) and runs.find(pos[0]) is not None
+
+
+def heartbeat_interval(cmd: str, rest: list) -> float:
+    """Seconds between "still running" lines on stderr, 0 for none.
+
+    On by default only when stderr is not a terminal (an agent's tool call, a pipe, a log) and the command
+    can run long. SHOWTIME_HEARTBEAT=<seconds> sets the interval (and forces it on), 0 turns it off; so do
+    SHOWTIME_PROGRESS=off, the MCP server (it reports progress itself) and background runs."""
+    raw = os.environ.get("SHOWTIME_HEARTBEAT", "").strip().lower()
+    if raw in ("0", "off", "no", "false") or os.environ.get("SHOWTIME_PROGRESS", "").lower() == "off":
+        return 0.0
+    if os.environ.get("SHOWTIME_MCP") == "1" or os.environ.get("SHOWTIME_RUN_ID"):
+        return 0.0
+    if any(a in ("-h", "--help") for a in rest):
+        return 0.0
+    try:
+        forced = float(raw) if raw else 0.0
+    except ValueError:
+        forced = 0.0
+    if forced > 0:
+        return forced
+    if cmd in QUIET_COMMANDS:
+        return 0.0
+    try:
+        if sys.stderr.isatty():
+            return 0.0
+    except (AttributeError, ValueError, OSError):
+        pass
+    return HEARTBEAT_DEFAULT
+
+
+def heartbeat_line(label: str, secs: float) -> str:
+    if os.environ.get("SHOWTIME_PROGRESS", "").lower() == "json":
+        import json as _json
+        return _json.dumps({"heartbeat": label, "seconds": int(secs)}) + "\n"
+    m, s = divmod(int(secs), 60)
+    return "showtime: %s still running (%s)\n" % (label, ("%d min %d s" % (m, s)) if m else ("%d s" % s))
+
+
+def start_heartbeat(label: str, every: float) -> None:
+    """Print heartbeat_line to stderr every `every` seconds until this process (or what it execs into) ends.
+
+    POSIX: a forked watcher that keeps only stderr, sleeps until the parent exits (kqueue on macOS/BSD,
+    PR_SET_PDEATHSIG on Linux, a poll elsewhere) and never outlives it, so the command keeps its pid and
+    its exec. Windows: a daemon thread (the launcher waits for its child there)."""
+    if every <= 0:
+        return
+    if os.name == "nt" or not hasattr(os, "fork"):
+        import threading
+        import time as _time
+
+        def loop() -> None:
+            t0 = _time.time()
+            while True:
+                _time.sleep(every)
+                try:
+                    sys.stderr.write(heartbeat_line(label, _time.time() - t0))
+                    sys.stderr.flush()
+                except (OSError, ValueError):
+                    return
+        threading.Thread(target=loop, name="showtime-heartbeat", daemon=True).start()
+        return
+    parent = os.getpid()
+    try:
+        sys.stdout.flush()
+        sys.stderr.flush()
+        pid = os.fork()
+    except OSError:
+        return
+    if pid:
+        return
+    # the watcher: never returns
+    try:
+        import time as _time
+        devnull = os.open(os.devnull, os.O_RDWR)
+        os.dup2(devnull, 0)
+        os.dup2(devnull, 1)
+        try:
+            os.closerange(3, 256)
+        except OSError:
+            pass
+        wait = _parent_waiter(parent)
+        t0 = _time.time()
+        while True:
+            if wait(every):          # True: the parent is gone
+                break
+            if os.getppid() != parent:
+                break
+            os.write(2, heartbeat_line(label, _time.time() - t0).encode("utf-8", "replace"))
+    except BaseException:  # noqa: BLE001 - the watcher must never run the command itself
+        pass
+    finally:
+        os._exit(0)
+
+
+def _parent_waiter(parent: int):
+    """A function wait(seconds) -> True once `parent` has exited (returns early), else False after the time."""
+    import time as _time
+    try:
+        import select
+        if hasattr(select, "kqueue"):
+            kq = select.kqueue()
+            ev = select.kevent(parent, filter=select.KQ_FILTER_PROC, flags=select.KQ_EV_ADD | select.KQ_EV_ONESHOT,
+                               fflags=select.KQ_NOTE_EXIT)
+            kq.control([ev], 0, 0)
+
+            def wait_kq(secs: float) -> bool:
+                return bool(kq.control(None, 1, secs)) or os.getppid() != parent
+            return wait_kq
+    except (OSError, ImportError, AttributeError):
+        pass
+    if sys.platform.startswith("linux"):
+        try:
+            import ctypes
+            import signal as _signal
+            libc = ctypes.CDLL(None, use_errno=True)
+            libc.prctl(1, int(_signal.SIGKILL), 0, 0, 0)   # PR_SET_PDEATHSIG: die with the parent
+        except (OSError, AttributeError, ValueError):
+            pass
+
+    def wait_poll(secs: float) -> bool:
+        t_end = _time.time() + secs
+        while _time.time() < t_end:
+            if os.getppid() != parent:
+                return True
+            _time.sleep(min(0.1, max(0.0, t_end - _time.time())))
+        return os.getppid() != parent
+    return wait_poll
+
+
+def run_mcp(env: dict, rest: list) -> int:
+    node = env.get("SHOWTIME_NODE") or plat.find_tool("node", env.get("PATH"))
+    if not node:
+        sys.stderr.write("%s the MCP server needs Node.js 18+, which was not found.\n  fix: %s\n"
+                         % (_paint("error:", "red", sys.stderr), _node_hint()))
+        return 127
+    return _handoff([node, str(SKILL_DIR / "mcp" / "server.mjs")] + rest, env)
+
+
 def main(argv=None) -> int:
     utf8_stdio()
     args = list(sys.argv[1:] if argv is None else argv)
-    home = showtime_home()
+    global _HOME_SOURCE
+    home, _HOME_SOURCE = home_and_source()
     env = build_env(home)
+    remember_skill(home)
+    background, args = take_flag(args, "--background")
     if "--debug" in args:
         env["SHOWTIME_DEBUG"] = "1"
         os.environ["SHOWTIME_DEBUG"] = "1"
@@ -566,7 +947,29 @@ def main(argv=None) -> int:
 
     cmd, rest = args[0], args[1:]
 
+    installs = cmd == "setup" and not any(a in ("-h", "--help", "--list", "--estimate") for a in rest)
+    if background and cmd not in NO_BACKGROUND and not any(a in ("-h", "--help") for a in rest):
+        mark_home(home)
+        return start_background(args, env)
+    if installs:
+        mark_home(home)
+
+    os.environ["SHOWTIME_HOME"] = env["SHOWTIME_HOME"]   # st.runs finds the runs folder from it
+    if cmd == "status" and is_run_status(rest):
+        os.environ.update(env)
+        from st.runs import status_main
+        return status_main(rest)
+
+    if cmd == "mcp":
+        return run_mcp(env, rest)
+
+    label = cmd
+    if cmd in SUBCOMMAND_GROUPS and rest and re.match(r"^[a-z][a-z0-9-]*$", rest[0]):
+        label = "%s %s" % (cmd, rest[0])
+    start_heartbeat(label, heartbeat_interval(cmd, rest))
+
     if cmd == "setup":
+        env.update(cache_redirects(home, env))
         setup_py = SKILL_DIR / "setup" / "setup.py"
         return _handoff([_base_python(), str(setup_py)] + [a for a in rest if a != "--debug"], env)
 

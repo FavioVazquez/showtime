@@ -2,7 +2,7 @@
 
 All of it is decoration, so all of it steps aside by itself. Nothing here prints or plays unless the
 stream is an interactive terminal, and never with --json, NO_COLOR, TERM=dumb, CI, SHOWTIME_COLOR=never
-or SHOWTIME_PROGRESS=json. Claude's tool calls, pipes and logs therefore see exactly the plain output they
+or SHOWTIME_PROGRESS=json. An agent's tool calls, pipes and logs therefore see exactly the plain output they
 always did. On Windows the mark needs a console that accepts VT sequences (Windows 10+).
 
     header("showtime doctor 0.1.0", "mac-x64  ·  home ~/.showtime")   -> 2 lines, or None

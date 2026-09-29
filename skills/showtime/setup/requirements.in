@@ -4,6 +4,10 @@
 #   uv pip compile --universal --python-version 3.12 \
 #       --index-url https://pypi.org/simple requirements.in -o requirements.txt
 #
+# Not in the default install (fetched on first use, see manifest.json "lazy_pip"):
+#   requirements-whisper.in          faster-whisper + ctranslate2, before the first Whisper transcription
+#   requirements-imageio-ffmpeg.txt  imageio-ffmpeg, only when neither the static nor a system ffmpeg works
+#
 # Platform notes (PEP 508 markers):
 # - Intel Macs (darwin/x86_64) are frozen at the last releases that ship x86_64
 #   wheels: onnxruntime 1.23.2, numba 0.62.1, llvmlite 0.45.1 (numba 0.62 caps numpy < 2.4).
@@ -19,8 +23,6 @@ pillow>=11
 opencv-python>=4.10,<5          # PySceneDetect's OpenCV backend breaks on 5.x
 av>=14
 scenedetect==0.7.1
-faster-whisper==1.2.1
-ctranslate2==4.8.2
 onnxruntime==1.23.2 ; sys_platform == 'darwin' and platform_machine == 'x86_64'
 onnxruntime==1.30.0 ; sys_platform != 'darwin' or platform_machine != 'x86_64'
 kokoro-onnx==0.6.1
@@ -36,7 +38,6 @@ pyloudnorm>=0.1.1
 pypdfium2==5.13.0            # PDF import (`showtime doc`): PDFium, Apache-2.0/BSD-3; wheels for every OS
 requests>=2.32
 rich>=13
-imageio-ffmpeg>=0.6            # last-resort ffmpeg if the static build is unavailable
 huggingface-hub>=0.26
 pyobjc-framework-Vision>=11 ; sys_platform == 'darwin'    # macOS Vision subject cutout (optional path)
 pyobjc-framework-Quartz>=11 ; sys_platform == 'darwin'

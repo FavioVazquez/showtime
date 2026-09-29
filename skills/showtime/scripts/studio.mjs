@@ -729,10 +729,10 @@ const EXPORT = {
   summary: 'Write the board as one self-contained HTML file (<= 16 MB) to publish or send.',
   description: 'Every image, font and small audio/video file is embedded; files that would pass the size limit are left out\n' +
     '(largest first) and listed. The copy never touches the network. Reviewers react in their browser and send back\n' +
-    '"Copy for Claude" text or a downloaded feedback.json (showtime studio feedback <job> --import FILE).',
+    '"Copy for your agent" text or a downloaded feedback.json (showtime studio feedback <job> --import FILE).',
   options: {
     inline: { type: 'boolean', help: 'embed media (the default and only mode; kept for clarity)' },
-    target: { help: 'file (default) or artifact: for a host that shows the page in a sandboxed frame (an HTML artifact), where downloads are blocked: no "Download feedback.json" button, reviewers use "Copy for Claude" (the board also detects such hosts by itself)', metavar: 'KIND' },
+    target: { help: 'file (default) or artifact: for a host that shows the page in a sandboxed frame (an HTML artifact), where downloads are blocked: no "Download feedback.json" button, reviewers use "Copy for your agent" (the board also detects such hosts by itself)', metavar: 'KIND' },
     output: { short: 'o', help: 'output file (default studio/exports/<job>-r<rev>.html)', metavar: 'FILE' },
     json: { type: 'boolean', help: 'print {file, bytes, skipped} as JSON' },
   },
@@ -756,8 +756,8 @@ async function cmdExport(argv) {
   if (a.json) { console.log(JSON.stringify({ file: out, bytes, target, inlined_bytes: r.bytes, skipped: r.skipped }, null, 2)); return 0; }
   console.log(`${c.green('exported')}: ${out} (${fmtBytes(bytes)})`);
   for (const s of r.skipped) warn(`left out ${s.path}${s.bytes ? ` (${fmtBytes(s.bytes)})` : ''}: ${s.why}`);
-  console.log(target === 'artifact' ? '  self-contained, loads nothing from the network; for an artifact: no download code, files left out are named with their place in the job folder; reviewers send back "Copy for Claude" text'
-    : '  self-contained, loads nothing from the network; reviewers send back "Copy for Claude" text or feedback.json');
+  console.log(target === 'artifact' ? '  self-contained, loads nothing from the network; for an artifact: no download code, files left out are named with their place in the job folder; reviewers send back "Copy for your agent" text'
+    : '  self-contained, loads nothing from the network; reviewers send back "Copy for your agent" text or feedback.json');
   if (target !== 'artifact') console.log(c.dim(`  publishing it as an HTML artifact? use: showtime studio export ${quote(a._[0] || job)} --target artifact (a host's frame blocks downloads)`));
   return 0;
 }

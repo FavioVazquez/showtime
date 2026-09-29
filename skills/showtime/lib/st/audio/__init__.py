@@ -1,7 +1,8 @@
 """showtime audio: local music, sound effects, analysis, mixing and mastering.
 
 Everything runs on this machine (numpy/scipy plus the resolved ffmpeg); only
-`audio lib fetch` goes online, to download the library. Modules:
+`audio lib fetch`, catalog music, extra sound packs and Openverse search go online,
+to download files on first use. Modules:
 
 - dsp.py       oscillators, noise, filters (static and time-varying), envelopes,
                stereo helpers, convolution reverb, delay, chorus, compressor
@@ -18,6 +19,11 @@ Everything runs on this machine (numpy/scipy plus the resolved ffmpeg); only
 - beats.py     beat grid, downbeats, onsets, energy curve, sections, key
 - fit.py       loop / trim music to an exact length on musical boundaries
 - library.py   manifest-pinned library fetch, analysis, catalog, credits
+- music.py     the produced-music catalog (music_catalog.json): search, pick,
+               fetch on first use, sha256-verified cache, vetoes, credit items
+- credits.py   credits.txt, the share.txt description block, end card, Content ID notes
+- openverse.py live CC BY / CC0 audio search and fetch with a license sidecar
+- packs.py     extra sound-effect packs (sfx_packs.json) installed on first use
 - search.py    catalog queries with ranking
 - mix.py       the audio/mix.json renderer (ducking, carving, alignment,
                loudness) and mix.report.json

@@ -192,10 +192,19 @@ def register(sub: argparse._SubParsersAction) -> None:
     # ------------------------------------------------------------------ status
     p = sub.add_parser("status", help=COMMANDS["status"], formatter_class=RAW, description=(
         "Three lines: which job and stage, what is verified/assumed/open, and the next command.\n"
-        "Without an argument: the newest job under ./showtime-out (or $SHOWTIME_OUT)."),
-        epilog="examples:\n  showtime status\n  showtime status launch-teaser\n  showtime status --json")
-    p.add_argument("job", nargs="?", help="job folder, a file in it, or a slug")
+        "Without an argument: the newest job under ./showtime-out (or $SHOWTIME_OUT).\n\n"
+        "Background runs: any command takes --background (it starts detached and prints a run id at once);\n"
+        "`showtime status <run-id>` then says whether it still runs, its latest progress line, and at the\n"
+        "end its exit code and last lines of output. --wait S watches it for up to S seconds (a line every\n"
+        "30 s) and exits with the command's own code, or 75 if it is still running."),
+        epilog="examples:\n  showtime status\n  showtime status launch-teaser\n  showtime status --json\n"
+               "  showtime render my-video --background\n  showtime status render-20260928-141500-a1b2 --wait 240\n"
+               "  showtime status --runs")
+    p.add_argument("job", nargs="?", help="job folder, a file in it, a slug, or a background run id")
     p.add_argument("--json", action="store_true")
+    p.add_argument("--runs", action="store_true", help="list the background runs")
+    p.add_argument("--wait", type=float, metavar="S", help="background run: watch it for up to S seconds")
+    p.add_argument("--cancel", action="store_true", help="background run: stop it")
     p.set_defaults(func=cmd_status)
 
     # ------------------------------------------------------------------ clean
@@ -419,6 +428,13 @@ def cmd_job_show(args: argparse.Namespace) -> int:
 
 
 def cmd_status(args: argparse.Namespace) -> int:
+    from . import runs
+    if args.runs or args.wait is not None or args.cancel or (args.job and runs.find(args.job)):
+        # the launcher normally answers these itself (it works before setup); same code either way
+        argv = ([args.job] if args.job else []) + (["--runs"] if args.runs else []) + \
+            (["--wait", str(args.wait)] if args.wait is not None else []) + (["--cancel"] if args.cancel else []) + \
+            (["--json"] if args.json else [])
+        return runs.status_main(argv)
     from .job import ledger
     if args.job is None and ledger.enclosing_job(Path.cwd()) is None and ledger.latest() is None:
         msg = "no showtime jobs under %s" % (Path.cwd() / "showtime-out")

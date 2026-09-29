@@ -1,0 +1,2 @@
+{ "tool": "check", "rule": "text_clipped", "severity": "FAIL", "check_args": ["--no-determinism", "--samples", "2"],
+  "why": "A terminal line in a fixed-width window with overflow hidden: the command runs under the window's edge (a 9:16 re-layout of a 16:9 page does this). Clipped text is an error, not a warning." }

@@ -2,7 +2,7 @@
  "schema": 1,
  "status": "confirmed",
  "name": "showtime",
- "tagline": "Describe a video. Claude directs. Your machine renders.",
+ "tagline": "Describe a video. Your agent directs. Your machine renders.",
  "url": null,
  "logo": {
   "path": "logo/mark.svg",

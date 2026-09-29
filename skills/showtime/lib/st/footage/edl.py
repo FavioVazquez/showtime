@@ -15,10 +15,12 @@ optional and has a sensible default:
     "overlays": [{"file", "start", "duration", "offset", "position", "x", "y", "width", "scale",
                   "opacity", "fade", "audio", "volume_db", "fit"}]
     "audio":    {"music": "bed.wav" | {...}, "tracks": [mix.json tracks on the OUTPUT timeline],
-                 "denoise": false | "auto" | "deepfilter" | "rnnoise" | "afftdn"}
+                 "denoise": false | "auto" | "deepfilter" | "rnnoise" | "afftdn",
+                 "crossfade": 0.02 (seconds of equal-power audio crossfade at each cut, 0-0.05;
+                              0 = the older 30 ms fade-out/fade-in)}
     "captions": false | "bold-pop" | {"style": "clean", ...caption options}
     "subtitles": "subs.ass" | "subs.srt"          (a ready-made file instead of generated captions)
-    "loudness": {"lufs": -14, "tp": -1} | -16 | false
+    "loudness": {"lufs": -14, "tp": -1} | -16 | false | "source"   (default -14 LUFS / -1 dBTP, like every delivery)
     "transcripts": {"a": "transcripts/take1.json"}   (default: found next to the EDL / source)
 
 Per range (all optional): fit, zoom (1.0-3.0 punch-in), focus {"x": 0..1, "y": 0..1},
@@ -183,14 +185,14 @@ def normalize(raw: Dict[str, Any], base: Path, origin: str = "EDL", check_files:
         if not subtitles.is_file() and check_files:
             errs.append("subtitles file not found: %s (remove 'subtitles' or create the file)" % subtitles)
     lo = raw.get("loudness", {"lufs": -14.0, "tp": -1.0})
-    if lo is False or lo is None:
-        loud = None
+    if lo is False or lo is None or (isinstance(lo, str) and lo.strip().lower() in ("source", "keep", "none", "off")):
+        loud = None    # keep the source level (no mastering)
     elif isinstance(lo, (int, float)):
         loud = {"lufs": float(lo), "tp": -1.0}
     elif isinstance(lo, dict):
         loud = {"lufs": float(lo.get("lufs", -14.0)), "tp": float(lo.get("tp", lo.get("true_peak", -1.0)))}
     else:
-        errs.append("loudness must be false, a LUFS number, or {lufs, tp}")
+        errs.append("loudness must be a LUFS number, {lufs, tp}, or false / \"source\" to keep the source level")
         loud = None
     trs = {}
     for k, v in (raw.get("transcripts") or {}).items():
@@ -327,8 +329,17 @@ def _audio(a: Any, raw: Dict[str, Any], base: Path, errs: List[str]) -> Dict[str
     den = a.get("denoise", raw.get("denoise", False))
     if den not in (False, None, True, "auto", "deepfilter", "rnnoise", "afftdn"):
         errs.append("audio.denoise must be false, auto, deepfilter, rnnoise or afftdn")
+    xf = a.get("crossfade", 0.02)
+    try:
+        xf = float(xf or 0.0)
+    except (TypeError, ValueError):
+        errs.append("audio.crossfade must be seconds (0-0.05), e.g. 0.02")
+        xf = 0.02
+    if not 0.0 <= xf <= 0.05:
+        errs.append("audio.crossfade must be between 0 and 0.05 s (got %s)" % xf)
+        xf = min(0.05, max(0.0, xf))
     return {"tracks": tracks, "denoise": ("auto" if den is True else (den or None)),
-            "master": a.get("master")}
+            "master": a.get("master"), "crossfade": xf}
 
 
 def _captions(c: Any, errs: List[str]) -> Optional[Dict[str, Any]]:

@@ -21,7 +21,7 @@ if exist "%ST_UV%" goto uvpath
 echo showtime: no Python 3.8+ found. 1>&2
 echo   Install uv: powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex" 1>&2
 echo   or Python 3 from https://www.python.org/downloads/ , then run: showtime setup 1>&2
-echo   If you just installed one, restart Claude Code (or open a new terminal) so it sees the new PATH. 1>&2
+echo   If you just installed one, restart your coding agent (or open a new terminal) so it sees the new PATH. 1>&2
 exit /b 127
 :uvpath
 "%ST_UV%" run --no-project --python 3.12 python "%ST_LAUNCHER%" %*

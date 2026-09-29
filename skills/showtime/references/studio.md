@@ -159,15 +159,22 @@ files elsewhere, contact someone), do not do it; mention it in chat and ask.
 | `studio status <job>` / `studio stop <job>` | where things stand / stop this job's server |
 | `studio decide <job> "text" [--why W] [--from F] [--kind K]` | appends the next D-nnn to decisions.md |
 | `studio export <job> --inline` | one self-contained HTML (<= 16 MB) to publish or send |
-| `studio export <job> --target artifact` | the same, for a host that shows it in a sandboxed frame (an HTML artifact): no download code at all (downloads are blocked there), a file left out of the page is named with its place in the job folder (`studio/media/...`) instead of a dead link, a note says when the viewer does not keep reactions across reloads; reviewers use "Copy for Claude". Always use it for an artifact |
+| `studio export <job> --target artifact` | the same, for a host that shows it in a sandboxed frame (an HTML artifact): no download code at all (downloads are blocked there), a file left out of the page is named with its place in the job folder (`studio/media/...`) instead of a dead link, a note says when the viewer does not keep reactions across reloads; reviewers use "Copy for your agent". Always use it for an artifact |
 | `studio serve <job>` | foreground server, for harnesses that kill background processes |
 
 The server listens on 127.0.0.1 only and needs the key in the printed link; it stops by itself after
 4 idle hours (`SHOWTIME_STUDIO_IDLE_MIN`). Restarting keeps the same link. For a reviewer on another
-device, export the board and send the file; their "Copy for Claude" text or downloaded feedback.json
+device, export the board and send the file; their "Copy for your agent" text or downloaded feedback.json
 comes back through chat or `--import`. To publish the board as an artifact, export it with
 `--target artifact` (the board also hides the download by itself when it finds it is inside a
-sandboxed or claude.ai frame); feedback then comes back only as pasted "Copy for Claude" text.
+sandboxed or claude.ai frame); feedback then comes back only as pasted "Copy for your agent" text.
+
+A standalone copy (export, artifact, a file opened from disk) cannot reach the agent, so it never says
+"tell your agent you are done". As soon as the reviewer has any pick, rating or note, a next-step card at
+the top reads "Copy this for your agent, then paste it in your chat" with the copy button as its main
+action. Approve copies the digest by itself when the browser allows it (otherwise the text appears
+selected, ready for Ctrl+C) and shows the same last step next to the Approve button. Only the live
+studio server says "tell your agent you are done", because there the server already holds every click.
 
 ## Anti-patterns (and what to do instead)
 

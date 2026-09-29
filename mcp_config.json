@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "showtime": {
+      "command": "node",
+      "args": ["${PLUGIN_ROOT}/skills/showtime/mcp/server.mjs"]
+    }
+  }
+}

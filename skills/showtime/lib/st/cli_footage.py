@@ -50,10 +50,16 @@ def _register_transcribe(sub) -> None:
                                    "folder is in, else the newest job under ./showtime-out, else a new job "
                                    "<name>-edit. Nothing is written next to your footage unless you pass --edit-dir.",
                        epilog="Models:\n"
-                              "  auto       turbo when installed, else small.en (English) / small (other languages)\n"
-                              "  turbo      Whisper large-v3-turbo: best accuracy, 99 languages (setup --with asr-turbo)\n"
-                              "  small      multilingual, fast; small.en: English only (installed by default)\n"
-                              "  parakeet   English, ~3x faster than turbo, keeps fillers (setup --with parakeet)\n"
+                              "  auto         Parakeet-TDT v3 (verbatim: keeps um/uh; 25 European languages incl.\n"
+                              "               English and Spanish; ~490 MB, fetched on first use), else Whisper for\n"
+                              "               other languages (turbo when installed, else small)\n"
+                              "  parakeet-v2  English-only Parakeet (fetched on first use)\n"
+                              "  turbo        Whisper large-v3-turbo, 99 languages (setup --with asr-turbo)\n"
+                              "  small        Whisper small (multilingual); small.en: English only\n"
+                              "  crisper      CrisperWhisper 2.0 'max accuracy' (opt-in: NON-COMMERCIAL licence,\n"
+                              "               needs PyTorch, not available on Intel Macs; --accept-license)\n"
+                              "\nFillers: missed um/uh are recovered by a gap scan (voiced pauses no word covers, each\n"
+                              "checked by decoding it again); they carry \"filler\": true. --no-gap-scan turns it off.\n"
                               "\nExamples:\n"
                               "  showtime transcribe raw/take1.mp4\n"
                               "  showtime transcribe raw/ --model turbo              # every media file in a folder\n"
@@ -63,8 +69,8 @@ def _register_transcribe(sub) -> None:
                               "  showtime transcribe demo.mp4 --prompt \"showtime, Kokoro, ffmpeg\"  # names/jargon\n"
                               "  showtime transcribe talk.mp4 --from 12:30 --to 18:00  # only that part (times stay on the file's clock)")
     p.add_argument("media", nargs="+", help="video/audio files or folders")
-    p.add_argument("--model", "-m", default="auto", help="auto (default), turbo, small, small.en, base.en, medium, "
-                                                        "parakeet, parakeet-v3, or a model folder")
+    p.add_argument("--model", "-m", default="auto", help="auto (default: parakeet), parakeet-v2, turbo, small, small.en, "
+                                                        "medium, crisper, or a whisper model folder")
     p.add_argument("--language", "-l", help="language code (en, es, fr...); default: detect (or English for .en models)")
     p.add_argument("--speakers", "-s", help="diarize: number of speakers, or 'auto' (default: off, all S0)")
     ev = p.add_mutually_exclusive_group()
@@ -75,6 +81,14 @@ def _register_transcribe(sub) -> None:
     p.add_argument("--audio-track", "-a", type=int, default=0, help="audio track index (default 0)")
     p.add_argument("--no-vad", action="store_true", help="disable voice-activity filtering (whisper)")
     p.add_argument("--no-refine", action="store_true", help="keep raw ASR word times (no energy snapping)")
+    p.add_argument("--no-gap-scan", action="store_true", help="do not look for fillers the ASR missed (parakeet)")
+    p.add_argument("--separate", choices=["auto", "on", "off"], default="auto",
+                   help="pull the voice out of loud background music before ASR (UVR MDX-Net, 67 MB on first use): "
+                        "auto = only when the music is within ~8 dB of the speech (default)")
+    p.add_argument("--no-stem", action="store_true",
+                   help="for a video showtime rendered itself: transcribe the final mix, not the dry narration stem")
+    p.add_argument("--accept-license", action="store_true",
+                   help="accept the CrisperWhisper non-commercial licence (needed once for --model crisper)")
     p.add_argument("--prompt", help="names/jargon to bias recognition (whisper), e.g. \"showtime, Kokoro\"")
     p.add_argument("--edit-dir", help="where to write transcripts/ (default: <job>/edit, see above)")
     p.add_argument("-o", "--output", help="transcript path (single input only)")
@@ -100,12 +114,15 @@ def cmd_transcribe(args) -> int:
                                  refine=not args.no_refine, prompt=args.prompt, edit_dir=args.edit_dir,
                                  force=args.force, threads=args.threads, out_path=args.output,
                                  start=parse_time(args.start) if args.start is not None else None,
-                                 end=parse_time(args.end) if args.end is not None else None)
+                                 end=parse_time(args.end) if args.end is not None else None,
+                                 gap_scan=not args.no_gap_scan, accept_license=args.accept_license,
+                                 use_stem=not args.no_stem, separate=args.separate)
         st = doc.get("stats") or {}
         results.append({"source": str(f), "transcript": str(path), "duration": doc.get("duration"),
                         "range": doc.get("range"),
                         "language": doc.get("language"), "model": doc.get("model"), "words": st.get("words"),
-                        "fillers": st.get("fillers"), "events": st.get("events"),
+                        "fillers": st.get("fillers"), "filler_scan": st.get("gap_scan"), "events": st.get("events"),
+                        "audio_from": doc.get("audio_from"), "separation": st.get("separation"),
                         "speakers": (st.get("diarize") or {}).get("speakers", 1),
                         "dropped": len((doc.get("guards") or {}).get("dropped") or []),
                         "warnings": (doc.get("guards") or {}).get("warnings") or []})
@@ -212,7 +229,17 @@ def _register_edit(sub) -> None:
                             "  showtime edit cut t1.json t2.json --keep-fillers -o edl.json   # takes in order")
     p.add_argument("transcripts", nargs="+", help="transcript JSON file(s) (their sources play in this order)")
     p.add_argument("--keep-fillers", action="store_true", help="do not remove um/uh/erm")
-    p.add_argument("--filler", action="append", default=[], help="extra filler word to remove (repeatable)")
+    p.add_argument("--filler", action="append", default=[], help="extra filler word or phrase to remove (repeatable), "
+                                                                 "e.g. --filler \"o sea\"")
+    p.add_argument("--filler-set", action="append", default=[], choices=sorted(("en-discourse", "es-discourse")),
+                   help="also remove discourse markers that are real words elsewhere: en-discourse (you know, "
+                        "i mean, like) or es-discourse (este, o sea, pues, bueno). Off by default")
+    p.add_argument("--strict-fillers", action="store_true",
+                   help="cut only fillers a second, isolated decode confirmed (fewer false cuts, some fillers stay)")
+    p.add_argument("--filler-pause", type=float, default=0.2,
+                   help="longest pause left where a filler was cut, 0.15-0.25 s (0.2)")
+    p.add_argument("--no-snap", action="store_true", help="keep cut edges where the transcript puts them (default: "
+                                                          "move each to the quietest point within 40 ms)")
     p.add_argument("--max-pause", type=float, help="shorten pauses longer than this (seconds), e.g. 0.5")
     p.add_argument("--keep-pause", type=float, default=0.3, help="pause length left where something was cut (0.3)")
     p.add_argument("--remove", action="append", default=[], help="word ids to remove, e.g. w12-w18 (repeatable)")
@@ -227,6 +254,9 @@ def _register_edit(sub) -> None:
     p.add_argument("--grade", help="none, auto, a preset or a look (see `footage luts`)")
     p.add_argument("--music", help="music file to lay under the speech (ducked)")
     p.add_argument("--denoise", choices=["auto", "deepfilter", "rnnoise", "afftdn"], help="clean the speech audio")
+    p.add_argument("--keep-loudness", action="store_true",
+                   help="do not master the loudness: keep the source level (default: -14 LUFS / -1 dBTP, "
+                        "like every showtime delivery)")
     p.add_argument("-o", "--output", help="EDL path (default <edit dir>/edl.json; when it exists, edl-2.json ... is "
                                           "written and printed, unless --overwrite)")
     p.add_argument("--overwrite", action="store_true", help="replace an existing EDL at -o instead of writing edl-N.json")
@@ -268,6 +298,10 @@ def _register_edit(sub) -> None:
     p.add_argument("--caption-position", choices=["bottom", "middle", "top"], help="override where captions sit")
     p.add_argument("--no-captions", action="store_true", help="render without captions/subtitles")
     p.add_argument("--grade", help="override the grade")
+    p.add_argument("--lufs", type=float, help="master the loudness to this many LUFS instead of the EDL's "
+                                              "(default -14 LUFS / -1 dBTP, like every showtime delivery)")
+    p.add_argument("--keep-loudness", action="store_true",
+                   help="do not master the loudness: keep the source level (the report and qa note it)")
     p.add_argument("--jobs", "-j", type=int, help="parallel segment encodes (default 1-3 by CPU count)")
     p.add_argument("--overwrite", action="store_true", help="replace the output file if it exists (default: write name-2.mp4)")
     _add_json(p)
@@ -332,7 +366,13 @@ def cmd_edit_cut(args) -> int:
         sources[k] = _rel(src, base) if not tr.get("audio_track") else {
             "file": _rel(src, base), "audio_track": int(tr["audio_track"])}
         tmap[k] = _rel(tp, base)
-        plan = C.plan_keep(tr, fillers=not args.keep_fillers, extra_fillers=args.filler,
+        extra = list(args.filler)
+        for fs in args.filler_set:
+            extra += U.DISCOURSE_FILLERS.get(fs, [])
+        snap = None if args.no_snap else _source_audio(src, tr)
+        plan = C.plan_keep(tr, fillers=not args.keep_fillers, extra_fillers=extra,
+                           filler_pause=max(0.1, min(0.3, args.filler_pause)), snap_audio=snap,
+                           strict_fillers=args.strict_fillers,
                            remove_ids=args.remove if len(trs) == 1 else [],
                            remove_times=U.parse_ranges(",".join(args.remove_time)) if args.remove_time and len(trs) == 1 else [],
                            keep_times=U.parse_ranges(",".join(args.keep_time)) if args.keep_time and len(trs) == 1 else None,
@@ -366,6 +406,8 @@ def cmd_edit_cut(args) -> int:
         doc["audio"] = {"music": _rel(Path(args.music).resolve(), base)}
     if args.denoise:
         doc.setdefault("audio", {})["denoise"] = args.denoise
+    if args.keep_loudness:
+        doc["loudness"] = False
     doc["cut_summary"] = {"before_s": round(before, 3), "after_s": round(after, 3), "segments": len(ranges),
                           "removed": [{"id": r.get("id"), "text": r["text"], "at": r["start"], "why": r["why"],
                                        "source": r["source"]} for r in removed_all]}
@@ -385,6 +427,22 @@ def cmd_edit_cut(args) -> int:
         print(out)
         print("next: showtime edit render %s --preview" % out, file=sys.stderr)
     return 0
+
+
+def _source_audio(src: Path, tr: Dict[str, Any]):
+    """(16 kHz mono float32, sr) of the transcript's source track, for cut-edge snapping (None on failure)."""
+    from .footage import util as U
+    try:
+        track = int(tr.get("audio_track") or 0)
+        qh = U.quick_hash(src)
+        wav = U.cache_dir("transcripts") / ("%s.t%d.16k.wav" % (qh, track))
+        if not wav.is_file():
+            U.extract_wav(src, wav, sr=16000, track=track)
+        return U.load_audio(wav, sr=16000)
+    except Exception as e:  # noqa: BLE001 - snapping is a refinement, never a blocker
+        from .common import debug
+        debug("no audio for cut snapping: %s" % e)
+        return None
 
 
 # ----------------------------------------------------------- which file is current
@@ -532,6 +590,12 @@ def cmd_edit_render(args) -> int:
         ov["captions"] = dict(ov.get("captions") or {}, position=args.caption_position)
     if args.grade:
         ov["grade"] = args.grade
+    if args.keep_loudness and args.lufs is not None:
+        raise ShowtimeError("--keep-loudness and --lufs contradict each other", hint="use one: keep the source level, or master to a level")
+    if args.keep_loudness:
+        ov["loudness"] = False
+    elif args.lufs is not None:
+        ov["loudness"] = {"lufs": args.lufs, "tp": -1.0}
     edl = _edl_arg(args.edl)
     rep = R.render(edl, args.output, preview=args.preview, overwrite=args.overwrite, jobs=args.jobs,
                    captions=not args.no_captions, overrides=ov or None)
@@ -547,9 +611,10 @@ def cmd_edit_render(args) -> int:
         print_json(rep)
     else:
         lo = rep.get("loudness") or {}
-        info("duration %.2f s (planned %.2f), %s frames, loudness %s LUFS / %s dBTP" % (
+        info("duration %.2f s (planned %.2f), %s frames, loudness %s LUFS / %s dBTP%s" % (
             rep.get("video_duration") or rep["duration"], rep["duration"], rep.get("frames"),
-            lo.get("integrated_lufs"), lo.get("true_peak_dbtp")))
+            lo.get("integrated_lufs"), lo.get("true_peak_dbtp"),
+            " (source level kept)" if (rep.get("loudness_target") or {}).get("mode") == "source" else ""))
         info("report %s" % rep["report"])
         for w in (rep.get("warnings") or [])[:6]:
             info("warning: %s" % w)

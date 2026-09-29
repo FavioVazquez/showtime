@@ -86,12 +86,16 @@ short-short-long, with the longest hold on the key message).
 | move | numbers |
 |---|---|
 | push-in (focus) | scale 1.00 -> 1.04-1.08 over the whole shot, `sine.inOut` or `camera` |
-| punch-in (emphasis) | 1.0 -> 1.15-1.3 in 0.25-0.4 s, `power3.out`, hold >= 1 s |
+| punch-in (emphasis) | 1.0 -> 1.15-1.3 in 0.25-0.4 s, `power3.out`, hold >= 1 s; never in launch, promo or explainer films, and never on every jump cut (viewers read it as cheap) |
 | zoom to a UI target | 1.5-2x for clicks and typing, 1.3-1.5x for scroll, hard max ~2.8x; transition 0.6 s + 0.55 s x ln(zoom); start 0.15-0.4 s before the action; hold >= 1.2 s |
 | pull-back reveal | author the wide shot at 1x and open scaled in, never shrink a 1x close-up |
 | drift | 2-8 px x, 1-4 px y, 1-3 slow cycles per shot, on the background layer only |
 | parallax | 2-4 depth layers; far layers move 20-40 % of near layers |
 | shake | only on impacts, <= 0.3 s, amplitude decaying; decorrelated x/y noise |
+
+The `camera` component (`components.md`) does all of these from a path of keys (zoom, focus, eased in
+log-zoom space, drift on holds, parallax depth layers); scene-to-scene camera moves are the
+`through`, `match` and `pan` transitions (`transitions.md`).
 
 Scale perception: < 5 % reads as static, 10-15 % comfortable, > 30 % dramatic. Never run the same
 ambient zoom on every scene; stillness after motion is powerful.

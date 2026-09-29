@@ -160,7 +160,7 @@ export itself (`showtime qa <export> --platform github`); without one it FAILs w
 | `first_frame_flat` | WARN | frame 0 is one flat colour |
 | `poster_flash` | WARN | frame 0 differs sharply from frames 1-2 (a baked poster over an opening that builds from empty): a one-frame flash on autoplay and every loop |
 | `black_segment` | WARN ≥ 0.25 s, FAIL ≥ 1 s | black inside the video (`ends_black`: WARN for a black ending ≥ 1 s) |
-| `frozen` | WARN ≥ 2.5 s, FAIL ≥ 6 s or half the video | no visible change (a few typed characters or a thin moving line still count as a hold); the thresholds, `freeze_noise_db` included, live in `runtime/thresholds.json`, shared with `showtime check`, so check finds the same holds before the render. A padded or blurred export is judged inside its picture (`<export>.export.json`), not on its bars. See "Dark themes and slow pushes" below |
+| `frozen` | WARN ≥ 2.5 s (launch films, showtime.json `"kind": "launch"`: ≥ 5 s, `launch_hold_s`), FAIL ≥ 6 s or half the video | no visible change (a few typed characters or a thin moving line still count as a hold); the thresholds, `freeze_noise_db` included, live in `runtime/thresholds.json`, shared with `showtime check`, so check finds the same holds before the render. A padded or blurred export is judged inside its picture (`<export>.export.json`), not on its bars. See "Dark themes and slow pushes" below |
 | `held_shot` | INFO | a long hold that is live camera footage with sound (a speaker holding still), not a frozen picture; see the Visual checklist above |
 | `final_hold` | INFO ≤ 4 s, WARN above | the ending is a still hold (fine for an end card) |
 | `captions_past_end`, `captions_timing` | FAIL | sidecar cues outside the video or reversed |
@@ -177,6 +177,10 @@ export itself (`showtime qa <export> --platform github`); without one it FAILs w
 | `must_show` | FAIL | a must-show text is missing from the on-screen text list of the last `showtime check` |
 | `must_show_unverified` | WARN | found only in the project source (run `showtime check`, then `qa` again) |
 | `expect_invalid` | WARN | an unknown key in the `expect` block, or an unknown platform name (checked without a platform target) |
+| `edit_choppy` | WARN (launch films) | more than 5 hard cuts in a film of up to 60 s |
+| `too_many_scenes` | WARN (launch films) | more than 6 scenes or layouts in up to 60 s |
+| `dead_hold` | WARN (launch films) | nothing moves for more than 5.5 s |
+| `flat_music` | WARN (launch films without a voice) | the mix's loudness moves less than 3 dB (10th-90th percentile of 0.5 s windows) |
 
 The optional `expect` block in `showtime.json` (or a file passed with `--expect`) states the brief's
 measurable targets up front:
@@ -189,6 +193,16 @@ measurable targets up front:
 
 Platforms: `youtube x linkedin reels tiktok shorts square` (as in `deliver exports`) plus `web` (silent loop,
 15 MB), `github` and `chat` (10 MB), `broadcast` (-23 LUFS).
+
+**Edit rhythm** (`rhythm` in qa.json, one line in the output) is measured for every video up to 3 minutes:
+layouts (stretches with one composition) and how each layout change happens (`cut`, `fast`: a push,
+wipe or whip under 0.6 s that replaces the frame, `move`: 0.6 s or more of continuous motion: a camera
+move, a match, a dissolve), hard cuts, shot lengths, the share of frames where nothing moves and the
+longest such stretch, the mix's dynamics, and per planned scene change whether it was a hard cut
+and whether the music moves there (an onset or a +1.5 dB rise). It is judged (the four rules above) for
+launch, promo, release and trailer films: showtime.json `"kind": "launch"` (the launch template sets it),
+`expect.style`, or a job goal that says launch, promo, trailer, teaser or release video. The numbers
+come from the premium grammar in `workflows/launch-video.md`.
 
 **Dark themes and slow pushes.** Black and frozen stretches are measured on absolute pixel change, so two
 honest designs can trip them:
@@ -218,7 +232,7 @@ there are two or more, else top-level clips minus overlays: a clip shown inside 
 open-ended layer under later clips, or `data-overlay`), `voice/timeline.json` slots or the EDL report; only
 without any of these does it detect cuts in the pixels. It prints `(N scenes, M cuts, from <source>)`; the
 manifest has `scenes_source`. Its fresh qa run uses `--platform`/`--lufs` when given, else the ones the last
-`showtime qa` of the same file was given (a -16 LUFS tutorial stays judged at -16). The protocol is in
+`showtime qa` of the same file was given (a -16 LUFS tutorial stays judged at -16). For an edit render, qa judges loudness against what the render report says it was mastered to (-14 by default; a kept source level is noted, not failed). The protocol is in
 `review.md`.
 
 **Which render is the job's latest final.** `showtime qa <job>`, `review-pack <job>` and `deliver` use the

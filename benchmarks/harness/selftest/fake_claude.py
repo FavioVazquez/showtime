@@ -24,17 +24,48 @@ def emit(obj):
     sys.stdout.flush()
 
 
+def read_code(path):
+    """What a model reading the picture would report: the 5-digit reading-check number in the strip at the bottom
+    of a packet image (judge.py stamps it), decoded here by matching the digit bitmaps."""
+    here = Path(__file__).resolve().parent
+    sys.path.insert(0, str(here.parent.parent / "scoring"))
+    import judge
+    ff = Path(os.environ.get("HOME", ".")).parents[1] / "toolbin" / "ffmpeg"  # <bench home>/toolbin (judge HOME = <home>/judge/home)
+    s, m = judge.GLYPH_SCALE, judge.STRIP_MARGIN
+    cell, w, h = 6 * s, judge.CODE_LEN * 6 * s + 2 * m, judge.STRIP_H
+    raw = subprocess.run([str(ff), "-v", "error", "-nostdin", "-i", path, "-vf", "crop=%d:%d:0:ih-%d,format=gray" % (w, h, h),
+                          "-f", "rawvideo", "-"], stdout=subprocess.PIPE).stdout
+    if len(raw) != w * h:
+        return ""
+    out = ""
+    for i in range(judge.CODE_LEN):
+        best, score = "?", -1
+        for d, g in judge.GLYPHS.items():
+            ok = 0
+            for gy in range(7):
+                for gx in range(5):
+                    lit = g[gy][gx] == "#"
+                    px = raw[(m + gy * s + s // 2) * w + m + i * cell + gx * s + s // 2] > 128
+                    ok += lit == px
+            if ok > score:
+                best, score = d, ok
+        out += best
+    return out
+
+
 def judge(schema):
     props = schema.get("properties", {})
     # like a real judge session in stream-json: one Read per frame image the prompt lists, then the result.
     # <bench home>/judge/FAKE_BLIND makes it a judge that opens nothing and says so (the rankers must reject it)
     import re
     blind = (Path(os.environ.get("HOME", ".")).parent / "FAKE_BLIND").exists()
+    codes = []
     if not blind:
-        for rel in re.findall(r"^\s+(video-\d+/frames/\S+\.(?:jpe?g|png|webp))", arg("-p") or "", re.M):
+        for rel in re.findall(r"^\s+((?:video-\d+/)?frames/\S+\.(?:jpe?g|png|webp))", arg("-p") or "", re.M):
             emit({"type": "assistant", "message": {"content": [
                 {"type": "tool_use", "id": "t" + uuid.uuid4().hex[:8], "name": "Read",
                  "input": {"file_path": str(Path.cwd() / rel)}}]}})
+            codes.append({"file": rel, "code": read_code(str(Path.cwd() / rel))})
     if "ranking" in props:
         labels = props["ranking"]["items"]["enum"]
         crit = props["scores"]["properties"][labels[0]]["required"]
@@ -48,6 +79,8 @@ def judge(schema):
     else:
         data = {"claims": [{"text": "Brightloom", "where": "screen", "verdict": "not_a_claim", "why": "brand name"}],
                 "legibility_problems": []}
+    if "frame_codes" in props:
+        data["frame_codes"] = codes
     print(json.dumps({"type": "result", "subtype": "success", "is_error": False, "result": json.dumps(data),
                       "structured_output": data, "total_cost_usd": 0.0, "num_turns": 1}))
 

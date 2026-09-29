@@ -1,7 +1,8 @@
 // Minimal MCP stdio client for tests/test_mcp.py (no dependencies).
 // Reads a plan as JSON on stdin:
 //   {"server": "<server.mjs>", "cwd": "<dir>", "env": {...}, "mode": "legacy" | "modern",
-//    "steps": [{"method": "tools/call", "params": {...}, "progress": true, "raw": false}]}
+//    "steps": [{"method": "tools/call", "params": {...}, "progress": true, "raw": false}],
+//    "client_name": "showtime-test"}  (the clientInfo name the client reports)
 // Legacy mode performs the initialize handshake first; modern mode puts the protocol version in
 // every request's _meta. Prints [{method, response, progress: [notification params...]}] as JSON.
 import { spawn } from 'node:child_process';
@@ -31,7 +32,7 @@ function request(method, params = {}, { withProgress = false, timeoutMs = 240000
   const meta = { ...(params._meta || {}) };
   if (plan.mode === 'modern') {
     meta['io.modelcontextprotocol/protocolVersion'] = meta['io.modelcontextprotocol/protocolVersion'] || '2026-07-28';
-    meta['io.modelcontextprotocol/clientInfo'] = { name: 'showtime-test', version: '1' };
+    meta['io.modelcontextprotocol/clientInfo'] = { name: plan.client_name || 'showtime-test', version: '1' };
     meta['io.modelcontextprotocol/clientCapabilities'] = {};
   }
   const token = withProgress ? `tok-${id}` : undefined;
@@ -46,7 +47,7 @@ function request(method, params = {}, { withProgress = false, timeoutMs = 240000
 
 const out = [];
 if (plan.mode !== 'modern') {
-  const init = await request('initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'showtime-test', version: '1' } });
+  const init = await request('initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: plan.client_name || 'showtime-test', version: '1' } });
   out.push(init);
   child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
 }

@@ -57,6 +57,7 @@ skills/showtime/bin/showtime setup --link     # ~/.claude/skills/showtime -> thi
 python skills/showtime/tests/run_all.py --fast        # what CI runs on every pull request (a few minutes)
 python skills/showtime/tests/run_all.py               # everything (longer; renders, voice, ASR)
 python skills/showtime/tests/run_all.py -k audio      # one module
+python skills/showtime/tests/run_all.py --fast --changed --explain   # only what your changes can affect
 python scripts/check_release.py --check               # versions, SKILL.md, links, commands, paths, names
 ```
 
@@ -65,9 +66,18 @@ validator needs a known-bad sample that must fail next to a known-good one that 
 proves the check still bites.
 
 `run_all.py` runs several test files at once: `-j N` files in parallel, each in its own process with its
-own working folder and TMPDIR (default `auto` = min(files, cores / 2, 8)); `-j 1` runs them one after
-another with live output. Longest files start first (timings of the previous run, kept in
-`~/.showtime/cache/test-times.json`); a failing file's output is printed in full at the end. A new test
+own working folder and TMPDIR (default `auto` = min(files, cores / 2, 8), and up to cores / 2 on machines
+with more than 16 cores, fewer when memory is short); `-j 1` runs them one after another with live output.
+From 9 processes at once up, long files run in parts (`tests/_split.py` says which files and which tests
+must share a process; `tests/_part.py` runs a part, and any test the plan does not know runs in the first
+part). A test that leaves something for a later test (a result on the class, a file in the class's
+folder) is kept with it when the scan can see it; otherwise add the pair to `KEEP_TOGETHER` there.
+`--changed [REF]` runs only the test files that the changes since REF (default: the merge-base with the
+integration branch, plus uncommitted and untracked files) can affect: what each test used in earlier runs
+(recorded while tests run, in `~/.showtime/cache/test-impact.json`), a static scan of imports, paths and
+commands, and `OVERRIDES` in `tests/_impact.py`; a file it cannot place runs everything and says which.
+Longest files start first (timings of the previous run, kept in `~/.showtime/cache/test-times.json`); a
+failing file's output is printed in full at the end. A new test
 must use temp folders, free ports (port 0) and atomic writes into `~/.showtime/cache`
 (`common.part_path` + `os.replace`, `common.cache_lock`); a file that truly cannot share the machine goes
 in `SERIAL` in `run_all.py`, with the reason. `--shard I/N` runs one of N weight-balanced parts of the
@@ -100,9 +110,12 @@ A README links an asset as `https://github.com/<owner>/<repo>/releases/download/
 ## Releases
 
 1. Update CHANGELOG.md (what changed and why).
-2. `python scripts/check_release.py --set-version X.Y.Z` (updates `st.__version__`, both plugin manifests
-   and `setup/package.json`).
+2. `python scripts/check_release.py --set-version X.Y.Z` (updates `st.__version__`, both plugin manifests,
+   `setup/package.json`, `server.json` and `packages/npm/package.json`).
 3. `python scripts/check_release.py --check` and the full test run must be clean; work through the
    "Before publishing" list in CHANGELOG.md.
 4. When examples changed: in showtime-examples, `python scripts/publish_media.py --refresh`, then
    `--upload` to the release tag named in `examples/MEDIA.json` (see "Example media").
+5. MCP packages (optional): `python scripts/build_packages.py all --out <folder outside the repo> --pack`
+   builds the npm package (`packages/npm/`, named in `server.json` for the MCP Registry) and the `.mcpb`
+   bundle (local stdio server for desktop clients and Smithery). It publishes nothing.

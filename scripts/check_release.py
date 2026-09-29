@@ -8,15 +8,21 @@
 
 Checks:
   versions    .claude-plugin/plugin.json, .claude-plugin/marketplace.json,
-              skills/showtime/setup/package.json and st.__version__ agree
-  skill       SKILL.md exists, has valid frontmatter (name, description <= 1024 chars)
-              and a body within the word budget
-  links       every relative link / `references/...` path in SKILL.md and references/ exists
+              skills/showtime/setup/package.json, server.json (MCP Registry) and packages/npm/package.json
+              agree with st.__version__; the npm package's mcpName and name match server.json
+  skill       SKILL.md exists, has valid frontmatter (name, description <= 1024 chars,
+              compatibility <= 500 chars) and a body within the word budget; no command runs a
+              path built from ${CLAUDE_SKILL_DIR} or ${CLAUDE_PLUGIN_ROOT} (other hosts leave them empty,
+              and "${CLAUDE_SKILL_DIR}/bin/showtime" becomes /bin/showtime)
+  links       every relative link / `references/...` path in SKILL.md and references/ exists; no links
+              to documentation that moved (MOVED_URLS, e.g. the old Codex docs address)
   commands    every `showtime <cmd> [sub]` named in SKILL.md, references/ and agents/ exists in the CLI
   agents      plugin sub-agents in agents/*.md: valid frontmatter (name = file name, a short
               "showtime crew." description, an explicit tool list without the Agent tool, known
               model/effort/color values), every ${CLAUDE_PLUGIN_ROOT} path exists, each agent points at
-              its brief in references/crew/ and carries the return contract, and every brief has an agent
+              rules.md and its brief in references/crew/ (relative to the skill folder, so any host can
+              follow it), runs showtime without ${CLAUDE_PLUGIN_ROOT}, carries the return contract, and
+              every brief has an agent
   paths       no machine-specific paths (a developer's home folder, temp folders) in shipped files
   names       no names of outside projects this repo must not mention (list kept encoded below)
   terms       words CONTEXT.md says to avoid (warning only)
@@ -170,6 +176,12 @@ def rel(p: Path) -> str:
 VERSION_RE = re.compile(r'("version"\s*:\s*")([^"]+)(")')
 
 
+def write_lf(path: Path, text: str) -> None:
+    """Write text with LF line ends on every OS (Path.write_text has no newline= before Python 3.10)."""
+    with open(str(path), "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(text)
+
+
 def lib_version() -> str:
     text = read(LIB / "st" / "__init__.py")
     m = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', text)
@@ -180,11 +192,17 @@ def version_sources() -> List[Tuple[str, Path, Optional[str]]]:
     out: List[Tuple[str, Path, Optional[str]]] = [("st.__version__", LIB / "st" / "__init__.py", lib_version())]
     for label, path, getter in (
             ("plugin.json", REPO / ".claude-plugin" / "plugin.json", lambda d: d.get("version")),
+            ("Agent Plugins plugin.json", REPO / "plugin.json", lambda d: d.get("version")),
+            ("gemini-extension.json", REPO / "gemini-extension.json", lambda d: d.get("version")),
             ("marketplace.json metadata", REPO / ".claude-plugin" / "marketplace.json",
              lambda d: (d.get("metadata") or {}).get("version")),
             ("marketplace.json plugin", REPO / ".claude-plugin" / "marketplace.json",
              lambda d: next((p.get("version") for p in d.get("plugins", []) if p.get("name") == "showtime"), None)),
-            ("setup/package.json", SKILL / "setup" / "package.json", lambda d: d.get("version"))):
+            ("setup/package.json", SKILL / "setup" / "package.json", lambda d: d.get("version")),
+            ("server.json", REPO / "server.json", lambda d: d.get("version")),
+            ("server.json npm package", REPO / "server.json",
+             lambda d: next((p.get("version") for p in d.get("packages", []) if p.get("registryType") == "npm"), None)),
+            ("packages/npm/package.json", REPO / "packages" / "npm" / "package.json", lambda d: d.get("version"))):
         try:
             out.append((label, path, getter(json.loads(read(path)))))
         except (OSError, ValueError):
@@ -201,7 +219,7 @@ def check_versions(f: Findings, fix: bool, set_version: Optional[str]) -> None:
         text = read(init)
         new = re.sub(r'(__version__\s*=\s*["\'])([^"\']+)(["\'])', lambda m: m.group(1) + want + m.group(3), text)
         if new != text and fix:
-            init.write_text(new, encoding="utf-8", newline="\n")
+            write_lf(init, new)
     drift = []
     for label, path, have in version_sources():
         if have is None:
@@ -212,11 +230,32 @@ def check_versions(f: Findings, fix: bool, set_version: Optional[str]) -> None:
         for path in sorted({p for _l, p, _h in drift if p.suffix == ".json"}):
             text = read(path)
             new = VERSION_RE.sub(lambda m: m.group(1) + want + m.group(3), text)
-            path.write_text(new, encoding="utf-8", newline="\n")
+            write_lf(path, new)
         drift = [(l, p, h) for l, p, h in drift if p.suffix != ".json"]
     for label, path, have in drift:
         f.add("versions", "error", "%s says %s, expected %s (run scripts/check_release.py to sync)"
               % (label, have, want), rel(path))
+    check_registry_names(f)
+
+
+def check_registry_names(f: "Findings") -> None:
+    """The MCP Registry accepts server.json only when the npm package it names carries the same mcpName."""
+    server_path, pkg_path = REPO / "server.json", REPO / "packages" / "npm" / "package.json"
+    try:
+        server, pkg = json.loads(read(server_path)), json.loads(read(pkg_path))
+    except (OSError, ValueError) as e:
+        f.add("versions", "error", "cannot read server.json / packages/npm/package.json: %s" % e, rel(server_path))
+        return
+    if pkg.get("mcpName") != server.get("name"):
+        f.add("versions", "error", "packages/npm/package.json mcpName %r must equal server.json name %r"
+              % (pkg.get("mcpName"), server.get("name")), rel(pkg_path))
+    npm = [p for p in server.get("packages", []) if p.get("registryType") == "npm"]
+    if not npm or npm[0].get("identifier") != pkg.get("name"):
+        f.add("versions", "error", "server.json's npm package must be %r (packages/npm/package.json name)"
+              % pkg.get("name"), rel(server_path))
+    if len(server.get("description") or "") > 100:
+        f.add("versions", "error", "server.json description is over 100 characters (the registry's limit)",
+              rel(server_path))
 
 
 # ---------------------------------------------------------------------------
@@ -247,6 +286,11 @@ def parse_frontmatter(text: str) -> Tuple[Optional[Dict[str, str]], str, str]:
     return fields, m.group(2), ""
 
 
+# `${CLAUDE_SKILL_DIR}/bin/showtime`: a host that does not substitute the variable leaves it to the shell,
+# which expands it to nothing (`/bin/showtime`). Mentioning the variable alone, as the folder, is fine.
+HOST_VAR_PATH_RE = re.compile(r"\$\{(CLAUDE_SKILL_DIR|CLAUDE_PLUGIN_ROOT)\}((?:[/\\][\w.-]+)*[/\\](?:bin)[/\\][\w.-]+)")
+
+
 def word_count(md: str) -> int:
     md = re.sub(r"```.*?```", lambda m: " ".join(["w"] * len(m.group(0).split())), md, flags=re.S)
     return len(re.findall(r"[A-Za-z0-9][\w'./-]*", md))
@@ -272,6 +316,13 @@ def check_skill(f: Findings) -> Optional[str]:
     elif not desc.lower().startswith("use when"):
         f.add("skill", "warning", "description should start with 'Use when' (triggers, not a pipeline summary)",
               rel(path))
+    compat = fields.get("compatibility", "")
+    if len(compat) > 500:
+        f.add("skill", "error", "compatibility is %d characters (the Agent Skills limit is 500)" % len(compat), rel(path))
+    for doc in [path] + sorted((SKILL / "references").rglob("*.md")):
+        for m in HOST_VAR_PATH_RE.finditer(body if doc == path else read(doc)):
+            f.add("skill", "error", "%s is a path built from a variable only Claude Code fills in; elsewhere it "
+                  "becomes %s. Say the folder once and write <folder>/... instead" % (m.group(0), m.group(2)), rel(doc))
     words = word_count(body)
     if words > BODY_WORDS_MAX:
         f.add("skill", "error", "SKILL.md body is %d words (budget %d; move detail into references/)"
@@ -341,7 +392,7 @@ def _literal_commands(path: Path) -> Dict[str, str]:
 
 def cli_commands() -> Dict[str, Optional[Set[str]]]:
     """{top-level command: set of sub-commands, or None when it takes free arguments}."""
-    cmds: Dict[str, Optional[Set[str]]] = {"setup": None, "doctor": None, "help": None, "version": None}
+    cmds: Dict[str, Optional[Set[str]]] = {"setup": None, "doctor": None, "help": None, "version": None, "mcp": None}
     st_dir = LIB / "st"
     for py in sorted(st_dir.glob("cli_*.py")):
         for name in _literal_commands(py):
@@ -491,11 +542,14 @@ def check_agents(f: Findings, agents_dir: Optional[Path] = None, crew_dir: Optio
             if not (root / t.replace("\\", "/")).exists():
                 f.add("agents", "error", "${CLAUDE_PLUGIN_ROOT}/%s does not exist" % t, where)
         brief = crew_dir / (path.stem + ".md")
-        want = {(crew_dir / "rules.md").relative_to(root).as_posix(), brief.relative_to(root).as_posix()}
-        missing = want - {t.replace("\\", "/") for t in targets}
+        want = ["%s/%s" % (crew_dir.name, n) for n in ("rules.md", brief.name)]
+        missing = [w for w in want if w not in body.replace("\\", "/")]
         if missing:
-            f.add("agents", "error", "body must point at %s via ${CLAUDE_PLUGIN_ROOT}" % ", ".join(sorted(missing)),
+            f.add("agents", "error", "body must point at %s (relative to the skill folder)" % ", ".join(missing),
                   where)
+        for m in HOST_VAR_PATH_RE.finditer(body):
+            f.add("agents", "error", "runs %s, a path only Claude Code fills in (elsewhere it becomes %s); use "
+                  "`showtime` on PATH or <skill folder>/bin/showtime" % (m.group(0), m.group(2)), where)
         if not brief.is_file():
             f.add("agents", "error", "no role brief %s" % rel(brief), where)
         if "STATUS:" not in body or "NEEDS_INPUT" not in body:
@@ -509,6 +563,24 @@ def check_agents(f: Findings, agents_dir: Optional[Path] = None, crew_dir: Optio
 # ---------------------------------------------------------------------------
 # machine paths, banned names, terms
 # ---------------------------------------------------------------------------
+
+# Documentation that moved: an old link still redirects today but may not tomorrow (and some targets 404).
+MOVED_URLS = [
+    (re.compile(r"https?://developers\.openai\.com/codex\S*"),
+     "the Codex docs moved to https://learn.chatgpt.com/docs/...: link the new page (check it answers 200)"),
+]
+
+
+def check_moved_urls(f: Findings, files: Sequence[Path]) -> None:
+    for p in files:
+        if not is_text(p):
+            continue
+        for i, line in enumerate(read(p).splitlines(), 1):
+            for rx, why in MOVED_URLS:
+                m = rx.search(line)
+                if m:
+                    f.add("links", "error", "%s: %s" % (m.group(0), why), "%s:%d" % (rel(p), i))
+
 
 def check_paths_and_names(f: Findings, files: Sequence[Path]) -> None:
     banned_re = re.compile(r"(?<![A-Za-z0-9_-])(%s)(?![A-Za-z0-9_])" % "|".join(re.escape(b) for b in BANNED),
@@ -709,6 +781,7 @@ def run_checks(fix: bool = False, set_version: Optional[str] = None,
         check_skill(f)
     if "links" in want:
         check_links(f)
+        check_moved_urls(f, shipped_files())
     if "commands" in want:
         check_commands(f)
     if "agents" in want:

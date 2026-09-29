@@ -17,7 +17,7 @@ import subprocess
 import sys
 import sysconfig
 from pathlib import Path, PurePath, PureWindowsPath
-from typing import Dict, Iterable, List, Optional, Union
+from typing import Any, Dict, Iterable, List, Optional, Union
 
 PathLike = Union[str, "os.PathLike[str]"]
 
@@ -62,17 +62,50 @@ def _mac_is_translated() -> bool:
         return False
 
 
+_WIN_ARM64: Optional[bool] = None
+
+
+def _win_native_arm64() -> bool:
+    """True on Windows on Arm, also when this process is x64 code run by Windows' emulation.
+
+    An emulated x64 process sees PROCESSOR_ARCHITECTURE=AMD64, so the environment cannot tell;
+    IsWow64Process2 (Windows 10 1709+) reports the machine's native architecture.
+    """
+    global _WIN_ARM64
+    if not IS_WINDOWS:
+        return False
+    if _WIN_ARM64 is None:
+        _WIN_ARM64 = False
+        try:
+            import ctypes
+            from ctypes import wintypes
+            k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            fn = getattr(k32, "IsWow64Process2", None)
+            if fn is not None:
+                k32.GetCurrentProcess.restype = wintypes.HANDLE
+                fn.argtypes = [wintypes.HANDLE, ctypes.POINTER(ctypes.c_ushort), ctypes.POINTER(ctypes.c_ushort)]
+                fn.restype = wintypes.BOOL
+                proc, native = ctypes.c_ushort(0), ctypes.c_ushort(0)
+                if fn(k32.GetCurrentProcess(), ctypes.byref(proc), ctypes.byref(native)):
+                    _WIN_ARM64 = native.value == 0xAA64  # IMAGE_FILE_MACHINE_ARM64
+        except Exception:  # noqa: BLE001
+            _WIN_ARM64 = False
+    return _WIN_ARM64
+
+
 def arch() -> str:
     """Hardware architecture: 'arm64' or 'x64' (others returned verbatim).
 
     On an Apple Silicon Mac this reports 'arm64' even when the current
-    Python runs under Rosetta, so native binaries get installed.
+    Python runs under Rosetta, so native binaries get installed. On Windows
+    on Arm it reports 'arm64' even when the current Python is x64 code run by
+    Windows' emulation (showtime's own venv is x64 there; see binary_key()).
     """
     m = _machine()
     if m in ("arm64", "aarch64", "armv8l", "arm64e"):
         return "arm64"
     if m in ("x86_64", "amd64", "x64", "i686-64"):
-        if _mac_is_translated():
+        if _mac_is_translated() or _win_native_arm64():
             return "arm64"
         return "x64"
     return m
@@ -82,6 +115,27 @@ def platform_key() -> str:
     """'mac-arm64', 'mac-x64', 'win-x64', 'win-arm64', 'linux-x64', 'linux-arm64'."""
     o = {"mac": "mac", "windows": "win", "linux": "linux"}[os_name()]
     return "%s-%s" % (o, arch())
+
+
+# Where a download has no build for this platform, use another platform's: Windows 11 on Arm runs
+# x64 programs through its built-in emulation (tools without an arm64 build such as deep-filter;
+# its native ffmpeg is used when the manifest lists one).
+BINARY_FALLBACK = {"win-arm64": "win-x64"}
+
+
+def binary_key(key: Optional[str] = None) -> str:
+    """The platform key whose prebuilt binaries (ffmpeg, tools, Python wheels) this machine uses."""
+    key = key or platform_key()
+    return BINARY_FALLBACK.get(key, key)
+
+
+def pick_for_platform(table: Dict[str, Any], key: Optional[str] = None) -> Any:
+    """table[key], else the entry for binary_key(key) (None when neither exists)."""
+    key = key or platform_key()
+    got = table.get(key)
+    if got is None and binary_key(key) != key:
+        got = table.get(binary_key(key))
+    return got
 
 
 def exe(name: str) -> str:
@@ -257,11 +311,36 @@ def playwright_chromium(browsers_dir: Optional[PathLike] = None) -> Optional[Pat
     return max(found, key=rev) if found else None
 
 
+def playwright_headless_shell(browsers_dir: Optional[PathLike] = None) -> Optional[Path]:
+    """Newest Chrome Headless Shell in browsers_dir (installed by showtime setup when no Chrome is found)."""
+    base = Path(browsers_dir) if browsers_dir else None
+    if base is None:
+        env = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
+        if env and env != "0":
+            base = Path(env)
+    if base is None or not base.is_dir():
+        return None
+    found = [p for p in base.glob("chromium_headless_shell-*/chrome-headless-shell-*/chrome-headless-shell*")
+             if p.is_file() and p.name in ("chrome-headless-shell", "chrome-headless-shell.exe")]
+
+    def rev(p: Path) -> int:
+        m = re.search(r"chromium_headless_shell-(\d+)", str(p))
+        return int(m.group(1)) if m else 0
+
+    return max(found, key=rev) if found else None
+
+
+def system_browsers_allowed() -> bool:
+    """SHOWTIME_SYSTEM_BROWSER=0 ignores installed Chrome/Edge/Chromium (tests; a system browser that misbehaves)."""
+    return os.environ.get("SHOWTIME_SYSTEM_BROWSER", "1").strip().lower() not in ("0", "false", "no", "off")
+
+
 def find_browsers(browsers_dir: Optional[PathLike] = None) -> List[Dict[str, str]]:
     """All usable Chromium-family browsers, best first.
 
     Order: $SHOWTIME_CHROME, then system Chrome, Edge, Chromium, then the
-    Playwright-managed Chromium in `browsers_dir`.
+    Playwright-managed Chromium in `browsers_dir`, then the Chrome Headless Shell
+    (headless only; what a default install gets when no browser is installed).
     """
     seen = set()
     result: List[Dict[str, str]] = []
@@ -278,7 +357,7 @@ def find_browsers(browsers_dir: Optional[PathLike] = None) -> List[Dict[str, str
     if env:
         add("custom", env, "env")
     cands = {"mac": _mac_app_candidates, "windows": _win_candidates,
-             "linux": _linux_candidates}[os_name()]()
+             "linux": _linux_candidates}[os_name()]() if system_browsers_allowed() else []
     for kind in ("chrome", "edge", "chromium", "chrome-for-testing"):
         for k, p in cands:
             if k == kind:
@@ -286,6 +365,9 @@ def find_browsers(browsers_dir: Optional[PathLike] = None) -> List[Dict[str, str
     pw = playwright_chromium(browsers_dir)
     if pw:
         add("playwright", pw, "playwright")
+    shell = playwright_headless_shell(browsers_dir)
+    if shell:
+        add("headless-shell", shell, "showtime")
     return result
 
 

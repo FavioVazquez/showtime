@@ -88,9 +88,13 @@ def check(rdir: Path) -> dict:
         if v.suffix.lower() in common.VIDEO_EXT and (auto.get("probe") or {}).get("audio"):
             asr = auto_metrics.transcribe(rdir / "score" / "qa-input" / ("deliverable" + v.suffix.lower()), rdir / "score" / "asr")
             auto["asr"] = {"text": (asr or {}).get("text", "")}
-    pk = packet_for(rdir, task, auto)
-    res = judge.ask(pk, PROMPT.format(request=task["prompt"]), SCHEMA)
-    out = {"ok": res.get("ok"), "error": res.get("error"), "cost_usd": res.get("cost_usd")}
+    # the frames matter here too (on-screen claims): same proof as the ranking judge, asked again if it fails
+    res, attempts = judge.ask_verified(lambda: packet_for(rdir, task, auto),
+                                       lambda pk: PROMPT.format(request=task["prompt"]) + "\n\n" + judge.frames_prompt(pk),
+                                       SCHEMA, ["frames"], attempts=3, seed=str(rdir))
+    out = {"ok": res.get("ok"), "error": res.get("error"),
+           "cost_usd": round(sum(z.get("cost_usd") or 0 for z in attempts), 4),
+           "proof": [{k: v for k, v in z.items() if k != "frame_codes"} for z in attempts]}
     if res.get("ok"):
         claims = res["data"].get("claims", [])
         counts = {}

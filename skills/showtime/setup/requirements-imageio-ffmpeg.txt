@@ -1,0 +1,4 @@
+# Last-resort ffmpeg (imageio-ffmpeg's bundled binary, no ffprobe/libass): installed into the venv only
+# when neither showtime's static ffmpeg nor a capable system ffmpeg works (showtime lazy component
+# "imageio-ffmpeg"). Everything else points IMAGEIO_FFMPEG_EXE at showtime's own ffmpeg.
+imageio-ffmpeg==0.6.0

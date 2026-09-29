@@ -195,7 +195,8 @@ def register_new(sub: argparse._SubParsersAction) -> None:
                 "  showtime retime my-film -d 30 --json\n"
                 "  showtime retime my-reel --from-voice my-reel/voice/timeline.json\n"
                 "  showtime retime my-reel --from-voice voice/timeline.json --map hook=open,demo=demo,cta=close\n"
-                "  showtime retime my-reel --from-voice voice/timeline.json --map lines-to-scenes.json --pad 0.4"))
+                "  showtime retime my-reel --from-voice voice/timeline.json --map lines-to-scenes.json --pad 0.4\n"
+                "  showtime retime my-launch --cuts 5.33,12.44,19.56,24.89 -d 30   (scene changes on the music's phrases)"))
     p.add_argument("project", help="project folder (with showtime.json)")
     p.add_argument("--duration", "-d", type=float, metavar="S", help="new length in seconds")
     p.add_argument("--from-voice", metavar="TIMELINE",
@@ -210,6 +211,9 @@ def register_new(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--total", type=float, metavar="S",
                    help="--from-voice: keep the video S seconds long (the end card after the narration grows or "
                         "shrinks; it warns under 2.5 s)")
+    p.add_argument("--cuts", metavar="T,T,...",
+                   help="put the scene changes at these times (seconds, one per scene change, e.g. from `showtime "
+                        "audio cuts`: the music's phrase starts); with --duration the video also gets that length")
     p.add_argument("--dry-run", "-n", action="store_true", help="print what would change, write nothing")
     p.add_argument("--json", action="store_true", help="print the report as JSON")
     p.set_defaults(func=cmd_retime)
@@ -335,6 +339,13 @@ def cmd_retime(args: argparse.Namespace) -> int:
         proj = proj.parent
     if not (proj / "showtime.json").is_file():
         raise ShowtimeError("no showtime.json in %s" % proj, hint="pass the project folder: showtime retime <project> -d 20")
+    if getattr(args, "cuts", None):
+        if args.from_voice:
+            raise ShowtimeError("--cuts and --from-voice both set the scene lengths; give one of them")
+        cuts = _parse_cuts(args.cuts)
+        new, plan = cuts_plan(proj, cuts, args.duration)
+        rep = retime_project(proj, new, dry_run=args.dry_run, plan=plan)
+        return _retime_report(rep, proj, args)
     if (args.duration is None) == (args.from_voice is None):
         raise ShowtimeError("give either --duration S or --from-voice <timeline.json>",
                             hint="showtime retime %s -d 20   or   showtime retime %s --from-voice %s/voice/timeline.json"
@@ -356,6 +367,48 @@ def cmd_retime(args: argparse.Namespace) -> int:
         rep["notes"] = voice["notes"] + rep["notes"]
     else:
         rep = retime_project(proj, float(args.duration), dry_run=args.dry_run)
+    return _retime_report(rep, proj, args)
+
+
+def _parse_cuts(spec: str) -> List[float]:
+    try:
+        return [float(x) for x in re.split(r"[,\s]+", str(spec).strip()) if x]
+    except ValueError:
+        raise ShowtimeError("--cuts takes seconds separated by commas (got %r)" % spec,
+                            hint="showtime retime <project> --cuts 5.3,12.4,19.6,24.9")
+
+
+def cuts_plan(proj: Path, cuts: List[float], total: Optional[float] = None) -> Any:
+    """(new length, plan) that puts the scene changes of a project at `cuts`: one time per scene change
+    (N-1 for N scenes), or N scene starts beginning with 0. Every scene keeps at least 0.5 s."""
+    cfg_path, cfg, old = _project_cfg(proj)
+    new = float(total) if total else old
+    page = proj / str(cfg.get("page") or "index.html")
+    if not page.is_file():
+        raise ShowtimeError("--cuts needs an HTML page with scenes (%s is missing)" % page.name)
+    scenes, _ = _split_tops(_Tags(page.read_text(encoding="utf-8")).resolve())
+    n = len(scenes)
+    starts = list(cuts)
+    if len(starts) == n - 1:
+        starts = [0.0] + starts
+    if len(starts) != n or n == 0:
+        raise ShowtimeError("%s has %d scene(s), so --cuts needs %d time(s) (got %d)" % (page.name, n, max(0, n - 1), len(cuts)),
+                            why="each time is where one scene hands over to the next",
+                            hint="scenes: %s" % ", ".join(_scene_names(scenes)))
+    if abs(starts[0]) > 1e-6:
+        raise ShowtimeError("the first scene must start at 0 (got %g)" % starts[0])
+    ends = starts[1:] + [new]
+    fps = float(cfg.get("fps") or 30)
+    plan = []
+    for i, (a, b) in enumerate(zip(starts, ends)):
+        if b - a < 0.5:
+            raise ShowtimeError("scene %d (%s) would last %.2fs; every scene needs at least 0.5 s" % (
+                i + 1, _scene_names(scenes)[i] or "#%d" % (i + 1), b - a), hint="check the order of --cuts and the length")
+        plan.append((_on_frame(a, fps), b if i == n - 1 else _on_frame(b, fps)))
+    return new, plan
+
+
+def _retime_report(rep: Dict[str, Any], proj: Path, args: argparse.Namespace) -> int:
     if args.json:
         print_json(rep)
         return 0

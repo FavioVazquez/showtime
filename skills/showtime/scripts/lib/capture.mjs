@@ -608,7 +608,7 @@ export async function serveStatic(target, { spa = true } = {}) {
 /**
  * Did the browser land somewhere that is not the site? -> null, or { kind, reason, hint }.
  * kinds: 'showtime-preview' (the page was wrapped in showtime's preview player: it was served by
- * `showtime server`/`preview`), 'showtime-runtime' (any other /_st/ page), 'directory-listing'.
+ * `showtime server`/`preview`; also that server's 403 "needs its session key" page), 'showtime-runtime' (any other /_st/ page), 'directory-listing'.
  */
 export async function landingProblem(page) {
   const s = await page.evaluate(() => {
@@ -617,6 +617,7 @@ export async function landingProblem(page) {
     return {
       path: location.pathname, title, h1,
       player: typeof window.__ST_PLAYER__ !== 'undefined',
+      keyWall: /^403 forbidden: this showtime preview server needs its session key/.test((document.body?.innerText || '').trim()),
       listingTable: !!document.querySelector('table#files, ul#files, #listing, .directory-listing'),
       otherEls: document.querySelectorAll('img,video,canvas,svg,button,input,form,section,article,header,footer,nav').length,
     };
@@ -624,6 +625,10 @@ export async function landingProblem(page) {
   if (!s) return null;
   const hintServe = 'capture the folder with `--serve <dir>` (a plain static server), or the app\'s own dev-server URL; ' +
     'never through `showtime server` / `showtime preview`, which wrap pages in the preview player';
+  if (s.keyWall) {
+    return { kind: 'showtime-preview', reason: 'the URL is showtime\'s own project server (`showtime server` / `preview`), which ' +
+      'refused it for lack of its session key; it wraps pages in the preview player, so it is not the site', hint: hintServe };
+  }
   if (s.player || /\s-\sshowtime preview$/.test(s.title) || s.path === '/_st/preview') {
     return { kind: 'showtime-preview', reason: `the page is showtime's preview player ("${s.title}"), not the site`, hint: hintServe };
   }

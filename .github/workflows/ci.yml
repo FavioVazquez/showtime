@@ -1,15 +1,20 @@
 name: ci
 
 # Two tiers (the quick release checks are checks.yml):
-#   every push / pull request : the fast test suite, split into 3 parallel shards per OS image
-#                               (run_all.py --shard I/3, -j 2 inside each), after a core-tier setup;
-#                               shard 1 also runs a 2 s 360p render and the path-with-spaces shims
-#   nightly / manual          : the full test suite (voice, ASR, longer renders)
+#   every push / pull request : the fast test suite on Linux, Windows and Apple Silicon, split into 3
+#                               parallel shards per OS image (run_all.py --shard I/3, -j 2 inside each),
+#                               after a core-tier setup; shard 1 also runs a 2 s 360p render and the
+#                               path-with-spaces shims
+#   nightly / manual          : the full test suite (voice, ASR, longer renders; a superset of the fast
+#                               tier) on every OS image, the Intel Mac included
+# The Intel Mac runner (macos-15-intel) is the slowest and scarcest image, so pushes and pull requests do
+# not wait on it: it runs in the nightly tier and whenever the workflow is started by hand (Actions > ci >
+# Run workflow; an empty "os" input means every image, the Intel Mac included).
 # Changes that only touch docs, Markdown, README art or the site do not run it.
 # The showtime runtime (ffmpeg, models, SoundFont, Node packages, Python venv) is cached per OS, keyed on the
 # setup manifest, the requirements lock, the Node lock, setup.py and the Python version: a warm run only checks it.
-# While the repository is private, Actions minutes come from the owner's plan (macOS counts 10x, Windows 2x):
-# pushes skip the Intel Mac and the nightly tier; run them by hand (Actions > ci > Run workflow).
+# A private repository pays for its Actions minutes (macOS counts 10x, Windows 2x): there the schedule does
+# not run; start the nightly tier by hand.
 on:
   push:
     branches: [main]
@@ -63,8 +68,9 @@ jobs:
       fail-fast: false
       matrix:
         # macos-14: Apple Silicon (arm64). macos-15-intel: x86_64 (the macos-13 image is retired).
-        # ubuntu-24.04 and windows-2022: x64. A private repository's pushes skip the Intel Mac.
-        os: ${{ fromJSON(inputs.os || (github.event.repository.private && '["ubuntu-24.04", "windows-2022", "macos-14"]' || '["ubuntu-24.04", "windows-2022", "macos-14", "macos-15-intel"]')) }}
+        # ubuntu-24.04 and windows-2022: x64. Push / pull request: no Intel Mac (it runs nightly).
+        # By hand: the "os" input, or every image, the Intel Mac included, when it is empty.
+        os: ${{ fromJSON(inputs.os || (github.event_name == 'workflow_dispatch' && '["ubuntu-24.04", "windows-2022", "macos-14", "macos-15-intel"]' || '["ubuntu-24.04", "windows-2022", "macos-14"]')) }}
         # the suite's files split into 3 weight-balanced parts (run_all.py SHARD_WEIGHTS), one job each
         shard: [1, 2, 3]
     runs-on: ${{ matrix.os }}

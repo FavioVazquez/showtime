@@ -38,12 +38,17 @@ def snap_words(words: List[Dict[str, Any]], audio, sr: int, *, grow_start: float
     toks.sort(key=lambda w: w["start"])
     shifts = []
     orig = [(w["start"], w["end"]) for w in toks]
+    # fillers the gap scan added already carry decoder-bounded spans: trimming them to the loudest
+    # frames would shrink a quiet "uh" to a sliver (they still bound their neighbours below)
+    fixed = [bool(w.get("detected")) for w in toks]
 
     def fr(t: float) -> int:
         return max(0, min(nf, int(round(t / HOP))))
 
     # pass 1: trim + grow starts
     for i, w in enumerate(toks):
+        if fixed[i]:
+            continue
         s, e = float(w["start"]), float(w["end"])
         a, b = fr(s), max(fr(s) + 1, fr(e))
         seg = voiced[a:b]
@@ -62,6 +67,8 @@ def snap_words(words: List[Dict[str, Any]], audio, sr: int, *, grow_start: float
         w["end"] = max(e2, s2 + min_len)
     # pass 2: grow ends
     for i, w in enumerate(toks):
+        if fixed[i]:
+            continue
         nxt = toks[i + 1]["start"] if i + 1 < len(toks) else nf * HOP
         k = fr(w["end"])
         limit = min(nxt, w["end"] + grow_end)

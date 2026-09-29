@@ -42,5 +42,5 @@ if ($uv) {
 Write-Error ("showtime: no Python 3.8+ found. Install uv: " +
   'powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"' +
   " (or Python 3 from https://www.python.org/downloads/), then run: showtime setup. " +
-  "If you just installed one, restart Claude Code (or open a new terminal) so it sees the new PATH.")
+  "If you just installed one, restart your coding agent (or open a new terminal) so it sees the new PATH.")
 exit 127

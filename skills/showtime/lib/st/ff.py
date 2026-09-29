@@ -23,7 +23,7 @@ import threading
 from dataclasses import dataclass, field
 from fractions import Fraction
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 from . import platform as plat
 from .common import RunError, ShowtimeError, debug, home, read_json, run, write_json
@@ -64,18 +64,40 @@ _lock = threading.Lock()
 _cached: Optional[FF] = None
 
 
-def _version_of(exe_path: str) -> Optional[str]:
+def _version_of(exe_path: str, timeout: float = 30) -> Optional[str]:
     """First line of `-version` if the binary runs, else None."""
+    return _run_version(exe_path, timeout)[0]
+
+
+def _run_version(exe_path: str, timeout: float = 30) -> Tuple[Optional[str], str]:
+    """(version or None, why it did not run): `-version` with the reason kept for error messages."""
     try:
         cp = subprocess.run([exe_path, "-hide_banner", "-version"], stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE, timeout=30, encoding="utf-8", errors="replace")
-    except (OSError, subprocess.SubprocessError):
-        return None
+                            stderr=subprocess.PIPE, timeout=timeout, encoding="utf-8", errors="replace")
+    except subprocess.TimeoutExpired:
+        return None, ("no answer within %.0f s (a virus scanner may still be checking the new file)" % timeout)
+    except (OSError, subprocess.SubprocessError) as e:
+        return None, "cannot start: %s" % e
     if cp.returncode != 0:
-        return None
+        tail = " ".join(((cp.stderr or "") + (cp.stdout or "")).split())[-200:]
+        return None, exit_reason(cp.returncode) + (": " + tail if tail else "")
     first = (cp.stdout or "").splitlines()[:1]
     m = re.search(r"version\s+(\S+)", first[0]) if first else None
-    return m.group(1) if m else (first[0] if first else "unknown")
+    return (m.group(1) if m else (first[0] if first else "unknown")), ""
+
+
+def exit_reason(rc: int, windows: Optional[bool] = None) -> str:
+    """'exit code 3', or on Windows 'exit code 0xC0000135 (a DLL it needs is missing)'."""
+    if (plat.IS_WINDOWS if windows is None else windows) and (rc < 0 or rc > 0xFFFF):
+        nt = rc & 0xFFFFFFFF
+        return "exit code 0x%08X%s" % (nt, NT_STATUS.get(nt, ""))
+    return "exit code %d" % rc
+
+
+# Windows exit codes that say why a program did not start
+NT_STATUS = {0xC0000135: " (a DLL it needs is missing)", 0xC0000139: " (entry point not found in a DLL)",
+             0xC000007B: " (wrong architecture: bad image format)", 0xC000001D: " (illegal instruction: CPU too old)",
+             0xC0000005: " (access violation)", 0xC0000142: " (DLL initialisation failed)"}
 
 
 def _sibling(exe_path: str, name: str) -> Optional[str]:

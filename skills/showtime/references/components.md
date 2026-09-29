@@ -104,7 +104,10 @@ English plus common Spanish, French, Portuguese and German ones). One-word cards
 never overlap; each card shows from its first word − 0.05 s to its last word + 0.35 s. Lines use
 `text-wrap: balance`; a weak word stays on the line of the word after it, and a short token ("K")
 can still strand away from its modifier: list such pairs in `keep`. Theme tokens:
-`--cap-font --cap-weight --cap-ink --cap-accent --cap-outline --cap-plate --cap-active-ink`.
+`--cap-font --cap-weight --cap-ink --cap-accent --cap-outline --cap-plate --cap-active-ink`. The
+edge, glow and drop shadow are all made from `--cap-outline`, so on a light ground set a dark ink and a
+light outline (as `paper` does) and the words stay crisp; the accent must pass 4.5:1 on the ground.
+For a light 9:16 short, `boxed-pill` (a plate behind the card) reads best.
 Put the layer outside the scenes so it runs across cuts; it is marked `data-caption` for QA.
 ```html
 <div data-st="caption-karaoke" data-src="voice/vo.words.json" data-style="highlight-box" data-at="0.6"></div>
@@ -254,8 +257,31 @@ to land each card on its own beat), `dim`. Icons: `.svg` path (inlined, takes th
 `/_lib/lucide-static/icons/zap.svg`), raw `<svg>`, image, or text. Avoid emoji (they render
 with each OS's own font).
 
-## 6. Stills, closers, texture
+## 6. Camera, stills, closers, texture
 
+- **camera**: a scene camera over the content it wraps (put it at `position:absolute; inset:0` around
+  the scene's content). `path` `[{at, dur, zoom, focus, to, ease}]`: `at` seconds from the scene start,
+  `dur` the move (0 = a cut to that framing), `zoom` (1 = as laid out), `focus` a selector inside the
+  camera or `[x%, y%]` (the point looked at), `to` `[x%, y%]` where it lands on screen (default the
+  centre), `ease` (default `camera`). Zoom is interpolated in log space and the focus with the same
+  curve, so a push reads even. `contain` (default true): at zoom >= 1 the content always covers the
+  frame. `drift` (zoom per second after the last move, capped at +6 %): holds keep breathing. Children
+  with `data-depth="k"` that fill the camera move k times as much (0.3 = a far layer: parallax).
+  `keepText` (default true): while the camera moves, the union of the visible text stays inside the
+  frame (the feed-safe box at 9:16), so a push never crops a headline; between moves (with `drift` 0,
+  the default) the transform sits on whole pixels so type does not shimmer. `to: "stay"` zooms about
+  the focus where it is laid out. A 5-6 % push onto a result is the premium move; `through`/`match`/`pan`
+  (`transitions.md`) carry the camera from one scene to the next.
+- **fit**: `data-st="fit"` on a terminal, a code line or a command pill: the type shrinks until the
+  longest line fits the box (and the lines fit its height) at the frame size of the run, down to `min`
+  (0.55); below that, lines wrap with a hanging indent. Measured once, after the components inside it.
+  ```html
+  <div class="cam" data-st="camera" data-drift="0.004"
+       data-path='[{"at":0,"zoom":1},{"at":3,"dur":1.6,"focus":".out","zoom":1.08}]'>...</div>
+  ```
+- **portal** (for the `through` transition): `data-portal` on any element makes its box the opening;
+  `data-portal="counter"` on a single letter (`<span data-portal="counter">o</span>`) makes the glyph's
+  enclosed hole the opening (measured from the real font).
 - **ken-burns**: `src` or child media, `from`/`to` `{scale, x, y}` (x/y %), or `focus` `[x%, y%]` +
   `zoom` 1.1, `dur` (default clip length), `ease` `sine.inOut`, `fit` (`cover`; `contain` shows the
   whole image; page CSS on `.st-kb-media` works too), `fade` (default: none when the shot starts with

@@ -1,6 +1,6 @@
 """takes_packed.md: every transcript of a shoot as compact, phrase-level text.
 
-This is what Claude reads to understand the material and pick ranges.
+This is what your agent reads to understand the material and pick ranges.
 A phrase ends at a pause >= 0.5 s (configurable) or a speaker change.
 
     ## take1  (source: take1.mp4, 42.1 s, 12 phrases, speakers S0 S1, 5 fillers)

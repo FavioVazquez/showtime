@@ -65,10 +65,12 @@ Hook catalog (pick based on what the source actually offers):
 
 Times are for the default length. Scale proportionally, but keep the hook at ≤3 s.
 
-**Launch (20–45 s social, 60–90 s hero).** Hook 0–3 → tension (the problem in one image) 3–8 →
-reveal (name + hero UI, on the strongest downbeat) → 2–4 feature beats, each "verb then result", each
-ending on a result frame held ≥0.7 s → optional proof beat (a real number, a real quote) → close:
-logo, one-line value, URL/CTA held ≥2.5 s.
+**Launch (20–45 s social, 60–90 s hero).** 4–6 scenes, one message each, handed over by camera
+cuts and dissolves, not layout changes, the camera still (`workflows/launch-video.md`, scene grammar): hook (the promise or the
+problem, complete at frame 0, 3.5–6 s) → the verb (the product doing its one job, a real command or
+capture, the result landing and marked) → 1–3 proof beats in the same window, each "verb then
+result" with the result held ≥1.5 s → end card on the music's swell: name, one-line value,
+install/CTA, URL, held ≥3 s. A real number or quote may replace one proof beat when it is sourced.
 **Explainer.** Pick one: concept (name → mechanism, one layer at a time → implication); process
 (3–6 steps on one consistent stage); list (hook → N parallel items, three is strongest → wrap);
 story (setup → tension → turn → resolution → lesson). Never follow the source's paragraph order.

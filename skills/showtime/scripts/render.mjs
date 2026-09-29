@@ -2,6 +2,8 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { startServer } from './server.mjs';
 import {
   parseCli, runMain, resolveProject, jobDir, freshPath, Progress, info, warn, c, cpuCount, fmtDuration, fmtBytes,
@@ -61,6 +63,7 @@ const SPEC = {
     size: { help: 'render at this size for this run: WxH (1080x1920) or an aspect (9:16, 1:1, 4:5); beats showtime.json and ST.config. With --job the file is <job>/<W>x<H>.mp4, a variant that leaves the job\'s final alone', metavar: 'SIZE' },
     settle: { help: 'paint wait per frame: raf1 (default), raf2 (extra safe), none (fastest, can miss paints)' },
     'keep-frames': { type: 'boolean', help: 'keep work/frames after a successful render' },
+    'no-check': { type: 'boolean', help: 'with --size: skip the layout check at that size (it stops the render when text is cut off or off frame there)' },
     json: { type: 'boolean', help: 'print a JSON report on stdout' },
     quiet: { type: 'boolean', short: 'q', help: 'no progress output' },
   },
@@ -106,6 +109,22 @@ async function main() {
   // --size: one page, another size for this run (a 9:16 cut of a 16:9 page reads the frame aspect)
   const size = parseSize(a.size);
   if (size) { cfg.width = size.width; cfg.height = size.height; override.width = size.width; override.height = size.height; }
+  // Another size re-lays the page: text that fits at 16:9 can be cut off at 9:16. Check the layout at THIS
+  // size first, so a clipped line never ships silently (--no-check skips it).
+  if (size && !a.preview && !a['no-check']) {
+    const checkJs = path.join(path.dirname(fileURLToPath(import.meta.url)), 'check.mjs');
+    if (!a.quiet) info(`checking the layout at ${size.width}x${size.height} before rendering (--no-check skips this)`);
+    const r = spawnSync(process.execPath, [checkJs, proj.dir, '--size', `${size.width}x${size.height}`, '--no-determinism', '--json'],
+      { encoding: 'utf8', env: process.env, maxBuffer: 64 * 1024 * 1024 });
+    let rep = null;
+    try { rep = JSON.parse(r.stdout); } catch { rep = null; }
+    const LAYOUT = new Set(['text_clipped', 'text_off_canvas', 'safe_zone', 'text_overlap', 'overflow']);
+    const bad = rep ? rep.findings.filter((f) => f.severity === 'error' && (LAYOUT.has(f.code) || /clip|off_canvas|overflow/.test(f.code))) : [];
+    if (bad.length) {
+      throw new UserError(`the layout breaks at ${size.width}x${size.height} (the page re-lays itself for this size and some text no longer fits): ${bad.slice(0, 4).map((f) => f.message).join('; ')}`,
+        `showtime check ${path.relative(process.cwd(), proj.dir) || '.'} --size ${a.size}, fix the layout for that size (terminals and code lines: data-st="fit"), or --no-check to render anyway`);
+    }
+  }
   if (a.fps !== undefined) { const f = Number(a.fps); if (!(f > 0 && f <= 240)) throw new UserError(`--fps must be between 1 and 240 (got ${a.fps})`); override.fps = f; }
   const alpha = a.alpha ? String(a.alpha).toLowerCase() : null;
   if (alpha && !['prores', 'webm', 'animation'].includes(alpha)) throw new UserError(`--alpha must be prores, animation or webm (got ${a.alpha})`);
@@ -515,6 +534,28 @@ async function main() {
       fs.writeFileSync(credFile, creditLines.join('\n') + '\n');
       report.credits = credFile;
     }
+    if (audio && audio.mixReport && audio.creditItems && hasPyModule('cli_audio.py')) {
+      // the full credits: exact attributions, courtesy credits, end-card line, the description block in share.txt
+      // (finals only) and the Content ID note for music whose owner claims uncredited videos
+      const stem = path.basename(outFile, ext);
+      const credName = !a.output || stem === 'final' ? 'credits.txt' : `${stem}.credits.txt`;
+      const cargs = ['audio', 'credits', '--report', audio.mixReport, '--out-dir', outDir, '--name', credName, '--json'];
+      if (report.credits) cargs.push('--merge', report.credits);
+      if (a.preview || partial) cargs.push('--no-share');
+      const cr = await runPyCli(cargs, { timeout: 120000 });
+      if (cr.code === 0) {
+        try {
+          const cj = JSON.parse(cr.stdout);
+          if (cj.credits_file) report.credits = cj.credits_file;
+          if (cj.share_file) report.share = cj.share_file;
+          report.credit_notes = cj.notes || [];
+          if ((cj.end_card || []).length) report.end_card = cj.end_card;
+        } catch { /* the credits file from above stays */ }
+      } else {
+        const why = (cr.stderr || '').trim().split('\n').filter(Boolean).pop() || `exit ${cr.code}`;
+        addWarn(`credits: ${why}`);
+      }
+    }
     timings.total = Date.now() - T0;
     report.fps_overall = +(nFrames / (timings.total / 1000)).toFixed(2);
     const reportFile = a.output ? path.join(workDir, 'render.json') : path.join(outDir, 'render.json');
@@ -571,6 +612,8 @@ async function main() {
       if (alpha === 'prores' && size > SIZE_HINT_BYTES) console.log(c.dim(`          ProRes 4444 is large; for flat graphics --alpha animation (lossless RGBA) is usually a fraction of the size`));
       if (report.poster) console.log(`  poster  ${report.poster.file}${report.poster.baked ? ` (${report.poster.time}s baked into frame 0)` : ''}`);
       if (report.credits) console.log(`  credits ${report.credits}`);
+      if (report.share) console.log(`  share   ${report.share} (credits block for the video description)`);
+      for (const n of report.credit_notes || []) console.log(c.yellow(`  note    ${n}`));
       console.log(`  report  ${reportFile}`);
       console.log(`  log     ${logFile}`);
       if (report.job) console.log(`  job     ${report.job}${studioMedia ? ' (studio media: the latest final/preview is unchanged)' : report.job_variant ? ` (logged as a variant, ${report.job_variant}: the latest ${a.preview ? 'preview' : 'final'} is unchanged; to make it the latest: showtime job note ${report.job} --output ${a.preview ? 'preview' : 'final'}=${outFile})` : ` (latest ${a.preview ? 'preview' : 'final'} -> ${path.basename(outFile)})`}`);
@@ -645,6 +688,8 @@ async function buildAudio({ proj, cfg, info, browser, openOpts, audioDir, from, 
   const inputs = [];
   const sources = [];
   let credits = [];
+  let mixReport = null;
+  let creditItems = 0;
   const fullDur = info.duration;
   // 1) ST.score, rendered offline in its own page
   if (info.hasScore) {
@@ -667,7 +712,7 @@ async function buildAudio({ proj, cfg, info, browser, openOpts, audioDir, from, 
   if (aud !== undefined && aud !== null && aud !== false && aud !== '') {
     const mixOut = path.join(audioDir, 'mix.wav');
     const r = await mixFromConfig(aud, proj.dir, fullDur, mixOut, audioDir, addWarn);
-    if (r) { inputs.push({ file: mixOut, channels: 2 }); sources.push(r.kind); credits = r.credits || []; }
+    if (r) { inputs.push({ file: mixOut, channels: 2 }); sources.push(r.kind); credits = r.credits || []; mixReport = r.reportFile || null; creditItems = r.creditItems || 0; }
   }
   if (!inputs.length) return null;
 
@@ -785,7 +830,7 @@ async function buildAudio({ proj, cfg, info, browser, openOpts, audioDir, from, 
   const mOut = pick.m;
   if (leveled && !ok(pick)) addWarn(`the AAC audio peaks at ${mOut.TP} dBTP, above the ${tp} dBTP ceiling`);
   return {
-    file: m4a, wav: masterWav, credits,
+    file: m4a, wav: masterWav, credits, mixReport, creditItems,
     report: { sources, lufs: mOut.I, true_peak: mOut.TP, target: noLoudnorm ? null : target, ceiling: tp, mode: mres.mode, gain_db: mres.gain_db ?? null, voice_over_score_db: voiceOverScore },
   };
 }

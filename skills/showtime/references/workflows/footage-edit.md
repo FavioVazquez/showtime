@@ -18,7 +18,7 @@ transcript; you read text and images, never the raw video. The full reference is
 Keep the source aspect, frame rate and framing (no punch-ins on cuts unless asked), except for Reels/TikTok/Shorts: `--aspect 9:16 --captions
 bold-pop` (face-tracked reframe). Remove fillers, shorten pauses over 0.5 s to 0.3 s; captions
 `bold-pop` for vertical, `clean` for 16:9; `--grade auto` only when the footage looks off; denoise only
-when noise is audible in the measurements; -14 LUFS (-16 for podcasts and tutorials). Ask at most:
+when noise is audible in the measurements; -14 LUFS / -1 dBTP for every edit (the same as everything else showtime delivers, podcasts and tutorials included; another level only when the user asks: `--lufs N`, or `--keep-loudness` to leave the source level). Ask at most:
 target length/platform, and anything that must stay or go, and only when the request leaves it open.
 
 ## Steps
@@ -80,7 +80,7 @@ target length/platform, and anything that must stay or go, and only when the req
 |---|---|
 | Tighten a talking head | `edit cut --max-pause 0.5`, no punch-ins: jump cuts in a tightened talking head are expected and read as clean; a zoom in and back out at every cut reads as a gimmick (`edit check` flags it). Reframe only on request, one scale held per sentence or section (`editing.md` section 6) |
 | Vertical from landscape | `--aspect 9:16` (face-tracked reframe), `--captions bold-pop`; or `showtime footage reframe <file> --aspect 9:16` for a whole clip |
-| Podcast clip | `transcribe --speakers 2`, pick ranges by speaker lines, captions `clean`, `"loudness": -16` in the EDL. Long episode: `transcribe <file> --from 21:30 --to 24:00` transcribes only that window (times stay on the episode's clock). Published transcript: align it (`showtime voice align`) and take speakers from its labels rather than diarization (captions.md, section 6) |
+| Podcast clip | `transcribe --speakers 2`, pick ranges by speaker lines, captions `clean` (loudness stays at the -14 default unless asked). Long episode: `transcribe <file> --from 21:30 --to 24:00` transcribes only that window (times stay on the episode's clock). Published transcript: align it (`showtime voice align`) and take speakers from its labels rather than diarization (captions.md, section 6) |
 | Noisy room | `showtime footage denoise <file> --strength 0.7 -o clean.mp4` first, or `"audio": {"denoise": "auto"}` in the EDL |
 | Colour | `showtime footage grade <file> --analyze`, then `--auto`, or a look (`showtime footage luts`); `--compare` writes a before/after still |
 | Shaky phone clip | `showtime footage stabilize <file>` or `"stabilize": true` on a range |

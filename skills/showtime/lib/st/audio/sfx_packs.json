@@ -1,0 +1,1111 @@
+{
+ "schema": "showtime.audio.packs/1",
+ "about": "Extra sound-effect packs for the audio library, fetched from their creators' sites the first time a mix, a search or `showtime audio packs fetch` needs them (never re-hosted). Each pack is pinned by URL, size and sha256; its license was checked on the creator's page (evidence). CC0 packs need no credit; CC BY packs carry the exact credit, which `audio mix` writes into credits.txt.",
+ "updated": "2026-09-29",
+ "hosts": {
+  "opengameart.org": {
+   "delay_s": 10.5,
+   "rule": "direct file links from each pack page; one pack per request, 10 s apart (the site asks for gentle use)"
+  },
+  "bigsoundbank.com": {
+   "delay_s": 2.0,
+   "rule": "direct /UPLOAD/ogg/<n>.ogg links; every page states CC0"
+  },
+  "upload.wikimedia.org": {
+   "delay_s": 2.0,
+   "rule": "Commons file URLs; send a descriptive User-Agent (SHOWTIME_CONTACT adds a contact) and back off on HTTP 429"
+  }
+ },
+ "packs": [
+  {
+   "id": "oga-100-cc0-metal-wood-sfx",
+   "title": "100 CC0 metal and wood SFX",
+   "author": "rubberduck",
+   "source": "opengameart",
+   "source_url": "https://opengameart.org/content/100-cc0-metal-and-wood-sfx",
+   "url": "https://opengameart.org/sites/default/files/100-CC0-wood-metal-SFX.zip",
+   "type": "zip",
+   "bytes": 1990361,
+   "sha256": "be6eba63b03409ac0c77787a956b1503a7c186403d04aef9725c52644a4b7878",
+   "license": "CC0-1.0",
+   "evidence": "\"License(s): CC0\" on https://opengameart.org/content/100-cc0-metal-and-wood-sfx",
+   "attribution": null,
+   "credit_optional": "rubberduck (OpenGameArt)",
+   "kind": "sfx",
+   "category": "impact",
+   "tags": [
+    "door",
+    "foley",
+    "hammer",
+    "hit",
+    "keys",
+    "lock",
+    "metal",
+    "slam",
+    "wood"
+   ],
+   "files": 100,
+   "formats": [
+    "ogg"
+   ],
+   "notes": "Flat zip of 100 short ogg: metal door open, hammer, keys, lock open/close, sheets, slams; wood breaking, door closing, cracking, squeaks. Companion to the already-listed 100-CC0-SFX_0.zip (different content)."
+  },
+  {
+   "id": "oga-100-cc0-sfx-2",
+   "title": "100 CC0 SFX #2",
+   "author": "rubberduck",
+   "source": "opengameart",
+   "source_url": "https://opengameart.org/content/100-cc0-sfx-2",
+   "url": "https://opengameart.org/sites/default/files/sfx_100_v2.zip",
+   "type": "zip",
+   "bytes": 2367871,
+   "sha256": "0fc61b4494e2e893c0c015ced4877b3f689c7d84a48cb61daecd7ddb52db797b",
+   "license": "CC0-1.0",
+   "evidence": "\"License(s): CC0\" on https://opengameart.org/content/100-cc0-sfx-2",
+   "attribution": null,
+   "credit_optional": "rubberduck (OpenGameArt)",
+   "kind": "sfx",
+   "category": "foley",
+   "tags": [
+    "air",
+    "ambience",
+    "construction",
+    "door",
+    "footsteps",
+    "glass",
+    "loop",
+    "metal",
+    "stone",
+    "street",
+    "switch",
+    "thunder",
+    "wood"
+   ],
+   "files": 100,
+   "formats": [
+    "ogg"
+   ],
+   "notes": "Flat zip, prefix sfx100v2_. Includes footsteps, doors, glass, switches, thunder plus loops (ambient, machine, construction site, highway/street, flowing water). Different file from the already-listed 100-CC0-SFX_0.zip."
+  },
+  {
+   "id": "oga-75-cc0-breaking-falling-hit",
+   "title": "75 CC0 breaking / falling / hit sfx",
+   "author": "rubberduck",
+   "source": "opengameart",
+   "source_url": "https://opengameart.org/content/75-cc0-breaking-falling-hit-sfx",
+   "url": "https://opengameart.org/sites/default/files/sfx_breaking_and_falling.zip",
+   "type": "zip",
+   "bytes": 1624406,
+   "sha256": "e6ee04d91c5f4d30cfda1260d2c9d1faf96fda36319287215fbd07bcb1a80451",
+   "license": "CC0-1.0",
+   "evidence": "\"License(s): CC0\" on https://opengameart.org/content/75-cc0-breaking-falling-hit-sfx",
+   "attribution": null,
+   "credit_optional": "rubberduck (OpenGameArt)",
+   "kind": "sfx",
+   "category": "impact",
+   "tags": [
+    "break",
+    "crash",
+    "debris",
+    "falling",
+    "glass",
+    "hit",
+    "impact",
+    "wood"
+   ],
+   "files": 75,
+   "formats": [
+    "ogg"
+   ],
+   "notes": "Flat zip, prefix bfh1_."
+  },
+  {
+   "id": "oga-202-more-sound-effects",
+   "title": "202 More Sound Effects",
+   "author": "OwlishMedia",
+   "source": "opengameart",
+   "source_url": "https://opengameart.org/content/202-more-sound-effects",
+   "url": "https://opengameart.org/sites/default/files/MoreSounds.zip",
+   "type": "zip",
+   "bytes": 14937403,
+   "sha256": "9428c1437137d9ea06ba94e13da12488d4c57990a1c32d83db9e7707e69fb3af",
+   "license": "CC0-1.0",
+   "evidence": "\"License(s): CC0\" on https://opengameart.org/content/202-more-sound-effects",
+   "attribution": null,
+   "credit_optional": "OwlishMedia (OpenGameArt)",
+   "kind": "sfx",
+   "category": "foley",
+   "tags": [
+    "camera",
+    "cash",
+    "cloth",
+    "coins",
+    "door",
+    "household",
+    "keys",
+    "kitchen",
+    "lock",
+    "money",
+    "paper",
+    "phone",
+    "plastic",
+    "scissors",
+    "shutter",
+    "stapler",
+    "tape",
+    "velcro"
+   ],
+   "files": 202,
+   "formats": [
+    "wav"
+   ],
+   "notes": "15 MB of home-recorded WAV in folders: Camera, Cloth, Keys Locks Door (52), Paper & Stationery (45), Money (39), Kitchen (25), Plastic (21), phone, drinking etc. Best single source for camera shutter + coins/cash + paper/stationery foley."
+  },
+  {
+   "id": "oga-keyboard-typing",
+   "title": "Keyboard Soundpack #1 [Typing and Single Keystrokes]",
+   "author": "unicaegames",
+   "source": "opengameart",
+   "source_url": "https://opengameart.org/content/keyboard-soundpack-1-typing-and-single-keystrokes",
+   "url": "https://opengameart.org/sites/default/files/unicae_games_keyboard_soundpack_1_0.zip",
+   "type": "zip",
+   "bytes": 8515609,
+   "sha256": "935eae2fa5c3742eacdd38c4ea0e9047f3887faa0701996498492c256db1b351",
+   "license": "CC0-1.0",
+   "evidence": "\"License(s): CC0\" on https://opengameart.org/content/keyboard-soundpack-1-typing-and-single-keystrokes",
+   "attribution": null,
+   "credit_optional": "unicaegames (OpenGameArt)",
+   "kind": "sfx",
+   "category": "foley",
+   "tags": [
+    "computer",
+    "keyboard",
+    "keystroke",
+    "office",
+    "typewriter",
+    "typing"
+   ],
+   "files": 49,
+   "formats": [
+    "wav"
+   ],
+   "include": [
+    "*/*.wav"
+   ],
+   "notes": "Folders: Human Typing (10), Generated Typing (7 speeds), Single Keys (32). Root also has preview.ogg + readme.txt (excluded by include glob). Page says \"Free to use however you like.\" Recorded on a Cherry KC 1000 keyboard. File was re-uploaded 2026-01-27 (filename has _0 suffix)."
+  },
+  {
+   "id": "oga-book-page-flips",
+   "title": "10 Book Page Flips",
+   "author": "StarNinjas",
+   "source": "opengameart",
+   "source_url": "https://opengameart.org/content/10-book-page-flips",
+   "url": "https://opengameart.org/sites/default/files/book_flips_-_starninjas.zip",
+   "type": "zip",
+   "bytes": 136291,
+   "sha256": "0ff49c3677ea0e64544aeda3a0aa2ce71ee5d42b266da9e54421252a5ca5f20f",
+   "license": "CC0-1.0",
+   "evidence": "\"License(s): CC0\" on https://opengameart.org/content/10-book-page-flips",
+   "attribution": null,
+   "credit_optional": "StarNinjas (https://opengameart.org/users/starninjas)",
+   "kind": "sfx",
+   "category": "foley",
+   "tags": [
+    "book",
+    "flip",
+    "page",
+    "paper",
+    "turn"
+   ],
+   "files": 10,
+   "formats": [
+    "ogg"
+   ],
+   "notes": "Page: \"Credit is appreciated\" (not required; CC0)."
+  },
+  {
+   "id": "oga-paper-sounds",
+   "title": "Various Paper Sound Effects",
+   "author": "Luckius",
+   "source": "opengameart",
+   "source_url": "https://opengameart.org/content/various-paper-sound-effects",
+   "url": "https://opengameart.org/sites/default/files/sounds_6.zip",
+   "type": "zip",
+   "bytes": 974191,
+   "sha256": "aa1889414310c7cfdd8dc291c19d4e4fc21ec987e9238b0d961fb72449c263a4",
+   "license": "CC0-1.0",
+   "evidence": "\"License(s): CC0\" on https://opengameart.org/content/various-paper-sound-effects",
+   "attribution": null,
+   "credit_optional": "Luckius (OpenGameArt)",
+   "kind": "sfx",
+   "category": "foley",
+   "tags": [
+    "crumple",
+    "crush",
+    "map",
+    "paper",
+    "rip",
+    "tear"
+   ],
+   "files": 7,
+   "formats": [
+    "wav"
+   ],
+   "include": [
+    "WAV/*.wav"
+   ],
+   "notes": "Zip has the same 7 sounds twice (WAV/ and MP3/); include only WAV/. Author: \"It would be great if you credit me but this is not mandatory.\""
+  },
+  {
+   "id": "oga-ui-sfx-robin-lamb",
+   "title": "UI Sound Effects (Button Clicks, User Feedback, Notifications)",
+   "author": "Robin Lamb",
+   "source": "opengameart",
+   "source_url": "https://opengameart.org/content/ui-sound-effects-button-clicks-user-feedback-notifications",
+   "url": "https://opengameart.org/sites/default/files/ui_ogg.zip",
+   "type": "zip",
+   "bytes": 231225,
+   "sha256": "9e24099c1625f34077d890ed09e5351afb8025e51d80871e3c40e991c5fd991b",
+   "license": "CC0-1.0",
+   "evidence": "\"License(s): CC0\" on https://opengameart.org/content/ui-sound-effects-button-clicks-user-feedback-notifications",
+   "attribution": null,
+   "credit_optional": "Robin Lamb (OpenGameArt)",
+   "kind": "sfx",
+   "category": "ui",
+   "tags": [
+    "alarm",
+    "chime",
+    "click",
+    "ding",
+    "feedback",
+    "notification",
+    "ui"
+   ],
+   "files": 12,
+   "formats": [
+    "ogg"
+   ],
+   "notes": "Folder ui_ogg/: alarm, chimes, clicks 1-4, Ding, etc. A WAV version (ui_wav.zip, 1.36 MB) also exists on the same page; the ogg zip is enough."
+  },
+  {
+   "id": "oga-ui-sounds-haeldb",
+   "title": "UI Sounds",
+   "author": "HaelDB",
+   "source": "opengameart",
+   "source_url": "https://opengameart.org/content/ui-sounds-0",
+   "url": "https://opengameart.org/sites/default/files/ui_sounds.zip",
+   "type": "zip",
+   "bytes": 2805236,
+   "sha256": "441a5e0200a879a38ef53596252670522f2ad761528e3fa28a2a6d92be93634d",
+   "license": "CC0-1.0",
+   "evidence": "\"License(s): CC0\" on https://opengameart.org/content/ui-sounds-0",
+   "attribution": null,
+   "credit_optional": "HaelDB (OpenGameArt)",
+   "kind": "sfx",
+   "category": "ui",
+   "tags": [
+    "accept",
+    "alert",
+    "attention",
+    "error",
+    "notification",
+    "ui"
+   ],
+   "files": 11,
+   "formats": [
+    "wav"
+   ],
+   "notes": "Page: \"Error, Accept, Notification, Attention. etc.\" Files are unhelpfully named \"New folder/#0.wav\"..\"#10.wav\" - rename/tag after install."
+  },
+  {
+   "id": "oga-10-clicks-and-switches",
+   "title": "10 Clicks and Switches",
+   "author": "StarNinjas",
+   "source": "opengameart",
+   "source_url": "https://opengameart.org/content/10-clicks-and-switches",
+   "url": "https://opengameart.org/sites/default/files/10_clicks_and_switches.zip",
+   "type": "zip",
+   "bytes": 133035,
+   "sha256": "fd650fe3924f76601e6f39d947a8e44b19fa0c3700fcfd3a0095e217d445e936",
+   "license": "CC0-1.0",
+   "evidence": "\"License(s): CC0\" on https://opengameart.org/content/10-clicks-and-switches",
+   "attribution": null,
+   "credit_optional": "StarNinjas (https://opengameart.org/users/starninjas)",
+   "kind": "sfx",
+   "category": "ui",
+   "tags": [
+    "button",
+    "click",
+    "mechanical",
+    "switch",
+    "ui"
+   ],
+   "files": 11,
+   "formats": [
+    "ogg"
+   ],
+   "notes": "11 ogg (10 clicks + likely a combined preview). Page: \"Credit is appreciated!\""
+  },
+  {
+   "id": "oga-interface-beeps",
+   "title": "Interface beeps",
+   "author": "bart",
+   "source": "opengameart",
+   "source_url": "https://opengameart.org/content/interface-beeps",
+   "url": "https://opengameart.org/sites/default/files/beeps.zip",
+   "type": "zip",
+   "bytes": 1066112,
+   "sha256": "b814c4b8281196e98e25b0161ce943b7195565b9b1a2626e7a732d91e39c0355",
+   "license": "CC0-1.0",
+   "evidence": "\"License(s): CC0\" on https://opengameart.org/content/interface-beeps",
+   "attribution": null,
+   "credit_optional": "bart (OpenGameArt)",
+   "kind": "sfx",
+   "category": "ui",
+   "tags": [
+    "beep",
+    "computer",
+    "hud",
+    "interface",
+    "sci-fi",
+    "tech",
+    "ui"
+   ],
+   "files": 16,
+   "formats": [
+    "wav"
+   ],
+   "notes": "Folder Beeps/ beep-00..15. Sci-fi/HUD style interface beeps."
+  },
+  {
+   "id": "oga-50-cc0-sci-fi-sfx",
+   "title": "50 CC0 Sci-Fi SFX",
+   "author": "rubberduck",
+   "source": "opengameart",
+   "source_url": "https://opengameart.org/content/50-cc0-sci-fi-sfx",
+   "url": "https://opengameart.org/sites/default/files/sci-fi-sfx.zip",
+   "type": "zip",
+   "bytes": 2436465,
+   "sha256": "7824c08e54b5b68d6c70ced9d8fe9e47f86ce19c1d8d47d093e1dc1b579f78ec",
+   "license": "CC0-1.0",
+   "evidence": "\"License(s): CC0\" on https://opengameart.org/content/50-cc0-sci-fi-sfx",
+   "attribution": null,
+   "credit_optional": "rubberduck (OpenGameArt)",
+   "kind": "sfx",
+   "category": "fx",
+   "tags": [
+    "beep",
+    "computer",
+    "glitch",
+    "laser",
+    "loop",
+    "sci-fi",
+    "tech",
+    "teleport",
+    "terminal",
+    "weird"
+   ],
+   "files": 50,
+   "formats": [
+    "ogg"
+   ],
+   "notes": "Beeps, 9 \"terminal sounds\", teleports, weird/glitchy sounds, 5 loops (ambient, machine), a few retro beeps/explosions."
+  },
+  {
+   "id": "oga-60-cc0-sci-fi-sfx",
+   "title": "60 CC0 Sci-Fi SFX",
+   "author": "rubberduck",
+   "source": "opengameart",
+   "source_url": "https://opengameart.org/content/60-cc0-sci-fi-sfx",
+   "url": "https://opengameart.org/sites/default/files/60-sci-fi-sfx_0.zip",
+   "type": "zip",
+   "bytes": 9180009,
+   "sha256": "11ebf7d8c4ece445128eeb95c969e0ed36ff34fc2c8ef0e04a154d62e2f938f8",
+   "license": "CC0-1.0",
+   "evidence": "\"License(s): CC0\" on https://opengameart.org/content/60-cc0-sci-fi-sfx",
+   "attribution": null,
+   "credit_optional": "rubberduck (OpenGameArt)",
+   "kind": "sfx",
+   "category": "fx",
+   "tags": [
+    "energy",
+    "glitch",
+    "hum",
+    "power",
+    "sci-fi",
+    "tech",
+    "whoosh"
+   ],
+   "files": 60,
+   "formats": [
+    "ogg"
+   ],
+   "notes": "22 sounds x 2-3 variations, generic names sfx_01a..sfx_22b - needs auditioning/tagging after install. 9.2 MB."
+  },
+  {
+   "id": "oga-wind-hit-time-morph",
+   "title": "Wind, hit, time morph",
+   "author": "qubodup",
+   "source": "opengameart",
+   "source_url": "https://opengameart.org/content/wind-hit-time-morph",
+   "url": "https://opengameart.org/sites/default/files/qubodup-timehitwind.zip",
+   "type": "zip",
+   "bytes": 373858,
+   "sha256": "8ed235b84ed19a5a72c47771e33d347406e67750b2a6ba72a2f558e64cc6205e",
+   "license": "CC0-1.0",
+   "evidence": "\"License(s): CC0\" on https://opengameart.org/content/wind-hit-time-morph",
+   "attribution": null,
+   "credit_optional": "qubodup (OpenGameArt)",
+   "kind": "sfx",
+   "category": "transition",
+   "tags": [
+    "hit",
+    "morph",
+    "slow-motion",
+    "swish",
+    "swoosh",
+    "time",
+    "transition",
+    "whoosh"
+   ],
+   "files": 4,
+   "formats": [
+    "wav",
+    "flac"
+   ],
+   "notes": "qubodup-megaswosh1/2.wav, qubodup-slomo1.wav + original 60009__qubodup__swosh_22.flac. Big cinematic swooshes / slow-mo morph, good for transitions."
+  },
+  {
+   "id": "oga-27-metal-audio-samples",
+   "title": "27 Metal Audio Samples (SFX)",
+   "author": "blacklodgegames",
+   "source": "opengameart",
+   "source_url": "https://opengameart.org/content/27-metal-audio-samples-sfx",
+   "url": "https://opengameart.org/sites/default/files/27-Metal-Audio-Samples-blacklodgegames.com_.zip",
+   "type": "zip",
+   "bytes": 2840697,
+   "sha256": "479e85403898c2ff2d1e2d6a130b8cfb4ae00fbd8cbcaf440917450f996f5232",
+   "license": "CC0-1.0",
+   "evidence": "\"License(s): CC0\" on https://opengameart.org/content/27-metal-audio-samples-sfx",
+   "attribution": null,
+   "credit_optional": "blacklodgegames (OpenGameArt)",
+   "kind": "sfx",
+   "category": "impact",
+   "tags": [
+    "bend",
+    "cartoon",
+    "clang",
+    "hit",
+    "impact",
+    "metal",
+    "wobble"
+   ],
+   "files": 27,
+   "formats": [
+    "wav"
+   ],
+   "include": [
+    "*.wav"
+   ],
+   "notes": "WAV files are 44.1 kHz 32-bit float stereo (named *_44k_32bit_stereo.wav) - ensure the decoder handles float WAV. Zip also contains cc0_license.txt. Author notes many sound cartoonish (wobbles/boings). Do NOT confuse with ArenaCombatAnnouncerPack (63 MB) on the same page."
+  },
+  {
+   "id": "oga-3-pop-sounds",
+   "title": "3 Pop Sounds",
+   "author": "wubitog",
+   "source": "opengameart",
+   "source_url": "https://opengameart.org/content/3-pop-sounds",
+   "url": "https://opengameart.org/sites/default/files/3pops.zip",
+   "type": "zip",
+   "bytes": 90641,
+   "sha256": "b54c299913b6502e5d07ba62bcc6726f13498ee848d49f25fc4390e0b6103a82",
+   "license": "CC0-1.0",
+   "evidence": "\"License(s): CC0\" on https://opengameart.org/content/3-pop-sounds",
+   "attribution": null,
+   "credit_optional": "wubitog (OpenGameArt)",
+   "kind": "sfx",
+   "category": "fx",
+   "tags": [
+    "appear",
+    "bubble",
+    "cartoon",
+    "pop",
+    "ui"
+   ],
+   "files": 3,
+   "formats": [
+    "ogg"
+   ],
+   "include": [
+    "3pops/pop*.ogg"
+   ],
+   "notes": "Zip has 3pops/pop1-3.ogg plus 3pops/3pops.ogg (all three in one) and macOS __MACOSX/._* junk; the include glob keeps only pop1-3."
+  },
+  {
+   "id": "oga-amb-morning",
+   "title": "AMB Morning Sounds (Perfect Loop)",
+   "author": "Kresiek The Furry",
+   "source": "opengameart",
+   "source_url": "https://opengameart.org/content/amb-morning-sounds-perfect-loop",
+   "url": "https://opengameart.org/sites/default/files/amb_morning_0.ogg",
+   "type": "file",
+   "bytes": 3229148,
+   "sha256": "f49f9470038fcbd75742ca88a9914de0e7fe515340cfddaf3a7614e42678b4a7",
+   "license": "CC0-1.0",
+   "evidence": "\"License(s): CC0\" on https://opengameart.org/content/amb-morning-sounds-perfect-loop",
+   "attribution": null,
+   "credit_optional": "Kresiek The Furry (OpenGameArt)",
+   "kind": "ambience",
+   "category": "ambience",
+   "tags": [
+    "ambience",
+    "birds",
+    "loop",
+    "morning",
+    "outdoor",
+    "suburban"
+   ],
+   "files": 1,
+   "formats": [
+    "ogg"
+   ],
+   "notes": "Seamless loop, ogg 48 kHz stereo 3.2 MB. A 48 MB WAV of the same exists on the page; use the ogg."
+  },
+  {
+   "id": "oga-air-whoosh",
+   "title": "Air whoosh",
+   "author": "pyranostudios",
+   "source": "opengameart",
+   "source_url": "https://opengameart.org/content/air-whoosh",
+   "url": "https://opengameart.org/sites/default/files/whoosh2_0.wav",
+   "type": "file",
+   "bytes": 925662,
+   "sha256": "d3fbff5bb78b289af16b2dfa29083f07ef83b0cbaff4514c48dfda16d082b468",
+   "license": "CC0-1.0",
+   "evidence": "\"License(s): CC0\" on https://opengameart.org/content/air-whoosh",
+   "attribution": null,
+   "credit_optional": "pyranostudios (OpenGameArt)",
+   "kind": "sfx",
+   "category": "transition",
+   "tags": [
+    "air",
+    "swoosh",
+    "transition",
+    "whoosh"
+   ],
+   "files": 1,
+   "formats": [
+    "wav"
+   ],
+   "notes": "Single 16-bit 44.1 kHz stereo WAV, 0.9 MB. Server returns Content-Type application/octet-stream (file itself is a valid WAV)."
+  },
+  {
+   "id": "bigsoundbank-little-parisian-street",
+   "title": "Little Parisian Street",
+   "author": "Joseph SARDIN",
+   "source": "bigsoundbank",
+   "source_url": "https://bigsoundbank.com/little-parisian-street-s1713.html",
+   "url": "https://bigsoundbank.com/UPLOAD/ogg/1713.ogg",
+   "type": "file",
+   "bytes": 7320935,
+   "sha256": "e268e1048abf59edbc381e4d20ecee814d0e5a5336ee2b6f366bd4990916463b",
+   "license": "CC0-1.0",
+   "evidence": "\"License CC0 (public domain): Free and royalty-free\" on https://bigsoundbank.com/little-parisian-street-s1713.html; site licence page https://bigsoundbank.com/licenses.html says \"Creative Commons CC0 1.0 Universal\"",
+   "attribution": null,
+   "credit_optional": "Additional sounds: Joseph SARDIN - BigSoundBank.com",
+   "kind": "ambience",
+   "category": "ambience",
+   "tags": [
+    "city",
+    "daytime",
+    "paris",
+    "pedestrians",
+    "street",
+    "traffic",
+    "urban"
+   ],
+   "files": 1,
+   "formats": [
+    "ogg"
+   ],
+   "notes": "1:57 daytime street atmosphere (ORTF, 48k/24-bit master). OGG 7.3 MB; WAV/FLAC also offered (32.9/21.4 MB)."
+  },
+  {
+   "id": "bigsoundbank-atmosphere-bar-2",
+   "title": "Atmosphere Bar #2",
+   "author": "DavidGreck",
+   "source": "bigsoundbank",
+   "source_url": "https://bigsoundbank.com/atmosphere-bar-2-s0480.html",
+   "url": "https://bigsoundbank.com/UPLOAD/ogg/0480.ogg",
+   "type": "file",
+   "bytes": 2368228,
+   "sha256": "225687e497083faf884a84e1d0ee3761e81aebfd1999145c8cefbf90e84eb5e3",
+   "license": "CC0-1.0",
+   "evidence": "\"License CC0 (public domain): Free and royalty-free\" on https://bigsoundbank.com/atmosphere-bar-2-s0480.html; site licence page https://bigsoundbank.com/licenses.html says \"Creative Commons CC0 1.0 Universal\"",
+   "attribution": null,
+   "credit_optional": "Additional sounds: DavidGreck - BigSoundBank.com",
+   "kind": "ambience",
+   "category": "ambience",
+   "tags": [
+    "bar",
+    "cafe",
+    "chatter",
+    "crowd",
+    "indoor",
+    "restaurant",
+    "walla"
+   ],
+   "files": 1,
+   "formats": [
+    "ogg"
+   ],
+   "notes": "1:35 bar/cafe ambience, mono ogg. Site-wide CC0 per page even though the author is a contributor (DavidGreck), not the site owner."
+  },
+  {
+   "id": "bigsoundbank-montparnasse-station",
+   "title": "Montparnasse Station, Paris",
+   "author": "Joseph SARDIN",
+   "source": "bigsoundbank",
+   "source_url": "https://bigsoundbank.com/montparnasse-station-paris-s3592.html",
+   "url": "https://bigsoundbank.com/UPLOAD/ogg/3592.ogg",
+   "type": "file",
+   "bytes": 2117860,
+   "sha256": "a5185786cff5868d4ff748f6b47b5b3c1e375660e219d87707ae61b47b1564ee",
+   "license": "CC0-1.0",
+   "evidence": "\"License CC0 (public domain): Free and royalty-free\" on https://bigsoundbank.com/montparnasse-station-paris-s3592.html; site licence page https://bigsoundbank.com/licenses.html says \"Creative Commons CC0 1.0 Universal\"",
+   "attribution": null,
+   "credit_optional": "Additional sounds: Joseph SARDIN - BigSoundBank.com",
+   "kind": "ambience",
+   "category": "ambience",
+   "tags": [
+    "announcement",
+    "city",
+    "crowd",
+    "indoor",
+    "speech",
+    "station",
+    "train",
+    "transport"
+   ],
+   "files": 1,
+   "formats": [
+    "ogg"
+   ],
+   "notes": "2:35 crowded station hall with an SNCF PA announcement (French speech) - fine as background, avoid under narration."
+  },
+  {
+   "id": "bigsoundbank-whoosh-3",
+   "title": "Whoosh #3",
+   "author": "Joseph SARDIN",
+   "source": "bigsoundbank",
+   "source_url": "https://bigsoundbank.com/whoosh-3-s1795.html",
+   "url": "https://bigsoundbank.com/UPLOAD/ogg/1795.ogg",
+   "type": "file",
+   "bytes": 56933,
+   "sha256": "6fc429821305979a5683ea8d3f9c946254dc4e7ea166ddae6f68458744a0fe1c",
+   "license": "CC0-1.0",
+   "evidence": "\"License CC0 (public domain): Free and royalty-free\" on https://bigsoundbank.com/whoosh-3-s1795.html; site licence page https://bigsoundbank.com/licenses.html says \"Creative Commons CC0 1.0 Universal\"",
+   "attribution": null,
+   "credit_optional": "Additional sounds: Joseph SARDIN - BigSoundBank.com",
+   "kind": "sfx",
+   "category": "transition",
+   "tags": [
+    "foley",
+    "swish",
+    "swoosh",
+    "transition",
+    "whoosh"
+   ],
+   "files": 1,
+   "formats": [
+    "ogg"
+   ],
+   "notes": "~1 s studio foley whoosh. BigSoundBank has Whoosh #1-#10 (s0572,s0573,s1795-s1802) under the same CC0 terms if more variety is wanted."
+  },
+  {
+   "id": "bigsoundbank-shepard-rising-scale",
+   "title": "Shepard Rising Scale x1 #1",
+   "author": "Joseph SARDIN",
+   "source": "bigsoundbank",
+   "source_url": "https://bigsoundbank.com/shepard-tone-x1-s3528.html",
+   "url": "https://bigsoundbank.com/UPLOAD/ogg/3528.ogg",
+   "type": "file",
+   "bytes": 59466,
+   "sha256": "14c4dac00d0b4b6418138a5c3947f45256f0ecb9d44e5e160d2e4f7a1f4e50cb",
+   "license": "CC0-1.0",
+   "evidence": "\"License CC0 (public domain): Free and royalty-free\" on https://bigsoundbank.com/shepard-tone-x1-s3528.html; site licence page https://bigsoundbank.com/licenses.html says \"Creative Commons CC0 1.0 Universal\"",
+   "attribution": null,
+   "credit_optional": "Additional sounds: Joseph SARDIN - BigSoundBank.com",
+   "kind": "sfx",
+   "category": "fx",
+   "tags": [
+    "build-up",
+    "cinematic",
+    "loop",
+    "riser",
+    "shepard",
+    "tension"
+   ],
+   "files": 1,
+   "formats": [
+    "ogg"
+   ],
+   "notes": "12 s single cycle of an ascending Shepard scale (UCS: Designed / Riser), loopable for an endless-rise tension build. Synthetic/tonal; the x10 versions (2 min) exist too."
+  },
+  {
+   "id": "wikimedia-applause-after-concert",
+   "title": "Sound Effects - Applause after a concert",
+   "author": "Amada44",
+   "source": "wikimedia",
+   "source_url": "https://commons.wikimedia.org/wiki/File:Sound_Effects_-_Applause_after_a_concert.ogg",
+   "url": "https://upload.wikimedia.org/wikipedia/commons/3/32/Sound_Effects_-_Applause_after_a_concert.ogg",
+   "type": "file",
+   "bytes": 1793175,
+   "sha256": "a9bed3afd89d66c3ce13edb9f2be2a548ab87a2cc70827624905be90044f8e72",
+   "license": "CC0-1.0",
+   "evidence": "Commons licence template \"Creative Commons Zero, Public Domain Dedication\" (LicenseShortName: CC0, AttributionRequired: false, Credit: \"Own work\") on https://commons.wikimedia.org/wiki/File:Sound_Effects_-_Applause_after_a_concert.ogg",
+   "attribution": null,
+   "credit_optional": "Amada44 (Wikimedia Commons)",
+   "kind": "ambience",
+   "category": "ambience",
+   "tags": [
+    "applause",
+    "audience",
+    "cheer",
+    "clapping",
+    "concert",
+    "crowd"
+   ],
+   "files": 1,
+   "formats": [
+    "ogg"
+   ],
+   "notes": "Mono ogg, 1.8 MB; Commons sha1 4e9a9f7235b36cc46702f40934d8949449cbeca4 matches. upload.wikimedia.org returned HTTP 429 once to a bare UA; Wikimedia policy wants a UA with contact info - showtime fetcher should send one and retry with backoff."
+  },
+  {
+   "id": "wikimedia-wws-typewriter",
+   "title": "WWS Typewriter (Erika 5 mechanical typewriter)",
+   "author": "Work With Sounds / Konrad Gutkowski",
+   "source": "wikimedia",
+   "source_url": "https://commons.wikimedia.org/wiki/File:WWS_Typewriter.ogg",
+   "url": "https://upload.wikimedia.org/wikipedia/commons/2/25/WWS_Typewriter.ogg",
+   "type": "file",
+   "bytes": 398063,
+   "sha256": "cc4a9660c09f3ba86c46ffab11f40aaf38cf5bf858176397a471699dc8cdf33b",
+   "license": "CC-BY-4.0",
+   "evidence": "Commons: \"Creative Commons Attribution 4.0\" (AttributionRequired: true); Credit: \"All recorded sounds have been made available under the license Creative Commons Attribution 4.0\" on https://commons.wikimedia.org/wiki/File:WWS_Typewriter.ogg",
+   "attribution": "\"WWS Typewriter\" by Work With Sounds / Konrad Gutkowski, CC BY 4.0, via Wikimedia Commons (https://commons.wikimedia.org/wiki/File:WWS_Typewriter.ogg)",
+   "credit_optional": null,
+   "kind": "sfx",
+   "category": "foley",
+   "tags": [
+    "bell",
+    "carriage",
+    "mechanical",
+    "office",
+    "retro",
+    "typewriter",
+    "typing"
+   ],
+   "files": 1,
+   "formats": [
+    "ogg"
+   ],
+   "notes": "Erika 5 mechanical typewriter (1940) - classic clack/carriage; complements the modern-keyboard pack. Attribution REQUIRED."
+  },
+  {
+   "id": "bigsoundbank-applause-150-people",
+   "title": "Applause: 150 People",
+   "author": "Joseph SARDIN",
+   "source": "bigsoundbank",
+   "source_url": "https://bigsoundbank.com/applause-150-people-s0019.html",
+   "url": "https://bigsoundbank.com/UPLOAD/ogg/0019.ogg",
+   "type": "file",
+   "bytes": 883134,
+   "sha256": "c9fb9bfc02ca09878c6181141bc7db4989e5561024358d13267a6ef8bb148607",
+   "license": "CC0-1.0",
+   "evidence": "\"License CC0 (public domain): Free and royalty-free\" on https://bigsoundbank.com/applause-150-people-s0019.html; site licence page https://bigsoundbank.com/licenses.html says \"Creative Commons CC0 1.0 Universal\"",
+   "attribution": null,
+   "credit_optional": "Additional sounds: Joseph SARDIN - BigSoundBank.com",
+   "kind": "ambience",
+   "category": "ambience",
+   "tags": [
+    "applause",
+    "audience",
+    "clapping",
+    "crowd",
+    "ovation"
+   ],
+   "files": 1,
+   "formats": [
+    "ogg"
+   ],
+   "notes": "25 s audience applause (about 150 people), mono ogg: launch reveals, keynote endings, 'thank you' cards."
+  },
+  {
+   "id": "bigsoundbank-shouts-and-applauses-of-teens-2",
+   "title": "Shouts and Applauses of Teens #2",
+   "author": "DenisChardonnet",
+   "source": "bigsoundbank",
+   "source_url": "https://bigsoundbank.com/shouts-and-applauses-of-teens-2-s0237.html",
+   "url": "https://bigsoundbank.com/UPLOAD/ogg/0237.ogg",
+   "type": "file",
+   "bytes": 187299,
+   "sha256": "4348fcd8b0dd6c3a65e76e3e0e6d957827850f7493c3f2264b1103c144cced8c",
+   "license": "CC0-1.0",
+   "evidence": "\"License CC0 (public domain): Free and royalty-free\" on https://bigsoundbank.com/shouts-and-applauses-of-teens-2-s0237.html; site licence page https://bigsoundbank.com/licenses.html says \"Creative Commons CC0 1.0 Universal\"",
+   "attribution": null,
+   "credit_optional": "Additional sounds: DenisChardonnet - BigSoundBank.com",
+   "kind": "sfx",
+   "category": "fx",
+   "tags": [
+    "applause",
+    "celebration",
+    "cheer",
+    "cheering",
+    "crowd",
+    "shouts"
+   ],
+   "files": 1,
+   "formats": [
+    "ogg"
+   ],
+   "notes": "5.6 s crowd cheer with whoops: a win, a milestone, a big number landing."
+  },
+  {
+   "id": "bigsoundbank-whiteboard-marker",
+   "title": "Whiteboard marker",
+   "author": "Joseph SARDIN",
+   "source": "bigsoundbank",
+   "source_url": "https://bigsoundbank.com/whiteboard-marker-s0807.html",
+   "url": "https://bigsoundbank.com/UPLOAD/ogg/0807.ogg",
+   "type": "file",
+   "bytes": 1032413,
+   "sha256": "fc808270bfabfb01e39e962b524081e4af4e726bca6a9a057d4a5d8fcde055fb",
+   "license": "CC0-1.0",
+   "evidence": "\"License CC0 (public domain): Free and royalty-free\" on https://bigsoundbank.com/whiteboard-marker-s0807.html; site licence page https://bigsoundbank.com/licenses.html says \"Creative Commons CC0 1.0 Universal\"",
+   "attribution": null,
+   "credit_optional": "Additional sounds: Joseph SARDIN - BigSoundBank.com",
+   "kind": "sfx",
+   "category": "foley",
+   "tags": [
+    "drawing",
+    "explainer",
+    "marker",
+    "scribble",
+    "whiteboard",
+    "writing"
+   ],
+   "files": 1,
+   "formats": [
+    "ogg"
+   ],
+   "notes": "32 s of marker strokes on a whiteboard (quiet: about -38 LUFS, normalised by the mix): hand-drawn explainers, diagrams being sketched."
+  },
+  {
+   "id": "bigsoundbank-pencil-1",
+   "title": "Pencil #1",
+   "author": "Joseph SARDIN",
+   "source": "bigsoundbank",
+   "source_url": "https://bigsoundbank.com/pencil-1-s0221.html",
+   "url": "https://bigsoundbank.com/UPLOAD/ogg/0221.ogg",
+   "type": "file",
+   "bytes": 1092256,
+   "sha256": "849ccd125951c38abb2562a1965f9912e0fd527aac8d237fa8df5175924d231f",
+   "license": "CC0-1.0",
+   "evidence": "\"License CC0 (public domain): Free and royalty-free\" on https://bigsoundbank.com/pencil-1-s0221.html; site licence page https://bigsoundbank.com/licenses.html says \"Creative Commons CC0 1.0 Universal\"",
+   "attribution": null,
+   "credit_optional": "Additional sounds: Joseph SARDIN - BigSoundBank.com",
+   "kind": "sfx",
+   "category": "foley",
+   "tags": [
+    "notes",
+    "paper",
+    "pencil",
+    "scribble",
+    "sketch",
+    "writing"
+   ],
+   "files": 1,
+   "formats": [
+    "ogg"
+   ],
+   "notes": "33 s of pencil writing on paper: note-taking, sketching, signing."
+  },
+  {
+   "id": "bigsoundbank-rain-and-thunder-2",
+   "title": "Rain and Thunder #2",
+   "author": "Joseph SARDIN",
+   "source": "bigsoundbank",
+   "source_url": "https://bigsoundbank.com/rain-and-thunder-2-s0740.html",
+   "url": "https://bigsoundbank.com/UPLOAD/ogg/0740.ogg",
+   "type": "file",
+   "bytes": 5561658,
+   "sha256": "bb729ff851058c21d4d038030fc991303567f6615eaa65dd58c104207b89b105",
+   "license": "CC0-1.0",
+   "evidence": "\"License CC0 (public domain): Free and royalty-free\" on https://bigsoundbank.com/rain-and-thunder-2-s0740.html; site licence page https://bigsoundbank.com/licenses.html says \"Creative Commons CC0 1.0 Universal\"",
+   "attribution": null,
+   "credit_optional": "Additional sounds: Joseph SARDIN - BigSoundBank.com",
+   "kind": "ambience",
+   "category": "ambience",
+   "tags": [
+    "nature",
+    "rain",
+    "storm",
+    "thunder",
+    "weather"
+   ],
+   "files": 1,
+   "formats": [
+    "ogg"
+   ],
+   "notes": "2:38 rain with rolling thunder (mono ogg): moody b-roll, 'the storm before' sections."
+  },
+  {
+   "id": "bigsoundbank-thunder-4",
+   "title": "Thunder #4",
+   "author": "Joseph SARDIN",
+   "source": "bigsoundbank",
+   "source_url": "https://bigsoundbank.com/thunder-4-s3115.html",
+   "url": "https://bigsoundbank.com/UPLOAD/ogg/3115.ogg",
+   "type": "file",
+   "bytes": 129538,
+   "sha256": "be21acc153c8c4da54aed4c553ce9262fa9b4a0ff1cb5d308c62f816d0f6734f",
+   "license": "CC0-1.0",
+   "evidence": "\"License CC0 (public domain): Free and royalty-free\" on https://bigsoundbank.com/thunder-4-s3115.html; site licence page https://bigsoundbank.com/licenses.html says \"Creative Commons CC0 1.0 Universal\"",
+   "attribution": null,
+   "credit_optional": "Additional sounds: Joseph SARDIN - BigSoundBank.com",
+   "kind": "sfx",
+   "category": "impact",
+   "tags": [
+    "boom",
+    "rumble",
+    "storm",
+    "thunder",
+    "weather"
+   ],
+   "files": 1,
+   "formats": [
+    "ogg"
+   ],
+   "notes": "17 s thunder clap and roll: a dramatic hit or a scene change into bad weather."
+  },
+  {
+   "id": "bigsoundbank-mouse-single-click",
+   "title": "Mouse, Single Click",
+   "author": "Joseph SARDIN",
+   "source": "bigsoundbank",
+   "source_url": "https://bigsoundbank.com/apple-magic-mouse-single-click-s1742.html",
+   "url": "https://bigsoundbank.com/UPLOAD/ogg/1742.ogg",
+   "type": "file",
+   "bytes": 13930,
+   "sha256": "91f6b93a0f832c65664f749b45bafa76a8c03bb7324916c051b27ef7b57a2df6",
+   "license": "CC0-1.0",
+   "evidence": "\"License CC0 (public domain): Free and royalty-free\" on https://bigsoundbank.com/apple-magic-mouse-single-click-s1742.html; site licence page https://bigsoundbank.com/licenses.html says \"Creative Commons CC0 1.0 Universal\"",
+   "attribution": null,
+   "credit_optional": "Additional sounds: Joseph SARDIN - BigSoundBank.com",
+   "kind": "sfx",
+   "category": "ui",
+   "tags": [
+    "click",
+    "computer",
+    "desktop",
+    "mouse",
+    "screen-recording"
+   ],
+   "files": 1,
+   "formats": [
+    "ogg"
+   ],
+   "notes": "A real wireless-mouse click (0.4 s): clicks in screen-recording demos."
+  },
+  {
+   "id": "bigsoundbank-trackpad-single-click",
+   "title": "Laptop Trackpad, Single Click",
+   "author": "Joseph SARDIN",
+   "source": "bigsoundbank",
+   "source_url": "https://bigsoundbank.com/macbook-pro-trackpad-single-click-s1738.html",
+   "url": "https://bigsoundbank.com/UPLOAD/ogg/1738.ogg",
+   "type": "file",
+   "bytes": 12854,
+   "sha256": "9ae15721cf34d6d89d59f1ea153160c8012f9499a78b1477e668437511d164c1",
+   "license": "CC0-1.0",
+   "evidence": "\"License CC0 (public domain): Free and royalty-free\" on https://bigsoundbank.com/macbook-pro-trackpad-single-click-s1738.html; site licence page https://bigsoundbank.com/licenses.html says \"Creative Commons CC0 1.0 Universal\"",
+   "attribution": null,
+   "credit_optional": "Additional sounds: Joseph SARDIN - BigSoundBank.com",
+   "kind": "sfx",
+   "category": "ui",
+   "tags": [
+    "click",
+    "computer",
+    "laptop",
+    "screen-recording",
+    "trackpad"
+   ],
+   "files": 1,
+   "formats": [
+    "ogg"
+   ],
+   "notes": "A real laptop trackpad click (0.4 s): quieter, softer alternative to the mouse click."
+  },
+  {
+   "id": "bigsoundbank-mobile-vibrator-in-a-hand",
+   "title": "Mobile Vibrator in a Hand",
+   "author": "Joseph SARDIN",
+   "source": "bigsoundbank",
+   "source_url": "https://bigsoundbank.com/mobile-vibrator-in-a-hand-s1035.html",
+   "url": "https://bigsoundbank.com/UPLOAD/ogg/1035.ogg",
+   "type": "file",
+   "bytes": 461305,
+   "sha256": "1c3b5258c4ada46dce5d385898ee7a320b772794e13d1a57ae12e05e31d06794",
+   "license": "CC0-1.0",
+   "evidence": "\"License CC0 (public domain): Free and royalty-free\" on https://bigsoundbank.com/mobile-vibrator-in-a-hand-s1035.html; site licence page https://bigsoundbank.com/licenses.html says \"Creative Commons CC0 1.0 Universal\"",
+   "attribution": null,
+   "credit_optional": "Additional sounds: Joseph SARDIN - BigSoundBank.com",
+   "kind": "sfx",
+   "category": "foley",
+   "tags": [
+    "buzz",
+    "mobile",
+    "notification",
+    "phone",
+    "smartphone",
+    "vibration"
+   ],
+   "files": 1,
+   "formats": [
+    "ogg"
+   ],
+   "notes": "20 s of phone vibration bursts held in a hand: incoming messages, alerts, app demos."
+  },
+  {
+   "id": "bigsoundbank-trigger-of-camera-1",
+   "title": "Trigger of Camera #1",
+   "author": "Joseph SARDIN",
+   "source": "bigsoundbank",
+   "source_url": "https://bigsoundbank.com/trigger-of-camera-1-s2394.html",
+   "url": "https://bigsoundbank.com/UPLOAD/ogg/2394.ogg",
+   "type": "file",
+   "bytes": 8593,
+   "sha256": "cbc2a0a9fe6dcf713474a201e1ebec59bdc39156ff9f345a1e8be6aef33f72cb",
+   "license": "CC0-1.0",
+   "evidence": "\"License CC0 (public domain): Free and royalty-free\" on https://bigsoundbank.com/trigger-of-camera-1-s2394.html; site licence page https://bigsoundbank.com/licenses.html says \"Creative Commons CC0 1.0 Universal\"",
+   "attribution": null,
+   "credit_optional": "Additional sounds: Joseph SARDIN - BigSoundBank.com",
+   "kind": "sfx",
+   "category": "foley",
+   "tags": [
+    "camera",
+    "photo",
+    "screenshot",
+    "shutter",
+    "snapshot"
+   ],
+   "files": 1,
+   "formats": [
+    "ogg"
+   ],
+   "notes": "A single SLR shutter (0.4 s): photos, screenshots, 'captured' moments."
+  }
+ ]
+}

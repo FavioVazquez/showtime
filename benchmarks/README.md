@@ -80,6 +80,7 @@ once and save the token to `<bench home>/oauth-token` (`chmod 600`), or export
 | Invented claims | `factcheck.py`: a blind judge lists every factual claim (spoken via the transcript, on screen via frames) and labels it supported / unsupported / contradicted against the task's sources | `score/factcheck.json` |
 | Blind pairwise | `pairwise.py`: every pair of arms per task, 3 judges each, fresh session per judgment, Read-only, packets named `video-1` / `video-2`, order alternated per judge, JSON-schema verdict with 7 criteria; win rate, Bradley-Terry, first-position bias check | `pairwise.jsonl`, `pairwise_summary.json` |
 | Blind ranking | `rank.py`: one judge per task (or `--judges N`) sees every delivered output at once as `video-1..N`, order shuffled per task and rotated per judge, same criteria and blinding as pairwise, ranks them; cheaper than pairwise when a task has few arms | `rank.jsonl`, `rank_summary.json` |
+| Proof of looking | every judge (`judge.py`, used by `rank.py`, `pairwise.py` and `factcheck.py`) must prove it opened the pictures it judges: the session's own tool calls must show that every frame image of its packet was opened, and every image carries a random 5-digit number in a strip at the bottom (stamped on every image of every candidate alike) that the judge must report back (at most 10 percent wrong). A judgment without both is discarded and asked again in a fresh session; every attempt, the images opened and the numbers reported against the true ones are kept in `rank.jsonl` | `attempts` in `rank.jsonl`, `proof` in `factcheck.json` |
 | Human blind A/B | `human_board.py`: a showtime studio board per task with shuffled letters, each candidate's video embedded (all candidates re-encoded with identical settings to fit one <= 15 MB page; HTML deliverables screen-recorded by one procedure, `html_record.mjs`), up to 5 A/B questions and 0-5 ratings; exported as one file for a private artifact; answers mapped back through a key kept off the board | `human/<run>/*.html`, `human_summary.json` |
 | Report | `aggregate.py` + `report/TEMPLATE.md` | `report.md`, `results.json` |
 
@@ -96,7 +97,10 @@ triggering, the one-sentence contract, honesty. See its README for why it cannot
   so they can be re-judged; contrast and text size are not measurable on an arbitrary video file, so they
   are left to the judges (legibility criterion) instead of `showtime check`, which only works on its own
   projects.
-- Judges see frames, transcripts and measurements, not motion or sound.
+- Judges see frames, transcripts and measurements, not motion or sound. A judgment counts only with the proof
+  above (an earlier round found three rankings made without the images); the proof shows the images were
+  opened and read, not that they were judged well. Several judgments of one task come from the same model
+  looking at rotated copies of one packet, so their agreement is not independent confirmation.
 - The human voter on the boards may know the tools; the letters are shuffled and nothing on a board names
   a tool, but recruit voters who did not build any arm for a claim that matters.
 - Network access is not blocked. No arm gets a cloud API key; an arm whose shipped workflow needs one is
@@ -114,6 +118,7 @@ python benchmarks/harness/smoke.py --fake          # harness self-test, no model
 python benchmarks/harness/smoke.py                 # real smoke: t7, baseline vs showtime
 python benchmarks/harness/run_matrix.py --run r1 -j 2
 python benchmarks/scoring/auto_metrics.py --run r1
+python benchmarks/scoring/auto_metrics.py --run r1 --task t4 --footage-model turbo   # filler cut with the model rounds 1-2 used
 python benchmarks/scoring/factcheck.py --run r1
 python benchmarks/scoring/pairwise.py --run r1
 python benchmarks/scoring/rank.py --run r1          # or the ranking judge: one judgment per task

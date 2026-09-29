@@ -494,16 +494,24 @@ class RenderTests(unittest.TestCase):
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8")
         try:
             line = p.stdout.readline()
-            url = json.loads(line)["url"]
+            info = json.loads(line)
+            url, key = info["url"], info["key"]
+            self.assertIn("k=" + key, info["preview"])     # the printed links open the server
 
-            def get(path, headers=None):
-                req = urllib.request.Request(url + path, headers=headers or {})
+            def get(path, headers=None, keyed=True):
+                h = dict(headers or {})
+                if keyed:
+                    h["X-Showtime-Key"] = key
+                req = urllib.request.Request(url + path, headers=h)
                 try:
                     with urllib.request.urlopen(req, timeout=10) as r:
                         return r.status, dict(r.headers), r.read()
                 except urllib.error.HTTPError as e:
                     return e.code, dict(e.headers), e.read()
 
+            st, _, body = get("/index.html", keyed=False)
+            self.assertEqual(st, 403)                      # the session key guards every path
+            self.assertIn(b"session key", body)
             st, h, body = get("/blob.bin", {"Range": "bytes=10-19"})
             self.assertEqual(st, 206)
             self.assertEqual(body, bytes(range(10, 20)))

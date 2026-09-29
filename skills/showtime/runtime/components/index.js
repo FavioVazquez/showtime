@@ -25,6 +25,9 @@ export { FeatureGrid } from './feature-grid.js';
 export { ChatThread, Notifications } from './bubbles.js';
 export { Steps } from './steps.js';
 export { KenBurns } from './ken-burns.js';
+export { Camera } from './camera.js';
+export { Fit } from './fit.js';
+export { portalShape, counterOf } from './portal.js';
 export { WorldMap } from './map.js';
 export { Grain } from './grain.js';
 

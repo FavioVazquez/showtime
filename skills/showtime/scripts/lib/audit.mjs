@@ -278,7 +278,7 @@ export function textSnapshot(o) {
       const color = rgba(svgFill || (s.webkitTextFillColor && s.webkitTextFillColor !== s.color && !/rgba\(0, 0, 0, 0\)/.test(s.webkitTextFillColor) ? s.webkitTextFillColor : s.color));
       leaves.push({ lid: idOf(leaf.el, 'data-st-lid'), bid, own: (leaf.el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 60), rect: { x: leaf.box.x, y: leaf.box.y, w: leaf.box.r - leaf.box.x, h: leaf.box.b - leaf.box.y },
         color, opacity: op, fontSize: fs, scale: scaleOf(leaf.el), decor: blk.decor, weight: parseInt(s.fontWeight, 10) || 400, outlined, clipText, sel: sel(leaf.el), chars: leaf.chars, blurred: blurred(leaf.el),
-        entering: animatingOf(leaf.el),
+        entering: animatingOf(leaf.el), portal: !!(leaf.el.closest && leaf.el.closest('[data-st-portal-word],[data-portal]')),
         family: s.fontFamily, style: s.fontStyle });
     }
   }

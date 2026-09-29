@@ -4,13 +4,18 @@
 //   const { browser, executablePath, kind, flags } = await launchBrowser({ gpu: 'auto', headless: true });
 //
 // Preference order: $SHOWTIME_CHROME / $CHROME_PATH, system Google Chrome, Microsoft Edge,
-// Chromium, then the Playwright-managed Chromium in ~/.showtime/browsers.
+// Chromium (major version >= MIN_CHROME_MAJOR; SHOWTIME_SYSTEM_BROWSER=0 skips them), then the
+// Chrome Headless Shell showtime setup installs when no browser is found (headless runs), then a
+// Playwright-managed full Chromium in ~/.showtime/browsers. When none of them can start, the
+// headless shell (or, for --headed, full Chromium) is fetched once through `showtime setup --fetch`,
+// announced with its size, and the launch is retried.
 // Flags come from chrome-flags.json (shared with lib/st/platform.py):
 //   gpu 'auto'|'on'  -> per-OS hardware path (ANGLE Metal on macOS, D3D11 on Windows,
 //                       default GL with a SwiftShader fallback on Linux)
 //   gpu 'off'|'software' -> SwiftShader (slower; most reproducible across machines)
 //
 // Run directly for a self-test:  node chrome.mjs --probe [--gpu auto|off] [--prefer playwright]
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -90,6 +95,48 @@ function systemCandidates() {
   return out;
 }
 
+// An installed browser older than this is skipped (rendering and CDP features differ too much).
+export const MIN_CHROME_MAJOR = 120;
+
+const systemAllowed = () => !['0', 'false', 'no', 'off'].includes(String(process.env.SHOWTIME_SYSTEM_BROWSER || '1').toLowerCase());
+
+function browsersDir() {
+  const env = process.env.PLAYWRIGHT_BROWSERS_PATH;
+  return env && env !== '0' ? env : path.join(showtimeHome(), 'browsers');
+}
+
+/** Chrome Headless Shell installed by showtime setup (newest revision), or null. */
+export function findHeadlessShell(dir = browsersDir()) {
+  let best = null;
+  let bestRev = -1;
+  let entries = [];
+  try { entries = fs.readdirSync(dir); } catch { return null; }
+  for (const d of entries) {
+    const m = /^chromium_headless_shell-(\d+)$/.exec(d);
+    if (!m) continue;
+    let subs = [];
+    try { subs = fs.readdirSync(path.join(dir, d)); } catch { continue; }
+    for (const sub of subs) {
+      if (!sub.startsWith('chrome-headless-shell-')) continue;
+      for (const exe of ['chrome-headless-shell', 'chrome-headless-shell.exe']) {
+        const p = path.join(dir, d, sub, exe);
+        if (isFile(p) && Number(m[1]) > bestRev) { best = p; bestRev = Number(m[1]); }
+      }
+    }
+  }
+  return best;
+}
+
+/** Fetch a browser through the installer (resumable, sha256-verified for the headless shell). */
+function fetchBrowser(name) {
+  const py = process.env.SHOWTIME_PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
+  const setupPy = path.join(HERE, '..', '..', 'setup', 'setup.py');
+  process.stderr.write(`showtime: fetching ${name === 'chromium' ? 'Chromium (full browser, ~190-205 MB)' : 'Chrome Headless Shell (~100-120 MB)'} ` +
+    'for rendering (one time; `showtime setup --plan` lists it)\n');
+  const r = spawnSync(py, [setupPy, '--fetch', name], { stdio: ['ignore', 2, 2], windowsHide: true, env: process.env });
+  return r.status === 0;
+}
+
 /** System browsers found on this machine, best first: [{kind, path, source}] */
 export function findSystemBrowsers() {
   const seen = new Set();
@@ -104,7 +151,7 @@ export function findSystemBrowsers() {
   };
   const env = process.env.SHOWTIME_CHROME || process.env.CHROME_PATH;
   if (env) add('custom', env, 'env');
-  const cands = systemCandidates();
+  const cands = systemAllowed() ? systemCandidates() : [];
   for (const kind of ['chrome', 'edge', 'chromium', 'chrome-for-testing']) {
     for (const [k, p] of cands) if (k === kind) add(k, p, 'system');
   }
@@ -133,40 +180,71 @@ export async function launchBrowser(o = {}) {
   const { gpu = 'auto', headless = true, prefer = 'system', args = [], timeout = 60000 } = o;
   const { chromium } = await playwright();
   const flags = [...chromeFlags(gpu), ...args];
-  const system = o.executablePath ? [{ kind: 'custom', path: o.executablePath, source: 'option' }] : findSystemBrowsers();
-  let bundled = null;
-  try {
-    const p = chromium.executablePath();
-    if (isFile(p)) bundled = { kind: 'playwright', path: null, source: 'playwright', resolved: p };
-  } catch { /* not installed */ }
-  let order = prefer === 'playwright' ? [bundled, ...system] : [...system, bundled];
-  if (o.executablePath) order = system;
-  order = order.filter(Boolean);
-  if (!order.length) {
-    throw new Error('showtime: no Chrome, Edge or Chromium found.\n' +
-      '  Install Google Chrome, or run: showtime setup --with chromium');
-  }
-  const errors = [];
-  for (const cand of order) {
+  const bundledCandidates = () => {
+    const out = [];
+    // SHOWTIME_HEADLESS_SHELL=0: skip the shell (it rasterizes small text edges slightly differently from
+    // full Chrome: PSNR 37-45 dB on text-heavy frames, identical elsewhere; see references/render.md)
+    const useShell = headless && !['0', 'false', 'no', 'off'].includes(String(process.env.SHOWTIME_HEADLESS_SHELL || '1').toLowerCase());
+    const shell = useShell ? findHeadlessShell() : null;
+    if (shell) out.push({ kind: 'headless-shell', path: shell, source: 'showtime' });
     try {
-      const browser = await chromium.launch({
-        headless,
-        // Bundled browser: channel 'chromium' = full Chromium in new-headless mode
-        // (same code path as system Chrome; no separate headless-shell download).
-        ...(cand.path ? { executablePath: cand.path } : { channel: 'chromium' }),
-        args: flags,
-        timeout,
-      });
-      return {
-        browser,
-        executablePath: cand.path || cand.resolved,
-        kind: cand.kind,
-        flags,
-        version: browser.version(),
-      };
-    } catch (err) {
-      errors.push(`${cand.kind} (${cand.path || cand.resolved}): ${String(err.message || err).split('\n')[0]}`);
+      const p = chromium.executablePath();
+      if (isFile(p)) out.push({ kind: 'playwright', path: null, source: 'playwright', resolved: p });
+    } catch { /* not installed */ }
+    return out;
+  };
+  const system = o.executablePath ? [{ kind: 'custom', path: o.executablePath, source: 'option' }] : findSystemBrowsers();
+  const errors = [];
+  const tried = new Set();
+  const attempt = async (order) => {
+    for (const cand of order) {
+      const id = cand.path || cand.resolved;
+      if (tried.has(id)) continue;
+      tried.add(id);
+      let browser = null;
+      try {
+        browser = await chromium.launch({
+          headless,
+          // Full bundled Chromium: channel 'chromium' = new-headless mode (same code path as system
+          // Chrome). The headless shell and system browsers are launched by path.
+          ...(cand.path ? { executablePath: cand.path } : { channel: 'chromium' }),
+          args: flags,
+          timeout,
+        });
+        const version = browser.version();
+        const major = Number(String(version).split('.')[0]);
+        if (cand.source === 'system' && major && major < MIN_CHROME_MAJOR) {
+          await browser.close().catch(() => {});
+          errors.push(`${cand.kind} ${version} (${id}): older than ${MIN_CHROME_MAJOR}, skipped`);
+          continue;
+        }
+        return { browser, executablePath: id, kind: cand.kind, flags, version };
+      } catch (err) {
+        if (browser) await browser.close().catch(() => {});
+        errors.push(`${cand.kind} (${id}): ${String(err.message || err).split('\n')[0]}`);
+      }
     }
+    return null;
+  };
+  let order = o.executablePath ? system : (prefer === 'playwright' ? [...bundledCandidates(), ...system] : [...system, ...bundledCandidates()]);
+  let res = await attempt(order);
+  if (res) return res;
+  if (!o.executablePath) {
+    // Nothing usable yet: fetch the headless shell (or full Chromium for a headed run, or when the shell is
+    // here but cannot start, or is switched off) once, then retry.
+    const shellOff = ['0', 'false', 'no', 'off'].includes(String(process.env.SHOWTIME_HEADLESS_SHELL || '1').toLowerCase());
+    const want = headless && !shellOff && !findHeadlessShell() ? 'chromium-headless-shell' : 'chromium';
+    const offline = !['', '0', 'false', 'no'].includes(String(process.env.SHOWTIME_OFFLINE || '').toLowerCase());
+    if (!offline && fetchBrowser(want)) {
+      res = await attempt(bundledCandidates());
+      if (res) return res;
+    } else if (offline) {
+      errors.push(`${want} is not installed and showtime is offline (run \`showtime setup --full\` on a connected machine, or \`showtime setup --seed DIR --fetch ${want}\`)`);
+    }
+  }
+  if (!errors.length) {
+    throw new Error('showtime: no Chrome, Edge or Chromium found.\n' +
+      '  Install Google Chrome, or run: showtime setup   (installs the Chrome Headless Shell)');
   }
   throw new Error('showtime: could not launch a browser:\n  ' + errors.join('\n  ') +
     (osName() === 'linux' ? '\n  hint: missing system libraries? run: sudo npx playwright install-deps chromium' : ''));

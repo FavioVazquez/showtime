@@ -21,6 +21,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { buildPage, Core, TEMPLATE_FILES } from './build.mjs';
+import { sameKey, newKey, isKey, keyCookie } from '../sessionkey.mjs';
 import { readJSON, writeJSONAtomic, writeJSONAtomicSync, layout, ensureStateDir, safeMediaFile, mimeOf } from './paths.mjs';
 
 export function emptyFeedback(job) {
@@ -28,12 +29,7 @@ export function emptyFeedback(job) {
   return { schema: Core.FEEDBACK_SCHEMA, job, created: now, updated: now, board_rev: null, events: [], state: Core.reduce([]) };
 }
 
-export function sameKey(a, b) {
-  if (typeof a !== 'string' || typeof b !== 'string' || !a || !b) return false;
-  const ha = crypto.createHash('sha256').update(a).digest();
-  const hb = crypto.createHash('sha256').update(b).digest();
-  return crypto.timingSafeEqual(ha, hb) && a.length === b.length;
-}
+export { sameKey };   // shared with the preview server (lib/sessionkey.mjs)
 
 const CSP = (nonce) => `default-src 'self' data: blob:; script-src 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; ` +
   "img-src 'self' data: blob:; media-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; " +
@@ -44,7 +40,7 @@ const BASE_HEADERS = {
 };
 const DENIED_PAGE = '<!doctype html><meta charset="utf-8"><title>studio: key needed</title>' +
   '<body style="font:16px/1.5 system-ui,sans-serif;max-width:36em;margin:4em auto;padding:0 1em">' +
-  '<h1 style="font-size:20px">This studio board needs its key</h1><p>Open the full link that Claude (or ' +
+  '<h1 style="font-size:20px">This studio board needs its key</h1><p>Open the full link that your agent (or ' +
   '<code>showtime studio open &lt;job&gt;</code>) printed. It ends in <code>?k=...</code>.</p></body>';
 
 /**
@@ -68,7 +64,7 @@ export async function serveStudio(o) {
 
   // ---- stable port + key: reuse the last pair so an open tab reconnects after a restart
   const prev = readJSON(L.session, null) || {};
-  let token = typeof prev.token === 'string' && /^[0-9a-f]{64}$/.test(prev.token) ? prev.token : crypto.randomBytes(32).toString('hex');
+  let token = isKey(prev.token) ? prev.token : newKey();
   const want = Number(o.port) || Number(prev.port) || 0;
 
   const clients = new Set();
@@ -196,7 +192,7 @@ export async function serveStudio(o) {
         const nonce = crypto.randomBytes(16).toString('base64');
         return send(res, 200, `<!doctype html><meta charset="utf-8"><title>studio</title><script nonce="${nonce}">location.replace('/')</script>` +
           '<noscript><meta http-equiv="refresh" content="0;url=/"></noscript><p style="font:14px system-ui,sans-serif">Opening the board...</p>',
-        'text/html; charset=utf-8', { 'Set-Cookie': `${cookieName()}=${token}; Path=/; HttpOnly; SameSite=Strict`, 'Content-Security-Policy': CSP(nonce) });
+        'text/html; charset=utf-8', { 'Set-Cookie': keyCookie(cookieName(), token), 'Content-Security-Policy': CSP(nonce) });
       }
       const auth = keyOf(req);
       if (!sameKey(auth.key, token)) {
@@ -304,7 +300,7 @@ export async function serveStudio(o) {
   try { port = await listen(want); } catch (e) {
     if (e.code !== 'EADDRINUSE' && e.code !== 'EACCES') throw e;
     log(`port ${want} is taken; using a new port and a new key`);
-    token = crypto.randomBytes(32).toString('hex');
+    token = newKey();
     port = await listen(0);
   }
   await writeJSONAtomic(L.session, { port, token }, { mode: 0o600 });

@@ -83,6 +83,18 @@ jobs:
         run: >-
           python site/build.py --examples _examples/examples --examples-repo "$EXAMPLES_REPO"
           --media-from _media --repo "$GITHUB_REPOSITORY" --out _site --clean
+      # The benchmark report names the tools it was compared with, so it is not in this repository: it is the
+      # asset of the release "benchmark-report" and is published at /benchmark/.
+      - name: Benchmark report (release asset)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view benchmark-report --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            mkdir -p _site/benchmark
+            gh release download benchmark-report --repo "$GITHUB_REPOSITORY" --pattern index.html --dir _site/benchmark --clobber
+          else
+            echo "::warning::release benchmark-report not found: /benchmark/ is not published"
+          fi
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:

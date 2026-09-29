@@ -483,28 +483,15 @@ Every model and tool is downloaded once into `~/.showtime`, the small ones at se
 first time a video needs them. After that it goes online only when you ask for something from the web: public-archive media search (Openverse, Wikimedia Commons, NASA) and website
 capture fetch pages and files, and send nothing of yours.
 
-<!-- ============================================================================================
-BENCHMARK SECTION (hidden until the benchmark is published; no claims before then).
-To publish: fill the numbers from benchmarks/, render the two charts into assets/readme/benchmark/
-(light + dark, same style as assets/readme/diagrams/), uncomment the block and add
-<a href="#benchmark"><b>Benchmark</b></a> to the navigation line under the hero.
-
 ## Benchmark
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/readme/benchmark/results-dark.svg">
-  <img alt="BENCHMARK CHART ALT TEXT: what was measured, on which tasks, and the headline result." src="assets/readme/benchmark/results-light.svg" width="100%">
-</picture>
-
-One or two sentences: what the benchmark measures, how many tasks, who judged and how (blind or not).
-
-| Task set | showtime | Baseline A | Baseline B |
-|---|---|---|---|
-| (tasks) | (score) | (score) | (score) |
-
-How it was run, and how to rerun it: [`benchmarks/`](benchmarks/). Every number above is reproducible
-from the files there.
-============================================================================================= -->
+In a small benchmark (6 one-sentence tasks, one run each), showtime was compared with plain Claude Code on Opus 5.5
+and with an open-source tool built for each kind of job, scored by automatic checks, an AI judge that must prove it
+looked at every frame, and a blind vote by me. In the latest round my pick was a showtime video on 5 of the 6 tasks,
+and 0.2.0 beat plain Claude Code on all 6 in that vote; the launch video lost all three rounds to a tool built only
+for launch videos. I'm showtime's author, so treat it as 6 anecdotes, not a result. Every number, limit and loss is
+in the [benchmark report](https://faviovazquez.github.io/showtime/benchmark/); the method and the code to rerun it
+are in [`benchmarks/`](benchmarks/).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/readme/divider-dark.svg">

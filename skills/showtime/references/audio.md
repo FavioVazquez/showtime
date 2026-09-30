@@ -43,12 +43,12 @@ Everything runs locally. Every command has `--help` with examples, and most acce
 | Section | Lines |
 |---|---|
 | 1. The five-minute path | 53-67 |
-| 2. Music | 69-121 |
-| 3. Sound effects | 123-139 |
-| 4. Library | 141-188 |
-| 5. The mix spec (audio/mix.json): Credits | 190-288 |
-| 6. Analysis and delivery | 290-306 |
-| 7. Platform notes | 308-318 |
+| 2. Music | 69-124 |
+| 3. Sound effects | 126-142 |
+| 4. Library | 144-191 |
+| 5. The mix spec (audio/mix.json): Credits | 193-291 |
+| 6. Analysis and delivery | 293-309 |
+| 7. Platform notes | 311-321 |
 
 ## 1. The five-minute path
 
@@ -78,8 +78,9 @@ changed.
 | The beat grid of any track | `audio beats track.mp3` (writes `track.beats.json`) |
 | Temp music from a text prompt (non-commercial) | `audio musicgen "prompt" --dur 20 -o draft.wav` (optional tier) |
 
-**The produced-music catalog** (`lib/st/audio/music_catalog.json`, 150+ tracks: Scott Buckley and
-Kevin MacLeod under CC BY 4.0, CC0 and public-domain recordings; every track was downloaded, measured
+**The produced-music catalog** (`lib/st/audio/music_catalog.json`, nearly 300 tracks: Scott Buckley and
+Kevin MacLeod under CC BY 4.0, composers on OpenGameArt under CC BY 3.0/4.0 or CC0, CC0 and public-domain
+recordings; every track was downloaded, measured
 and passed a quality gate: no muffled old transfers, hiss, crackle, clipping, mono, dead gaps or wild
 loudness swings, thresholds in `music.py`):
 - `audio music search [words] --for USE --shelf S --mood M --energy 0.2-0.5 --dur D --vocals none`
@@ -118,7 +119,9 @@ loudness swings, thresholds in `music.py`):
 - `--backend auto|sf|synth|hybrid`: SoundFont instruments (GeneralUser GS), the numpy synth, or synth
   drums/bass with SoundFont keys and strings. If `tinysoundfont` or the SoundFont is missing, it
   falls back to the synth automatically. It still works, it just sounds more electronic.
-- `--seed N` gives a different melody and variation with the same structure. Try 2 or 3 seeds.
+- `--seed N` gives a different melody and variation with the same structure. Try 2 or 3 seeds. In a
+  mix.json compose track, `"seed": "auto"` takes the seed from the project and, unless `"key"` is given,
+  moves the style's key (up to a fourth), so two videos on one style do not share a bed.
 
 ## 3. Sound effects
 

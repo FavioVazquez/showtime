@@ -81,6 +81,19 @@ class PairwiseRule(unittest.TestCase):
         for p1, p2 in (("X", "Y"), ("Y", "X"), ("tie", "tie"), ("X", "tie"), ("tie", "X"), ("Y", "Y")):
             self.assertFalse(pw.decide(p1, p2, "X")[0], (p1, p2))
         self.assertIn("split", pw.decide("X", "Y", "X")[1])
+
+    def test_would_post(self):
+        """The absolute verdict per video: either critic's "no" wins; a missing line is no answer."""
+        from st.qa import pairwise as pw
+        yes = pw.parse_findings(findings("X", "X", "Y", "WOULD I POST X: yes -- crisp\nWOULD I POST Y: no -- soft\n"))
+        self.assertEqual(yes["would_post"], {"X": ("yes", "crisp"), "Y": ("no", "soft")})
+        no = pw.parse_findings(findings("X", "Y", "X", "WOULD I POST X: no -- stepped caption boxes\n"
+                                                       "WOULD I POST Y: no -- soft\n"))
+        self.assertEqual(pw.would_post([yes, no], "X"), {"answer": "no", "reason": "stepped caption boxes"})
+        self.assertEqual(pw.would_post([yes, yes], "X")["answer"], "yes")
+        self.assertIsNone(pw.would_post([yes, pw.parse_findings(findings("X", "X", "Y"))], "X")["answer"])
+        tmpl = pw.parse_findings(findings("X", "X", "Y", "WOULD I POST X: yes | no  -- one reason\n"))
+        self.assertEqual(tmpl["would_post"], {})
         self.assertIn("old preferred in both", pw.decide("Y", "Y", "X")[1])
 
     def test_parse(self):
@@ -177,7 +190,8 @@ class PairwisePack(unittest.TestCase):
         self.assertIn("compare-YX.jpg", b2)
         for b in (b1, b2):
             for word in ("PREFERENCE", "Blocker", "Should-fix", "Polish", "No scores", "DECLINED TO JUDGE",
-                         "type detail pass", "timestamp and a frame path", "transcript"):
+                         "type detail pass", "timestamp and a frame path", "transcript", "WOULD I POST X",
+                         "WOULD I POST Y", "under your own name"):
                 self.assertIn(word, b)
             self.assertNotIn("1-10", b)
             self.assertIn("`../X/frames/t0000.000s.jpg`", b)
@@ -198,6 +212,8 @@ class PairwisePack(unittest.TestCase):
         self.assertTrue(v["improved"])
         self.assertEqual(Path(v["best"]).name, "final-2.mp4")
         self.assertTrue(v["blind"])
+        self.assertIsNone(v["would_post"]["answer"])          # no WOULD I POST lines: not answered, so not done
+        self.assertIn("WOULD I POST", v["next"])
         self.assertEqual({f["role"] for f in v["open_findings"]}, {"new"})
         self.assertEqual(sorted(f["severity"] for f in v["open_findings"]), ["blocker", "should-fix"])
         self.assertEqual(len(v["dropped"]), 2)

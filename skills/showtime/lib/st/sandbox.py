@@ -171,6 +171,24 @@ def probe_network(url: Optional[str] = None, timeout: float = PROBE_TIMEOUT) -> 
         return False, _why(e)
 
 
+MIRROR_ENV = "SHOWTIME_MODEL_MIRROR"
+
+
+def probe_mirror(timeout: float = PROBE_TIMEOUT) -> Tuple[bool, str]:
+    """(reachable, detail) for the first model mirror (st/mirror.py): where model files come from when
+    Hugging Face or GitHub LFS is blocked. A local SHOWTIME_MODEL_MIRROR folder counts when it exists."""
+    try:
+        from . import mirror
+    except ImportError:
+        return False, "no mirror list"
+    for d in mirror.local_dirs():
+        if d.is_dir():
+            return True, "folder %s" % d
+    for base in mirror.bases()[:1]:
+        return probe_network(base, timeout)
+    return False, "mirrors off"
+
+
 def _host(url: str) -> str:
     m = re.match(r"^[a-z]+://([^/:]+)", url)
     return m.group(1) if m else url

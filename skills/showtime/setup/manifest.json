@@ -45,7 +45,7 @@
       "description": "DeepFilterNet3 denoiser binary (~30 MB)"
     },
     "music-catalog": {
-      "description": "every produced-music catalog track (Scott Buckley, Kevin MacLeod, CC0/public domain; 249 tracks, about 2.4 GB), pre-fetched for offline use; otherwise each track downloads the first time a mix uses it",
+      "description": "the produced-music catalog pre-fetched for offline use (Kevin MacLeod, CC0/public domain and other sources that allow it); Scott Buckley asks for no bulk downloads, so his tracks always download one at a time, the first time a mix uses them",
       "first_use": true,
       "when": "each track the first time a mix uses it"
     },

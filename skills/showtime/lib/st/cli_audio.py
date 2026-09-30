@@ -36,7 +36,7 @@ def _unique(path: Path) -> Path:
 def register(sub: argparse._SubParsersAction) -> None:
     a = sub.add_parser("audio", help=COMMANDS["audio"], formatter_class=_F, description=(
         "Local audio toolkit.\n\n"
-        "  music      produced music catalog (Scott Buckley, Kevin MacLeod, CC0 ...): search, pick, fetch,\n"
+        "  music      produced music catalog (Scott Buckley, Kevin MacLeod, OpenGameArt ...): search, pick, fetch,\n"
         "             credits; fetched on first use; also live Openverse search\n"
         "  compose    procedural music in 18 styles, exact length, stems + MIDI + beats.json\n"
         "  styles     list music styles (bpm, key, moods, what they suit)\n"
@@ -95,6 +95,24 @@ def register(sub: argparse._SubParsersAction) -> None:
                             "  showtime audio compose --style lofi-chill --dur 30 -o bed.wav   # then use one")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_styles)
+
+    p = s.add_parser("film-score", help="write a new score.js for a film project (key, tempo, chords, motif, sound)",
+                     formatter_class=_F,
+                     description="Write the film template's score.js from a new signature: key and mode, a tempo "
+                                 "and meter that keep the cues on bar lines, a progression, a motif, the "
+                                 "instruments and the drums, picked for the mood and away from the scores of "
+                                 "recent jobs (the look history). `showtime new film` does this once; run it again "
+                                 "for another score. A score.js you wrote by hand is kept unless --force.",
+                     epilog="Examples:\n  showtime audio film-score my-film\n"
+                            "  showtime audio film-score my-film --mood tension\n"
+                            "  showtime audio film-score my-film --seed 7 --json")
+    p.add_argument("project")
+    p.add_argument("--mood", choices=["calm", "upbeat", "tension", "playful", "cinematic"],
+                   help="default: from the job's goal and the title, else a seeded choice")
+    p.add_argument("--seed", type=int, help="a fixed seed (default: the project and the history)")
+    p.add_argument("--force", action="store_true", help="replace a hand-written score.js")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_film_score)
 
     p = s.add_parser("sfx", help="render a procedural sound effect", formatter_class=_F,
                      description="Render one procedural effect (loudness-matched to its category) and print its "
@@ -255,7 +273,7 @@ def _music_filters(p) -> None:
     p.add_argument("--min-dur", type=float)
     p.add_argument("--max-dur", type=float)
     p.add_argument("--vocals", help="none, some, lead (comma list; explainer presets allow none only)")
-    p.add_argument("--source", help="buckley, incompetech, wikimedia, archive (comma list)")
+    p.add_argument("--source", help="buckley, incompetech, opengameart, wikimedia, archive (comma list)")
     p.add_argument("--license", help="cc-by, cc0, pd, CC-BY-4.0 ... (comma list)")
     p.add_argument("--ending", help="clean (a final hit and ring-out), soft (fade or quiet outro), cut, unknown")
     p.add_argument("--all", action="store_true", help="include tracks you vetoed")
@@ -263,7 +281,7 @@ def _music_filters(p) -> None:
 
 def _register_music(s) -> None:
     m = s.add_parser("music", help="produced music catalog: search, pick, fetch, credits, veto", formatter_class=_F,
-                     description="A curated catalog of produced recordings (Scott Buckley, Kevin MacLeod, CC0 and "
+                     description="A curated catalog of produced recordings (Scott Buckley, Kevin MacLeod, composers on OpenGameArt, CC0 and "
                                  "public-domain recordings), tagged by shelf, mood, energy and use. "
                                  "Nothing is bundled: a track is fetched from its creator's site the first time it is "
                                  "used (\"fetching X (N MB) for Y\"), checked against its pinned sha256 and kept in "
@@ -569,6 +587,25 @@ def cmd_compose(args) -> int:
     return 0
 
 
+def cmd_film_score(args) -> int:
+    from .audio import filmscore
+    from .common import read_json
+    proj = Path(args.project).expanduser().resolve()
+    if not (proj / "score.js").is_file() or not (proj / "cues.js").is_file():
+        raise ShowtimeError("%s has no score.js and cues.js" % proj, hint="this works on a film project (showtime new film)")
+    title = str((read_json(proj / "showtime.json", {}) or {}).get("title") or "")
+    sig = filmscore.apply(proj, brief=title, mood=args.mood, seed=args.seed, force=args.force)
+    if sig is None:
+        raise ShowtimeError("score.js in %s was written by hand: kept" % proj, hint="--force replaces it")
+    if args.json:
+        print_json(sig)
+    else:
+        print("score.js: %s %s, %g bpm in %d/4, %s chords, %s motif, %s, %s drums (%s mood)" % (
+            sig["key"], sig["mode"], sig["bpm"], sig["meter"], sig["progression"], sig["motif"], sig["palette"],
+            sig["drums"], sig["mood"]))
+    return 0
+
+
 def cmd_styles(args) -> int:
     from .audio import compose
     rows = compose.style_list()
@@ -625,7 +662,7 @@ def cmd_cuts(args) -> int:
     if proj is not None:
         if proj.is_file() and proj.name == "showtime.json":
             proj = proj.parent
-        cfg = read_json(proj / "showtime.json", None)
+        cfg = read_json(proj / "showtime.json", {})
         if not cfg:
             raise ShowtimeError("no showtime.json in %s" % proj, hint="--apply takes the project folder")
         dur = dur or float(cfg.get("duration") or 0) or None
@@ -1030,12 +1067,12 @@ def cmd_music_fetch(args) -> int:
     else:
         raise ShowtimeError("name tracks to fetch, or use --for/--shelf/--all",
                             hint="showtime audio music fetch buckley-with-these-hands")
-    rep = music.fetch_many(ts, seeds=args.seed, purpose="offline use")
+    rep = music.fetch_many(ts, seeds=args.seed, purpose="offline use", bulk=not args.ids)
     if args.json:
         print_json(rep)
     else:
-        print("fetched %d, already cached %d, failed %d  (%s)" % (len(rep["fetched"]), len(rep["cached"]), len(rep["failed"]),
-                                                                 music.cache_root()))
+        print("fetched %d, already cached %d, failed %d, left for first use %d  (%s)" % (
+            len(rep["fetched"]), len(rep["cached"]), len(rep["failed"]), len(rep["skipped"]), music.cache_root()))
         for f in rep["failed"]:
             print("  FAILED %s: %s" % (f["id"], f["error"]))
     return 1 if rep["failed"] and not (rep["fetched"] or rep["cached"]) else 0

@@ -685,7 +685,7 @@ render. Press <kbd>?</kbd> in the player for the key map.
 <table>
 <tr>
 <td width="33%" valign="top"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/readme/icons/voice-dark.svg"><img src="assets/readme/icons/voice-light.svg" width="44" alt=""></picture><br><b>Voice-over</b><br><sub>Kokoro, Piper and Supertonic voices, English, Spanish and 30+ more languages, with exact word timings for captions and kinetic type.</sub></td>
-<td width="33%" valign="top"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/readme/icons/music-dark.svg"><img src="assets/readme/icons/music-light.svg" width="44" alt=""></picture><br><b>Music and sound</b><br><sub>249 produced tracks (Scott Buckley, Kevin MacLeod, public-domain recordings) with the credit written for you, a composer that hits exact lengths, 56 synthesized effect types, 1,334 permissively licensed sounds, beat grids, ducking, mastering.</sub></td>
+<td width="33%" valign="top"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/readme/icons/music-dark.svg"><img src="assets/readme/icons/music-light.svg" width="44" alt=""></picture><br><b>Music and sound</b><br><sub>297 produced tracks (Scott Buckley, Kevin MacLeod, a dozen more composers, public-domain recordings) with the credit written for you, a composer that hits exact lengths, 56 synthesized effect types, 1,334 permissively licensed sounds, beat grids, ducking, mastering.</sub></td>
 <td width="33%" valign="top"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/readme/icons/captions-dark.svg"><img src="assets/readme/icons/captions-light.svg" width="44" alt=""></picture><br><b>Captions</b><br><sub>Five styles, burned in or as SRT/VTT, placed inside each platform's safe zone; karaoke from the voice's word times.</sub></td>
 </tr>
 <tr>
@@ -755,7 +755,7 @@ attribution writes itself into `credits.txt`. Catalog tracks are downloaded from
 |---|---|
 | `audio compose` | procedural music to an exact length in 18 styles, with stems, MIDI and a beat map; restrained beds for explainers and data, livelier styles on request |
 | `audio sfx` | 56 synthesized effect types (whooshes, hits, UI clicks, risers), with the hit time printed |
-| `audio music` | the produced-music catalog: 249 tracks, each measured for quality and tagged by mood, energy and tempo; `audio music pick --for launch --dur 45` chooses one, and the credit lands in `credits.txt` and the post copy by itself |
+| `audio music` | the produced-music catalog: 297 tracks, each measured for quality and tagged by mood, energy and tempo; `audio music pick --for launch --dur 45` chooses one, and the credit lands in `credits.txt` and the post copy by itself |
 | `audio lib` | the local library, 1,334 sounds: CC0 effects and ambiences, CC-BY music beds credited automatically, and beds rendered on your machine; `audio packs` adds 35 more sound packs (34 CC0, 1 CC BY) on demand |
 | `audio beats` | beats, downbeats, onsets, energy, sections and key, so cuts land on the music |
 | `audio fit` | loops or trims music to a length on bar lines |
@@ -868,7 +868,8 @@ by this agent". The full list is in the [changelog](CHANGELOG.md).
   default install (the transcription model, Manim, the audio library beyond its 41 MB starter, browser and icon
   extras) is fetched the first time a video needs it, announced with its size. Homes made by 0.1 keep working;
   `setup --prune` clears what is no longer used.
-- **A real music catalog.** 249 produced tracks (Scott Buckley, Kevin MacLeod and public-domain recordings),
+- **A real music catalog.** 297 produced tracks (Scott Buckley, Kevin MacLeod, a dozen more composers and
+  public-domain recordings),
   each downloaded and measured for hiss, clipping, mono, dead gaps and loudness swings, tagged by mood, energy,
   tempo and use, and picked with `showtime audio music pick`. Tracks are fetched from their creators on first use
   and never re-hosted. Every render that uses one writes the credit into `credits.txt` and the post copy by
@@ -937,8 +938,9 @@ macOS and Windows, with a browser already installed and about 100 MB more withou
 component by component. What a video needs only sometimes arrives the first time it is used, with its size
 announced: the transcription model (Parakeet, 465 MB, once),
 Manim (60 MB), the audio library's starter part (41 MB), a music track or a sound pack (each a few MB to a few
-dozen). `showtime setup --full` fetches all of it now, for a machine that will be offline (about 6.6 to 7.2 GB,
-mostly the 2.4 GB music catalog and the 1.6 GB Whisper large-v3-turbo model).
+dozen). `showtime setup --full` fetches all of it now, for a machine that will be offline (about 5.1 to 5.7 GB,
+mostly the 1.6 GB Whisper large-v3-turbo model and 0.9 GB of the music catalog; Scott Buckley asks for no bulk
+downloads, so his tracks still download one at a time, the first time a video uses them).
 
 <details>
 <summary><b>Install commands for uv and Node.js</b></summary>

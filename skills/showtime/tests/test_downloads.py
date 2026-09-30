@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Download tiers and first-use fetches: the manifest's tiers and `setup --plan` table, the lazy-fetch
 hook (announce, progress, resume, sha256, seeds, shared Hugging Face cache, offline errors) against a
-local fixture server, audio packs, icon cache, headless-shell discovery, and the fp16 Kokoro NaN guard.
+local fixture server, the model mirror for blocked hosts, audio packs, icon cache, headless-shell discovery, and the fp16 Kokoro NaN guard.
 
 No real network: every download comes from a 127.0.0.1 server started here.
 usage: python tests/test_downloads.py [--fast] [-v]
@@ -48,6 +48,7 @@ def setup_mod():
 class _Handler(http.server.BaseHTTPRequestHandler):
     files: dict = {}
     hits: list = []
+    codes: dict = {}          # path -> HTTP status to answer instead (403: a proxy refusing the host)
 
     def log_message(self, *a):  # quiet
         pass
@@ -55,6 +56,18 @@ class _Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         body = self.files.get(self.path)
         self.hits.append((self.path, self.headers.get("Range")))
+        if self.path in self.codes:
+            self.send_response(self.codes[self.path])
+            self.end_headers()
+            return
+        if isinstance(body, str):          # a proxy's block page: 200, text/html
+            page = body.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(page)))
+            self.end_headers()
+            self.wfile.write(page)
+            return
         if body is None:
             self.send_response(404)
             self.end_headers()
@@ -76,9 +89,10 @@ class _Handler(http.server.BaseHTTPRequestHandler):
 
 
 @contextlib.contextmanager
-def fixture_server(files):
+def fixture_server(files, codes=None):
     _Handler.files = dict(files)
     _Handler.hits = []
+    _Handler.codes = dict(codes or {})
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
     t = threading.Thread(target=srv.serve_forever, daemon=True)
     t.start()
@@ -397,6 +411,145 @@ class TestLazyFetch(unittest.TestCase):
 
 
 # ------------------------------------------------------------------ audio packs, icons, browser, kokoro
+
+# ------------------------------------------------------------------ model mirror (blocked hosts)
+
+@contextlib.contextmanager
+def mirror_table(files, mirrors):
+    """Swap mirror.json for `files` (primary url -> mirror file name) and `mirrors` (base URLs)."""
+    from st import mirror
+    saved = mirror.load()
+    mirror.reset()
+    mirror.load({"mirrors": list(mirrors), "files": [{"url": u, "file": n} for u, n in files.items()]})
+    try:
+        with env(SHOWTIME_MODEL_MIRROR=None):
+            yield mirror
+    finally:
+        mirror.reset()
+        mirror.load(saved)
+
+
+class TestModelMirror(unittest.TestCase):
+    def test_primary_403_falls_back_to_mirror_and_remembers_the_host(self):
+        a, b = os.urandom(40_000), os.urandom(30_000)
+        with fixture_server({"/mirror/m--a.bin": a, "/mirror/m--b.bin": b},
+                            codes={"/hf/a.bin": 403, "/hf/b.bin": 403}) as (base, hits):
+            it = item("fixture-mirror", base + "/hf/a.bin", a, "models/mm/a.bin")
+            it["files"].append(item("x", base + "/hf/b.bin", b, "models/mm/b.bin")["files"][0])
+            with fake_skill([it]) as (root, home), \
+                    mirror_table({base + "/hf/a.bin": "m--a.bin", base + "/hf/b.bin": "m--b.bin"}, [base + "/mirror/"]):
+                _, err = capture_stderr(lambda: lazy.ensure_item("fixture-mirror", "a blocked host"))
+                self.assertEqual((home / "models/mm/a.bin").read_bytes(), a)
+                self.assertEqual((home / "models/mm/b.bin").read_bytes(), b)
+                paths = [p for p, _r in hits]
+                self.assertEqual(paths, ["/hf/a.bin", "/mirror/m--a.bin", "/mirror/m--b.bin"],
+                                 "one 403 from a host sends its later files straight to the mirror")
+                self.assertIn("HTTP 403", err)
+
+    def test_block_page_and_bad_mirror_checksum(self):
+        good = os.urandom(20_000)
+        with fixture_server({"/hf/m.bin": "<html>Access denied by proxy</html>", "/bad/m--m.bin": os.urandom(20_000),
+                             "/good/m--m.bin": good}) as (base, hits):
+            it = item("fixture-page", base + "/hf/m.bin", good, "models/pg/m.bin")
+            with fake_skill([it]) as (root, home), \
+                    mirror_table({base + "/hf/m.bin": "m--m.bin"}, [base + "/bad/", base + "/good/"]):
+                lazy.ensure_item("fixture-page", "a proxy block page")
+                self.assertEqual((home / "models/pg/m.bin").read_bytes(), good,
+                                 "a 200 web page is a block, a wrong checksum moves on to the next mirror")
+                self.assertEqual([p for p, _r in hits], ["/hf/m.bin", "/bad/m--m.bin", "/good/m--m.bin"])
+
+    def test_checksum_mismatch_is_an_error_and_nothing_is_kept(self):
+        want = os.urandom(10_000)
+        with fixture_server({"/mirror/m--m.bin": os.urandom(10_000)}, codes={"/hf/m.bin": 403}) as (base, hits):
+            it = item("fixture-sha", base + "/hf/m.bin", want, "models/sha/m.bin")
+            with fake_skill([it]) as (root, home), \
+                    mirror_table({base + "/hf/m.bin": "m--m.bin"}, [base + "/mirror/"]):
+                with self.assertRaises(common.ShowtimeError) as cm:
+                    lazy.ensure_item("fixture-sha", "checksum test")
+                self.assertIn("sha256 mismatch", str(cm.exception))
+                self.assertFalse((home / "models/sha/m.bin").exists())
+                self.assertFalse((home / "models/sha/m.bin.part").exists(), "a file failing its checksum is not kept")
+
+    def test_env_override_folder_and_url(self):
+        body = os.urandom(15_000)
+        with fixture_server({"/own/m--m.bin": body, "/mirror/m--m.bin": body}, codes={"/hf/m.bin": 403}) as (base, hits):
+            it = item("fixture-env", base + "/hf/m.bin", body, "models/env/m.bin")
+            with fake_skill([it]) as (root, home), \
+                    mirror_table({base + "/hf/m.bin": "m--m.bin"}, [base + "/mirror/"]) as mirror:
+                folder = root / "mirror-folder"
+                folder.mkdir()
+                (folder / "m--m.bin").write_bytes(body)
+                with env(SHOWTIME_MODEL_MIRROR=folder):
+                    lazy.ensure_item("fixture-env", "a local mirror")
+                self.assertEqual((home / "models/env/m.bin").read_bytes(), body)
+                self.assertEqual(hits, [], "a mirror folder is used before any network")
+                (home / "models/env/m.bin").unlink()
+                with env(SHOWTIME_MODEL_MIRROR=folder, SHOWTIME_OFFLINE="1"):
+                    lazy.ensure_item("fixture-env", "a local mirror, offline")
+                self.assertEqual((home / "models/env/m.bin").read_bytes(), body)
+                (home / "models/env/m.bin").unlink()
+                with env(SHOWTIME_MODEL_MIRROR=base + "/own"):
+                    self.assertEqual(mirror.bases(), [base + "/own/", base + "/mirror/"])
+                    lazy.ensure_item("fixture-env", "an own mirror")
+                self.assertEqual([p for p, _r in hits], ["/hf/m.bin", "/own/m--m.bin"], "the override comes first")
+                with env(SHOWTIME_MODEL_MIRROR="off"):
+                    self.assertEqual((mirror.bases(), mirror.local_dirs()), ([], []))
+                    self.assertEqual(mirror.sources(base + "/hf/m.bin"), [base + "/hf/m.bin"])
+
+    def test_everything_blocked_names_hosts_and_the_override(self):
+        body = os.urandom(5_000)
+        with fixture_server({}, codes={"/hf/m.bin": 403, "/mirror/m--m.bin": 403}) as (base, hits):
+            it = item("fixture-all", base + "/hf/m.bin", body, "models/all/m.bin")
+            with fake_skill([it]) as (root, home), \
+                    mirror_table({base + "/hf/m.bin": "m--m.bin"}, [base + "/mirror/"]):
+                with self.assertRaises(common.ShowtimeError) as cm:
+                    lazy.ensure_item("fixture-all", "everything blocked")
+                msg = str(cm.exception)
+                self.assertIn("127.0.0.1 (HTTP 403)", msg)
+                self.assertIn("SHOWTIME_MODEL_MIRROR", msg)
+                self.assertIn("m--m.bin", msg, "the file to put in a mirror folder is named")
+                self.assertLess(len(msg), 600)
+
+    def test_proxy_refusal_counts_as_blocked(self):
+        import socket
+        import urllib.error
+        from st import mirror
+        self.assertTrue(mirror.blocked_reason(urllib.error.URLError(OSError("Tunnel connection failed: 403 Forbidden"))))
+        self.assertTrue(mirror.blocked_reason(urllib.error.URLError(socket.gaierror(8, "nodename nor servname"))))
+        self.assertIsNone(mirror.blocked_reason(urllib.error.URLError(ConnectionResetError("reset"))), "retried")
+        self.assertIsNone(mirror.blocked_reason(IOError("size mismatch for x: got 1, expected 2")), "resumed")
+
+    def test_probe_mirror_folder(self):
+        from st import sandbox
+        with env(SHOWTIME_MODEL_MIRROR=TESTS_DIR):
+            ok, detail = sandbox.probe_mirror()
+        self.assertTrue(ok)
+        self.assertIn(str(TESTS_DIR), detail)
+
+    def test_mirror_json_matches_the_pinned_files(self):
+        """Every mirrored file is a pinned download (same url, size and sha256) with a license, and the names are
+        valid release-asset names; the default install's Hugging Face and GitHub LFS files are all mirrored."""
+        import re
+        from st import mirror
+        from st.voice import models as vm
+        data = json.loads(mirror.MANIFEST.read_text(encoding="utf-8"))
+        self.assertEqual(data["mirrors"][0], "https://github.com/FavioVazquez/showtime/releases/download/%s/" % data["tag"])
+        pinned = {f["url"]: (f["size"], f["sha256"]) for it in MAN["items"] for f in it.get("files", [])}
+        for remote, _local, size, sha in (vm.W2V_VARIANTS["q8"], vm.W2V_VOCAB):
+            pinned[vm.W2V_BASE + remote] = (size, sha)
+        names = [f["file"] for f in data["files"]]
+        self.assertEqual(len(names), len(set(names)))
+        for f in data["files"]:
+            self.assertEqual((f["size"], f["sha256"]), pinned.get(f["url"]), f["file"])
+            self.assertRegex(f["file"], r"^[A-Za-z0-9._-]+$")
+            self.assertTrue(f["license"] and f["license_url"].startswith("https://") and f["attribution"], f["file"])
+        mirrored = {f["url"] for f in data["files"]}
+        for it in MAN["items"]:
+            if it.get("tier") in ("minimal", "core", "lazy"):
+                for f in it.get("files", []):
+                    if re.match(r"https://(huggingface\.co|github\.com/[^/]+/[^/]+/raw/)", f["url"]):
+                        self.assertIn(f["url"], mirrored, "%s is not mirrored" % f["url"])
+
 
 class TestPacksIconsBrowser(unittest.TestCase):
     def test_library_parts_partition(self):

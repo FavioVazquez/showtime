@@ -6,6 +6,7 @@ import { startServer } from '../server.mjs';
 import { resolveProject, info, c, UserError } from './cli.mjs';
 import { openStage } from './stagehost.mjs';
 import { resolveFF, ffmpeg, probe } from './ff.mjs';
+import { stripColorChunks } from './png.mjs';
 
 export const VIDEO_EXT = /\.(mp4|mov|m4v|webm|mkv)$/i;
 
@@ -32,7 +33,8 @@ export async function openSource(arg, a, shared) {
           if (t - back <= 0) break;
         }
         if (!fs.existsSync(tmp)) throw new UserError(`could not decode a frame of ${path.basename(file)} at ${t.toFixed(3)} s`);
-        const b = fs.readFileSync(tmp);
+        // ffmpeg tags the still with the video's colour (cICP/cHRM/gAMA): a browser then draws it darker than the video
+        const b = stripColorChunks(fs.readFileSync(tmp));
         fs.rmSync(tmp, { force: true });
         return b;
       },
@@ -52,7 +54,7 @@ export async function openSource(arg, a, shared) {
       const d = await sess.diag().catch(() => null);
       const bad = d && d.videos ? Object.entries(d.videos) : [];
       for (const [k, v] of bad) if (!this.warned.has(k)) { this.warned.add(k); info(c.yellow(`snap: warning: video ${k}: ${v} (the still at ${t.toFixed(3)}s may show the wrong frame)`)); }
-      return sess.shot({ format: 'png' });
+      return stripColorChunks(await sess.shot({ format: 'png' }));
     },
     warned: new Set(),
     async close() { await sess.close().catch(() => {}); await server.close().catch(() => {}); },

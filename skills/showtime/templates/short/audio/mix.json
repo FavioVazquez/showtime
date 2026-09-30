@@ -2,7 +2,7 @@
   "_comment": "Generated music + sound design, no downloads. Times match index.html: the music sections start on the scenes, pops on the chat bubbles, ticks on the checklist's data-cues, the sting on the end card. `showtime retime <project> -d <seconds>` moves them with the scenes. When you add a voice track, put it here as {\"kind\": \"voice\", \"file\": \"voice/vo.wav\"} and add \"duck\": {\"under\": \"voice\"} to the music track. The mix follows the showtime.json duration.",
   "sample_rate": 48000,
   "tracks": [
-    {"id": "bed", "kind": "music", "compose": {"style": "synthwave", "bpm": 100, "key": "Am", "sections": "0:intro,2.5:drop,9.8:outro", "seed": 1}, "gain_db": 0, "fade_out": 0.8},
+    {"id": "bed", "kind": "music", "compose": {"style": "synthwave", "bpm": 100, "sections": "0:intro,2.5:drop,9.8:outro", "seed": "auto"}, "gain_db": 0, "fade_out": 0.8},
     {"kind": "sfx", "synth": {"type": "whoosh", "intensity": 0.5, "seed": 2}, "at": 2.5, "align": "hit", "gain_db": -4},
     {"kind": "sfx", "synth": {"type": "pop", "key": "A", "seed": 3}, "at": 2.8, "align": "hit", "gain_db": -3},
     {"kind": "sfx", "synth": {"type": "pop", "key": "E", "seed": 4}, "at": 4.4, "align": "hit", "gain_db": -3},

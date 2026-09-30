@@ -231,6 +231,16 @@ def resolve_style(name: str) -> str:
     return k
 
 
+KEY_SHIFTS = (0, 2, -2, 3, -3, 5, -4)     # semitones: at most a fourth either way keeps each part's register
+
+
+def auto_key(style: str, seed: int) -> str:
+    """The style's key moved by a seeded interval, mode kept: beds of one style with "seed": "auto" in
+    different projects sit in different keys (a mix.json compose track). Seed 0 keeps the style's key."""
+    pc, mode = parse_key(STYLES[resolve_style(style)]["key"])
+    return dsp.key_name(pc + KEY_SHIFTS[int(seed) % len(KEY_SHIFTS)], mode)
+
+
 def style_list() -> List[dict]:
     return [{"style": k, "bpm": v["bpm"], "key": v["key"], "moods": v["moods"], "description": v["desc"],
              "use_for": v["use"], "backend": v["backend"], "drums": v["drums"] != "none",

@@ -7,7 +7,8 @@ use (with a one-line notice), verified by size + sha256:
 - the English CTC aligner (wav2vec2-base-960h, ONNX uint8-quantized, 95 MB, Apache-2.0)
 - Piper voices for sherpa-onnx (60-115 MB each; commercially usable ones only)
 
-Downloads reuse the installer's resumable, checksum-verified fetcher.
+Downloads reuse the installer's resumable, checksum-verified fetcher, which falls back to the
+model mirror (st/mirror.py) when Hugging Face is blocked.
 """
 from __future__ import annotations
 
@@ -94,7 +95,9 @@ def _fetch(url: str, dest: Path, sha: Optional[str], size: Optional[int], label:
         raise
     except Exception as e:  # noqa: BLE001
         raise ShowtimeError("download failed for %s: %s" % (label, e),
-                            hint="check your connection and retry; files resume where they stopped")
+                            hint="check your connection and retry; files resume where they stopped. Behind a "
+                                 "proxy that blocks the model hosts, set SHOWTIME_MODEL_MIRROR to a mirror URL "
+                                 "or a folder holding the files")
 
 
 def ensure_aligner(allow_download: bool = True) -> Optional[Path]:

@@ -132,7 +132,8 @@ export const Chart = define({
     // clear of the category labels under the plot: the axis reaches low enough for it (set after layout)
     let negRoom = 0;
     const yMinAt = (lt, yMax) => {
-      if (o.yMin != null) return Math.min(0, Number(o.yMin));
+      // a given yMin is the axis floor, also above zero (a zoomed-in axis: 90-100 %)
+      if (o.yMin != null && Number.isFinite(Number(o.yMin)) && !(yMax != null && Number(o.yMin) >= yMax)) return Number(o.yMin);
       let m = minOf(states[0]);
       for (const st of states.slice(1)) m = lerp(m, minOf(st), M(clamp((lt - st.at) / 0.5)));
       if (!(m < 0)) return 0;
@@ -175,6 +176,8 @@ export const Chart = define({
     root.append(g);
     const gridG = svg('g', { class: 'st-chart-grid' });
     g.append(gridG);
+    // marks grow from zero, or from the axis floor when a yMin above zero cuts zero off
+    const baseOf = (yMin, yMax) => Math.min(Math.max(0, yMin), yMax);
     const hasNeg = states.some((st) => minOf(st) < 0) || (o.yMin != null && Number(o.yMin) < 0);
     const zeroLine = hasNeg ? svg('line', { class: 'st-chart-zero' }) : null;
     // a reference line ("next warmest: 2014, +0.75", a target, a previous record), drawn on at `at`
@@ -354,7 +357,7 @@ export const Chart = define({
         const gapAt = (sc) => valFs * sc * 0.3;
         const hit = (a, b, gp) => Math.min(a.b, b.b) - Math.max(a.t, b.t) > -gp * 0.3 && Math.max(a.l, b.l) - Math.min(a.r, b.r) < gp;
         // the settled bars: a label must not sit on another bar
-        const bars = marks.map((m, i) => { const bw = m.rect.width.baseVal.value, x = m.cx - bw / 2, y = lin(vals[i]), z = lin(0); return { l: x, r: x + bw, t: Math.min(y, z), b: Math.max(y, z) }; });
+        const bars = marks.map((m, i) => { const bw = m.rect.width.baseVal.value, x = m.cx - bw / 2, y = lin(vals[i]), z = lin(baseOf(yMn, yMx)); return { l: x, r: x + bw, t: Math.min(y, z), b: Math.max(y, z) }; });
         const onBar = (a, i, gp) => bars.some((q, j) => j !== i && inK[j] && Math.min(a.b, q.b) - Math.max(a.t, q.t) > 0 && Math.min(a.r, q.r) - Math.max(a.l, q.l) > -gp * 0.3);
         const clean = (bx, gp) => { for (let i = 0; i < n; i++) { if (!inK[i]) continue; if (onBar(bx[i], i, gp)) return false; for (let j = i + 1; j < n; j++) if (inK[j] && hit(bx[i], bx[j], gp)) return false; } return true; };
         for (let sc = 1; sc >= kMin - 1e-6; sc -= 0.05) if (clean(boxes(sc), gapAt(sc))) return { s: sc, show: inK.map((x) => (x ? 1 : 0)) };
@@ -413,7 +416,8 @@ export const Chart = define({
         // tick labels carry as many decimals as their step needs (0, 0.5, 1.0 -> one decimal)
         const step = tickVals.length > 1 ? Math.abs(tickVals[1] - tickVals[0]) : 1;
         const tickDec = step > 0 && step < 1 ? Math.min(4, Math.ceil(-Math.log10(step) - 1e-9)) : 0;
-        const base0 = lin(0);
+        const baseV = baseOf(yMin, yMax);
+        const base0 = lin(baseV);
         if (zeroLine) {
           zeroLine.style.display = yMin < 0 ? '' : 'none';
           if (type === 'hbar') { zeroLine.setAttribute('x1', base0); zeroLine.setAttribute('x2', base0); zeroLine.setAttribute('y1', 0); zeroLine.setAttribute('y2', ih); }
@@ -437,8 +441,8 @@ export const Chart = define({
             const p = E(clamp((lt - 0.2 - stagger(m.li, nL, 0.045, { cap: 0.6 })) / o.grow));
             const full = valueAt(m.si, m.li, lt);
             const v = full * p;
-            const y = lin(v);
-            // bars grow up or down from zero
+            const y = lin(baseV + (full - baseV) * p);
+            // bars grow up or down from zero (or from a positive yMin)
             m.rect.setAttribute('y', Math.min(y, base0).toFixed(2)); m.rect.setAttribute('height', Math.abs(base0 - y).toFixed(2));
             if (m.hiFill) m.rect.setAttribute('fill', lt >= hlAt ? m.hiFill : 'var(--chart-muted, var(--chart-muted-default, #8a8f98))');
             if (m.val) {
@@ -474,7 +478,7 @@ export const Chart = define({
           marks.forEach((m, i) => {
             const p = E(clamp((lt - 0.2 - stagger(i, nL, 0.045, { cap: 0.6 })) / o.grow));
             const v = vals[i] * p;
-            const w = lin(v);
+            const w = lin(baseV + (vals[i] - baseV) * p);
             const yv = ((rankOf[i] + 0.5) * m.band);
             m.row.setAttribute('transform', `translate(0, ${yv.toFixed(2)})`);
             m.rect.setAttribute('x', Math.min(w, base0).toFixed(2));

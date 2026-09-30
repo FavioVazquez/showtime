@@ -642,6 +642,7 @@ class TestDoctorSandbox(Tmp):
 
     def test_no_network(self):
         env = clean_env(SHOWTIME_HOME=self.tmp / "home", SHOWTIME_NET_PROBE="http://127.0.0.1:%d/" % closed_port(),
+                        SHOWTIME_MODEL_MIRROR="http://127.0.0.1:%d/" % closed_port(),   # no mirror either
                         CODEX_SANDBOX="seatbelt", CODEX_SANDBOX_NETWORK_DISABLED="1")
         rows, _ = self.doctor(env)
         net = rows["network"]

@@ -275,7 +275,8 @@ class TestReviewState(Base):
         s = review_state.state(j)
         self.assertEqual(s["status"], "waiting")
         self.assertIn("review-verdict", s["next"])
-        (r2 / "verdict.json").write_text(json.dumps({"improved": True, "best": str(f3)}), encoding="utf-8")
+        (r2 / "verdict.json").write_text(json.dumps({"improved": True, "best": str(f3), "would_post": {"answer": "yes"}}),
+                                         encoding="utf-8")
         s = review_state.state(j)
         self.assertEqual((s["status"], s["pending"]), ("done", False))
         self.assertIn("new version wins", s["message"])
@@ -285,7 +286,7 @@ class TestReviewState(Base):
     def test_ship_after_fixes_and_cap(self):
         j = self.job()
         f = self.final(j)
-        self.round(j, 1, "VERDICT: ship after fixes -- the year label\n", video=f)
+        self.round(j, 1, "VERDICT: ship after fixes -- the year label\nWOULD I POST THIS: yes -- clean\n", video=f)
         s = review_state.state(j)
         self.assertEqual(s["status"], "done")
         g = self.final(j, "final-2.mp4")
@@ -305,6 +306,89 @@ class TestReviewState(Base):
         self.round(j, 1, "VERDICT: not ready -- x\n", video=f)
         self.final(j, "final.poster.mp4")
         self.assertIn("fix the blockers", review_state.state(j)["next"])
+
+    def test_parse_would_post(self):
+        pw = review_state.parse_would_post
+        self.assertEqual(pw("WOULD I POST THIS: no -- captions in stepped boxes"), {"": ("no", "captions in stepped boxes")})
+        self.assertEqual(pw("**WOULD I POST THIS:** yes - clean and sharp"), {"": ("yes", "clean and sharp")})
+        self.assertEqual(pw("WOULD I POST THIS: yes | no  -- one reason"), {})         # the template left as is
+        self.assertEqual(pw("WOULD I POST X: no -- soft footage\nWOULD I POST Y: yes -- fine"),
+                         {"X": ("no", "soft footage"), "Y": ("yes", "fine")})
+        self.assertEqual(pw("VERDICT: ship -- ok"), {})
+
+    def test_absolute_verdict_holds_delivery(self):
+        j = self.job()
+        f = self.final(j)
+        r1 = self.round(j, 1, "VERDICT: ship -- fine\n", video=f)
+        s = review_state.state(j)
+        self.assertEqual((s["status"], s["pending"]), ("waiting", True))    # the absolute line is required
+        self.assertIn("WOULD I POST THIS", s["next"])
+        (r1 / "FINDINGS.md").write_text("VERDICT: ship -- fine\nWOULD I POST THIS: no -- it looks cheap at full size\n",
+                                        encoding="utf-8")
+        s = review_state.state(j)
+        self.assertEqual((s["status"], s["pending"]), ("would not post", True))
+        self.assertIn("looks cheap", s["message"])
+        self.assertIn("WARN", review_state.pending_line(s))
+        # a pairwise round the new version won, but a critic would not post it: still held
+        k = self.job()
+        fa = self.final(k)
+        fb = self.final(k, "final-2.mp4")
+        r = k / "review" / "round-1"
+        for o in (1, 2):
+            (r / ("order-%d" % o)).mkdir(parents=True)
+            (r / ("order-%d" % o) / "FINDINGS.md").write_text("PREFERENCE: X\n", encoding="utf-8")
+        (k / "review" / ".pairwise-keys").mkdir(parents=True)
+        (k / "review" / ".pairwise-keys" / "round-1.json").write_text(json.dumps(
+            {"new": {"label": "X", "video": str(fb)}, "old": {"label": "Y", "video": str(fa)}}), encoding="utf-8")
+        (r / "verdict.json").write_text(json.dumps({"improved": True, "best": str(fb), "would_post": {
+            "answer": "no", "reason": "player controls in the footage"}}), encoding="utf-8")
+        s = review_state.state(k)
+        self.assertEqual((s["status"], s["pending"]), ("would not post", True))
+        self.assertIn("player controls", s["message"])
+        # lean mode never holds on it
+        m = self.job("--mode", "lean")
+        fm = self.final(m)
+        self.round(m, 1, "VERDICT: ship -- ok\nWOULD I POST THIS: no -- soft\n", video=fm)
+        self.assertFalse(review_state.state(m)["pending"])
+
+    def test_caption_should_fix_needs_an_answer(self):
+        cs = review_state.caption_should_fixes
+        text = ("VERDICT: ship after fixes -- captions\nWOULD I POST THIS: yes -- after the fix\nBLOCKERS:\n- none\n"
+                "SHOULD-FIX:\n- t=4.00s frames/t0004.000s.jpg captions sit in two stepped boxes -> one plate\n"
+                "- t=9.00s frames/t0009.000s.jpg the hook holds 3 s -> cut to 1.5 s\nPOLISH:\n- subtitles font -> Inter\n")
+        self.assertEqual(len(cs(text)), 1)                                   # polish is not held
+        self.assertTrue(review_state.resolves_captions("- fixed: the captions are one plate now"))
+        self.assertTrue(review_state.resolves_captions("won't fix: the captions box style is the brand's"))
+        self.assertFalse(review_state.resolves_captions("- not fixed: captions still stepped"))
+        self.assertFalse(review_state.resolves_captions("won't fix: the hook"))       # names no captions
+        j = self.job()
+        f = self.final(j)
+        r1 = self.round(j, 1, text, video=f)
+        s = review_state.state(j)
+        self.assertEqual((s["status"], s["pending"]), ("caption fix open", True))
+        self.assertIn("stepped boxes", s["message"])
+        self.assertIn("RESPONSE.md", s["next"])
+        # a later round that does not answer it keeps it open; "not fixed" is no answer
+        g = self.final(j, "final-2.mp4")
+        r2 = self.round(j, 2, "VERDICT: ship -- ok\nWOULD I POST THIS: yes -- ok\nPREVIOUS:\n- not fixed: captions\n",
+                        video=g)
+        self.assertEqual(review_state.state(j)["status"], "caption fix open")
+        (r2 / "FINDINGS.md").write_text("VERDICT: ship -- ok\nWOULD I POST THIS: yes -- ok\nPREVIOUS:\n"
+                                        "- fixed: captions in one plate\n", encoding="utf-8")
+        self.assertEqual(review_state.state(j)["status"], "done")
+        # the maker's explanation also closes it
+        (r2 / "FINDINGS.md").write_text("VERDICT: ship -- ok\nWOULD I POST THIS: yes -- ok\n", encoding="utf-8")
+        self.assertEqual(review_state.state(j)["status"], "caption fix open")
+        (r1 / "RESPONSE.md").write_text("won't fix: the stepped caption boxes are the client's house style\n",
+                                        encoding="utf-8")
+        self.assertEqual(review_state.state(j)["status"], "done")
+        # lean: a loud WARN, never pending
+        m = self.job("--mode", "lean")
+        fm = self.final(m)
+        self.round(m, 1, text, video=fm)
+        s = review_state.state(m)
+        self.assertFalse(s["pending"])
+        self.assertIn("caption should-fix", review_state.pending_line(s))
 
     def test_lean_is_never_pending(self):
         j = self.job("--mode", "lean")
@@ -395,7 +479,7 @@ class TestQaLine(Base):
         # after a critic round with a verdict: no WARN line, a done line instead; the verdict is unchanged
         d = j / "review" / "round-1"
         d.mkdir(parents=True)
-        (d / "FINDINGS.md").write_text("VERDICT: ship -- fine\n", encoding="utf-8")
+        (d / "FINDINGS.md").write_text("VERDICT: ship -- fine\nWOULD I POST THIS: yes -- fine\n", encoding="utf-8")
         (d / "manifest.json").write_text(json.dumps({"video": str(j / "final.mp4")}), encoding="utf-8")
         out = self.st("qa", str(j), "--no-sheet", check=False).stdout
         self.assertNotIn("review pending", out)

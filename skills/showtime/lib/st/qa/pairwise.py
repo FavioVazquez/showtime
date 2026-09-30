@@ -498,6 +498,8 @@ Weigh them for both videos. Then prefer one: the one you would ship. Answer "tie
 cannot choose. **No scores**: do not rate either video on a number scale; the preference and the findings
 carry the judgment.
 
+Then judge each video on its own, {absolute}
+
 {severity}
 
 Rule: **every finding names its video ([{a}] or [{b}]), cites a timestamp and a frame path** from this
@@ -509,6 +511,8 @@ in fixes.
 PREFERENCE: {a} | {b} | tie  -- one line: the one you would ship, and why
 VERDICT {a}: ship | ship after fixes | not ready
 VERDICT {b}: ship | ship after fixes | not ready
+WOULD I POST {a}: yes | no  -- one reason, judged on {a} alone (not against {b})
+WOULD I POST {b}: yes | no  -- one reason, judged on {b} alone (not against {a})
 WHAT WORKS (max 3 per video, so it is kept):
 - [{a}] ...
 BLOCKERS:
@@ -526,7 +530,7 @@ BEST POSTER FRAME: [{a} or {b}] t=..s because ...
            cmp=_rel(m["compare"][first + second], od), ctx=ctx, launch=launch,
            questions=review.QUESTIONS.replace("open every text crop above", "open every text crop listed")
            .replace("Answer these eight questions for yourself first", "Answer these eight questions for each video first"),
-           severity=review.SEVERITY)
+           severity=review.SEVERITY, absolute=review.ABSOLUTE)
 
 
 # ------------------------------------------------------------------ findings and the verdict
@@ -581,8 +585,23 @@ def parse_findings(text: str) -> Dict[str, Any]:
                 dropped.append(body)
                 continue
             items.append({"severity": sev, "video": label, "t": float(t.group(1)), "frame": fr.group(0), "text": body})
+    from ..job import review_state
+    posts = review_state.parse_would_post(text)
     return {"preference": pref, "verdicts": verdicts, "findings": items, "dropped": dropped,
+            "would_post": {k: v for k, v in posts.items() if k in LABELS},
             "self_review": text.lstrip().upper().startswith("SELF-REVIEW")}
+
+
+def would_post(parsed: Sequence[Dict[str, Any]], label: str) -> Dict[str, Any]:
+    """The absolute verdict on one version across both orders: "no" when either critic would not post it,
+    "yes" when both would, None when a line is missing."""
+    ans = [p.get("would_post", {}).get(label) for p in parsed]
+    nos = [a for a in ans if a and a[0] == "no"]
+    if nos:
+        return {"answer": "no", "reason": "; ".join(a[1] for a in nos if a[1]) or None}
+    if ans and all(ans):
+        return {"answer": "yes", "reason": "; ".join(a[1] for a in ans if a[1]) or None}
+    return {"answer": None, "reason": None}
 
 
 def decide(pref1: Optional[str], pref2: Optional[str], new_label: str) -> Tuple[bool, str]:
@@ -660,10 +679,17 @@ def verdict(target: Optional[str] = None, rnd: Optional[int] = None) -> Dict[str
            "blind": not any(p["self_review"] for p in parsed), "open_findings": open_best,
            "findings": findings, "dropped": [d for p in parsed for d in p["dropped"]],
            "rounds_used": len(answered), "max_rounds": review.MAX_ROUNDS, "cap_reached": cap,
-           "blockers_open": sum(1 for f in open_best if f["severity"] == "blocker")}
+           "blockers_open": sum(1 for f in open_best if f["severity"] == "blocker"),
+           "would_post": would_post(parsed, best_label),
+           "would_post_new": would_post(parsed, new_l)["answer"]}
     if cap:
         res["next"] = "round cap reached: ship %s with its open findings listed%s" % (
             Path(best_video).name, "; blockers are open, so show them to the user, who decides" if res["blockers_open"] else "")
+    elif res["would_post"]["answer"] != "yes":
+        res["next"] = ("%s is the best version, but %s: fix what the critics named and pair again (--against best)"
+                       % (Path(best_video).name, "a critic would not post it (%s)" % (res["would_post"]["reason"] or "no reason")
+                          if res["would_post"]["answer"] == "no" else
+                          "a critic left out the WOULD I POST line; ask for it, then rerun review-verdict"))
     elif improved:
         res["next"] = ("keep %s; fix its open findings and pair the next render with showtime review-pack <job> "
                        "--against best, or ship it" % Path(best_video).name)
@@ -695,6 +721,9 @@ def verdict_md(v: Dict[str, Any]) -> str:
                                                           ", ".join("%s = %s" % kv for kv in sorted(v["labels"].items()))),
            "- Result: **%s** (%s)" % ("improvement" if v["improved"] else "not an improvement", v["reason"]),
            "- Best so far: `%s`" % v["best"], "- Rounds: %d of %d" % (v["rounds_used"], v["max_rounds"])]
+    wp = v.get("would_post") or {}
+    out.append("- Would the critics post the best version: **%s**%s (absolute, independent of the comparison)" % (
+        wp.get("answer") or "not answered", (" (%s)" % wp["reason"]) if wp.get("reason") else ""))
     if not v["blind"]:
         out.append("- Not blind: at least one order is a self-review by the maker, who knows which is new; say so to the user")
     out += ["- Next: %s" % v["next"], "", "## Open findings of the best version"]
@@ -725,6 +754,9 @@ def print_verdict(v: Dict[str, Any]) -> None:
     print("round %d: %s (%s)" % (v["round"], "IMPROVEMENT: the new version wins" if v["improved"] else "NOT AN IMPROVEMENT",
                                  v["reason"]))
     print("  best      %s" % v["best"])
+    wp = v.get("would_post") or {}
+    print("  post it?  %s%s" % (wp.get("answer") or "not answered (a WOULD I POST line is missing)",
+                                ("  (%s)" % wp["reason"]) if wp.get("reason") else ""))
     if not v["blind"]:
         print("  note      a self-review is not blind (the maker knows which is new): tell the user")
     nb = {s: sum(1 for f in v["open_findings"] if f["severity"] == s) for s in ("blocker", "should-fix", "polish")}

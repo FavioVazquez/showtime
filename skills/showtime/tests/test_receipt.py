@@ -3,7 +3,11 @@
 
   * usage: token sums from a hand-made Claude Code session log (a message logged twice counts once, the
     largest count wins, sub-agent logs are added, the time window is honoured, an unpriced model makes a lower
-    bound and says so), the price arithmetic, a Codex rollout (tokens only), and every "not reported" path
+    bound and says so), the price arithmetic, a Codex rollout (tokens only), a Devin sessions.db (numbers selected in
+    SQL, a copied node counts once, only sessions in the job's folder, an estimate labelled "est.", Fusion token
+    shares), and every "not reported" path
+  * review rounds: a pairwise round counts both orders' FINDINGS; findings in a session with no sub-agent are
+    flagged "not an independent critic"
   * privacy: nothing but numbers leaves a session log (prompt, reply and secrets never reach the receipt, and
     neither does the log's path); the request is masked for keys, e-mail addresses and home paths
   * receipt from a fixture job: the request as typed, assumptions, review rounds (self-review noticed),
@@ -352,6 +356,180 @@ class ReceiptTests(unittest.TestCase):
         rec = receipt.write(job)["receipt"]
         self.assertNotIn(home, rec["request"]["text"])
         self.assertNotIn("ghp_" + "a" * 36, rec["request"]["text"])
+
+
+DEVIN_SCHEMA = """
+CREATE TABLE sessions (
+  id TEXT PRIMARY KEY,
+  working_directory TEXT NOT NULL,
+  backend_type TEXT NOT NULL,
+  model TEXT NOT NULL,
+  agent_mode TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  last_activity_at INTEGER NOT NULL, title TEXT, main_chain_id INTEGER, shell_last_seen_index INTEGER DEFAULT 0,
+  cogs_json TEXT, workspace_dirs TEXT, hidden INTEGER NOT NULL DEFAULT 0, metadata TEXT);
+CREATE TABLE message_nodes (
+  row_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT NOT NULL,
+  node_id INTEGER NOT NULL,
+  parent_node_id INTEGER,
+  chat_message TEXT NOT NULL,
+  created_at INTEGER NOT NULL, metadata TEXT,
+  FOREIGN KEY (session_id) REFERENCES sessions(id),
+  UNIQUE(session_id, node_id));
+CREATE TABLE subagent_heads (
+    session_id    TEXT    NOT NULL,
+    agent_id      TEXT    NOT NULL,
+    chain_node_id INTEGER NOT NULL,
+    updated_at    INTEGER NOT NULL,
+    PRIMARY KEY (session_id, agent_id),
+    FOREIGN KEY (session_id) REFERENCES sessions(id));
+"""
+
+
+def devin_fixture(db: Path, workdir: Path, t0: float, subagent: bool = False) -> Path:
+    """A tiny Devin CLI sessions.db (same tables and columns): a Fusion session in `workdir` (lead + sidekick,
+    one message stored in two nodes, a user message) and a session in another folder that must not count."""
+    import sqlite3
+    db.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(str(db))
+    con.executescript(DEVIN_SCHEMA)
+    fusion = "fusion-claude-opus-5-5-high-sidekick-swe-2-medium"
+    for sid, wd in (("s-fusion", str(workdir)), ("s-other", "/other-folder-xyz/project")):
+        con.execute("INSERT INTO sessions (id, working_directory, backend_type, model, agent_mode, created_at, "
+                    "last_activity_at, title) VALUES (?, ?, 'windsurf', ?, 'normal', ?, ?, ?)",
+                    (sid, wd, fusion, int(t0), int(t0) + 600, "SECRET-TITLE"))
+
+    def msg(mid, model, t, i, o, cr, cc):
+        return json.dumps({"role": "assistant", "content": "SECRET-REPLY-TEXT", "message_id": mid, "tool_calls": [],
+                           "metadata": {"created_at": iso_utc(t), "generation_model": model, "request_id": "r-" + mid,
+                                        "finish_reason": "stop", "metrics": {
+                                            "input_tokens": i, "output_tokens": o, "cache_read_tokens": cr,
+                                            "cache_creation_tokens": cc, "ttft_ms": 500, "total_time_ms": 900}}})
+    rows = [
+        ("s-fusion", 1, json.dumps({"role": "user", "content": SECRET_PROMPT}), t0 + 1),
+        ("s-fusion", 2, msg("a1", "claude-opus-5-5-high", t0 + 5, 10, 1000, 100000, 20000), t0 + 5),
+        ("s-fusion", 3, msg("a1", "claude-opus-5-5-high", t0 + 5, 10, 1000, 100000, 20000), t0 + 400),  # a copied node
+        ("s-fusion", 4, msg("b1", "swe-2-medium", t0 + 20, 50000, 3000, 400000, None), t0 + 20),
+        ("s-fusion", 5, msg("b2", "swe-2-medium", t0 + 30, 50000, 1000, 400000, None), t0 + 30),
+        ("s-fusion", 6, msg("z0", "swe-2-medium", t0 - 7200, 999999, 999999, 0, None), t0 - 7200),    # before the job
+        ("s-other", 1, msg("x1", "claude-opus-5-5-high", t0 + 10, 777777, 777777, 0, 0), t0 + 10),
+    ]
+    for sid, node, cm, t in rows:
+        con.execute("INSERT INTO message_nodes (session_id, node_id, chat_message, created_at) VALUES (?, ?, ?, ?)",
+                    (sid, node, cm, int(t)))
+    if subagent:
+        con.execute("INSERT INTO subagent_heads VALUES ('s-fusion', 'critic', 3, ?)", (int(t0) + 60,))
+    con.commit()
+    con.close()
+    return db
+
+
+class DevinTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = Path(tempfile.mkdtemp(prefix="st-receipt-devin-"))
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(str(cls.tmp), ignore_errors=True)
+
+    def job_and_db(self, name, subagent=False):
+        job, _ = ledger.init(name, goal="demo", base=self.tmp / name, request="make a demo")
+        (job / "final.mp4").write_bytes(b"x")
+        ledger.note(job, stage="render", seconds=10, outputs=["final=%s" % (job / "final.mp4")],
+                    render={"kind": "full", "file": "final.mp4", "seconds": 10})
+        t0 = ledger._parse_iso(ledger.load(job)["created"])
+        db = devin_fixture(self.tmp / name / "private-devin-dir" / "sessions.db", self.tmp / name, t0, subagent)
+        return job, db
+
+    def test_devin_usage_numbers_only(self):
+        job, db = self.job_and_db("devinusage")
+        self.assertEqual(usage.sniff(db), "devin")
+        t0 = ledger._parse_iso(ledger.load(job)["created"])
+        u = usage.read_usage(db, since=t0, until=t0 + 3600, where=job)
+        self.assertEqual((u["status"], u["host"], u["messages"]), ("reported", "devin", 3))
+        m = u["models"]
+        self.assertEqual(set(m), {"claude-opus-5-5-high", "swe-2-medium"})          # the other folder's session is out
+        o, s = m["claude-opus-5-5-high"], m["swe-2-medium"]
+        self.assertEqual((o["input"], o["output"], o["cache_read"], o["write_5m"], o["messages"]), (10, 1000, 100000, 20000, 1))
+        self.assertEqual((s["input"], s["output"], s["cache_read"], s["messages"]), (100000, 4000, 800000, 2))
+        self.assertAlmostEqual(o["cost_usd"], (10 * 4 + 1000 * 20 + 100000 * 0.2 + 20000 * 4) / 1e6, places=4)
+        self.assertEqual(s["cost_usd"], 0.0)
+        self.assertAlmostEqual(o["token_share"] + s["token_share"], 1.0, places=3)
+        self.assertLess(o["token_share"], s["token_share"])
+        self.assertIn("est.", u["cost_note"])
+        self.assertIn(usage.DEVIN_PRICES_AS_OF, u["cost_note"])
+        self.assertNotIn("lower bound", u["cost_note"])
+        self.assertEqual(u["subagents"], 0)
+        blob = json.dumps(u)
+        for bad in ("SECRET", "sk-ant", "private-devin-dir", "other-folder-xyz", "r-a1"):
+            self.assertNotIn(bad, blob)
+        whole = usage.read_usage(db, where=job)                                    # no window: the early message too
+        self.assertEqual(whole["models"]["swe-2-medium"]["messages"], 3)
+        self.assertEqual(usage.read_usage(db, where=self.tmp / "nowhere")["status"], "not_reported")
+
+    def test_devin_receipt_found_by_itself_and_lead_review_flagged(self):
+        job, db = self.job_and_db("devinreceipt")
+        rd = job / "review" / "round-1"
+        rd.mkdir(parents=True)
+        (rd / "FINDINGS.md").write_text("Should-fix: 0:03 the title is small\nVERDICT: ship\n", encoding="utf-8")
+        saved = {k: os.environ.get(k) for k in ("SHOWTIME_HOST", "XDG_DATA_HOME", "SHOWTIME_TRANSCRIPT")}
+        data_home = self.tmp / "devinreceipt" / "private-devin-dir" / "data"
+        (data_home / "devin" / "cli").mkdir(parents=True)
+        shutil.copy(str(db), str(data_home / "devin" / "cli" / "sessions.db"))
+        try:
+            os.environ["SHOWTIME_HOST"] = "devin"
+            os.environ["XDG_DATA_HOME"] = str(data_home)
+            os.environ.pop("SHOWTIME_TRANSCRIPT", None)
+            out = receipt.write(job)
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+        rec = out["receipt"]
+        self.assertEqual(rec["agent"], "Devin")
+        self.assertEqual(rec["usage"]["status"], "reported")
+        self.assertTrue(rec["review"]["lead_review"])
+        md = (job / "receipt.md").read_text(encoding="utf-8")
+        self.assertIn("Agent: Devin", md)
+        self.assertIn("(est., at listed prices)", md)
+        self.assertIn("claude-opus-5-5-high: 1 request,", md)
+        self.assertIn("% of the tokens", md)
+        self.assertIn("not an independent critic", md)
+        text = md + (job / "receipt.json").read_text(encoding="utf-8") + (job / "share.txt").read_text(encoding="utf-8")
+        for bad in ("SECRET", "private-devin-dir", "other-folder-xyz"):
+            self.assertNotIn(bad, text)
+        # with a critic sub-agent in the session, no flag
+        job2, db2 = self.job_and_db("devincritic", subagent=True)
+        rd = job2 / "review" / "round-1"
+        rd.mkdir(parents=True)
+        (rd / "FINDINGS.md").write_text("VERDICT: ship\n", encoding="utf-8")
+        rec = receipt.write(job2, transcript=str(db2))["receipt"]
+        self.assertEqual(rec["usage"]["subagents"], 1)
+        self.assertFalse(rec["review"]["lead_review"])
+        self.assertNotIn("not an independent critic", (job2 / "receipt.md").read_text(encoding="utf-8"))
+
+    def test_pairwise_findings_count_both_orders(self):
+        job, _ = ledger.init("pairs", goal="demo", base=self.tmp / "pairs")
+        rv = job / "review"
+        (rv / ".pairwise-keys").mkdir(parents=True)
+        for n, orders in ((1, (1, 2)), (3, (1,))):
+            (rv / ".pairwise-keys" / ("round-%d.json" % n)).write_text(json.dumps({"new": {"video": "a.mp4"},
+                                                                                  "old": {"video": "b.mp4"}}), encoding="utf-8")
+            for k in orders:
+                (rv / ("round-%d" % n) / ("order-%d" % k)).mkdir(parents=True)
+                (rv / ("round-%d" % n) / ("order-%d" % k) / "FINDINGS.md").write_text("PREFER: A\n", encoding="utf-8")
+        (rv / "round-2").mkdir()
+        (rv / "round-2" / "FINDINGS.md").write_text("VERDICT: ship\n", encoding="utf-8")
+        r = receipt.build(job)["review"]
+        self.assertEqual((r["packed"], r["pairwise"], r["with_findings"], r["findings_files"]), (3, 2, 2, 4))
+        self.assertFalse(r["lead_review"])                                          # no session log: not known
+        md = receipt.to_markdown(receipt.build(job))
+        self.assertIn("2 pairwise (blind A/B, both orders)", md)
+        self.assertIn("4 FINDINGS files", md)
 
 
 class CliTests(unittest.TestCase):

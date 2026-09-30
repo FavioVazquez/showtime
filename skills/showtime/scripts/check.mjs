@@ -836,6 +836,7 @@ async function main() {
       const vis = new Map(); // bid -> [[t0,t1],...]
       const blocksById = new Map();
       const cvis = new Map(); // canvas text -> [[t0,t1],...]
+      const cdecor = new Set(); // canvas texts drawn as decor (F.decor): exempt from short_text
       const okGrid = [];
       const activeClips = []; // per sample: clips ([data-start]) showing
       const textShown = [];   // per sample: any readable text (DOM or canvas)
@@ -883,6 +884,7 @@ async function main() {
             if (!k || now.has(k)) continue;
             now.add(k);
             anyText = true;
+            if (tx.decor) cdecor.add(k);
             if (!tx.decor) sizeSeen(`canvas:${k}`, k, (tx.size || 0) * ky, gt, { source: 'canvas', caption: onPlate(tx) });
             if (onPlate(tx)) { seenText(k, gt, 'canvas', true); continue; }
             seenText(k, gt, 'canvas', false);
@@ -916,7 +918,8 @@ async function main() {
       const beatNoted = new Set();
       for (const [bid, runs] of vis) {
         const blk = blocksById.get(bid);
-        if (!blk || blk.caption || blk.len < 2) continue;
+        // UI-mockup detail (data-st-decor, and everything inside it) is not copy the viewer must read
+        if (!blk || blk.caption || blk.decor || blk.len < 2) continue;
         // numbers alone (axis ticks, counters, years) are glanced at, not read: as for canvas text; a
         // camera zoom that carries tick labels out of the frame is not a readability problem. A number
         // with a short unit ("+0.4 °C", "12 min", "3 GB": an axis tick that shows only while the axis
@@ -946,7 +949,7 @@ async function main() {
       const shapes = new Map();
       for (const k of ckeys) shapes.set(shape(k), (shapes.get(shape(k)) || 0) + 1);
       for (const [k, runs] of cvis) {
-        if (k.length < 2 || /^[\d\s.,:%$€£+\-×x/]+$/i.test(k)) continue;
+        if (k.length < 2 || cdecor.has(k) || /^[\d\s.,:%$€£+\-×x/]+$/i.test(k)) continue;
         if (/\d/.test(k) && shapes.get(shape(k)) >= 3) continue; // a counting number ("5.8 min", "5.9 min", ...)
         if (ckeys.some((o) => o !== k && o.startsWith(k))) continue;
         const best = Math.max(...runs.map(([s, e]) => e - s + stepS));
@@ -1641,7 +1644,7 @@ function beatRunBlocks(vis, blocksById, stepS, rate) {
   const items = [];
   for (const [bid, runs] of vis) {
     const blk = blocksById.get(bid);
-    if (!blk || blk.caption || runs.length !== 1) continue;
+    if (!blk || blk.caption || blk.decor || runs.length !== 1) continue;
     const words = String(blk.text || '').split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
     const [s, e] = runs[0];
     const held = e - s + stepS;

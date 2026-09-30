@@ -55,6 +55,24 @@ function pageLook() {
   return out;
 }
 
+const SEQ_RE = /^(.*?)(\d{2,})\.(png|jpe?g|webp|avif|gif)$/i;
+
+/** Time spans [from, to] (seconds) around the requests of numbered image sequences (name_0007.png ...). */
+export function sequenceSpans(requests, firstAt, step) {
+  const groups = new Map();
+  for (const p of requests) {
+    const m = SEQ_RE.exec(p);
+    if (!m || !firstAt.has(p)) continue;
+    const k = `${m[1]}#${m[3].toLowerCase()}`;
+    const g = groups.get(k) || [];
+    g.push(firstAt.get(p));
+    groups.set(k, g);
+  }
+  const spans = [];
+  for (const ts of groups.values()) spans.push([Math.min(...ts) - step, Math.max(...ts) + step]);
+  return spans;
+}
+
 /**
  * @param o.url server base URL   @param o.page page path   @param o.config showtime.json (+ overrides)
  * @param o.posterT seconds, 'auto' (40%) or null   @param o.wantScore pull ST.score as float channels
@@ -70,6 +88,8 @@ export async function probeProject(o) {
   const origin = new URL(o.url).origin;
   const requests = [];
   const seen = new Set();
+  const firstAt = new Map(); // path -> the probe time that first requested it
+  let curT = 0;
   const failed = [];
   const errors = [];
   const consoleErrors = [];
@@ -84,7 +104,7 @@ export async function probeProject(o) {
       const u = r.url();
       if (!u.startsWith(origin + '/')) return;
       const p = decodeURIComponent(new URL(u).pathname);
-      if (!seen.has(p)) { seen.add(p); requests.push(p); }
+      if (!seen.has(p)) { seen.add(p); requests.push(p); firstAt.set(p, curT); }
     });
     page.on('response', (r) => {
       if (r.status() >= 400 && r.url().startsWith(origin + '/')) failed.push({ path: decodeURIComponent(new URL(r.url()).pathname), status: r.status() });
@@ -143,7 +163,8 @@ export async function probeProject(o) {
     for (const c of chapters) times.add(q(c.t + 0.1));
     times.add(lastT);
     const list = [...times].filter((x) => x >= 0 && x <= lastT).sort((x, y) => x - y);
-    for (const t of list) {
+    const visit = async (t) => {
+      curT = t;
       // every character on the page at that time (for dropping font subsets nothing uses)
       await withTimeout(page.evaluate(async (x) => {
         await window.ST.seek(x);
@@ -156,7 +177,19 @@ export async function probeProject(o) {
           for (const f of F.frameInfo().fonts || []) fams.add(f);
         }
       }, t), 60000, `seek to ${t.toFixed(3)}s`);
+    };
+    for (const t of list) await visit(t);
+    // per-frame images (a numbered sequence, one file per frame) change between the samples: visit every
+    // frame around the times the sweep met one, so each image of the sequence is requested and packed
+    const extra = [];
+    for (const [a, b] of sequenceSpans(requests, firstAt, step)) {
+      for (let f = Math.max(0, Math.floor(a * fps)); f / fps <= Math.min(b, lastT) + 1e-9; f++) {
+        const t = q(f / fps);
+        if (!times.has(t)) { times.add(t); extra.push(t); }
+      }
     }
+    for (const t of extra) await visit(t);
+    list.push(...extra);
     const domText = await page.evaluate(() => [...(window.__stChars || [])].join(''));
     // families drawn on the canvas (null: not a canvas film, or text in the page's DOM too)
     const canvasFonts = await page.evaluate(() => {

@@ -11,8 +11,12 @@ the environment. `showtime history clear` deletes the file.
 The repeat check compares a look with the last RECENT jobs, aspect by aspect (template, theme,
 palette, type, transitions, camera, music, structure, tone), and for every repeat proposes two
 concrete alternatives from what showtime has: runtime themes, their type pairs and palettes,
-transitions from the catalog, camera verbs, catalog music from other shelves, other structures and
-hooks, other tone presets.
+transitions from the catalog, camera verbs, catalog music by other composers (from other shelves
+when the shelf repeats), other structures and hooks, other tone presets.
+
+Music rows ({ref, shelf, moods, title, artist, query?} for a catalog track, {ref, style, seed?, key?,
+bpm?} for a composed bed) also feed music rotation (st.audio.music.rotation): a new pick ranks what
+the last jobs used lower. Rows recorded before 0.3.2 have no artist; the catalog supplies it.
 """
 from __future__ import annotations
 
@@ -28,6 +32,7 @@ from . import look as L
 SCHEMA = 1
 MAX_KEEP = 50
 RECENT = 5
+COMPOSER_RECENT = 2          # the same composer counts as a music repeat against the last 2 jobs only
 PALETTE_NEAR = 60.0          # colour distance under which two colours count as the same
 # aspects that make a video look the same; template and tone alone are notes
 STRONG = ("theme", "palette", "type", "transitions", "camera", "music", "structure")
@@ -170,12 +175,57 @@ def _structure_match(a: Dict[str, Any], b: Dict[str, Any]) -> bool:
     return bool(a.get("shape")) and a.get("shape") == b.get("shape")
 
 
-def _music_match(a: List[Dict[str, Any]], b: List[Dict[str, Any]]) -> Optional[str]:
+def _artists(ms: List[Dict[str, Any]]) -> set:
+    """The composers of a look's catalog music (entries recorded before 0.3.2 name none: the catalog does)."""
+    out = set()
+    for m in ms:
+        ref = str(m.get("ref") or "")
+        a = m.get("artist")
+        if not a and ref.startswith("catalog:"):
+            try:
+                from ..audio import music as mus
+                a = mus.artist_of(mus.get(ref[len("catalog:"):]))
+            except Exception:  # noqa: BLE001 - an id the catalog no longer has
+                a = None
+        if a:
+            out.add(a)
+    return out
+
+
+def _score(ms: List[Dict[str, Any]]) -> Dict[str, Any]:
+    return next((m for m in ms if m.get("ref") == "score:synth"), {})
+
+
+def _score_match(a: List[Dict[str, Any]], b: List[Dict[str, Any]]) -> Optional[str]:
+    """A procedural score (score.js) that repeats: the same file, the same signature, or its key and tempo."""
+    sa, sb = _score(a), _score(b)
+    if not (sa and sb):
+        return None
+    if sa.get("sha") and sa.get("sha") == sb.get("sha"):
+        return "the same score (score.js %s)" % sa["sha"][:8]
+    ga, gb = sa.get("signature") or {}, sb.get("signature") or {}
+    if not (ga.get("key") and gb.get("key")):
+        return None
+    from ..audio import filmscore
+    if filmscore.signature_id(ga) == filmscore.signature_id(gb):
+        return "the same score (%s)" % filmscore.signature_id(ga)
+    if (ga["key"], ga.get("mode"), ga.get("bpm")) == (gb["key"], gb.get("mode"), gb.get("bpm")):
+        return "the same score key and tempo (%s %s, %g bpm)" % (ga["key"], ga.get("mode"), ga.get("bpm"))
+    return None
+
+
+def _music_match(a: List[Dict[str, Any]], b: List[Dict[str, Any]], composer: bool = True) -> Optional[str]:
     ra = {m.get("ref") for m in a if m.get("ref") and m.get("ref") != "score:synth"}
     rb = {m.get("ref") for m in b if m.get("ref") and m.get("ref") != "score:synth"}
     same = sorted(ra & rb)
     if same:
         return "the same track (%s)" % ", ".join(same)
+    sc = _score_match(a, b)
+    if sc:
+        return sc
+    same = sorted(_artists(a) & _artists(b)) if composer else []
+    if same:
+        return "the same composer (%s)" % ", ".join(same)
     sa = {m.get("shelf") for m in a if m.get("shelf")}
     sb = {m.get("shelf") for m in b if m.get("shelf")}
     if sa & sb:
@@ -220,7 +270,7 @@ def repeats(look: Dict[str, Any], others: List[Dict[str, Any]]) -> List[Dict[str
         out.append({"aspect": aspect, "value": aspect_value(look, aspect), "jobs": [o.get("job") or "?"],
                     "detail": detail, "strong": aspect in STRONG})
 
-    for o in others:
+    for i, o in enumerate(others):
         same_brand = bool(look.get("brand")) and look.get("brand") == o.get("brand")
         if look.get("template") and look.get("template") == o.get("template"):
             hit("template", o)
@@ -238,7 +288,7 @@ def repeats(look: Dict[str, Any], others: List[Dict[str, Any]]) -> List[Dict[str
         ca, cb = look.get("camera") or [], o.get("camera") or []
         if ca and cb and _jacc(ca, cb) >= 0.67:
             hit("camera", o)
-        mm = _music_match(look.get("music") or [], o.get("music") or [])
+        mm = _music_match(look.get("music") or [], o.get("music") or [], composer=i < COMPOSER_RECENT)
         if mm:
             hit("music", o, mm)
         if _structure_match(look.get("structure") or {}, o.get("structure") or {}):
@@ -396,31 +446,65 @@ def _energy_of(tr: Dict[str, int], cat: List[Dict[str, Any]]) -> str:
 
 
 def _music_alternatives(look: Dict[str, Any], others: List[Dict[str, Any]], kind: str, seed: int, n: int) -> List[str]:
+    mine = look.get("music") or []
+    if _score(mine) and not [m for m in mine if str(m.get("ref") or "").startswith("catalog:")]:
+        # a procedural score: a new signature away from the recent ones, then a produced track
+        out = _score_alternatives(look, others, seed)[:1]
+        return out + _catalog_alternatives(look, others, kind, n - len(out))
+    return _catalog_alternatives(look, others, kind, n)
+
+
+def _score_alternatives(look: Dict[str, Any], others: List[Dict[str, Any]], seed: int) -> List[str]:
+    try:
+        from ..audio import filmscore
+        sig0 = _score(look.get("music") or []).get("signature") or {}
+        recent = [s for s in [sig0] + [_score(o.get("music") or []).get("signature") or {} for o in others] if s]
+        moods = [m for m in filmscore.MOODS if m != sig0.get("mood")]
+        mood = sig0.get("mood") or moods[seed % len(moods)]
+        sig = filmscore.choose(mood, seed + 1, recent)
+    except Exception:  # noqa: BLE001 - a hint without the tables
+        return ["a new score: `showtime audio film-score <project>`"]
+    where = look.get("project") or "<project>"
+    return ["a new score, %s %s at %g bpm in %d/4 with %s chords and the %s motif (`showtime audio film-score %s "
+            "--mood %s --seed %d`)" % (sig["key"], sig["mode"], sig["bpm"], sig["meter"], sig["progression"],
+                                      sig["motif"], where, mood, seed + 1)]
+
+
+def _catalog_alternatives(look: Dict[str, Any], others: List[Dict[str, Any]], kind: str, n: int) -> List[str]:
+    if n <= 0:
+        return []
     try:
         from ..audio import music as mus
         cat = mus.load_catalog()
         use = MUSIC_USE.get(kind, "launch")
         pre = mus.preset(use, cat) or {}
         shelves = list(pre.get("shelves") or [])
-        lo, hi = (pre.get("energy") or [0.0, 1.0])[:2]
-        tracks = [t for t in mus.tracks(cat, include_vetoed=False)
-                  if t.get("energy") is None or lo - 0.05 <= float(t["energy"]) <= hi + 0.05]
+        # ranked for this use, recent tracks and composers already lower (music rotation)
+        ranked = [r["track"] for r in mus.search(use=use, limit=0, cat=cat, key=look.get("project") or look.get("job"))]
     except Exception:  # noqa: BLE001 - no catalog: a generic hint
         return ["a different catalog shelf: `showtime audio music search --shelf <shelf>`",
                 "a composed bed in another style (audio mix `compose`)"][:n]
     used_refs = {m.get("ref") for x in [look] + others for m in (x.get("music") or [])}
     used_shelves = {m.get("shelf") for x in [look] + others for m in (x.get("music") or []) if m.get("shelf")}
+    used_artists = _artists([m for x in [look] + others[:COMPOSER_RECENT] for m in (x.get("music") or [])])
     free = [s for s in shelves if s not in used_shelves] or [s for s in shelves]
+    fresh = [t for t in ranked if "catalog:%s" % t["id"] not in used_refs and t.get("shelf") in free]
+    # other composers first, a different shelf for each suggestion; then whatever is fresh
+    order = [t for t in fresh if mus.artist_of(t) not in used_artists] + fresh
     out: List[str] = []
-    for shelf in _rotate(free, seed):
-        cands = [t for t in tracks if t.get("shelf") == shelf and "catalog:%s" % t["id"] not in used_refs]
-        if not cands:
-            continue
-        t = _rotate(sorted(cands, key=lambda t: t["id"]), seed)[0]
-        out.append("catalog:%s (\"%s\", %s shelf, %s; `showtime audio music info %s`)" % (
-            t["id"], t.get("title"), shelf, ", ".join((t.get("moods") or [])[:2]) or "no mood tags", t["id"]))
-        if len(out) >= n:
-            break
+    seen_shelves, seen_artists = set(), set()
+    for strict in (True, False):
+        for t in order:
+            if len(out) >= n:
+                break
+            line = "catalog:%s (\"%s\" by %s, %s shelf, %s; `showtime audio music info %s`)" % (
+                t["id"], t.get("title"), mus.artist_of(t), t.get("shelf"),
+                ", ".join((t.get("moods") or [])[:2]) or "no mood tags", t["id"])
+            if line in out or (strict and (t.get("shelf") in seen_shelves or mus.artist_of(t) in seen_artists)):
+                continue
+            out.append(line)
+            seen_shelves.add(t.get("shelf"))
+            seen_artists.add(mus.artist_of(t))
     return out
 
 

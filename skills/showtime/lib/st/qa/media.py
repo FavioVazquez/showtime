@@ -267,6 +267,76 @@ def opening_diffs(video: PathLike, n: int = 3, size: Tuple[int, int] = (64, 36))
     return [sum(abs(a - b) for a, b in zip(frames[i], frames[i + 1])) / float(k) for i in range(len(frames) - 1)]
 
 
+def mean_luma(path: PathLike, at: Optional[float] = None, size: Tuple[int, int] = (64, 36)) -> Optional[float]:
+    """Mean grey level (0-255) of an image, or of a video's frame at `at` seconds, on a tiny copy decoded by
+    ffmpeg (which ignores PNG colour chunks, as a video player does). None when it cannot be decoded."""
+    import subprocess
+    w, h = size
+    pre = ["-ss", "%.3f" % max(0.0, float(at))] if at is not None else []
+    try:
+        cp = subprocess.run([ff.ffmpeg_path(), "-hide_banner", "-nostdin", "-loglevel", "error"] + pre +
+                            ["-i", os.fspath(path), "-frames:v", "1", "-vf", "scale=%d:%d:flags=area,format=gray" % (w, h),
+                             "-f", "rawvideo", "-"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    buf = (cp.stdout or b"")[:w * h]
+    return sum(buf) / float(len(buf)) if len(buf) == w * h else None
+
+
+PNG_COLOUR_CHUNKS = (b"gAMA", b"cHRM", b"cICP", b"iCCP")
+
+
+def png_colour_chunks(path: PathLike) -> List[str]:
+    """Colour chunks in a PNG (gAMA, cHRM, cICP, iCCP): a browser colour-manages the image by them, so a
+    still carrying them draws darker or lighter than the same frame of the video. [] for other files."""
+    out: List[str] = []
+    try:
+        with open(os.fspath(path), "rb") as f:
+            if f.read(8) != b"\x89PNG\r\n\x1a\n":
+                return out
+            while True:
+                head = f.read(8)
+                if len(head) < 8:
+                    break
+                n, kind = int.from_bytes(head[:4], "big"), head[4:]
+                if kind in PNG_COLOUR_CHUNKS:
+                    out.append(kind.decode("ascii"))
+                if kind in (b"IDAT", b"IEND"):
+                    break                         # colour chunks come before the image data
+                f.seek(n + 4, 1)
+    except OSError:
+        return out
+    return out
+
+
+def strip_png_colour_chunks(path: PathLike) -> int:
+    """Drop the colour chunks (and sRGB) from a PNG in place, so browsers draw it as the video decodes the
+    same frame. Returns how many were dropped; other files are left alone."""
+    p = os.fspath(path)
+    try:
+        with open(p, "rb") as f:
+            data = f.read()
+    except OSError:
+        return 0
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        return 0
+    out, i, dropped = [data[:8]], 8, 0
+    while i + 8 <= len(data):
+        n = int.from_bytes(data[i:i + 4], "big")
+        kind, end = data[i + 4:i + 8], i + 12 + n
+        if kind in PNG_COLOUR_CHUNKS + (b"sRGB",):
+            dropped += 1
+        else:
+            out.append(data[i:end])
+        i = end
+        if kind == b"IEND":
+            break
+    if dropped:
+        with open(p, "wb") as f:
+            f.write(b"".join(out))
+    return dropped
+
+
 def image_stats(path: PathLike) -> Dict[str, float]:
     """Mean/std/percentiles of luma (0-255) for a small copy of an image."""
     import numpy as np

@@ -23,6 +23,7 @@ from ..common import ShowtimeError, log, read_json, write_json
 from . import captions as capmod
 from . import phone as phonemod
 from . import media
+from . import floor
 
 
 _THRESHOLD_DEFAULTS = {"still_hold_s": 2.5, "launch_hold_s": 3.5, "final_hold_max_s": 4.0, "frozen_fail_s": 6.0, "freeze_noise_db": -50.0}
@@ -84,6 +85,7 @@ RULES = {
     "first_frame_black": "frame 0 is black (players and feeds show it as the thumbnail)",
     "first_frame_flat": "frame 0 is a flat colour",
     "poster_flash": "frame 0 differs sharply from frame 1 (a baked poster that flashes on autoplay and loops)",
+    "poster_mismatch": "the delivered poster still is lighter or darker than its video frame (or its PNG carries colour chunks)",
     "black_segment": "a black stretch inside the video",
     "ends_black": "the video ends on black",
     "frozen": "the picture does not change for a long stretch",
@@ -121,6 +123,7 @@ RULES = {
     "reference_close": "some frames look like frames of the style reference",
     "reference_credit": "the \"Style reference:\" credit is missing from credits.txt or share.txt",
 }
+RULES.update(floor.RULES)   # the quality floor (st.qa.floor): looks-cheap patterns, WARN only
 
 
 class Findings:
@@ -159,10 +162,15 @@ def find_project(video: Path, explicit: Optional[PathLike] = None) -> Optional[P
             raise ShowtimeError("%s is not a showtime project (no showtime.json or index.html)" % p,
                                 hint="pass the project folder that holds showtime.json, or leave --project out")
         return p
+    edit = edit_report(video) is not None       # a footage edit: its own report, not a project, made it
     for rj in (video.parent / "render.json", video.with_suffix(".work") / "render.json",
                video.parent / "job.json"):
         data = read_json(rj, None) if rj.is_file() else None
         if isinstance(data, dict) and data.get("project"):
+            if rj.name == "render.json" and data.get("output") and Path(str(data["output"])).name != video.name:
+                continue                         # another video's render (e.g. a cards/ sub-project's)
+            if rj.name == "job.json" and edit:
+                continue                         # the job's sub-project (cards, titles) did not make this video
             p = Path(data["project"])
             if (p / "showtime.json").is_file() or (p / "index.html").is_file():
                 return p
@@ -380,8 +388,10 @@ def run(video: PathLike, *, project: Optional[PathLike] = None, expect_file: Opt
                    footage=_may_hold_footage(proj, cfg), rep=rep,
                    launch_kind=str(cfg.get("kind") or "").lower() in ("launch", "promo", "trailer", "teaser", "release"))
     _check_opening_flash(F, vpath, fps)
+    _check_poster_match(F, vpath)
 
     _check_upscale(F, vpath)
+    rep["floor"] = _check_floor(F, vpath, dur, W, H, pic, _may_hold_footage(proj, cfg))
     _check_rhythm(F, vpath, dur, fps, proj, cfg, expect, rep, say)
 
     # ---------------------------------------------------------- captions, credits, texts
@@ -493,6 +503,10 @@ def _expected_duration(vpath: Path, cfg: Dict[str, Any], expect: Dict[str, Any],
     rj = read_json(vpath.parent / "render.json", None) if (vpath.parent / "render.json").is_file() else None
     if isinstance(rj, dict) and rj.get("output") and Path(rj["output"]).name == vpath.name and rj.get("duration"):
         return float(rj["duration"]), frame * 1.5, "the render report"
+    er = edit_report(vpath)
+    if er is not None:
+        # a footage edit: the EDL's own length (a poster-baked copy of it runs as long)
+        return (float(er["duration"]), frame * 1.5, "the edit render report") if er.get("duration") else (None, 0, "")
     if cfg.get("duration"):
         return float(cfg["duration"]), frame * 1.5, "showtime.json"
     return None, 0, ""
@@ -870,6 +884,54 @@ def _check_opening_flash(F: Findings, vpath: Path, fps: float) -> None:
         F.ok("frame 0 flows into frame 1 (no poster flash)")
 
 
+POSTER_LUMA_DIFF = 4.0     # mean luma levels (0-255) a poster still may differ from its video frame
+
+
+def poster_of(vpath: Path) -> Optional[Tuple[Path, float]]:
+    """(poster image, time) recorded by the render of this video (render.json "poster"), when it exists."""
+    for rj in (vpath.parent / "render.json", vpath.with_suffix(".work") / "render.json"):
+        r = read_json(rj, None) if rj.is_file() else None
+        if not isinstance(r, dict) or not isinstance(r.get("poster"), dict):
+            continue
+        if r.get("output") and Path(str(r["output"])).name != vpath.name:
+            continue
+        f, t = r["poster"].get("file"), r["poster"].get("time")
+        if not f or t is None:
+            continue
+        p = Path(str(f))
+        p = p if p.is_absolute() else vpath.parent / p
+        if p.is_file():
+            try:
+                return p, float(t)
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
+def _check_poster_match(F: Findings, vpath: Path) -> None:
+    """A delivered poster still should look like its video frame: compare mean luma (tiny grey copies), and
+    flag PNG colour chunks (gAMA, cHRM, cICP, iCCP), which make browsers draw the still darker than the video."""
+    found = poster_of(vpath)
+    if not found:
+        return
+    img, t = found
+    chunks = media.png_colour_chunks(img)
+    a, b = media.mean_luma(img), media.mean_luma(vpath, at=t)
+    if a is None or b is None:
+        return
+    d = a - b
+    if abs(d) > POSTER_LUMA_DIFF:
+        F.add("poster_mismatch", "WARN", "the poster %s is %.0f levels %s than the video at %.2fs" % (
+            img.name, abs(d), "lighter" if d > 0 else "darker", t), t=t,
+            fix="make the poster from the final video: showtime deliver poster %s --at %.2f" % (vpath.name, t))
+    elif chunks:
+        F.add("poster_mismatch", "WARN", "the poster %s carries PNG colour chunks (%s): browsers draw it darker than the "
+              "video frame" % (img.name, ", ".join(chunks)), t=t,
+              fix="make the poster again with this showtime (it writes PNGs without them), or use a .jpg")
+    else:
+        F.ok("the poster matches its video frame (mean luma within %.0f levels)" % POSTER_LUMA_DIFF)
+
+
 UPSCALE_LIMIT = 1.5
 
 
@@ -911,6 +973,17 @@ def _check_upscale(F: Findings, vpath: Path) -> None:
         F.add("upscale", "INFO", "sources are enlarged more than %.1fx; the EDL accepts it (output.allow_upscale)" % UPSCALE_LIMIT)
     if not worst and not accepted and (rep.get("segment_meta") or []):
         F.ok("no source enlarged more than %.1fx" % UPSCALE_LIMIT)
+
+
+def _check_floor(F: Findings, vpath: Path, dur: float, W: int, H: int, crop: Optional[Sequence[int]],
+                 footage: bool) -> Dict[str, Any]:
+    """The quality floor (st.qa.floor): player chrome, soft footage, stepped caption boxes, empty borders."""
+    try:
+        return floor.check(F, vpath, dur, W, H, crop=crop, footage=footage)
+    except Exception as e:  # noqa: BLE001 - a warning-only look never breaks qa
+        from ..common import debug
+        debug("quality floor skipped: %s" % e)
+        return {"error": str(e)}
 
 
 def is_job_latest(vpath: Path) -> bool:

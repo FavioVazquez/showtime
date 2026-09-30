@@ -1314,7 +1314,7 @@ def status_lines(job: Path, data: Optional[Dict[str, Any]] = None, absolute: boo
         l2 += "; last output %s (%s)" % (_rel(lo[0], job), lo[1][:16].replace("T", " ") if absolute else _ago(lo[1]))
     if qa.get("verdict"):
         l2 += "; qa %s" % qa["verdict"]
-    if rv.get("status") in ("pending", "waiting", "not ready"):
+    if rv.get("pending"):
         l2 += "; review pending"
     elif rv.get("status") in ("done", "cap"):
         l2 += "; " + rv["message"]

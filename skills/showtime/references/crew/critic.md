@@ -33,6 +33,15 @@ replaces `TASK.md` for you: it names the video, the pack's images and what to an
    - what you declined to judge and why (for example, you cannot hear the audio: judge the loudness
      plot and the captions instead);
    - a verdict: `ship`, `ship after fixes` or `not ready`;
+   - the absolute verdict, `WOULD I POST THIS: yes | no -- one reason`: would you post this under your own
+     name, watched once at full size by a stranger? The bar is "not cheap, broken or wrong", not "flawless":
+     with only should-fix and polish findings it is usually a yes. Say no when a blocker stands or the whole
+     video reads as cheap at a glance (captions in stepped boxes, a player's controls in the footage, a small
+     or soft recording in big borders); one flawed shot is a should-fix. Judge the video alone, never "better
+     than the last version". In quality mode a "no" holds delivery like a blocker;
+   - from round 2, a `PREVIOUS` line per earlier blocker or should-fix: `fixed: ...` or `not fixed: ...`,
+     naming what it was about (a caption should-fix stays open until a later line names the captions and
+     says `fixed`, or the maker writes `won't fix: <reason>`);
    - the best poster frame.
 
 Done when: `FINDINGS.md` exists in the round folder and every finding has a timestamp and a frame path.
@@ -42,7 +51,8 @@ Done when: `FINDINGS.md` exists in the round folder and every finding has a time
 A brief in `round-N/order-1/` or `order-2/` compares two versions, `X` and `Y`, shown in the order it
 names; another critic judges the other order. Look at every image of both (`../X/`, `../Y/`, the
 side-by-side `compare-*.jpg`, both `qa.txt` and `transcript.txt`), answer the questions for each, then
-give `PREFERENCE: X | Y | tie` (the one you would ship). Every finding names its video (`[X]` or `[Y]`)
+give `PREFERENCE: X | Y | tie` (the one you would ship), then `WOULD I POST X:` and `WOULD I POST Y:` (yes or
+no, one reason each, each judged alone: preferring one does not make it postable). Every finding names its video (`[X]` or `[Y]`)
 besides its time and frame. Which version is newer is hidden on purpose: never look for it (the
 `.pairwise-keys/` folder, other `order-*` folders, file dates). Write `FINDINGS.md` next to your brief.
 No scores in any round: do not rate a video on a number scale.

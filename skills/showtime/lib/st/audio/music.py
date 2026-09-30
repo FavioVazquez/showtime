@@ -57,6 +57,14 @@ placements; file hosts must belong to the track's source; custom "royalty-free" 
 
 User vetoes live in ~/.showtime/music/vetoes.json (`audio music veto <id>`); vetoed tracks are never
 picked unless asked for by id.
+
+Adding tracks is data only: append entries to `tracks` (a new host also needs a `sources` entry) and
+run `showtime audio music check`. validate() refuses an entry without every required field above
+(credit, license and deed, placements, pinned bytes + sha256, tags, the measured quiet_intro_s,
+lead_silence_s and highlight_s, a `verified` date), a licence outside LICENSES, a host outside its
+source, and a length or lead-in silence the quality gate fails. Search, rotation (recent jobs rank
+lower) and the per-composer diversity re-rank pick new tracks up with no code change; `composer` names
+the composer of a public-domain recording (rotation and diversity count it instead of the performer).
 """
 from __future__ import annotations
 
@@ -215,6 +223,16 @@ def validate(cat: Optional[Dict[str, Any]] = None) -> List[str]:
             v = t.get(k)
             if not (isinstance(v, (int, float)) and 0 <= v < max(d, 1)):
                 errs.append(pre + "%s must be measured seconds within the track" % k)
+        gate = (qg or {}).get("fail_if") if isinstance(qg, dict) else None
+        if isinstance(gate, dict):
+            if d and isinstance(gate.get("duration_s_below"), (int, float)) and d < gate["duration_s_below"]:
+                errs.append(pre + "shorter than the quality gate's %gs" % gate["duration_s_below"])
+            ls = t.get("lead_silence_s")
+            if isinstance(ls, (int, float)) and isinstance(gate.get("lead_silence_s_above"), (int, float)) \
+                    and ls > gate["lead_silence_s_above"]:
+                errs.append(pre + "lead-in silence above the quality gate's %gs" % gate["lead_silence_s_above"])
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(t.get("verified") or "")):
+            errs.append(pre + "verified must be the date the track passed the quality gate (YYYY-MM-DD)")
         if t.get("loops") not in (True, False, None):
             errs.append(pre + "loops must be true, false or null")
         if t.get("status", "active") not in ("active", "vetoed"):
@@ -328,9 +346,15 @@ def preset(use: Optional[str], cat: Optional[Dict[str, Any]] = None) -> Dict[str
 def search(words: Any = None, *, use: Optional[str] = None, shelf: Any = None, mood: Any = None, energy: Any = None,
            dur: Optional[float] = None, min_dur: Optional[float] = None, max_dur: Optional[float] = None,
            vocals: Any = None, source_id: Any = None, license: Any = None, ending: Any = None,
-           include_vetoed: bool = False, limit: int = 10, cat: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
-    """Ranked tracks: [{"track", "score", "why"}]. `use` applies a preset (launch, explainer, ...)."""
+           include_vetoed: bool = False, limit: int = 10, cat: Optional[Dict[str, Any]] = None,
+           rotate: bool = True, key: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Ranked tracks: [{"track", "score", "why"}]. `use` applies a preset (launch, explainer, ...).
+
+    With `rotate` (the default; see rotation()) tracks and composers heard in recent jobs rank lower
+    and the best of several near-equal tracks is a seeded choice (`key` is the job or project, so one
+    job keeps its pick). Every list is re-ranked so one composer does not fill the top (diversify())."""
     cat = cat or load_catalog()
+    rot = rotation(key) if rotate else None
     pre = preset(use, cat)
     shelves = _words(shelf) or list(pre.get("shelves") or [])
     moods = _words(mood)
@@ -397,15 +421,24 @@ def search(words: Any = None, *, use: Optional[str] = None, shelf: Any = None, m
             why.append("featured")
         if pre.get("max_intro_s") is not None and t.get("quiet_intro_s") and t["quiet_intro_s"] > pre["max_intro_s"]:
             score -= 1.0
+        if rot:
+            score -= _heard_penalty(t, rot, why)
         out.append({"track": t, "score": round(score, 3), "why": why})
     # equal scores: a stable order that differs per use, so ties are not settled alphabetically
     salt = (pre.get("name") or "") + "|" + " ".join(ws + moods + shelves)
     out.sort(key=lambda r: (-r["score"], hashlib.sha1((salt + r["track"]["id"]).encode("utf-8")).hexdigest()))
+    if rot and rot["recent"] and out:
+        # near-equal leaders: a seeded choice (the same job keeps it; the next job's seed differs). With
+        # nothing recorded yet the best track leads (the featured one, for a launch)
+        band = [r for r in out if out[0]["score"] - r["score"] <= NEAR]
+        h = hashlib.sha1(("%s|%s|%s" % (rot["seed"], salt, dur or "")).encode("utf-8")).hexdigest()
+        out.insert(0, out.pop(out.index(band[int(h[:8], 16) % len(band)])))
+    out = diversify(out)
     return out[: max(1, int(limit))] if limit else out
 
 
 def pick(use: Optional[str] = None, dur: Optional[float] = None, n: int = 0, **kw: Any) -> Dict[str, Any]:
-    """The n-th best track for a use (0 = best). Raises when nothing matches."""
+    """The n-th best track for a use (0 = best), rotated against recent jobs. Raises when nothing matches."""
     res = search(use=use, dur=dur, limit=max(10, n + 1), **kw)
     if not res:
         raise ShowtimeError("no catalog track matches %s" % json.dumps({k: v for k, v in dict(kw, use=use, dur=dur).items()
@@ -414,18 +447,163 @@ def pick(use: Optional[str] = None, dur: Optional[float] = None, n: int = 0, **k
     return res[min(n, len(res) - 1)]["track"]
 
 
-def resolve(ref: Any, dur: Optional[float] = None) -> Dict[str, Any]:
-    """A track from an id string or {"use"/"shelf"/"mood"/"energy"/"words", "pick": n} (a mix.json source)."""
+def resolve(ref: Any, dur: Optional[float] = None, key: Optional[str] = None) -> Dict[str, Any]:
+    """A track from an id string or {"use"/"shelf"/"mood"/"energy"/"words", "pick": n} (a mix.json source).
+    An id always wins. A query is rotated against recent jobs (`key`: the project, see search()), and a
+    job the history already holds keeps the track it was recorded with."""
     if isinstance(ref, str):
         return get(ref)
     if isinstance(ref, dict):
         if ref.get("id"):
             return get(ref["id"])
+        pinned = _pinned(key, query_key(ref)) if key else None
+        if pinned:
+            return pinned
         q = {k: ref.get(k) for k in ("shelf", "mood", "energy", "vocals", "license", "ending") if ref.get(k) is not None}
         q["source_id"] = ref.get("source")
         return pick(use=ref.get("use") or ref.get("for"), dur=ref.get("dur") or dur, n=int(ref.get("pick", 0)),
-                    words=ref.get("words") or ref.get("search"), **q)
+                    words=ref.get("words") or ref.get("search"), key=key, **q)
     raise ShowtimeError("bad catalog reference %r" % (ref,), hint='use a track id or {"use": "launch"}')
+
+
+# ------------------------------------------------------------------------------------------ rotation
+# The look history (st.variety.history, local only) records the music of every finished job. A new
+# pick ranks tracks heard in the last ROTATE_JOBS jobs lower (the whole piece: its variants too) and
+# composers heard in the last ARTIST_JOBS a little lower, so similar briefs in a row get different
+# music. Off with `showtime history off` (nothing recorded, nothing demoted) or SHOWTIME_MUSIC_ROTATION=off
+# (the plain ranking: tests, reproducing an old render). An explicit track id is never rotated.
+ROTATE_JOBS = 8
+TRACK_PENALTY = 3.0          # about one shelf match: a fresh track of the same kind comes first
+ARTIST_JOBS = 3
+ARTIST_PENALTY = 0.75        # per recent job with that composer, at most two
+NEAR = 0.4                   # leaders this close to the best are near-equal: the choice among them is seeded
+DIVERSE_WINDOW, DIVERSE_CAP, DIVERSE_MARGIN = 5, 2, 1.0    # at most 2 of any 5 places in a row per composer
+
+
+def artist_of(t: Dict[str, Any]) -> str:
+    """Who a listener hears: the composer of a public-domain recording, else the artist."""
+    return str(t.get("composer") or t.get("artist") or "")
+
+
+def _family(t: Dict[str, Any]) -> str:
+    return str(t.get("variant_of") or t.get("id"))
+
+
+def query_key(ref: Dict[str, Any]) -> str:
+    """A catalog query as the history records it (a finished job keeps the track it resolved to)."""
+    return json.dumps({k: v for k, v in ref.items() if k not in ("id", "dur")}, sort_keys=True)
+
+
+def rotation_off() -> Optional[str]:
+    """Why rotation is off, or None when it is on."""
+    v = str(os.environ.get("SHOWTIME_MUSIC_ROTATION", "")).strip().lower()
+    if v in ("0", "off", "false", "no"):
+        return "SHOWTIME_MUSIC_ROTATION=%s" % v
+    return None
+
+
+def _same(a: Any, b: Any) -> bool:
+    return bool(a and b) and os.path.normcase(str(a)) == os.path.normcase(str(b))
+
+
+def _is_job(lk: Dict[str, Any], key: str) -> bool:
+    return _same(lk.get("project"), key) or _same(lk.get("job_path"), key) or lk.get("job") == key
+
+
+def recent_music(key: Optional[str] = None, n: int = ROTATE_JOBS) -> List[Dict[str, Any]]:
+    """[{job, tracks, families, artists, composed}] of the last n recorded jobs, newest first, leaving
+    out the job or project `key` itself. [] when the history is off."""
+    from ..variety import history
+    if not history.enabled()[0]:
+        return []
+    out: List[Dict[str, Any]] = []
+    for lk in reversed(history.load()):
+        if key and _is_job(lk, key):
+            continue
+        row: Dict[str, Any] = {"job": lk.get("job"), "tracks": [], "families": [], "artists": [], "composed": []}
+        for m in lk.get("music") or []:
+            ref = str(m.get("ref") or "")
+            if ref.startswith("catalog:"):
+                tid = ref[len("catalog:"):]
+                try:
+                    t = get(tid)
+                except ShowtimeError:
+                    t = {"id": tid}
+                row["tracks"].append(tid)
+                row["families"].append(_family(t))
+                a = m.get("artist") or artist_of(t)     # entries recorded before 0.3.2 carry no artist
+                if a:
+                    row["artists"].append(a)
+            elif ref.startswith("compose:"):
+                row["composed"].append(m.get("style") or ref[len("compose:"):])
+        out.append(row)
+        if len(out) >= n:
+            break
+    return out
+
+
+def rotation(key: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """{recent, seed} for search(), or None when rotation is off."""
+    if rotation_off():
+        return None
+    try:
+        from ..variety import history
+        rec = recent_music(key)
+        hist = history.load() if history.enabled()[0] else []
+    except (ShowtimeError, OSError, ValueError):   # an unreadable history never stops a pick
+        rec, hist = [], []
+    # the seed moves on with every finished job: the next similar request lands on another near-equal track
+    seed = "%s|%d|%s" % (key or "", len(hist), ",".join(str(x.get("job")) for x in hist[-3:]))
+    return {"recent": rec, "seed": seed}
+
+
+def _heard_penalty(t: Dict[str, Any], rot: Dict[str, Any], why: List[str]) -> float:
+    rec = rot.get("recent") or []
+    pen = 0.0
+    if any(_family(t) in r["families"] for r in rec):
+        pen += TRACK_PENALTY
+        why.append("heard recently")
+    a = artist_of(t)
+    k = sum(1 for r in rec[:ARTIST_JOBS] if a in r["artists"])
+    return pen + ARTIST_PENALTY * min(k, 2)
+
+
+def diversify(rows: List[Dict[str, Any]], window: int = DIVERSE_WINDOW, cap: int = DIVERSE_CAP,
+              margin: float = DIVERSE_MARGIN) -> List[Dict[str, Any]]:
+    """Re-rank so one composer takes at most `cap` of any `window` places in a row, when another
+    composer's track scores within `margin` of the one it moves down (a clearly better track keeps its place)."""
+    rest, out = list(rows), []
+    while rest:
+        near = [artist_of(r["track"]) for r in out[-(window - 1):]]
+        j = 0
+        if near.count(artist_of(rest[0]["track"])) >= cap:
+            for i, r in enumerate(rest[1:], 1):
+                if rest[0]["score"] - r["score"] > margin:
+                    break
+                if near.count(artist_of(r["track"])) < cap:
+                    j = i
+                    break
+        out.append(rest.pop(j))
+    return out
+
+
+def _pinned(key: str, qk: str) -> Optional[Dict[str, Any]]:
+    """The track a recorded job resolved this query to (a re-render after `qa` keeps its music)."""
+    try:
+        from ..variety import history
+        if not history.enabled()[0]:
+            return None
+        for lk in reversed(history.load()):
+            if not (_same(lk.get("project"), key) or _same(lk.get("job_path"), key)):
+                continue
+            for m in lk.get("music") or []:
+                if m.get("query") == qk and str(m.get("ref") or "").startswith("catalog:"):
+                    t = get(str(m["ref"])[len("catalog:"):])
+                    if t.get("status", "active") == "active" and t["id"] not in vetoed_ids():
+                        return t
+    except (ShowtimeError, OSError, ValueError):
+        return None
+    return None
 
 
 # ------------------------------------------------------------------------------------------ fetch + cache
@@ -546,12 +724,28 @@ def match_file(path: Path) -> Optional[Dict[str, Any]]:
     return next((t for t in cands if t["sha256"] == digest), None)
 
 
+def bulk_allowed(t: Dict[str, Any], cat: Optional[Dict[str, Any]] = None) -> bool:
+    """False when the track's source asks never to be bulk-downloaded (its `fetch.bulk` is false): such tracks are
+    fetched one at a time, the first time a mix uses them, never by a pre-fetch of many tracks."""
+    return (source(t, cat).get("fetch") or {}).get("bulk", True) is not False
+
+
 def fetch_many(ts: Iterable[Dict[str, Any]], seeds: Optional[Sequence[str]] = None, purpose: str = "offline use",
-               progress: Any = None) -> Dict[str, Any]:
-    rep: Dict[str, Any] = {"fetched": [], "cached": [], "failed": []}
+               progress: Any = None, bulk: bool = False) -> Dict[str, Any]:
+    """Fetch several tracks. With `bulk` (a pre-fetch of the catalog or a shelf, not tracks the user named), tracks
+    whose source forbids bulk downloads are left to download on first use unless a seed folder has them."""
+    rep: Dict[str, Any] = {"fetched": [], "cached": [], "failed": [], "skipped": []}
     ts = list(ts)
     todo = [t for t in ts if not is_cached(t)]
     rep["cached"] = [t["id"] for t in ts if t not in todo]
+    if bulk:
+        seeds_d = _seed_dirs(seeds)
+        keep = [t for t in todo if bulk_allowed(t) or _from_seed(t, seeds_d) is not None]
+        rep["skipped"] = [t["id"] for t in todo if t not in keep]
+        todo = keep
+        if rep["skipped"]:
+            (progress or log)("music catalog: %d track(s) left to download on first use (their creator asks for no "
+                              "bulk downloads)" % len(rep["skipped"]))
     total = sum(int(t["bytes"]) for t in todo)
     if todo:
         (progress or log)("music catalog: %d track(s) to fetch (%s), %d already cached" % (len(todo), human_size(total),

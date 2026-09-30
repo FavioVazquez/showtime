@@ -50,6 +50,7 @@ LIB_DIR = SKILL_DIR / "lib"
 sys.path.insert(0, str(LIB_DIR))
 from st import __version__  # noqa: E402
 from st import platform as plat  # noqa: E402
+from st import mirror  # noqa: E402
 
 UA = "showtime-setup/%s (+python urllib)" % __version__
 MANIFEST_PATH = SETUP_DIR / "manifest.json"
@@ -383,6 +384,8 @@ def _download_urllib(url: str, part: Path, total: Optional[int], label: str,
         headers["Range"] = "bytes=%d-" % have
     req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=60, context=ctx) as resp:
+        if _looks_like_block_page(resp, url):
+            raise mirror.Blocked("answered with a web page instead of the file (a proxy block page?)")
         code = getattr(resp, "status", 200)
         mode = "ab"
         if have and code != 206:
@@ -410,46 +413,40 @@ def _download_curl(url: str, part: Path) -> None:
         raise RuntimeError("curl not available")
     cp = subprocess.run([curl, "-fL", "--retry", "3", "--connect-timeout", "30", "-A", UA,
                          "-C", "-", "-o", str(part), url])
+    if cp.returncode in (5, 6, 7, 22, 56):  # no proxy/host, no connection, HTTP error, proxy refused
+        raise mirror.Blocked("curl exited with %d" % cp.returncode)
     if cp.returncode not in (0, 33):  # 33: range not satisfiable (already complete)
         raise RuntimeError("curl exited with %d" % cp.returncode)
 
 
-def fetch(url: str, dest: Path, sha: Optional[str], size: Optional[int], seeds: Seeds,
-          label: str, verify: bool = False,
-          progress: Optional[Callable[[int, Optional[int]], None]] = None) -> str:
-    """Ensure `dest` holds the file. Returns 'present' | 'seeded' | 'downloaded'.
+def _install_copy(src: Path, dest: Path) -> None:
+    tmp = dest.with_name(dest.name + ".part")
+    if tmp.exists():
+        tmp.unlink()
+    try:
+        os.link(str(src), str(tmp))      # same filesystem: no second copy on disk
+    except OSError:
+        shutil.copyfile(str(src), str(tmp))
+    replace_file(tmp, dest)
 
-    Seeds come first (a --seed folder, or a verified copy in a shared Hugging Face cache);
-    downloads resume from `<dest>.part`. `progress(done, total)` replaces the built-in
-    progress line (the runtime's lazy fetches report through showtime's own Progress)."""
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    if dest.is_file() and (size is None or dest.stat().st_size == size):
-        if not verify or not sha or sha256_file(dest) == sha:
-            return "present"
-        say("  %s: checksum mismatch, re-downloading" % dest.name)
-        dest.unlink()
-    seeded = seeds.find(size, sha, url)
-    if seeded is not None:
-        tmp = dest.with_name(dest.name + ".part")
-        if tmp.exists():
-            tmp.unlink()
-        try:
-            os.link(str(seeded), str(tmp))      # same filesystem: no second copy on disk
-        except OSError:
-            shutil.copyfile(str(seeded), str(tmp))
-        replace_file(tmp, dest)
-        return "seeded"
-    if os.environ.get("SHOWTIME_OFFLINE", "") not in ("", "0", "false", "no"):
-        raise IOError("%s is not downloaded and SHOWTIME_OFFLINE is set (seed it with --seed DIR, "
-                      "or run `showtime setup --full` on a connected machine)" % label)
-    part = dest.with_name(dest.name + ".part")
+
+def _looks_like_block_page(resp: Any, url: str) -> bool:
+    """A proxy that answers 200 with its own HTML page instead of the file."""
+    ctype = str(resp.headers.get("Content-Type") or "").lower()
+    return ctype.startswith("text/html") and not url.lower().split("?")[0].endswith((".html", ".htm"))
+
+
+def _fetch_from(url: str, part: Path, sha: Optional[str], size: Optional[int], label: str,
+                progress: Optional[Callable[[int, Optional[int]], None]]) -> None:
+    """Download `url` into `part` and verify it. Raises mirror.Blocked when this source will not serve the
+    file (no retry), IOError after the retries for anything else. A checksum mismatch deletes the part."""
     last_err: Optional[BaseException] = None
     for attempt in range(1, 5):
         try:
             try:
                 _download_urllib(url, part, size, label, progress)
             except (ssl.SSLError, urllib.error.URLError) as e:
-                if isinstance(e, urllib.error.HTTPError) and e.code in (403, 404, 410):
+                if mirror.blocked_reason(e) is not None:
                     raise
                 if "CERTIFICATE" in str(e).upper() or isinstance(e, ssl.SSLError):
                     say("  TLS verification failed in Python (%s); retrying with curl" % e)
@@ -465,20 +462,67 @@ def fetch(url: str, dest: Path, sha: Optional[str], size: Optional[int], seeds: 
                 actual = sha256_file(part)
                 if actual != sha:
                     part.unlink()
-                    raise IOError("sha256 mismatch for %s: got %s, expected %s" % (label, actual, sha))
-            replace_file(part, dest)
-            return "downloaded"
-        except urllib.error.HTTPError as e:
-            if e.code in (403, 404, 410):
-                raise IOError("%s: HTTP %d for %s" % (label, e.code, url))
-            last_err = e
+                    raise mirror.Blocked("sha256 mismatch: got %s, expected %s" % (actual, sha))
+            return
         except (IOError, OSError, RuntimeError, urllib.error.URLError, ssl.SSLError) as e:
+            why = mirror.blocked_reason(e)
+            if why is not None:
+                raise mirror.Blocked(why)
             last_err = e
         if attempt < 4:
             wait = 3 * attempt
             say("  %s: attempt %d failed (%s); retrying in %ds" % (label, attempt, last_err, wait))
             time.sleep(wait)
-    raise IOError("could not download %s: %s" % (label, last_err))
+    raise IOError("%s" % last_err)
+
+
+def fetch(url: str, dest: Path, sha: Optional[str], size: Optional[int], seeds: Seeds,
+          label: str, verify: bool = False,
+          progress: Optional[Callable[[int, Optional[int]], None]] = None) -> str:
+    """Ensure `dest` holds the file. Returns 'present' | 'seeded' | 'downloaded'.
+
+    Seeds come first (a --seed folder, a verified copy in a shared Hugging Face cache, or a
+    SHOWTIME_MODEL_MIRROR folder); downloads resume from `<dest>.part`. When the primary host is
+    blocked (403, a proxy refusing the connection, no route) the file comes from the model mirror
+    (st/mirror.py, mirror.json); every source is sha256-verified. `progress(done, total)` replaces
+    the built-in progress line (the runtime's lazy fetches report through showtime's own Progress)."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if dest.is_file() and (size is None or dest.stat().st_size == size):
+        if not verify or not sha or sha256_file(dest) == sha:
+            return "present"
+        say("  %s: checksum mismatch, re-downloading" % dest.name)
+        dest.unlink()
+    seeded = seeds.find(size, sha, url)
+    if seeded is not None:
+        _install_copy(seeded, dest)
+        return "seeded"
+    local = mirror.local_copy(url)
+    if local is not None:
+        if (size is None or local.stat().st_size == size) and (not sha or sha256_file(local) == sha):
+            _install_copy(local, dest)
+            return "seeded"
+        say("  %s: %s in %s does not match the pinned checksum; ignored" % (label, local.name, local.parent))
+    if os.environ.get("SHOWTIME_OFFLINE", "") not in ("", "0", "false", "no"):
+        raise IOError("%s is not downloaded and SHOWTIME_OFFLINE is set (seed it with --seed DIR, "
+                      "or run `showtime setup --full` on a connected machine)" % label)
+    part = dest.with_name(dest.name + ".part")
+    tried: List[Tuple[str, str]] = []
+    for src in mirror.sources(url):
+        if tried:
+            say("  %s: %s; trying the model mirror at %s" % (label, tried[-1][1], mirror.host(src)))
+        try:
+            _fetch_from(src, part, sha, size, label, progress)
+        except mirror.Blocked as e:
+            tried.append((src, str(e)))
+            if src == url and not str(e).startswith("sha256"):
+                mirror.mark_blocked(url, str(e))
+            continue
+        except IOError as e:
+            tried.append((src, str(e)))
+            continue
+        replace_file(part, dest)
+        return "downloaded"
+    raise IOError(mirror.describe_failure(label, url, tried))
 
 
 # ==========================================================================
@@ -1195,10 +1239,13 @@ class Installer:
         except ValueError:
             return "fail", "exit %d\n%s" % (cp.returncode, tail(cp.stdout, 8))
         done = len(rep.get("fetched", rep.get("installed", [])))
-        have = len(rep.get("cached", rep.get("skipped", [])))
+        # music: "skipped" = tracks whose creator asks for no bulk downloads (they come on first use); packs: already there
+        have = len(rep["cached"]) if "cached" in rep else len(rep.get("skipped", []))
+        later = len(rep.get("skipped", [])) if "cached" in rep else 0
         failed = rep.get("failed") or []
-        msg = "%d downloaded, %d already present%s" % (done, have, ", %d failed (first: %s)" % (
-            len(failed), failed[0].get("error", "")[:120]) if failed else "")
+        msg = "%d downloaded, %d already present%s%s" % (
+            done, have, ", %d left for first use (their creator asks for no bulk downloads)" % later if later else "",
+            ", %d failed (first: %s)" % (len(failed), failed[0].get("error", "")[:120]) if failed else "")
         return ("warn" if failed else "ok"), msg
 
     def step_manimgl(self) -> Tuple[str, str]:

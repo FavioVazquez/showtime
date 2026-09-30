@@ -39,6 +39,8 @@ def extract_frame(video: PathLike, t: float, out: PathLike, width: Optional[int]
     ff.run_ffmpeg(args + ["-update", "1", os.fspath(out)])
     if not out.is_file():
         raise ShowtimeError("could not extract a frame at %.3fs from %s" % (t, video))
+    from ..qa.media import strip_png_colour_chunks
+    strip_png_colour_chunks(out)          # no gAMA/cHRM/cICP: browsers draw the still as bright as the video
     return out
 
 

@@ -162,8 +162,10 @@ def ensure_item(item_id: str, feature: str, allow_download: bool = True) -> Path
     label = it.get("description", item_id).split(" (")[0]
     seeds = su.Seeds([d for d in os.environ.get("SHOWTIME_SEED_DIRS", "").split(os.pathsep) if d])
     if not allow_download or offline():
-        # a seed folder or a shared cache copy still counts when offline
-        if not all(seeds.find(f.get("size"), f.get("sha256"), f.get("url")) for f in files):
+        # a seed folder, a shared cache copy or a SHOWTIME_MODEL_MIRROR folder still counts when offline
+        from . import mirror
+        if not all(seeds.find(f.get("size"), f.get("sha256"), f.get("url")) or mirror.local_copy(f.get("url", ""))
+                   for f in files):
             raise missing_error(item_id, label, nbytes, feature)
     with cache_lock(paths()["cache"] / "lazy" / item_id, timeout=4 * 3600, stale=6 * 3600):
         if su.item_status(it, home(), key)[0] == "ok":      # another process just fetched it

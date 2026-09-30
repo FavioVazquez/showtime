@@ -46,15 +46,17 @@ Batch visual checks: one `showtime look` per phase, not dozens of single frames 
   past 5 hard cuts or 6 scenes in 60 s, a 5.5 s still, and a voiceless mix moving under 3 dB (§ Tools)
 - Quality mode (the default), publish-bound or studio work: `showtime review-pack <job>` (qa's "review pending"
   line names it), then `review.md` with the pack's `CRITIC.md`; lean: publish-bound only (§3)
+- Quality floor (WARN): player controls in the footage, soft or upscaled footage, stepped caption boxes, a
+  small picture in big flat borders; the critic's `WOULD I POST THIS: no` holds delivery in quality mode (§3, § Tools)
 - Only a `final*.mp4` is the latest final; promote a variant: `job note <job> --output final=<file>` (§ Tools)
 
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| 1. Pre-render (on the project) | 59-100 |
-| 2. Post-render (on the MP4) | 102-140 |
-| 3. The critic pass | 142-149 |
-| Tools | 151-325 |
+| 1. Pre-render (on the project) | 61-102 |
+| 2. Post-render (on the MP4) | 104-142 |
+| 3. The critic pass | 144-151 |
+| Tools | 153-339 |
 
 ## 1. Pre-render (on the project)
 
@@ -145,7 +147,7 @@ Every finished video in quality mode (the default; qa prints "review pending" wi
 has a verdict), and publish-bound or studio work in lean mode: `showtime review-pack <job>`, then follow
 `review.md`. The critic's
 brief is the `CRITIC.md` the pack writes (severity scale, citation rule, answer format, three rounds
-at most, pairwise from round 2); do not write a brief of your own. Lean work that is not publish-bound gets
+at most, pairwise from round 2, the absolute `WOULD I POST THIS` line); do not write a brief of your own. Lean work that is not publish-bound gets
 the self-review in `review.md` section 1.
 
 ## Tools
@@ -206,6 +208,7 @@ export itself (`showtime qa <export> --platform github`); without one it FAILs w
 | `first_frame_black` | FAIL | frame 0 is black (no poster baked) |
 | `first_frame_flat` | WARN | frame 0 is one flat colour |
 | `poster_flash` | WARN | frame 0 differs sharply from frames 1-2 (a baked poster over an opening that builds from empty): a one-frame flash on autoplay and every loop |
+| `poster_mismatch` | WARN | the render's poster still (render.json `poster`) differs from its video frame by more than 4 mean luma levels, or its PNG carries colour chunks (gAMA, cHRM, cICP, iCCP) that make browsers draw it darker than the video |
 | `black_segment` | WARN ≥ 0.25 s, FAIL ≥ 1 s | black inside the video (`ends_black`: WARN for a black ending ≥ 1 s) |
 | `frozen` | WARN ≥ 2.5 s (launch films, showtime.json `"kind": "launch"`: ≥ 3.5 s, `launch_hold_s`), FAIL ≥ 6 s or half the video | no visible change (a few typed characters or a thin moving line still count as a hold); the thresholds, `freeze_noise_db` included, live in `runtime/thresholds.json`, shared with `showtime check`, so check finds the same holds before the render. A padded or blurred export is judged inside its picture (`<export>.export.json`), not on its bars. See "Dark themes and slow pushes" below |
 | `dead_stop` | WARN | a fast move (6+ frames of real change) whose last frames still move at half its peak or more, then nothing for 4+ frames: it lands with no settle. The message names the frame; fix: ease the last 6-10 frames out (`power3.out`, `premium`) or land earlier and hold (st.qa.motion, on the rhythm's frame differences) |
@@ -224,6 +227,10 @@ export itself (`showtime qa <export> --platform github`); without one it FAILs w
 | `aspect` | WARN (FAIL for `expect.width/height/aspect`) | aspect differs from the platform |
 | `resolution` | WARN | the aspect fits but the frame has under 97 % of the platform's pixels (540x960 for Reels): render the final at full size |
 | `upscale` | WARN (INFO when the EDL sets `"output": {"allow_upscale": true}`) | an EDL render enlarged a source more than 1.5x (from `<video>.report.json`, also for a baked `final.poster.mp4` and for exports, which carry the report with factors scaled to their size); the fix names a smaller output size or `--fit blur`, or says when it is unavoidable (1080p to 1080x1920) |
+| `player_chrome` | WARN (footage) | a thin bar across over half the width, low in the frame or in a recorded player, with small glyphs at both ends (play, time, fullscreen), in the same place on 2+ sampled frames: a web player's controls recorded with the page |
+| `soft_footage` | WARN (footage) | edge sharpness (sum \|Laplacian\| / sum \|gradient\| per detailed 64 px cell, at delivery size) under 0.75 on 60 % of the detailed cells, on half the sampled frames: crisp screen text is ~1.5, a 2x upscale ~1.0, 3x ~0.7. Fix: re-record at 2x device scale |
+| `caption_boxes` | WARN | two caption boxes stacked around one centre with widths differing by over 10 % (one box per line: the stepped look), on 2+ sampled frames. Fix: one plate (`captions --style boxed`) |
+| `empty_borders` | WARN (footage) | a solid picture filling under 70 % of the frame (width x height) inside flat borders, on over 30 % (and 2+) of the sampled frames |
 | `must_show` | FAIL | a must-show text is missing from the on-screen text list of the last `showtime check` |
 | `must_show_unverified` | WARN | found only in the project source (run `showtime check`, then `qa` again) |
 | `expect_invalid` | WARN | an unknown key in the `expect` block, or an unknown platform name (checked without a platform target) |
@@ -282,6 +289,13 @@ Parts:
 `--no-timeline` skips reading time (the line says so); type size and zones come from the sample frames then.
 Burned-in captions that are drawn as page text (`data-caption`) get the type-size and zone checks like any text,
 but not the reading-time rule (they follow the voice).
+
+**Quality floor** (`st/qa/floor.py`). Four looks-cheap patterns that pass every technical check: the four
+rows above from `player_chrome` on, measured on 3-10 frames sampled across the video (grey, at delivery size up to
+1920 px wide). They are WARNs only, tuned to stay quiet on designed frames (a title on a flat ground, a divider
+line, one caption plate); the thresholds are constants at the top of the file. `player_chrome`, `soft_footage`
+and `empty_borders` run only when the video may hold footage (not for a project whose page plays no `<video>`),
+and a padded export is judged inside its picture. `qa.json` `floor` has the counts.
 
 **Dark themes and slow pushes.** Black and frozen stretches are measured on absolute pixel change, so two
 honest designs can trip them:

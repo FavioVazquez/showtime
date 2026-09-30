@@ -230,7 +230,7 @@ class TestHistory(HistoryCase):
     def test_repeats_and_alternatives(self):
         from st.variety import history as h
         h.record(self.look("one"))
-        h.record(self.look("two", theme="paper", display="Fraunces", accent="#2f6fbf", catalog="buckley-aphelion",
+        h.record(self.look("two", theme="paper", display="Fraunces", accent="#2f6fbf", catalog="incompetech-crossing-the-chasm",
                            transitions=("crossfade 0.5",), camera=False))
         res = h.check(self.look("three"))
         self.assertEqual(res["compared"], ["two", "one"])
@@ -244,7 +244,7 @@ class TestHistory(HistoryCase):
         # alternatives never propose what the recent jobs used
         self.assertFalse(any("theme bold" in x or "theme paper" in x for x in aspects["theme"]["alternatives"]))
         self.assertFalse(any(x.startswith(("push ", "dip ", "crossfade ")) for x in aspects["transitions"]["alternatives"]))
-        self.assertFalse(any("buckley-with-these-hands" in x or "buckley-aphelion" in x
+        self.assertFalse(any("buckley-with-these-hands" in x or "incompetech-crossing-the-chasm" in x
                              for x in aspects["music"]["alternatives"]))
         self.assertIn("theme (look) bold", res["message"])
         self.assertIn("theme (look):", res["fix"])
@@ -260,7 +260,7 @@ class TestHistory(HistoryCase):
         self.assertEqual(res["compared"], [])
         self.assertIn("no earlier jobs", h.format_text(res))
         b = self.look("b", theme="terminal", display="JetBrains Mono", body="JetBrains Mono", accent="#5cff8a",
-                      catalog="buckley-aphelion", transitions=("", "", "", ""), camera=False, template="film")
+                      catalog="incompetech-crossing-the-chasm", transitions=("", "", "", ""), camera=False, template="film")
         res = h.check(b)
         self.assertEqual(res["level"], "ok", res["repeats"])
         self.assertIn("look is fresh", h.format_text(res))
@@ -269,17 +269,17 @@ class TestHistory(HistoryCase):
         from st.variety import history as h
         h.record(self.look("push-led", transitions=("push left 0.5", "push left 0.5", "push left 0.5", "blur-dissolve 0.6",
                                                      "dip 0.6")))
-        b = self.look("push-only", theme="paper", display="Fraunces", accent="#2f6fbf", catalog="buckley-aphelion",
+        b = self.look("push-only", theme="paper", display="Fraunces", accent="#2f6fbf", catalog="incompetech-crossing-the-chasm",
                       transitions=("push left 0.4",) * 4, camera=False)
         self.assertIn("transitions", {r["aspect"] for r in h.check(b)["repeats"]})
-        c = self.look("dip-led", theme="paper", display="Fraunces", accent="#2f6fbf", catalog="buckley-aphelion",
+        c = self.look("dip-led", theme="paper", display="Fraunces", accent="#2f6fbf", catalog="incompetech-crossing-the-chasm",
                       transitions=("dip 0.6",) * 3 + ("push left 0.5",), camera=False)
         self.assertNotIn("transitions", {r["aspect"] for r in h.check(c)["repeats"]})
 
     def test_same_brand_shares_palette_and_type(self):
         from st.variety import history as h
         a, b = self.look("brand-a"), self.look("brand-b", transitions=("crossfade 0.5",), camera=False,
-                                                 catalog="buckley-aphelion")
+                                                 catalog="incompetech-crossing-the-chasm")
         a["brand"] = b["brand"] = "Acme"
         h.record(a)
         aspects = {r["aspect"] for r in h.check(b)["repeats"]}
@@ -292,7 +292,7 @@ class TestHistory(HistoryCase):
         h.record(self.look("old"))
         for i in range(5):
             h.record(self.look("other%d" % i, theme="neon", display="Unbounded", accent="#29e7ff",
-                               catalog="buckley-aphelion", transitions=("crossfade 0.5",), camera=False))
+                               catalog="incompetech-crossing-the-chasm", transitions=("crossfade 0.5",), camera=False))
         res = h.check(self.look("new"))
         self.assertNotIn("old", res["compared"])
         self.assertFalse(any("old" in r["jobs"] for r in res["repeats"]))

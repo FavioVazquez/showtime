@@ -8,10 +8,10 @@
 
 
 
-https://github.com/user-attachments/assets/48b61d02-04cd-4816-8ac5-afca096722da
+https://github.com/user-attachments/assets/1132aa71-7fe5-4345-a925-790d80462fda
 
 
-<p align="center"><sub><a href="https://github.com/FavioVazquez/showtime-examples/releases/download/examples-media-v1/_launch--launch-16x9.mp4"><b>Download the 40-second launch film</b></a> (full quality, 68 MB). Every frame is from a real showtime example.</sub><br><sub>Music: “With These Hands” by Scott Buckley, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a> (<a href="https://github.com/FavioVazquez/showtime-examples/blob/main/examples/_launch/credits.txt">credits</a>).</sub></p>
+<p align="center"><sub>The 0.3.0 showreel: 50 seconds, rendered by showtime 0.3.0 on one machine; every shot names the feature it uses (<a href="https://github.com/FavioVazquez/showtime-examples/blob/main/examples/_showreel/README.md">about the film</a>).</sub><br><sub><a href="https://github.com/FavioVazquez/showtime-examples/releases/download/examples-media-v1/_showreel--showreel-16x9.mp4"><b>Download the 50-second showreel</b></a> (full quality, 41 MB). Music: “Born Of The Sky” by Scott Buckley, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. CO2 data: NOAA GML / Scripps (<a href="https://github.com/FavioVazquez/showtime-examples/blob/main/examples/_showreel/credits.txt">credits</a>).</sub></p>
 <!-- /HERO -->
 
 <p align="center">
@@ -19,9 +19,9 @@ https://github.com/user-attachments/assets/48b61d02-04cd-4816-8ac5-afca096722da
   <img alt="runs on your machine" src="assets/readme/badges/local.svg" height="24">
   <img alt="API keys: none" src="assets/readme/badges/keys.svg" height="24">
   <a href="#works-with"><img alt="tested with Claude Code, Codex, Cursor, Devin and OpenCode" src="assets/readme/badges/agents.svg" height="24"></a>
-  <a href="CHANGELOG.md"><img alt="status: 0.2, early" src="assets/readme/badges/status.svg" height="24"></a>
-  <a href="#requirements"><img alt="tested: Intel Mac, Apple Silicon, Linux x64, Linux arm64, Windows x64" src="assets/readme/badges/tested.svg" height="24"></a>
-  <a href="#requirements"><img alt="still to run: Windows 10/11 desktop, Windows 11 on Arm" src="assets/readme/badges/windows.svg" height="24"></a>
+  <a href="CHANGELOG.md"><img alt="status: 0.3, early" src="assets/readme/badges/status.svg" height="24"></a>
+  <a href="#requirements"><img alt="tested: Intel Mac, Apple Silicon, Linux x64, Linux arm64, Windows x64, Windows 11 on Arm" src="assets/readme/badges/tested.svg" height="24"></a>
+  <a href="#requirements"><img alt="still to run: Windows 10/11 desktop" src="assets/readme/badges/windows.svg" height="24"></a>
 </p>
 
 <h3 align="center">A local video studio for your coding agent.<br>Describe a video. Your agent directs. Your machine renders.</h3>
@@ -347,6 +347,9 @@ agent" through MCP).
 </p>
 
 ## Now showing
+
+<p align="center"><a href="https://faviovazquez.github.io/showtime/gallery.html#launch-film"><img alt="The 0.2.0 launch film: the camera flies through the o of &quot;road&quot;, with the Iceland example seen through it." src="assets/readme/launch/launch-film-poster.jpg" width="100%"></a></p>
+<p align="center"><sub>▶ <a href="https://faviovazquez.github.io/showtime/gallery.html#launch-film"><b>Watch the 0.2.0 launch film</b></a> (40 s, plays on the showtime site; made with showtime, every frame from a real example, <a href="https://github.com/FavioVazquez/showtime-examples/blob/main/examples/_launch/README.md">about the film</a>, <a href="https://github.com/FavioVazquez/showtime-examples/releases/download/examples-media-v1/_launch--launch-16x9.mp4">download</a>).</sub><br><sub>Music: “With These Hands” by Scott Buckley, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a> (<a href="https://github.com/FavioVazquez/showtime-examples/blob/main/examples/_launch/credits.txt">credits</a>).</sub></p>
 
 Every example was made by an agent acting as a user, and ships with its project sources and a README
 that tells the story: the request, the assumptions, the commands, what the critic found and what

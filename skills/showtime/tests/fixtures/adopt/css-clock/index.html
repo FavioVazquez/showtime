@@ -1,0 +1,12 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>css clock fixture</title>
+<style>
+  html, body { margin: 0; width: 1280px; height: 720px; background: #14121f; overflow: hidden; }
+  .dot { position: absolute; top: 320px; left: 140px; width: 80px; height: 80px; border-radius: 50%; background: #ffb454;
+         animation: slide 3s cubic-bezier(.3,.7,.2,1) forwards; }
+  .ring { position: absolute; top: 260px; left: 560px; width: 200px; height: 200px; border-radius: 50%; border: 14px solid #7fd1b9;
+          box-sizing: border-box; animation: pulse 1s ease-in-out 3 alternate; }
+  @keyframes slide { from { transform: translateX(0); } to { transform: translateX(900px); } }
+  @keyframes pulse { from { transform: scale(.8); opacity: .5; } to { transform: scale(1.1); opacity: 1; } }
+</style></head>
+<body><div class="dot"></div><div class="ring"></div></body></html>

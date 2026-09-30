@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>seek fixture</title>
+<style>
+  html, body { margin: 0; width: 1280px; height: 720px; overflow: hidden; background: #101418; color: #f4f1ea;
+               font-family: sans-serif; }
+  .card { position: absolute; left: 160px; top: 250px; width: 960px; height: 220px; border-radius: 24px;
+          background: #1f6f5c; display: grid; place-items: center; font-size: 72px; font-weight: 700; }
+  .bar { position: absolute; left: 160px; bottom: 120px; height: 16px; background: #f2c14e; border-radius: 8px; }
+</style>
+</head>
+<body>
+<div class="card" id="card">Seek fixture</div>
+<div class="bar" id="bar"></div>
+<script>
+// A page written as a pure function of time, the way a model writes it with no tools.
+const DURATION = 4;
+const ease = (x) => 1 - Math.pow(1 - Math.min(1, Math.max(0, x)), 3);
+function seek(t) {
+  const card = document.getElementById('card');
+  const k = ease(t / 0.8);
+  card.style.opacity = String(k);
+  card.style.transform = `translateY(${(1 - k) * 60}px) scale(${0.96 + 0.04 * k})`;
+  document.getElementById('bar').style.width = `${Math.round(960 * Math.min(1, t / DURATION))}px`;
+  card.textContent = t < 2 ? 'Seek fixture' : 'Frame ' + Math.floor(t * 30);
+}
+window.seek = seek;
+window.DURATION = DURATION;
+// live preview in a normal browser
+if (!location.search.includes('t=')) {
+  const t0 = performance.now();
+  (function loop() { seek(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })();
+}
+</script>
+</body>
+</html>

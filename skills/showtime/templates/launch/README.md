@@ -12,8 +12,9 @@ Files:
   phrases; the track is fetched on first use and credited in `credits.txt`, `share.txt` and the end
   card's `data-credit` line.
 - `index.html`: the film.
-  1. **hook**: one line, big and still, complete at frame 0; the key word (`<em>`) holds a letter marked
-     `data-portal="counter"`.
+  1. **hook**: one line, big, complete at frame 0; the key word (`<em>`) holds a letter marked
+     `data-portal="counter"`. It rests about 2 s, then the camera leans toward that letter (the start of the
+     fly-through), so the hook never sits frozen for 4-5 s.
   2. **verb**: the camera flies **through** the letter's counter into the product window: a command
      types and its output lands, then the result line is marked.
   3. **proof** and 4. **proof**: **match** handoffs: the window (`data-match="win"`) stays in place while
@@ -35,7 +36,10 @@ Timing: scene lengths are the `data-dur` of each `<section>`; inside a scene, `d
 `showtime retime <project> -d <s>` scales them; `showtime audio cuts --apply` or
 `showtime retime <project> --cuts ...` sets the scene changes directly.
 
-Brand: the four colour tokens and two font tokens at the top of the style. Sizes are container units,
+Brand: `showtime new launch` applies the brand kit it finds (`showtime brand capture <repo|url> --job <job>`
+writes one to `<job>/brand/`): a `<style id="st-brand">` block sets the colour tokens, the product window
+(`--win-*`, the product's code-block colours), the world light and the fonts, and the end card's wordmark,
+version, value line and install command replace their SLOTs. By hand: the colour and font tokens at the top of the style. Sizes are container units,
 so `showtime render <project> --size 9:16` (and `1:1`) re-lays the same page: the window on top, the
 words below, inside the feed safe zone.
 

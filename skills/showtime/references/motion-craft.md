@@ -4,6 +4,43 @@ Read this when you are choosing how things move in a video (DOM components, canv
 custom code), reviewing a draft that "feels off", or setting motion defaults for a new theme.
 Component options: `references/components.md`. Scene handoffs: `references/transitions.md`.
 
+## Essentials
+
+- Default to a strong ease-out (`power3.out`, `premium`); overshoot (`back`, springs damping < 0.8) only in a
+  playful register and never on blocks of text; ease every spatial move (§1, §2)
+- Reveal as the narration says it, spread into the back half of the scene; never front-load and freeze (§1)
+- Hold after a move lands: ≥0.5 s short-form, ≥1 s explainer, 1.5-2.5 s for anything to read or understand;
+  nothing freezes: holds over ~2 s keep the hold push (`data-drift="hold"`, 1.2 %/s) (§1)
+- Stagger in importance order: letters 15-25 ms, words 30-60 ms, items 60-100 ms, ≤0.4-0.5 s per group; over
+  ~9 items use one wipe (§1, §4)
+- Something changes every 2-4 s in short-form; a text-only scene over ~2.5 s needs motion (a 5-7 % push, 7-8 %
+  on dark frames) or `check`/`qa` flag a still hold (§1, §6)
+- Entrance 0.3-0.6 s, exit 60-80 % of it, scene move 0.5-0.8 s, count-up 1.2-2.5 s; first motion 0.1-0.3 s after
+  the cut, hero visible by 0.5 s (§3)
+- Animate transforms only (`translate`, `scale`, `rotate`, `opacity`, `filter`, `clip-path`); scale in from
+  0.94-0.98, travel 16-40 px; only the final scene exits on its own (§5)
+- Camera: push 1.00 -> 1.04-1.08 over a shot; punch-ins never in launch, promo or explainer films nor on every
+  jump cut; UI zoom 1.5-2x (max ~2.8x); drift on the background layer only (§6)
+- Headlines ≥7 % of the frame height; body ≥36 px at 1080p landscape, 48 px at 1080x1920; text-only hold
+  `max(1.0, 0.5 + characters / 13)` s (§7)
+- Visual hits 1-2 frames before the beat; put SFX on the components' `sync` beats (§8)
+- Determinism: no `Date.now`, timer animation, unseeded `Math.random`, CSS `transition`s, accumulators or
+  `will-change`; register library timelines paused (`ST.anime(tl)`) (§10)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| 1. The five rules that matter most | 44-64 |
+| 2. Easing by character | 66-82 |
+| 3. Durations | 84-99 |
+| 4. Stagger | 101-112 |
+| 5. Entrances and exits | 114-126 |
+| 6. Camera moves | 128-151 |
+| 7. Type in motion | 153-161 |
+| 8. Rhythm and sound sync | 163-169 |
+| 9. Anti-patterns (and the fix) | 171-186 |
+| 10. Determinism rules (why frames match every time) | 188-197 |
+
 ## 1. The five rules that matter most
 
 1. **Smooth beats bouncy.** Default to a strong ease-out (`power3.out`, or `premium` =
@@ -13,7 +50,14 @@ Component options: `references/components.md`. Scene handoffs: `references/trans
    the scene (especially the back half) instead of dumping everything in the first second and then
    freezing (the "slideshow" failure).
 3. **Hold after it lands.** At least 0.5 s (short-form) or 1 s (explainer) of stillness after a move
-   before the next change; 1.5-2.5 s for anything that must be read or understood.
+   before the next change; 1.5-2.5 s for anything that must be read or understood. The stillness is the
+   content's, never the frame's: **nothing freezes.** A hold longer than about 2 s keeps a slow push
+   under it so it reads as intended, not stuck: the scene camera's `data-drift="hold"` (1.2 % of scale
+   per second, 0.04 % a frame at 30 fps, capped at +6 %; the rate that passes both `check` and qa's
+   `frozen` detector on light and dark text frames with margin, measured; 0.8 %/s is borderline). Much faster (0.25 % a frame is 7.5 %/s)
+   reads as a zoom, not a hold. Launch films keep a still camera on their proof scenes and get the
+   motion from the next beat instead (`workflows/launch-video.md`); a hold longer than reading needs
+   is cut, not pushed (`slow_scene`).
 4. **One thing leads.** What moves first is what matters most. Stagger in importance order, keep
    every group's total stagger under ~0.5 s, and don't start everything at the same instant.
 5. **Something changes every 2-4 s** in short-form (a cut, a reveal, a camera move). A static frame
@@ -100,8 +144,8 @@ log-zoom space, drift on holds, parallax depth layers); scene-to-scene camera mo
 Scale perception: < 5 % reads as static, 10-15 % comfortable, > 30 % dramatic. Never run the same
 ambient zoom on every scene; stillness after motion is powerful.
 
-Text-only scenes longer than ~2.5 s need some motion or `check`/`qa` flag a still hold: a 5-7 % push
-over the scene (`.cam` wrapper, `sine.inOut`) is enough. Thin moving parts (a 2 px ruler fill, a small
+Text-only scenes longer than ~2.5 s need some motion or `check`/`qa` flag a still hold: the hold push
+(`data-drift="hold"`, §1 rule 3) or a 5-7 % push over the scene (`.cam` wrapper, `sine.inOut`) is enough. Thin moving parts (a 2 px ruler fill, a small
 pulse, a grey label) do not count as change, and a small restyle (a 3 cqh bold label made 2.4 cqh grey)
 can drop a scene back under the threshold; re-run `check` after type changes. On dark frames a slow
 push changes few pixels, so give it 7-8 % or pair it with another beat.

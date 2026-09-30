@@ -1,8 +1,43 @@
-# Modes: quick and studio
+# Modes: quick and studio, quality and lean
 
-Read this when you start a job and need to decide how much to ask, when the user wants to steer more
-(or less) than the current mode allows, or when you write the closing delivery card. The studio
+Read this when you start a job and need to decide how much to ask and how much to review, when the user
+wants to steer more (or less) than the current mode allows, or when you write the closing delivery card. The studio
 protocol itself (phases, boards, questions) is in `studio.md`; the board format in `boards.md`.
+
+## Essentials
+
+- Quick mode is the default: the opening line states the mode, format and assumptions in one sentence (§1)
+- Most requests need no questions. Ask only when genuinely ambiguous: at most two, only when the answer
+  changes the video, each with its recommended answer; never ask what the source already answers (§1)
+- Voice-over is a stated assumption, not a question; log assumptions with
+  `showtime job init ... --assumed "..."` or `showtime job note --assumed` (§1)
+- Quick mode does not stop for approval. Wait only for a destructive step (drops recorded content, overwrites
+  or deletes files), an expensive one (large install, download, over ~10 min) or real ambiguity (§1)
+- First look within minutes (`showtime look` after `showtime check`); give the time for anything over ~30 s
+  (§1)
+- Studio when the user asks. Offer it only with high stakes, an open direction and the user present: once, one
+  line, defaulting to quick, never blocking; never for small edits, captions, cut-downs or re-exports (§2)
+- Start: `showtime job init <slug> --mode studio --goal "..."`, then `showtime studio init <job>`; to quick:
+  fill open decisions as assumed, `showtime job note --mode quick`; a switch never deletes work (§2, §3)
+- Crew never render the final, open boards or ask the user; you merge, check and render (§4)
+- End every job with the delivery card: `final` is the file qa checked; quote the qa verdict with loudness and
+  true peak; list every assumption; exactly three next options with time estimates (§5)
+- Record it: `showtime job note --stage deliver --verified "qa PASS ..." --next "<option 1 command>"` (§5)
+- Review mode, a second choice: quality (default) gives every finished video the full review, a critic round
+  before delivery included; lean (a draft pass, no critic unless publish-bound) only when the user says quick
+  draft, rough cut, lean, cheap, don't review. Say which in the opening line (§6)
+- `showtime job init <slug> --mode lean` (or `studio,lean`), `showtime config mode lean` for every job,
+  `SHOWTIME_MODE`; qa and deliver say "review pending" in quality mode until a round has a verdict (§6)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| 1. Quick mode (the default) | 42-82 |
+| 2. Studio mode (opt-in) | 84-105 |
+| 3. Switching | 107-115 |
+| 4. Sub-agents (the crew) | 117-133 |
+| 5. The delivery card | 135-165 |
+| 6. Review mode: quality (default) or lean | 167-202 |
 
 ## 1. Quick mode (the default)
 
@@ -13,7 +48,7 @@ final with a delivery card.
 assumption costs the user one reply:
 
 > Quick mode: a 20 s 16:9 launch video for acme-cli, upbeat tone, generated music, no voice-over.
-> First look in about 3 minutes.
+> Quality mode (default): full review; say 'lean' for a cheaper draft pass. First look in about 3 minutes.
 
 **Questions.** Most requests need none: when the request names the kind of video and there is
 something to work from (a repo, a URL, footage, a brief), state the assumptions and start. Ask only
@@ -39,11 +74,12 @@ a reply only when:
   expected to take more than about 10 minutes;
 - the request is genuinely ambiguous (above).
 
-**Budget.** First look within minutes (a contact sheet from `showtime snap`, or a draft render).
+**Budget.** First look within minutes (`showtime look` after `showtime check`; `looking.md`).
 Tell the user the time for anything that takes more than about 30 s.
 
-**Recording the mode.** `showtime job init <slug> --mode quick` (the default). SHOWTIME.md carries
-the goal, what is verified, what is assumed, and the open questions.
+**Recording the mode.** `showtime job init <slug> --mode quick` (the default; the review mode, section
+6, rides on the same flag: `--mode quick,lean`). SHOWTIME.md carries the goal, the modes, what is
+verified, what is assumed, and the open questions.
 
 ## 2. Studio mode (opt-in)
 
@@ -80,9 +116,10 @@ A switch never loses work: drafts, voice lines and transcripts are cached and re
 
 ## 4. Sub-agents (the crew)
 
-Quick mode stays inline. Two exceptions: parallel scene building for longer videos (6+ scenes: one
-`showtime:motion-designer` per scene or group of scenes, capped by CPU), and, when publish-bound, the
-`showtime:researcher` before the final and the `showtime:critic` on it. Studio can use the whole crew
+Quick mode stays inline, with three exceptions: the `showtime:critic` on every finished video in quality
+mode (lean: publish-bound only; section 6), the `showtime:researcher` before the final when the video
+states facts, numbers or claims, and parallel scene building for longer videos (6+ scenes: one
+`showtime:motion-designer` per scene or group of scenes, capped by CPU). Studio can use the whole crew
 (creative director, brand designer, scriptwriter, storyboard artist, motion, sound, voice, editor,
 researcher, critic). Who to dispatch when, the `TASK.md` each gets, merging scene fragments and the
 CPU budget: `crew.md`.
@@ -117,6 +154,8 @@ Next, pick one:
 ```
 
 Rules for the card:
+- Quality mode: name the critic round's verdict ("review: round 1, ship after fixes; 2 fixes applied"), or say
+  it was a self-review; lean: say no critic round ran.
 - `final` is the file qa checked (the job's latest final: `final-2.mp4` after a re-render, the baked
   `final.poster.mp4` after `deliver poster --bake`), never an older one.
 - Quote the qa verdict with its loudness and true peak; never "should be fine".
@@ -124,3 +163,40 @@ Rules for the card:
 - Cheap vs costly is about this job's actual structure (a voice-led video makes timing changes costly).
 - Exactly three next options, each concrete and with a time estimate.
 - Record it: `showtime job note --stage deliver --verified "qa PASS ..." --next "<option 1 command>"`.
+
+## 6. Review mode: quality (default) or lean
+
+Two independent choices: quick or studio says how much to ask before building; quality or lean says how
+much reviewing the finished video gets. The efficiency rules apply in both (brief command output,
+`showtime guide` sections, `job init` checking setup, splice renders, looks through a disposable reviewer:
+`looking.md`).
+
+| | quality (default) | lean (opt-in) |
+|---|---|---|
+| first look | `check`, then `look` (a reviewer sub-agent opens it where the host has one) | the same |
+| after the final render | `qa`, then `look` | `qa`, then `look` |
+| critic round | every finished video, before delivery: `review-pack` + a critic sub-agent; pairwise (`--against` the previous final) when there is one | only when publish-bound or asked |
+| researcher | when the video states facts, numbers or claims | publish-bound only |
+| looks | as many as the fixes need, within `looking.md`'s budget | one per stage |
+
+**Choosing.** Quality unless the user asks for less. Lean when they say "quick draft", "rough cut",
+"just a draft", "lean", "cheap" or "keep it cheap", "don't review it", "skip the review", "no critic".
+"Quick" alone is not lean: it names the flow (no boards), not less checking. Only the user chooses lean;
+never switch a job to lean to get past a "review pending" line.
+
+**Opening line.** State it: "Quality mode (default): full review; say 'lean' for a cheaper draft pass."
+In lean: "Lean mode: a draft pass without a critic round; say 'quality' for the full review."
+
+**Recording it.** `showtime job init <slug> --mode lean` (or `--mode studio,lean`); later
+`showtime job note <job> --mode quality`. job.json, SHOWTIME.md, `showtime status` and the receipt name it.
+For every job: `showtime config mode lean` (Claude Code: the plugin option "Review mode" in /config; any
+shell: `SHOWTIME_MODE=lean`). Order: the job's own mode, the project's showtime.json `"review_mode"`
+(`showtime new ... --mode lean`, the MCP `new_project` tool's `mode`), `SHOWTIME_MODE`, the saved default,
+quality.
+
+**The critic round cannot be skipped by accident.** In quality mode `showtime qa <job>` on the latest
+final prints `WARN review pending ... -> <command>` until a critic round has a verdict (a single round:
+FINDINGS.md with its VERDICT line; a pairwise round: `showtime review-verdict`). `showtime status`, the
+SHOWTIME.md next command, `showtime deliver exports` and `showtime job note --stage deliver` say the same. A
+round that said "not ready" keeps it pending until a later round or the three-round cap. The line never
+changes the video's own qa verdict or exit code, and lean prints none of it. The protocol: `review.md`.

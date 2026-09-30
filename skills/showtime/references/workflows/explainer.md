@@ -7,6 +7,27 @@ generated on this machine. For a feature tour of a real app use `tutorial.md`; f
 `data-story.md`. When the subject is math itself (an equation, a proof, a function graph, a grid
 transform, geometry), build it with Manim instead: `references/manim.md`.
 
+## Essentials
+
+- Defaults: 45-60 s, 16:9 at 1920x1080, 30 fps, `film` template, voice `af_heart` (state it as an
+  assumption), 2.5-3 words per second. A 9:16 explainer: `showtime new short` and `social-short.md` (§ Defaults)
+- Script first: one line per scene, 6-20 words, numbers and acronyms spelled out; on screen show the payload,
+  never the narration word for word (§ Steps, § Pitfalls)
+- `showtime new film <job>/project --title "..." --duration <target>`; `showtime voice script ... --fit
+  <target>`; `showtime voice cues` into `voice/cues.js`; time reveals from `VO`, never type a time (§ Steps)
+- Voice into `audio/mix.json` + `"audio"` in `showtime.json`, 10-20 dB above the music (§ Steps, § Pitfalls)
+- `showtime check`, `showtime look`, show the user the script; `showtime render <job>/project --job <job>`,
+  `showtime qa <job>` (§ Steps)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| Inputs | 31-34 |
+| Defaults | 36-46 |
+| Steps | 48-92 |
+| Pitfalls | 94-104 |
+| Read next | 106-109 |
+
 ## Inputs
 
 - The subject: a repo, docs, an article, a diagram, or the user's own words.
@@ -53,11 +74,11 @@ file's steps 2-3 (subject and script); `film` works vertically only if you re-la
 6. **Sound.** Keep `score.js` sections on the same cues. Add the voice to the project's sound: create
    `audio/mix.json` with `{"kind": "voice", "file": "voice/vo.wav", "start": 0}` and set
    `"audio": "audio/mix.json"` in `showtime.json` (the score still plays; render combines both).
-   Hold the score 18-25 dB under speech with `m.level('music', ...)` at line starts
+   Hold the score 10-20 dB under speech (the mix report's `voice_to_music_db`) with `m.level('music', ...)` at line starts
    (`synth-score.md` section 6). Check the music alone in seconds: `showtime score <job>/project`.
    *Done when:* section levels rise and fall with the story and none sits near silence by mistake.
 7. **First look.** `showtime check <job>/project` (canvas text is audited through `Film.frameInfo()`),
-   `showtime snap <job>/project --every 2`, look at the sheet, and show it to the user together
+   `showtime look <job>/project` (`looking.md`), and show it to the user together
    with the script, then carry on (quick mode does not wait; the script is the cheapest thing to
    change if they reply). *Done when:* 0 check errors, and the user has seen the script.
 8. **Captions.** Burned-in on the canvas: `F.caption` driven by the same word times; then skip
@@ -66,8 +87,8 @@ file's steps 2-3 (subject and script); `film` works vertically only if you re-la
    or X: `showtime captions <job>/project/voice/vo.words.json --style clean --aspect 16:9
    -o <job>/captions.ass --srt <job>/final.srt` (recorded as the job's captions).
 9. **Final.** `"poster"` in `showtime.json`, then `showtime render <job>/project --job <job>`.
-10. **Verify.** `showtime qa <job>` (the latest final, plus the job's captions); look at the sheet.
-    Publish-bound: review-pack and critic (`review.md`).
+10. **Verify.** `showtime qa <job>` (the latest final, plus the job's captions); `showtime look <job>`.
+    Quality mode (the default; lean: publish-bound only): review-pack and critic (`review.md`).
 11. **Deliver.** Share copy (YouTube chapters if over 2 minutes), exports, the delivery card.
 
 ## Pitfalls

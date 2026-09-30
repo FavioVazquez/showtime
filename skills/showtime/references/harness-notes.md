@@ -4,6 +4,38 @@ Read this when you install showtime, when you run it from an agent host other th
 a script or CI), or when something about the host gets in the way: background processes are killed,
 long commands time out, images cannot be viewed, there is no terminal.
 
+## Essentials
+
+- Claude Code: install the plugin; the first use runs `showtime setup` into `~/.showtime`. Never use
+  `showtime setup --link` and the plugin at once (§1)
+- Other hosts: point them at `<path>/skills/showtime/SKILL.md`, call the launcher by full path
+  (`bin/showtime`, `bin\showtime.cmd` on Windows), run `showtime setup` once, then `showtime doctor` (§2)
+- Scripts, hand-written configs and PATH use the stable `~/.showtime/bin/showtime`; showtime never edits shell
+  profiles (§2)
+- Long work (setup, final renders, long transcriptions, audio, library fetch): add `--background`, then
+  `showtime status <id> --wait 240`; `--cancel` stops it. Draft first with `showtime render <p> --preview`
+  (§3)
+- Background processes killed at the end of a turn: run `showtime preview <p> --foreground` or
+  `showtime studio serve <job>` under the host's own background mechanism (§3)
+- Cannot view images: rely on `showtime qa` and `showtime check` text findings and tell the user you could not
+  inspect the frames. No sub-agents: hand over the `review-pack` folder instead of a critic (§3)
+- Sandboxed host: `showtime doctor` names the setting to change; or run `showtime setup` once in a normal
+  terminal, or `SHOWTIME_HOME=.showtime showtime setup` inside the project (§3)
+- Offline later: `showtime setup --full` first; `SHOWTIME_OFFLINE=1` turns off every download (§3, §4)
+- Exit codes: `0` ok, `1` an explained failure (qa FAIL, check errors), `3` a missing extra (prints the
+  `showtime setup --with` line) (§3)
+- Windows: use the `.cmd` shim; in PowerShell `& "<path>\bin\showtime.cmd" doctor` (§3)
+- In scripts `showtime clean` needs `--yes` (run `--dry-run` first) (§5)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| 1. Claude Code | 39-58 |
+| 2. Any other agent host | 60-84 |
+| 3. Host behaviour that matters | 86-102 |
+| 4. Environment variables | 104-134 |
+| 5. Scripts and CI | 136-150 |
+
 ## 1. Claude Code
 
 The supported install is the plugin:
@@ -60,7 +92,7 @@ checkouts can share one install.
 | No terminal (piped output) | Colour and redrawn progress lines switch off by themselves; `SHOWTIME_PROGRESS=json` gives one JSON object per progress update, `off` silences it |
 | Needs machine-readable output | Most commands take `--json`; errors go to stderr as `error:` / `why:` / `fix:` lines with a non-zero exit code |
 | Cannot view images | The "look at it" gates in SKILL.md still apply: rely on `showtime qa` and `showtime check` text findings, and tell the user you could not inspect the frames yourself |
-| No sub-agents | Skip parallel scene authoring; for publish-bound work give the user the `review-pack` folder instead of a critic sub-agent |
+| No sub-agents | Skip parallel scene authoring; for the critic round (quality mode, or publish-bound) answer `CRITIC.md` yourself as a SELF-REVIEW and give the user the `review-pack` folder for a second look |
 | Sandboxed commands (no network, writes only inside the folder the agent works in) | Run `showtime doctor`: it tests writing the showtime folder and reaching the download hosts, and names the setting to change in the host that runs it (Codex: the `network_access` and `writable_roots` sandbox settings in `~/.codex/config.toml`, doctor prints the lines; Antigravity: `read_url` / `write_file` rules; Cursor: the domains for `sandbox.json`; the Copilot cloud agent: `copilot-setup-steps.yml`). Two ways out work in every host: run `showtime setup` once in a normal terminal, or keep showtime inside that folder with `SHOWTIME_HOME=.showtime showtime setup`; from then on every command run in that project finds `./.showtime` by itself (its `.gitignore` keeps it out of git) |
 | Sandboxed network | Setup needs HTTPS to its download hosts, and so does the first use of anything outside the default install (Whisper before the first transcription, Manim, the audio library's packs, icons, the aligner, Piper voices, rembg; `showtime setup --plan` lists them all). A machine that will be offline later runs `showtime setup --full` first. Media search queries public archives and site capture fetches the pages you point it at; nothing is uploaded. `SHOWTIME_OFFLINE=1` turns off every download (fonts, voices, media search); a feature that would need one says so instead |
 | Windows | Use the `.cmd` shim from cmd and from PowerShell (in PowerShell, call a quoted path with `&`: `& "<path>\bin\showtime.cmd" doctor`); it needs no execution-policy change. `showtime.ps1` runs only where the policy allows local scripts (for example `RemoteSigned`); if PowerShell answers "running scripts is disabled", type `showtime.cmd` instead of `showtime`. Paths with spaces and parentheses work |
@@ -114,3 +146,5 @@ showtime qa out/final.mp4 --json
 
 `showtime clean` asks you to type the folder name before removing anything; in scripts pass `--yes`
 (and `--dry-run` first to see what goes).
+
+GitHub Actions: the composite action `.github/actions/showtime-video` makes a release or PR video from the notes, no key needed: [docs/github-action.md](https://github.com/FavioVazquez/showtime/blob/main/docs/github-action.md).

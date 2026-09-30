@@ -5,6 +5,260 @@ All notable changes to showtime. Each entry says what changed and why, so this f
 `skills/showtime/lib/st/__init__.py` and `python3 scripts/check_release.py` keeps the plugin manifests, the registry files and
 `setup/package.json` in sync with it.
 
+## 0.3.0 (2026-09-30)
+
+- **Quality first: every finished video gets the full review by default; lean is an opt-in.** Benchmark round 4
+  showed the lean default (fewer looks, the critic only for publish-bound work, which the agent often did not
+  trigger: a 45 s data story for YouTube shipped with no critic) ranked below 0.2.0 on several tasks (4-5 s still
+  holds, a muddy crossfade, a label missing its year). The review mode is now a separate, visible choice. **quality**
+  (the default): looks through the disposable reviewer, qa and a look after the final render, and a critic round
+  (review-pack + a critic sub-agent, pairwise against the previous final when there is one) before delivery, plus
+  the researcher when the video states facts. **lean**: one look per stage, the critic only when publish-bound or
+  asked. The efficiency work (brief output, guide sections, `job init` checking setup, splice renders, looks outside
+  the main context) stays on in both. Switch: `showtime job init <slug> --mode lean` (or `studio,lean`; recorded in
+  job.json, SHOWTIME.md and the history; `job note --mode quality` switches back), `showtime config mode lean|quality`
+  for every job (the new `showtime config` command; stdlib, runs before setup), `SHOWTIME_MODE`, the Claude Code
+  plugin option "Review mode", and `showtime new --mode` / the MCP `new_project` tool's `mode` (showtime.json
+  `review_mode`). `showtime status`, `doctor`, `job init`, the receipt (`review_mode`, the critic round's state) and
+  every `--help` name the mode and what lean skips. The critic round cannot be skipped by accident: in quality mode
+  `showtime qa <job>` on the latest final prints `WARN review pending ... -> <command>` until a round has a verdict (a
+  VERDICT line in FINDINGS.md, or `review-verdict` for a pairwise round; "not ready" stays pending until a later round
+  or the three-round cap), and `status`, SHOWTIME.md's next command, `deliver exports` and `job note --stage deliver`
+  say the same. The line never changes the video's own qa verdict or exit code; lean prints none of it. SKILL.md's
+  opening line states the mode ("Quality mode (default): full review; say 'lean' for a cheaper draft pass."), and
+  `modes.md` section 6 lists the phrases that mean lean.
+- **"Same style as this video" lands on the reference's style.** Benchmark round 4, t10: the owner's blind vote picked
+  plain Opus over showtime ("much closer to the reference ... maintained colors and idea"). showtime had run
+  `showtime reference`, but its brief said to use your own colours (the run switched to greens), merged the reference's
+  0.5 s word-per-beat cuts into one 3.7 s shot and called its colour-panel wipes `push`/`whip-pan`, gave no layout or
+  sound build (the run chose small body text and an acoustic-folk bed), and `short_text` pushed the beat words to 1 s.
+  Now `showtime reference` keeps beat cuts separate, names colour-panel wipes (colour, direction, length), samples
+  the palette (ground, ink, accent, flat or not), measures alignment, margin and type sizes, and the sound's build
+  (kick on the beats, off-beat tick, last hit, silence at the end); the brief says to carry the style over (its
+  colours included, unless a brand kit or the user says otherwise) and never the content, and writes `style.css`.
+  `showtime new <template> --job <job>` links that file last and sets the background, so template and theme defaults
+  yield (`--no-reference-style` skips it). The variety guard treats repeats that follow the job's style reference as
+  intended (a note, no alternatives). `showtime check` reads a word-per-beat run as one line (`beat_words` note)
+  when its words arrive no faster than 3 per second, and large text in the reference's own colour pair at 3:1 or more (WCAG large text) is a `low_contrast` note instead of an error when `reference-style.css` is linked. Type sizes are now measured from the ink of each line (cap heights; the t10 reference reads 385 / 200 / 85 / 65 / 50 px, the drawn sizes). Route: a router row in SKILL.md, the `reference` Essentials,
+  and a line in the launch and social-short workflows.
+- **The reference as a spec, and `showtime reference diff`.** reference.md/reference.json now carry a spec in frames
+  (every scene change and its kind, shot lengths, element moves with length and easing from the frame-difference
+  curve, palette roles, layout and type sizes, tempo and every sound hit) with KEEP and CHANGE lists.
+  `showtime reference diff <job>` measures a render the same way and prints each KEEP item as ok or OFF with frame
+  numbers (`--json`, `--strict`; another length is compared with scaled times). On t10 the round-4 plain Opus video
+  lines up on every item; round 4's showtime video is OFF on cuts, shots, palette, moves and sound.
+- **The near-copy guard checks detail before it fails.** A frame the coarse 64x36 test calls a near copy is confirmed
+  at 256x144 on its textured blocks, over small zooms and shifts, when both videos are on disk. The round-4 plain Opus
+  video (same layout, other words) failed the old guard at 12 % of frames; it passes now (detail about 0.3-0.45),
+  while a re-encode, grade or small crop of the reference still fails (about 0.8-0.95).
+- **Charts keep their numbers while the data changes, and data videos keep moving.** In the round-4 blind vote the
+  owner saw numbers "disappear and then reappear when a new item is added" in two data stories: the agents had hidden
+  every chart label while a chart moved (`[data-st-moving] .st-chart-val { opacity: 0 }`), because an added bar showed
+  "0.00" before it arrived, `count: false` labels counted through a morph and a line's end label read a point behind
+  the drawn tip. Now an item missing from a state (or `null`) is absent, not zero: added items grow in and light their
+  own labels, labels already on screen stay lit and ride their marks (the per-state label plan keeps them first),
+  `count: false` shows only real values across a morph, a state that only changes the title no longer counts as
+  moving, a line's end label reads the point under its tip, absent line points are gaps, and hbar rows are sized for
+  the largest state (a row that joins takes the place of one that leaves). `showtime check` warns
+  `chart_labels_hidden` on CSS that hides chart labels while charts move. Callouts name their datum: `{label}` and
+  `{value}` in `annotate.text`, and a line chart prefixes the point's label ("2015: first year above 400 ppm", the
+  judges' missing year); a line callout slides clear of the end label; with a reference line the callout arrives a
+  second later. Pacing: `check` warns `slow_scene` when a scene holds on past its last change and its reading time by
+  more than 2.5 s (4 s for an end card), the case the slow push hid ("readable, but not dynamic"); the data template
+  and release films use `dip` between text scenes (the judges' "heavy blur mid-transition" was a blur dissolve), the
+  data template's source line arrives as a beat, and `workflows/data-story.md` has a Pacing section (a beat about every
+  2 s, holds as long as reading needs, fix `slow_scene`/`dead_air`/`frozen` instead of accepting them). Holds: launch
+  films warn on still holds from 3.5 s (was 5 s; the judges marked every 3.6-4.9 s launch hold as frozen), the launch
+  hook leans toward its portal letter after 2 s instead of sitting still for 4.5 s, and a headline that arrives later
+  in a launch scene rises in. Motion defects: qa `dead_stop` (a fast move that halts in one frame, with the frame
+  number and an ease-out fix), check `same_frame_entrance` (3+ siblings entering on one frame, with a stagger fix),
+  camera `data-drift="hold"` (1.2 %/s: the measured hold push that check and qa both count as change; motion-craft:
+  nothing freezes), and `showtime look` adds the middle of the fastest transition to its key frames. Re-rendered
+  round-4 projects (t2 x2, t6, t1) pass check and qa with 0 errors and 0 fails; tests `test_chart_constancy.py`,
+  `test_pacing.py`.
+
+- **A section re-render makes the whole video, or says it is only a clip.** `showtime render <p> --from A --to B
+  --job <job>` used to write the job's next `final-N.mp4` with only the A-B seconds in it (found in a benchmark smoke
+  run: an 18 s fragment beside the 82 s video, and the agent could not tell which one to hand over). Now, when the
+  job's latest final comes from `showtime render` of the same project at the same size, frame rate and length, only
+  A-B (widened to the keyframes around it) is captured and encoded with the full-render settings, and those frames
+  replace exactly that run in a copy of the old final: a full-length `final-N.mp4`, every other frame the old
+  render's bytes, no visible seam (checked frame by frame against a full render of the fixed project), audio mixed
+  and mastered again for the whole video, poster as in a full render. A 1.2 s fix in a 20 s 1080p video took 18 s
+  instead of 43 s for the full render. job.json records it as the latest final with `spliced: A-B from final-(N-1)`
+  and the receipt counts a partial render. Another ffmpeg or other encode settings fall back to one whole encode.
+  Without such a render (or after a size, fps or length change, with `--preview`, `--alpha`, `--size`, or without a
+  job) the result is a span clip, `<job>/work/span-A-B.mp4` (no job: `span-A-B.mp4` in a new folder), never
+  `final*`/`preview*`; render prints that it is a span and how to get the full video. `latest_video`, `qa <job>`,
+  `look <job>`, review and ledger adoption never pick a span clip (nor a pre-0.3.0 span saved as `final-N.mp4`).
+
+- **Blind vote boards say how to vote.** A board marked `"blind": true` opens with three steps (watch, rate and answer,
+  copy and paste) and a **Copy my votes** button; the phone bar and the feedback drawer use the same label, and the
+  production phases are not shown. Long concept titles no longer widen the page on a phone. Round 3's voter found the
+  old "Copy for your agent" step hard to see. Non-blind boards are unchanged.
+- **Benchmark round 4 is ready to launch** (`benchmarks/rounds/r4.md`): two new tasks (t9 explain a repo, t10 make a
+  video in the style of a reference, with an original ffmpeg-drawn reference), a manifest-driven `round.py` that reuses
+  earlier rounds' cells and runs second runs as their own cells, and `round_report.py`, which adds per-run stream
+  metrics (cost, tokens, calls, images in context, largest context, tool text, full renders, receipt), an isolation
+  check for runs that touch another showtime folder, and the 0.3.0 release gates as PASS / FAIL / PENDING.
+- **Manim templates pass `manim check` and `qa`.** A fresh `manim new --template example` opened on 0.33 s of black and had
+  an 8 s still stretch (check: 2 errors, 4 warnings); it now passes check with 0 errors and 0 warnings in 16:9, 9:16, 1:1
+  and 4:5, and its voiced final passes qa with 0 fails and 0 warnings. The cause of the black opening was the kit:
+  `beat()` waited out the voice's lead-in before the scene had added anything, so `beat("hook"); add(hook)` still opened
+  on an empty frame; on an empty scene `beat()` now holds that lead-in on whatever is add()ed next. The example keeps its
+  story and colours with bigger motion on every word (each spoken number drops into the sum over a large running total,
+  copies of each term fly down and become its band of tiles, the four terms are boxed as braces read 4 by 4), and its
+  line ids are no longer spoken words (`tiling`, `closing`). The pattern templates open on their title at t=0;
+  `equation` uses a larger walkthrough (`equation_walkthrough(font_size=)`) and a slow camera push, `graph` fills the area
+  under the curve as it is traced (`graph_build(area=True)`), `refine` sits under its title. check's black-frame fix states
+  qa's rule (a frame is black only when nothing visible is on it). `tests/test_manim_templates.py`.
+
+- **`manim check` agrees with `qa`.** After its dry run, check renders the draft (the same 480p15 scenes `manim render` caches) and
+  runs qa's black and frozen-frame detectors on it with qa's thresholds. Manim's near-black ground with sparse content
+  (`black_segment`) and a small `Indicate` on an equation (`frozen`) are now reported before the full render, each with a fix
+  (`"light": true`, a bigger visible change); a hold the dry run already named is not repeated. `--no-draft` skips the pass.
+  `references/manim.md` points to section 11 for integration (it said 9).
+- **Receipts.** Every job ends with `receipt.md`, `receipt.json` (stable, schema 1) and one line in `share.txt`:
+  the request as typed, the assumptions, review rounds, full vs partial renders, the images showtime made for looking,
+  wall time from job start to final, and tokens and cost when the host's session log is named. Anything unknown says
+  "not reported by this agent"; nothing is estimated. `showtime receipt [job]` regenerates it; `qa` keeps it current,
+  `job note --stage deliver`, `deliver exports` and the MCP `receipt` tool finish it. Claude Code: the plugin's Stop hook
+  (or `--transcript FILE`) sums the current session's token counts (numbers only, never text) and prices them at
+  dated API list prices, labelled API-equivalent; Codex gives tokens only. `job init --request` keeps the user's words
+  verbatim, and partial renders (`render --from/--to`) are now recorded in the ledger. Format: `references/receipt.md`.
+- **Phone check.** The audience complaint about agent-made video (text moves too fast to read and is too small on a phone) is now one
+  named check. `showtime check` ends with `phone check: PASS` or `FAIL - <items with timestamps>` and writes a `phone` block to
+  `report.json`; `showtime qa` prints the same line, quoting that report (PARTIAL when there is none) and adding the caption
+  sidecar's line length and reading speed. It joins what already existed: reading time (`short_text`, now per language: 17
+  characters/s and 3 words/s, Japanese 4, Chinese 9, Korean 12 characters/s, in `runtime/thresholds.json`), type size (`tiny_text`, now
+  in points at a 390 pt wide phone, with a minimum per aspect: 16:9 5 pt, 1:1 10, 4:5 11, 9:16 15; canvas text and captions are judged
+  too, and small text is judged over its whole life, not only the sample frames) and the platform UI zones (`safe_zone`, `edge_margin`,
+  `control_strip`). New qa rules `phone_size`, `phone_reading`, `phone_zone` (WARN) and `phone_unverified` (INFO). Numbers, sources and
+  the calibration on the shipped examples: `references/qa.md`, "Phone check".
+- **Pairwise review.** A model reviewer's absolute score is noisy; its preference between two versions is
+  steadier, and only when it survives swapping the order. `showtime review-pack <job> --against best` (or
+  `round-N`, or an older file) pairs the latest render with the best so far as a blind X/Y (random; the key
+  stays in `review/.pairwise-keys/`): frames at the same times, both cut strips, loudness plots, qa and a
+  narration transcript each, side-by-side sheets, and two briefs, one per order, for two fresh critics.
+  `showtime review-verdict` applies the rule in code: the new render wins only when preferred in both orders;
+  a tie or a split keeps the older one (`best.json`). The protocol now allows three critic rounds (was two),
+  then ships the best version with its open findings listed. The briefs say "no scores". The benchmark's
+  `pairwise_summary.json` adds `both_orders`: the arm that won a pair with either arm shown first.
+### Lean mode: looks out of the main context, check before render, brief output
+
+Measured in the 0.2.0 benchmark streams: showtime jobs cost 1.4-4.4x plain Opus on five of six tasks, largely because every
+image opened (2000 px sheets, 1080p stills) and every long tool output stays in the agent's context and is paid for
+on each later call, and runs took more calls (51 vs 13 on the launch task). Nothing was removed; the full output and
+the full studio are one flag or one sentence away.
+
+- **`showtime look <project | video | job>`**: one composite of the key frames (the opening frame, each scene's
+  settled frame from the last `check`, the last frame), 1280 px wide, numbered per job with a budget of 12, plus
+  `look-N.md`, a brief a disposable reviewer sub-agent follows (it opens the image and answers in text with
+  timestamps), and `verdicts.md`. MCP: the `snap` tool takes `look: true`. `references/looking.md` is the protocol;
+  SKILL.md, the workflows, `review.md`, `qa.md` and `crew.md` point their "look at it" steps there.
+- **Check before render.** `render` warns when the project changed after the last `showtime check` (or was never
+  checked) before a full render, and after a second full render names `--from S --to S` as the cheaper next fix.
+- **Brief output.** Without a terminal (agents, pipes, MCP) `check`, `qa`, `doctor` and `render` print the verdict,
+  the findings to act on with their fixes, and paths; the full report goes to a file (`work/check/report.txt`,
+  `qa.json`, `<home>/logs/doctor.txt`, `render.log`). `--verbose` or `SHOWTIME_OUTPUT=full` prints everything; a
+  terminal keeps the full report. MCP tool results are capped at 40 lines.
+- **Lean by default**: quick mode is lean on strong models; "show me options first" or "studio" opens the studio,
+  and publish-bound work keeps the researcher and the critic.
+- **Crew model tiers**: the editor runs on Sonnet (the voice director already did); creative roles and the critic
+  keep the session model.
+- `benchmarks/scoring/stream_cost.py`: cost, turns, images in the main context (and which command produced each),
+  context per call and the largest tool outputs of a stream-json run.
+- **References by the piece.** The other large cost in the 0.2.0 streams was reference text: runs `cat` whole
+  references and workflows (34-57k characters of tool text per job, two outputs over 30k spilled to files and read
+  again). Every reference and workflow now opens with an `## Essentials` block (the rules for that step, 7-30 lines,
+  each pointing at the section with the detail) and a table of its sections with line ranges; nothing else in them
+  changed. `showtime guide <topic>` prints the Essentials and the section list (about a fifth of the file),
+  `showtime guide <topic> <section>` one section (a number, a name, or a sub-heading such as `count-up`),
+  `showtime guide --find <words>` the matching lines of every reference with their section. It is stdlib only (works
+  before setup) and an MCP tool (`guide`). `scripts/check_release.py` checks every Essentials block (present, first,
+  at most 40 lines, pointers that name real sections) and keeps the tables' line numbers current (`--check` fails on
+  a stale table; without it the tables are rewritten). The crew briefs and `index.md` are read whole and have none.
+  SKILL.md's routing tables name topics under a `showtime guide` header (`launch-video`, `components` ...): with
+  paths there, a first proof run still `cat` the workflow and `html-export.md` (29k characters) before anything else.
+  Proof on the 0.2.0 task t6 (single-file HTML report), one run each, same prompt and runtime: v0.3.0 base $1.11,
+  30 model calls, 6 images, max context 74k; this change $0.81, 24 calls, 2 images, max context 58k; the report
+  passes the same automatic checks (single file, offline, plays, no phone overflow).
+- **Font messages that say what is wrong.** A text node drawn only with a system font while the page has loaded
+  the family it asks for (a lone "₂" in a `<sub>` the font lacks) is now reported as a glyph fallback naming the
+  characters (`U+2082`), not "load a font file" (that advice sent an agent searching the disk for font files).
+- **One command to start.** `showtime job init` runs the quick setup check itself and prints `setup: ready` (or the
+  failures with their fixes) on stderr; stdout stays the job folder. A healthy `doctor --quick` result is reused for an
+  hour by both (same version, skill, home, agent and folder); `doctor --quick --fresh` checks again, a failing setup
+  is always checked again. SKILL.md's step 0 is now `job init`.
+- **Variety guard.** Each finished job's look (template, theme, palette, type pair, transitions, camera moves,
+  music, structure, tone; read from the project files, `brand.json` and the mix) is kept in a local history
+  (`~/.showtime/history/looks.json`, never uploaded; `showtime history off` or `SHOWTIME_HISTORY=off` opts
+  out). `showtime check` warns `look_repeat` when a project repeats one of the last five jobs, with two
+  concrete alternatives per repeat (themes, type pairs, palettes, catalog transitions, camera verbs, catalog
+  tracks from other shelves, structures, tones); `showtime history` lists, checks, adds and clears.
+  `showtime new` records the template name in showtime.json. Why: "every agent video looks the same" was the
+  loudest audience complaint.
+- **Style references.** `showtime reference <video>` breaks a reference into its grammar: cut times, shot
+  lengths and pace (ffmpeg scene detection), how scenes change, palette, motion and camera verb per shot, a
+  text-on-screen estimate with a rough type scale, loudness curve, silence and tempo, a 1 fps contact sheet
+  and a brief for the storyboard (borrow the grammar; never its words, logos or shots). Local files first; a
+  URL only as a direct link to a video file. The credit "Style reference: <title>" goes into credits.txt and
+  share.txt (render keeps it), and `showtime qa` fails a render that copies the reference (`reference_copy`:
+  sampled-frame SSIM and difference hashes plus cut-rhythm similarity; thresholds in
+  `references/reference.md`).
+- **`showtime adopt <folder | page | script>`**: a video someone already wrote as a function of time gets showtime's checks, sound, captions, qa, HTML export and review without a rewrite. It detects the contract (an HTML page with `seek`/`__seek`/`render`/`draw(t)`/`setTime(t)`, a page animated only by CSS, Web Animations or requestAnimationFrame on the virtual clock, a Python frame function returning Pillow/numpy/bytes, or a Python script whose own main writes the video) from the page, its local scripts and the render driver next to it, copies the folder (the originals are never changed), and writes a normal project around it. It then checks determinism (each sampled frame captured twice, in two orders) and runs `showtime check`. Every problem is printed as what/why/fix (`needs_setup`, `no_duration`, `outside_ref`, ...). Python runs in a separate process on the copy, with sockets to other machines refused and a time limit. `--refresh` re-adopts after the original changes. `references/adopt.md`.
+- **Brand first for launches.** `showtime brand capture <repo|url> --job <job>` captures the product before the
+  storyboard in one step: the palette with roles (the rendered site's ground, ink and accent win over the repo's
+  CSS), fonts, logo, the wordmark as the site sets it, the code-block look, the product's copy verbatim with
+  file:line (README tagline, install line, commands, features, the newest CHANGELOG release, the site's headline
+  and buttons) and its real UI (the site folder or a running app captured per aspect, or the README commands of a
+  CLI to run as evidence). It writes `<job>/brand/{brand.json,brand.md,capture/}` and records the kit in the job.
+  `showtime new launch` applies the kit (theme tokens, the product window in the product's code colours, fonts,
+  the end card's wordmark, version, value line and install command; text colours only deepened for contrast)
+  and `showtime brand apply` re-applies it. A launch job without a kit records why (`showtime brand skip <job>
+  --why ...`); `showtime check` warns when a launch job has neither (`brand_missing`) or when a kit exists but the
+  page ignores it (`brand_not_applied`). The launch workflow starts from this step and states the length defaults
+  (teaser 10-15 s, feature 30-40 s, launch 45-60 s), the 2-second hook, works-on-mute and the 3-4 s end-card hold.
+  Why: in the 0.2.0 benchmark the launch video lost three votes running to a launch tool that starts from the brand.
+- **qa fixes found while proving it.** `showtime qa` re-extracts its contact-sheet frames when the video is newer
+  than them (a re-render to the same `final.mp4` used to show the old render's frames), and a 1:1 or 4:5 master
+  is no longer an aspect warning for x or linkedin (both play it as is, as `deliver exports` already knew).
+- **Fixes where the contract tripped agents** (found in the 0.2.0 benchmark runs):
+  - Stage: a clip that is not active but still on screen (the outgoing scene through a transition, the incoming one
+    in an early-aligned window) had the `--t`/`--p` of whichever seek last activated it, so its frames depended on
+    seek order (`check`'s `nondeterministic`, chunk joins). Now they are a function of t: 0 before the clip starts,
+    its last frame's values after it ends (what an in-order render always showed). Active clips are unchanged.
+  - `retime --from-voice --total` works when every scene is narrated (a narrated close): the pause after the last
+    line absorbs the difference; a total that would cut the line is an error naming the shortest one that works.
+  - Manim: a `narration.md` with no lines (only a comment) is a silent film, not an error; `--mix` is read from the
+    current folder first, then the project, and a mix track's file is also found in the Manim folder. A silent-film
+    recipe is in `references/manim.md`.
+  - `doctor` warns, with the fix, when `<SHOWTIME_HOME>/bin/showtime` runs another showtime than the agent's (a newer
+    one recorded by another host, or a newer one installed that has not run yet); `showtime new` with an unknown
+    template names the running version.
+  - `check` names exactly the characters the page's fonts lack (from the loaded faces' unicode-ranges, not every
+    non-Latin character of the line) and gives the fix for each: `<sub>`/`<sup>` markup for sub/superscript digits
+    (no bundled font has them), an inline SVG for arrows, an `@font-face` with that `unicode-range` for the rest.
+  - `SECURITY.md`: how to report a vulnerability privately, what is in scope, supported versions.
+### Explainers from repos, papers and releases
+
+- **Repo explainer workflow** (`references/workflows/repo-explainer.md`): a codebase explained in five parts (what it
+  does, code map, life of one request, core abstractions, a real trace), from a research pass with a saved run and a
+  real stack in `work/evidence/`; every claim is a row in `claims.md` pointing at file:line at a pinned commit; a
+  narration guide for teaching like a lecturer instead of stacking short punchy lines and numbers.
+- **Paper explainer workflow** (`references/workflows/paper-explainer.md`): a PDF or arXiv paper through
+  `doc extract`, claims tied to pages, equations and figures, licenses checked before any figure is shown (credit
+  sidecars feed `credits.txt`, which qa requires), Manim for the math.
+- **`code-block` keeps a file's line numbers**: `data-first-line="258"` numbers an excerpt 258, 259, ... and
+  `highlight`/`focus` take those numbers.
+- **`showtime release-video`**: release notes, a CHANGELOG section (`--changelog-version`) or a PR description
+  (`--kind pr`) become a ready-to-render project with no agent: the notes' own headings and lines, reading-time
+  holds, the people credited, a composed bed; internal sections (dependencies, CI, docs) are counted, not shown.
+- **GitHub Action** (`.github/actions/showtime-video`, guide in `docs/github-action.md`, example workflow in
+  `docs/examples/`): installs showtime on the runner (minimal tier, cached), renders a release or PR video with
+  `release-video`, or a committed project, or runs an agent command you configure with your own key; runs
+  `check` and `qa`, exports the HTML video and a copy under 10 MB, and uploads them as an artifact or release assets.
+
 ## 0.2.0: every coding agent, a lighter first run, a real music catalog
 
 showtime is now a local video studio for your coding agent, not only for Claude Code: describe a video, your

@@ -61,7 +61,7 @@ def judge(schema):
     blind = (Path(os.environ.get("HOME", ".")).parent / "FAKE_BLIND").exists()
     codes = []
     if not blind:
-        for rel in re.findall(r"^\s+((?:video-\d+/)?frames/\S+\.(?:jpe?g|png|webp))", arg("-p") or "", re.M):
+        for rel in re.findall(r"^\s+((?:[\w-]+/)?frames/\S+\.(?:jpe?g|png|webp))", arg("-p") or "", re.M):
             emit({"type": "assistant", "message": {"content": [
                 {"type": "tool_use", "id": "t" + uuid.uuid4().hex[:8], "name": "Read",
                  "input": {"file_path": str(Path.cwd() / rel)}}]}})

@@ -10,6 +10,29 @@ version", "add Portuguese subtitles"). How much can change depends on what the v
 | a finished file with narration you recorded or generated separately | a new voice track mixed over the picture, translated captions |
 | real footage of a person speaking | translated subtitles (always), or a voice-over dub over the ducked original (no lip sync, no voice cloning) |
 
+## Essentials
+
+- Translate meaning, lines within about 10 % of the original; numbers, units, claims, product names, commands
+  and code stay as they are; say the translation is machine-made by you and offer a review
+  (§ Translation rules)
+- Every English brand name a non-English voice says needs a lexicon entry: check with
+  `showtime voice ipa "<line>" --lang es` before synthesizing (§ Translation rules)
+- `showtime voice script <job>/project/narration.<lang>.md -o <job>/project/voice --voice ef_dora`, then
+  `showtime retime <job>/project --from-voice <job>/project/voice/timeline.json` (§ Steps (showtime project))
+- Allow 20-30 % longer on-screen text; fonts must cover the language's characters. A dub is a voice-over, not
+  lip-synced, never a cloned voice: say so (§ Translation rules, § Steps (finished file or footage))
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| Inputs | 36-41 |
+| Defaults | 43-50 |
+| Translation rules | 52-62 |
+| Steps (showtime project) | 64-82 |
+| Steps (finished file or footage) | 84-97 |
+| Pitfalls | 99-105 |
+| Read next | 107-110 |
+
 ## Inputs
 
 - The source (project, file or footage) and its script or transcript.

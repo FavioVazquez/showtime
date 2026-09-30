@@ -7,12 +7,14 @@ import { fileURLToPath } from 'node:url';
 import { startServer } from './server.mjs';
 import {
   parseCli, runMain, resolveProject, jobDir, freshPath, Progress, info, warn, c, cpuCount, fmtDuration, fmtBytes,
-  parseTime, runPyCli, hasPyModule, UserError, progressLog,
+  parseTime, runPyCli, hasPyModule, UserError, progressLog, briefOutput,
 } from './lib/cli.mjs';
+import { checkFreshness } from './lib/lean.mjs';
 import { openBrowser, openStage, writeDiagnostics, pullScore, parseSize } from './lib/stagehost.mjs';
 import { resolveFF, ffmpeg, probe, ebur128, writeWavFloat, fpsArg, hasEncoder, setLogFile, logLine, meanFrameDiff } from './lib/ff.mjs';
 import { mixFromConfig, master } from './lib/audio.mjs';
-import { resolveJobDir, enclosingJob } from './lib/studio/paths.mjs';
+import { resolveJobDir, enclosingJob, readJSON } from './lib/studio/paths.mjs';
+import { toAnnexB, readStream, idrFrames, gopRange, mergeRanges, splitPlan, sameParamSets, joinStreams, muxAnnexB, reencodeJoin } from './lib/splice.mjs';
 import { showCard, fmtLen, openHint, shellPath } from './lib/delight.mjs';
 
 const AAC_HEADROOM_DB = 0.5;
@@ -34,6 +36,10 @@ const SPEC = {
     'one exists (renders never overwrite). A render into a job (--job, or -o inside a job folder) records',
     'itself in job.json "outputs" (final/preview, poster, credits), so `showtime qa <job>` checks the newest',
     'file. credits.txt is written next to the video whenever the mix used CC-BY material.',
+    '--from/--to with --job, when the job has a full render of this project at the same size, fps and length:',
+    'only those seconds (widened to the keyframes around them) are rendered and spliced into a copy of that',
+    'render, giving the next full final-N.mp4 (audio mixed again for the whole video). Otherwise the result is',
+    'a span clip, <job>/work/span-A-B.mp4 (without a job: span-A-B.mp4 in a new folder), never a final.',
     'Encode defaults can live in showtime.json "render": {"crf": 22, "x264_preset": "slow", "format": "png",',
     '"quality": 92, "poster": "none"}; flags override them, so every re-render keeps the same settings.',
   ].join('\n'),
@@ -43,7 +49,7 @@ const SPEC = {
     job: { short: 'j', help: 'render into this job (folder, or name -> newest showtime-out/<name>-<ts>/)', metavar: 'JOB' },
     preview: { type: 'boolean', short: 'p', help: 'fast draft: <=720p, veryfast encode, no poster bake' },
     fps: { help: 'frames per second (default: showtime.json fps, else 30)' },
-    from: { help: 'start time in seconds (default 0)', metavar: 'S' },
+    from: { help: 'start time in seconds (default 0); with --job: spliced into the job\'s full render, else a span clip', metavar: 'S' },
     to: { help: 'end time in seconds (default: the full duration)', metavar: 'S' },
     workers: { short: 'w', help: 'parallel browsers, 1-3 (default: auto, at most $SHOWTIME_MAX_WORKERS when set)' },
     scale: { help: 'output scale, e.g. 0.5 for half size or 2 for supersampled 4K (default 1; --preview: fit 720p)' },
@@ -70,7 +76,8 @@ const SPEC = {
   examples: [
     'showtime render my-video                      # final render -> showtime-out/my-video-<ts>/final.mp4',
     'showtime render my-video --preview            # quick 720p draft',
-    'showtime render my-video --from 12 --to 18    # re-render one section',
+    'showtime render my-video --from 12 --to 18    # just those seconds: a span clip to look at (span-12-18.mp4)',
+    'showtime render my-video --from 12 --to 18 --job launch-teaser   # fix 12-18 s in the job\'s video -> final-2.mp4 (full length)',
     'showtime render my-video -o launch.mp4 --workers 2',
     'showtime render my-video --job launch-teaser        # -> <job>/final.mp4 (final-2.mp4 on a re-render)',
     'showtime render my-video --job launch-teaser --size 9:16   # the same page in 9:16 -> <job>/1080x1920.mp4',
@@ -108,7 +115,21 @@ async function main() {
   const override = {};
   // --size: one page, another size for this run (a 9:16 cut of a 16:9 page reads the frame aspect)
   const size = parseSize(a.size);
+  const sizeFlag = !!size;   // (a later block-scoped `size` holds the file size)
   if (size) { cfg.width = size.width; cfg.height = size.height; override.width = size.width; override.height = size.height; }
+  // Lean mode: a full render is the expensive step. When the project changed after the last `showtime check`
+  // (or was never checked), say so before spending minutes on it; --preview, --from/--to and --size (which
+  // checks the layout itself) are cheap or already checked. A nudge, never a stop.
+  const nudges = [];
+  const partialRange = a.from !== undefined || a.to !== undefined;
+  if (!a.preview && !partialRange && !size && !a['no-check']) {
+    const fr = checkFreshness(proj.dir, proj.page, null);
+    const rel = path.relative(process.cwd(), proj.dir) || '.';
+    if (fr.state === 'none') nudges.push(`no \`showtime check\` has run on this project: run \`showtime check ${rel}\` and \`showtime look ${rel}\` first (a full render that needs a fix costs another one)`);
+    else if (fr.state === 'stale') nudges.push(`${path.relative(proj.dir, fr.changed)} changed ${fr.minutes ? `${fr.minutes} min ` : ''}after the last \`showtime check\`: check again before a full render (\`showtime check ${rel}\`)`);
+    // a note, not a warning: the render is fine to run, it is only the costly way to find a problem
+    for (const m of nudges) { info(c.yellow(`showtime render: note: ${m}`)); logLine(`nudge: ${m}`); }
+  }
   // Another size re-lays the page: text that fits at 16:9 can be cut off at 9:16. Check the layout at THIS
   // size first, so a clipped line never ships silently (--no-check skips it).
   if (size && !a.preview && !a['no-check']) {
@@ -143,7 +164,6 @@ async function main() {
 
   // ---- output location (never overwrite an earlier render)
   const stemName = a.preview ? 'preview' : 'final';
-  let outFile, outDir, workDir;
   const ext = alpha === 'prores' || alpha === 'animation' ? '.mov' : alpha === 'webm' ? '.webm' : '.mp4';
   if (a.output && a.job) throw new UserError('pass either -o or --job, not both', 'use --job <job> to render into the job folder');
   let jobFolder = null;
@@ -153,33 +173,65 @@ async function main() {
     if (!jobFolder || !fs.existsSync(jobFolder)) throw new UserError(`no job named "${a.job}"`, 'list jobs with `showtime job list`, or create one: showtime job init <slug>');
     a.output = path.join(jobFolder, (size && !a.preview ? `${size.width}x${size.height}` : stemName) + ext);
   }
-  if (a.output) {
-    const want = path.resolve(a.output);
-    outFile = freshPath(path.extname(want) ? want : want + ext);
-    // an intended re-render: an info line, not a warning (renders never overwrite)
-    if (outFile !== want && path.extname(want)) { renamedFrom = want; logLine(`${want} exists; writing ${path.basename(outFile)} instead`); }
-    outDir = path.dirname(outFile);
-    fs.mkdirSync(outDir, { recursive: true });
-    workDir = path.join(outDir, `${path.basename(outFile, path.extname(outFile))}.work`);
-    // studio media (animatics, look tests) keep studio/ small: their scratch goes to <job>/work/renders/
-    const sj = enclosingJob(outFile);
-    if (sj && !path.relative(path.join(sj, 'studio'), outFile).startsWith('..')) {
-      workDir = path.join(sj, 'work', 'renders', `${path.basename(outFile, path.extname(outFile))}.work`);
-    }
-  } else {
-    outDir = jobDir(proj.slug, a['out-dir']);
-    outFile = path.join(outDir, stemName + ext);
-    workDir = path.join(outDir, 'work');
+  // the file a whole-video render writes (null: a new job folder), and where a span render (--from/--to)
+  // goes instead: a span is never named final*/preview* and never lands where `showtime qa <job>` looks.
+  // A span that can be spliced into the job's last full render becomes the next final after the page
+  // loaded (see "span or splice" below); until then the render is laid out as a span.
+  const wholeTarget = a.output ? (path.extname(a.output) ? path.resolve(a.output) : path.resolve(a.output) + ext) : null;
+  const spanName = partialRange ? `span-${spanNum(a.from !== undefined ? parseTime(a.from) : 0)}-${a.to !== undefined ? spanNum(parseTime(a.to)) : 'end'}` : null;
+  const spanJob = partialRange && wholeTarget ? (jobFolder || enclosingJob(wholeTarget)) : null;
+  let target = wholeTarget;
+  if (partialRange && wholeTarget) {
+    if (spanJob) target = path.join(spanJob, 'work', spanName + ext);
+    else if (/^(final|preview|draft)/i.test(path.basename(wholeTarget))) target = path.join(path.dirname(wholeTarget), spanName + ext);
   }
-  const framesDir = path.join(workDir, 'frames');
-  const audioDir = path.join(workDir, 'audio');
-  const diagDir = path.join(workDir, 'diagnostics');
-  fs.rmSync(framesDir, { recursive: true, force: true });
-  fs.mkdirSync(framesDir, { recursive: true });
-  fs.mkdirSync(audioDir, { recursive: true });
-  // the full ffmpeg / browser story of this render (read by `showtime report` and when a render fails)
-  const logFile = path.join(workDir, 'logs', 'render.log');
-  setLogFile(logFile);
+  let outFile, outDir, workDir, framesDir, audioDir, diagDir, logFile;
+  // where: 'file' (want is a path), 'newjob' (want is a name in a new showtime-out/<title>-<time>/ folder),
+  // 'samejob' (a name in that folder)
+  const place = (want, where = 'file') => {
+    renamedFrom = null;
+    if (where === 'file') {
+      outFile = freshPath(want);
+      // an intended re-render: an info line, not a warning (renders never overwrite)
+      if (outFile !== want) { renamedFrom = want; logLine(`${want} exists; writing ${path.basename(outFile)} instead`); }
+      outDir = path.dirname(outFile);
+      fs.mkdirSync(outDir, { recursive: true });
+      workDir = path.join(outDir, `${path.basename(outFile, path.extname(outFile))}.work`);
+      // studio media (animatics, look tests) keep studio/ small: their scratch goes to <job>/work/renders/
+      const sj = enclosingJob(outFile);
+      if (sj && !path.relative(path.join(sj, 'studio'), outFile).startsWith('..')) {
+        workDir = path.join(sj, 'work', 'renders', `${path.basename(outFile, path.extname(outFile))}.work`);
+      }
+    } else {
+      if (where === 'newjob') outDir = jobDir(proj.slug, a['out-dir']);
+      outFile = path.join(outDir, want);
+      workDir = path.join(outDir, 'work');
+    }
+    framesDir = path.join(workDir, 'frames');
+    audioDir = path.join(workDir, 'audio');
+    diagDir = path.join(workDir, 'diagnostics');
+    fs.rmSync(framesDir, { recursive: true, force: true });
+    fs.mkdirSync(framesDir, { recursive: true });
+    fs.mkdirSync(audioDir, { recursive: true });
+    // the full ffmpeg / browser story of this render (read by `showtime report` and when a render fails)
+    logFile = path.join(workDir, 'logs', 'render.log');
+    setLogFile(logFile);
+  };
+  if (target) place(target);
+  else place(partialRange ? spanName + ext : stemName + ext, 'newjob');
+  // after the page loaded: move to the final name (a splice, or a "span" that covers the whole video)
+  const replace = (want) => {
+    const oldWork = workDir, oldLog = logFile;
+    setLogFile(null);
+    if (want) place(want);
+    else place(stemName + ext, 'samejob');
+    if (workDir !== oldWork) {
+      try { fs.appendFileSync(logFile, fs.readFileSync(oldLog)); } catch { /* nothing logged yet */ }
+      fs.rmSync(oldWork, { recursive: true, force: true });
+      if (path.basename(path.dirname(oldWork)) === 'work') { try { fs.rmdirSync(path.dirname(oldWork)); } catch { /* not empty */ } }
+    }
+    logLine(`output is now ${outFile}`);
+  };
   logLine(`showtime render ${proj.dir} -> ${outFile}${a.preview ? ' (preview)' : ''}; node ${process.version} ${process.platform}-${process.arch}`);
 
   say(`${c.bold('showtime render')} ${proj.dir}${a.preview ? c.dim('  (preview)') : ''}`);
@@ -239,29 +291,106 @@ async function main() {
     const last = Math.min(Math.round(to * fps), Math.round(duration * fps)); // exclusive
     const nFrames = last - first;
     if (nFrames <= 0) throw new UserError('nothing to render: the range is shorter than one frame');
-    const partial = first > 0 || last < Math.round(duration * fps);
-    const outDur = nFrames / fps;
+    const total = Math.round(duration * fps);
+    const partial = first > 0 || last < total;
     const W = even(info0.width * openOpts.scale), H = Math.round(info0.height * openOpts.scale);
+
+    // ---- poster settings (the poster frame is captured with the rest; a splice may re-render frame 0 for it)
+    const posterOff = String(a.poster || '').toLowerCase() === 'none';
+    let posterT = null;
+    if (a.poster !== undefined && !posterOff) posterT = parseTime(a.poster);
+    else if (a.poster === undefined && cfg.poster !== undefined && cfg.poster !== null && cfg.poster !== false) posterT = Number(cfg.poster);
+    // Baking a frame that does not look like the opening makes a one-frame flash on autoplay and on
+    // every loop (frame 0 = poster, frame 1 = the real opening). --poster-bake auto (default) bakes only
+    // when the poster frame is close to frame 1; force always bakes; off never does.
+    const bakeMode = String(a['poster-bake'] || 'auto').toLowerCase();
+    if (!['auto', 'force', 'off'].includes(bakeMode)) throw new UserError(`--poster-bake must be auto, force or off (got ${a['poster-bake']})`);
+
+    // ---- span or splice. A span (--from/--to) rendered into a job that already has a full render of this
+    //      project at the same size, frame rate and length becomes the job's next final: the span, widened to
+    //      the keyframes around it, re-rendered and spliced into a copy of that render (every other frame is
+    //      the old render's bytes). Otherwise it is a span clip (<job>/work/span-A-B.mp4), never a final.
+    let splice = null;
+    let spanWhy = null;
+    let needGop0 = false;
+    const posterIdx = !a.preview && !alpha && !posterOff && posterT !== null && isFinite(posterT) ? Math.round(posterT * fps) : null;
+    if (partialRange && !partial) {
+      // the range covers the whole video: an ordinary render
+      replace(wholeTarget);
+    } else if (partial) {
+      const into = spanJob || (wholeTarget && target !== wholeTarget ? wholeTarget : null);
+      if (a.preview) spanWhy = 'a --preview span is a draft of those seconds';
+      else if (alpha || sizeFlag) spanWhy = `a span with --${alpha ? 'alpha' : 'size'} is not spliced into the final`;
+      else if (!into) spanWhy = 'it is not rendered into a job (--job <job>), so there is no full render to splice it into';
+      else {
+        const found = await findSpliceBase({ job: spanJob, beside: spanJob ? null : wholeTarget, proj, W, H, fps, total });
+        if (!found.file) spanWhy = found.reason;
+        else {
+          replace(wholeTarget);
+          const dir = path.join(workDir, 'splice');
+          fs.mkdirSync(dir, { recursive: true });
+          let stream = null;
+          try {
+            stream = readStream(await toAnnexB(found.file, path.join(dir, 'base.h264')));
+            if (stream.aus.length !== total || !stream.aus[0].idr) {
+              logLine(`splice: ${found.file} parsed as ${stream.aus.length} frames (expected ${total}); re-encoding instead of cutting`);
+              stream = null;
+            }
+          } catch (e) { logLine(`splice: could not read ${found.file} as H.264: ${e.message}`); stream = null; }
+          // cut points: the IDR frames (with no readable stream, any frame: the whole video is encoded once)
+          const cuts = stream ? idrFrames(stream.aus) : Array.from({ length: total }, (_, i) => i);
+          const inSpan = (i) => i >= first && i < last;
+          // frame 0 carries a baked poster: re-render its GOP too unless the old render's frame 0 is still right
+          const bp = found.report.poster && typeof found.report.poster === 'object' ? found.report.poster : null;
+          const mayBake = posterIdx !== null && posterIdx >= 0 && posterIdx < total && bakeMode !== 'off';
+          const frame0Same = mayBake
+            ? !!bp && Math.abs(Number(bp.time) - posterIdx / fps) < 0.5 / fps && (bp.bake_mode || 'auto') === bakeMode && !inSpan(1) && !inSpan(posterIdx)
+            : !bp || !bp.baked;
+          needGop0 = !inSpan(0) && !frame0Same;
+          const segs = [gopRange(cuts, total, first, last)];
+          if (needGop0) segs.push(gopRange(cuts, total, 0, 1));
+          splice = { base: found.file, baseReport: found.report, stream, dir, total, segments: mergeRanges(segs), frame0Same, basePoster: bp };
+        }
+      }
+    }
+    const isSpan = partial && !splice;
+    const nOut = splice ? total : nFrames;
+    const outDur = nOut / fps;
+    // the frames to capture: the span (a splice: its GOP-aligned segments, plus the poster frame and frame 1
+    // when the poster bake is decided again)
+    let plan = splice ? splice.segments.slice() : [[first, last]];
+    if (splice && posterIdx !== null && posterIdx >= 0 && posterIdx < total) plan.push([posterIdx, posterIdx + 1]);
+    if (splice && posterIdx !== null && (needGop0 || first === 0) && total > 1) plan.push([1, 2]);
+    plan = mergeRanges(plan);
+    const capFirst = plan[0][0];
+    const nCap = plan.reduce((n, [s, e]) => n + e - s, 0);
 
     // ---- workers
     const cpus = cpuCount();
     const memCap = Math.max(1, Math.floor((os.totalmem() / 2 ** 30) * 0.5 / 1.5));
     // SHOWTIME_MAX_WORKERS (plugin setting "max_workers") caps the automatic choice; --workers overrides it
     const workerCap = Math.floor(Number(process.env.SHOWTIME_MAX_WORKERS)) > 0 ? Math.floor(Number(process.env.SHOWTIME_MAX_WORKERS)) : 3;
-    let workers = a.workers !== undefined ? Math.round(Number(a.workers)) : Math.min(3, workerCap, Math.max(1, cpus - 2), Math.max(1, Math.floor(nFrames / 45)), memCap);
+    let workers = a.workers !== undefined ? Math.round(Number(a.workers)) : Math.min(3, workerCap, Math.max(1, cpus - 2), Math.max(1, Math.floor(nCap / 45)), memCap);
     if (!(workers >= 1)) throw new UserError('--workers must be >= 1');
     if (workers > 3 && a.workers !== undefined) addWarn(`${workers} workers requested; more than 3 rarely helps and can crash Chrome on smaller machines`);
-    workers = Math.min(workers, nFrames);
+    workers = Math.min(workers, nCap);
 
+    if (renamedFrom && splice) say(c.dim(`  ${path.basename(renamedFrom)} exists: writing ${path.basename(outFile)} (renders never overwrite)`));
+    if (splice) {
+      say(`  splice: ${from.toFixed(2)}-${(last / fps).toFixed(2)}s into a copy of ${path.basename(splice.base)} -> ${path.basename(outFile)} (the full ${outDur.toFixed(2)}s video); ` +
+        `re-rendering ${splice.segments.map(([s, e]) => `${(s / fps).toFixed(2)}-${(e / fps).toFixed(2)}s`).join(' and ')} (whole GOPs)`);
+    } else if (isSpan) {
+      say(`  span: only ${from.toFixed(2)}-${(last / fps).toFixed(2)}s -> ${path.basename(outFile)}, not a full video (${spanWhy})`);
+    }
     say(`  ${info0.width}x${info0.height}${openOpts.scale !== 1 ? ` -> ${W}x${H}` : ''} @ ${fps} fps, ${outDur.toFixed(2)}s` +
-      `${partial ? ` (${from.toFixed(2)}-${(last / fps).toFixed(2)}s)` : ''}, ${nFrames} frames, ${workers} worker${workers > 1 ? 's' : ''}, ` +
+      `${isSpan ? ` (${from.toFixed(2)}-${(last / fps).toFixed(2)}s)` : ''}, ${nCap} frames${splice ? ' to capture' : ''}, ${workers} worker${workers > 1 ? 's' : ''}, ` +
       `${b0.kind} ${b0.version}, ${capFormat}`);
 
     // ---- audio in parallel with capture
     // the soundtrack is built in parallel; a failure is retried once (a busy machine can close the
     // offline score page), and a project that has audio never ships silent unless --allow-silent
     const expectsAudio = !!(info0.hasScore || (cfg.audio !== undefined && cfg.audio !== null && cfg.audio !== false && cfg.audio !== ''));
-    const audioArgs = { proj, cfg, info: info0, browser: b0.browser, openOpts, audioDir, from: first / fps, dur: outDur, noLoudnorm: a['no-loudnorm'], lufsArg: a.lufs, addWarn, say };
+    const audioArgs = { proj, cfg, info: info0, browser: b0.browser, openOpts, audioDir, from: splice ? 0 : first / fps, dur: outDur, noLoudnorm: a['no-loudnorm'], lufsArg: a.lufs, addWarn, say };
     const audioJob = a['no-audio'] ? Promise.resolve(null)
       : buildAudio(audioArgs).catch(async (e) => {
         warn(`audio failed (${String(e.message).split('\n')[0]}); retrying once`);
@@ -283,26 +412,24 @@ async function main() {
 
     // ---- capture
     t = Date.now();
-    const chunk = Math.ceil(nFrames / workers);
-    const ranges = [];
-    for (let w = 0; w < workers; w++) {
-      const s = first + w * chunk, e = Math.min(last, s + chunk);
-      if (e > s) ranges.push([s, e]);
-    }
-    const prog = new Progress('frames', nFrames, { quiet });
+    // each worker renders contiguous runs in order (a span: one run split in `workers` parts)
+    const perWorker = splitPlan(plan, workers);
+    const prog = new Progress('frames', nCap, { quiet });
     const frameExt = capFormat === 'png' ? 'png' : 'jpg';
-    const framePath = (i) => path.join(framesDir, `f_${String(i - first).padStart(6, '0')}.${frameExt}`);
+    const framePath = (i) => path.join(framesDir, `f_${String(i - capFirst).padStart(6, '0')}.${frameExt}`);
     const stats = { seekMs: 0, shotMs: 0, frames: 0, retries: 0 };
 
+    const wsess = [sessions[0]];   // one page per worker, kept across its runs
     const captureRange = async (w, [s, e]) => {
       let attempt = 0;
       for (;;) {
-        let sess = w === 0 && attempt === 0 ? sessions[0] : null;
+        let sess = wsess[w] || null;
         try {
           if (!sess) {
             if (!browsers[w] || !browsers[w].browser.isConnected()) browsers[w] = await openBrowser({ gpu });
             sess = await openStage(browsers[w].browser, openOpts);
             sessions.push(sess);
+            wsess[w] = sess;
           }
           // warm-up: replay (without capturing) the second of frames before this chunk, so the first
           // captured frame has the same recent history as in a single-worker render. Chrome keeps some
@@ -340,21 +467,22 @@ async function main() {
           prog.clear();
           warn(`worker ${w}: ${msg}; retrying (${attempt}/2)`);
           if (sess) await sess.close();
+          wsess[w] = null;
           if (browsers[w] && !browsers[w].browser.isConnected()) browsers[w] = null;
         }
       }
     };
     // extra browsers start while worker 0 already captures
-    const jobs = ranges.map(async (r, w) => {
+    const jobs = perWorker.map(async (runs, w) => {
       if (w > 0 && !browsers[w]) browsers[w] = await openBrowser({ gpu });
-      return captureRange(w, r);
+      for (const r of runs) { if (interrupted) return; await captureRange(w, r); }
     });
     await Promise.all(jobs);
     if (interrupted) return 130;
     prog.end();
     // verify: every frame present and non-empty (ffmpeg stops silently at a gap)
     const missing = [];
-    for (let i = first; i < last; i++) { const f = framePath(i); if (!fs.existsSync(f) || fs.statSync(f).size <= 8) missing.push(i); }
+    for (const [s, e] of plan) for (let i = s; i < e; i++) { const f = framePath(i); if (!fs.existsSync(f) || fs.statSync(f).size <= 8) missing.push(i); }
     if (missing.length) {
       addWarn(`${missing.length} frame(s) missing after capture; re-capturing`);
       const b = await openBrowser({ gpu });
@@ -364,7 +492,7 @@ async function main() {
       for (const i of missing) { await sess.seek(i / fps); fs.writeFileSync(framePath(i), await sess.shot({ format: capFormat, quality })); }
     }
     timings.capture = Date.now() - t;
-    const capFps = nFrames / (timings.capture / 1000);
+    const capFps = nCap / (timings.capture / 1000);
     const pageLog = { errors: [], console: [], blocked: [], http: [] };
     for (const s of sessions) for (const k of Object.keys(pageLog)) for (const x of s.log[k]) pageLog[k].push(x);
     for (const e of pageLog.errors.slice(0, 50)) logLine(`browser page error: ${e.message}`);
@@ -378,7 +506,7 @@ async function main() {
     // soundtrack (closing it mid-score used to ship silent finals on a busy machine)
     const scoreBrowser = browsers[0];
     await Promise.all(browsers.filter((b) => b && b !== scoreBrowser).map((b) => b.browser.close().catch(() => {})));
-    say(`  captured ${nFrames} frames in ${fmtDuration(timings.capture)} (${capFps.toFixed(1)} fps; seek ${(stats.seekMs / Math.max(1, stats.frames)).toFixed(0)} ms + shot ${(stats.shotMs / Math.max(1, stats.frames)).toFixed(0)} ms per frame per worker)`);
+    say(`  captured ${nCap} frames in ${fmtDuration(timings.capture)} (${capFps.toFixed(1)} fps; seek ${(stats.seekMs / Math.max(1, stats.frames)).toFixed(0)} ms + shot ${(stats.shotMs / Math.max(1, stats.frames)).toFixed(0)} ms per frame per worker)`);
     if (pageLog.errors.length) addWarn(`${pageLog.errors.length} page error(s) during render, first: ${pageLog.errors[0].message}`);
     if (pageLog.blocked.length) addWarn(`blocked ${pageLog.blocked.length} network request(s) outside localhost (renders are offline), e.g. ${pageLog.blocked[0]}`);
     const http404 = pageLog.http.filter((h) => h.status === 404);
@@ -392,10 +520,7 @@ async function main() {
     // ---- poster: the chosen frame becomes poster.jpg and, for full renders, also frame 0 of the video
     //      (feeds and chat apps show frame 0 before playback). Doing it before the single encode means
     //      no second encoding pass: every other frame, the duration and the audio are untouched.
-    const posterOff = String(a.poster || '').toLowerCase() === 'none';
-    let posterT = null;
-    if (a.poster !== undefined && !posterOff) posterT = parseTime(a.poster);
-    else if (a.poster === undefined && cfg.poster !== undefined && cfg.poster !== null && cfg.poster !== false) posterT = Number(cfg.poster);
+    //      A span clip gets no poster (it is not a video to publish); a splice is a full video and gets one.
     // poster.jpg beside the job's main video (final.mp4), <stem>.poster.jpg beside any other name
     const posterFile = path.join(outDir, a.output && path.basename(outFile, ext) !== 'final' ? `${path.basename(outFile, ext)}.poster.jpg` : 'poster.jpg');
     let posterInfo = null;
@@ -403,29 +528,34 @@ async function main() {
       if (frameExt === 'jpg') fs.copyFileSync(src, posterFile);
       else await ffmpeg(['-i', src, '-q:v', '2', posterFile]);
     };
-    // Baking a frame that does not look like the opening makes a one-frame flash on autoplay and on
-    // every loop (frame 0 = poster, frame 1 = the real opening). --poster-bake auto (default) bakes only
-    // when the poster frame is close to frame 1; force always bakes; off never does.
-    const bakeMode = String(a['poster-bake'] || 'auto').toLowerCase();
-    if (!['auto', 'force', 'off'].includes(bakeMode)) throw new UserError(`--poster-bake must be auto, force or off (got ${a['poster-bake']})`);
-    if (!a.preview && !alpha && !posterOff && posterT !== null) {
+    if (!a.preview && !alpha && !posterOff && posterT !== null && !isSpan) {
       const idx = Math.round(posterT * fps);
-      if (!isFinite(posterT) || idx < first || idx >= last) {
+      // a splice is a whole video: its poster can be any frame (the poster frame was captured) and its
+      // frame 0 is the video's frame 0
+      const f0 = splice ? 0 : first;
+      const f1 = splice ? total : last;
+      if (!isFinite(posterT) || idx < f0 || idx >= f1) {
         addWarn(`poster time ${posterT}s is outside the rendered range; no poster baked`);
+      } else if (splice && splice.frame0Same) {
+        // the old render's frame 0 stays: same poster frame, same bake decision, neither frame 0, 1 nor the
+        // poster frame re-rendered
+        await writePoster(framePath(idx));
+        const bp = splice.basePoster || {};
+        posterInfo = { file: posterFile, time: idx / fps, baked: !!bp.baked, bake_mode: bakeMode, ...(bp.opening_diff !== undefined ? { opening_diff: bp.opening_diff } : {}) };
       } else {
         await writePoster(framePath(idx));
-        let bake = !partial && bakeMode !== 'off';
+        let bake = bakeMode !== 'off';
         let flash = null;
-        if (bake && idx !== first && bakeMode === 'auto' && last - first > 1) {
-          flash = await meanFrameDiff(framePath(idx), framePath(first + 1)).catch(() => null);
+        if (bake && idx !== f0 && bakeMode === 'auto' && f1 - f0 > 1) {
+          flash = await meanFrameDiff(framePath(idx), framePath(f0 + 1)).catch(() => null);
           if (flash !== null && flash > POSTER_FLASH_DIFF) {
             bake = false;
             say(c.dim(`  poster ${(idx / fps).toFixed(2)}s not baked into frame 0: it differs from the opening frame (mean diff ${flash.toFixed(1)}/255), ` +
               'so a baked frame 0 would flash on autoplay and loops. Start the video in the poster\'s state (poster 0), or --poster-bake force'));
           }
         }
-        posterInfo = { file: posterFile, time: idx / fps, baked: bake || (!partial && idx === first), ...(flash !== null ? { opening_diff: +flash.toFixed(1) } : {}) };
-        if (bake && idx !== first) fs.copyFileSync(framePath(idx), framePath(first));
+        posterInfo = { file: posterFile, time: idx / fps, baked: bake || idx === f0, bake_mode: bakeMode, ...(flash !== null ? { opening_diff: +flash.toFixed(1) } : {}) };
+        if (bake && idx !== f0) fs.copyFileSync(framePath(idx), framePath(f0));
       }
     }
 
@@ -460,17 +590,53 @@ async function main() {
         '-pix_fmt', 'yuv420p', '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv',
         '-video_track_timescale', '90000', '-movflags', '+faststart'];
     }
-    const encProg = new Progress('encode', nFrames, { quiet });
+    const encFrames = splice ? (splice.stream ? splice.segments.reduce((n, [s0, e0]) => n + e0 - s0, 0) : total) : nFrames;
+    let encProg = new Progress('encode', encFrames, { quiet });
     let lastFrame = 0;
-    await ffmpeg([...inArgs, ...vArgs, '-r', fpsArg(fps), '-an', '-progress', 'pipe:2', '-nostats', videoOnly], {
-      onStderr: (s) => {
-        const m = s.match(/frame=\s*(\d+)/g);
-        if (m) { const n = Number(m[m.length - 1].replace(/\D/g, '')); if (n > lastFrame) { encProg.tick(n - lastFrame); lastFrame = n; } }
-      },
-    });
+    const onEncode = (s) => {
+      const m = s.match(/frame=\s*(\d+)/g);
+      if (m) { const n = Number(m[m.length - 1].replace(/\D/g, '')); if (n > lastFrame) { encProg.tick(n - lastFrame); lastFrame = n; } }
+    };
+    if (!splice) {
+      await ffmpeg([...inArgs, ...vArgs, '-r', fpsArg(fps), '-an', '-progress', 'pipe:2', '-nostats', videoOnly], { onStderr: onEncode });
+    } else {
+      // each segment is encoded exactly as a full render encodes (same filter chain and x264 settings), then its
+      // frames replace the old ones between the same two keyframes; parameter sets that differ from the old
+      // render's (another ffmpeg or other settings) cannot be joined, so the whole video is encoded once instead
+      const pattern = path.join(framesDir, `f_%06d.${frameExt}`);
+      const joined = [];
+      let why = splice.stream ? null : `${path.basename(splice.base)} could not be cut at its keyframes`;
+      for (const [k, [s0, e0]] of (splice.stream ? splice.segments : []).entries()) {
+        const segMp4 = path.join(splice.dir, `seg-${k}.mp4`);
+        lastFrame = 0;
+        await ffmpeg(['-framerate', fpsArg(fps), '-start_number', String(s0 - capFirst), '-i', pattern, '-frames:v', String(e0 - s0),
+          ...vArgs, '-r', fpsArg(fps), '-an', '-progress', 'pipe:2', '-nostats', segMp4], { onStderr: onEncode });
+        const st = readStream(await toAnnexB(segMp4, path.join(splice.dir, `seg-${k}.h264`)));
+        if (st.aus.length !== e0 - s0 || !st.aus[0].idr) { why = `the new segment parsed as ${st.aus.length} frames, expected ${e0 - s0}`; break; }
+        if (!sameParamSets(splice.stream.params, st.params)) {
+          why = `${path.basename(splice.base)} was encoded with other settings or another ffmpeg (${describeEncode(splice.baseReport)}), so the new frames cannot be joined to its bytes`;
+          break;
+        }
+        joined.push({ range: [s0, e0], stream: st });
+      }
+      if (!why) {
+        await muxAnnexB(joinStreams(splice.stream, joined, total, path.join(splice.dir, 'joined.h264')), fps, null, videoOnly);
+        splice.mode = 'cut';
+      } else {
+        encProg.end();
+        say(c.dim(`  splice: ${why}; encoding the whole video once (old frames decoded, new frames from this capture)`));
+        logLine(`splice: re-encoding: ${why}`);
+        encProg = new Progress('encode', total, { quiet });
+        lastFrame = 0;
+        await reencodeJoin({ baseMp4: splice.base, total, fps, vf: vArgs[1], codecArgs: vArgs.slice(2), out: videoOnly, onStderr: onEncode,
+          segments: splice.segments.map(([s0, e0]) => ({ range: [s0, e0], pattern, start: s0 - capFirst })) });
+        splice.mode = 'reencode';
+        splice.why = why;
+      }
+    }
     encProg.end();
     timings.encode = Date.now() - t;
-    say(`  encoded in ${fmtDuration(timings.encode)} (${alpha ? alpha : `x264 ${x264Preset} crf ${crf}`})`);
+    say(`  encoded in ${fmtDuration(timings.encode)} (${alpha ? alpha : `x264 ${x264Preset} crf ${crf}`}${splice ? (splice.mode === 'cut' ? `, ${encFrames} new frames spliced into ${path.basename(splice.base)}` : ', the whole video') : ''})`);
 
     // ---- audio + mux
     t = Date.now();
@@ -493,13 +659,21 @@ async function main() {
     // ---- poster: frame image from the captured frames; bake into frame 0 when asked
     const report = {
       ok: true, output: outFile, folder: outDir, project: proj.dir, page: proj.page, preview: !!a.preview, log: logFile,
-      width: W, height: H, fps, duration: outDur, frames: nFrames, range: [first / fps, last / fps],
+      width: W, height: H, fps, duration: outDur, frames: nOut, range: splice ? [0, total / fps] : [first / fps, last / fps],
+      kind: a.preview ? 'preview' : isSpan ? 'span' : splice ? 'spliced' : 'full',
+      // a span clip is only those seconds: never the job's final (qa, look and the ledger skip it)
+      ...(isSpan ? { span: [+from.toFixed(3), +(last / fps).toFixed(3)], deliverable: false, span_reason: spanWhy } : {}),
+      ...(splice ? { splice: {
+        base: splice.base, span: [+from.toFixed(3), +(last / fps).toFixed(3)], mode: splice.mode, ...(splice.why ? { why: splice.why } : {}),
+        rerendered: splice.segments.map(([s0, e0]) => [+(s0 / fps).toFixed(3), +(e0 / fps).toFixed(3)]), frames_captured: nCap,
+      } } : {}),
       workers, browser: { kind: b0.kind, version: b0.version, gpu }, capture: { format: capFormat, quality, settle },
       encode: alpha ? { codec: alpha } : { codec: 'libx264', preset: x264Preset, crf },
       audio: audio ? audio.report : null, poster: null, warnings, timings, fps_capture: +capFps.toFixed(2),
+      ...(nudges.length ? { nudges } : {}),
     };
     report.poster = posterInfo;
-    if (!posterInfo && !a.preview && !alpha && !posterOff) {
+    if (!posterInfo && !a.preview && !alpha && !posterOff && !isSpan) {
       // no poster time given: let the deliver module pick a sharp, representative frame
       t = Date.now();
       let picked = null;
@@ -510,7 +684,12 @@ async function main() {
           report.poster = { file: posterFile, time: picked, baked: false, method: 'auto' };
         }
       }
-      if (!report.poster) {
+      if (!report.poster && splice) {
+        // most frames of a splice were not captured: take the frame from the video
+        const tt = Math.floor(total * 0.4) / fps;
+        await ffmpeg(['-ss', tt.toFixed(3), '-i', outFile, '-frames:v', '1', '-q:v', '2', posterFile]);
+        report.poster = { file: posterFile, time: tt, baked: false, method: '40%' };
+      } else if (!report.poster) {
         const idx = first + Math.round(nFrames * 0.4);
         await writePoster(framePath(Math.min(last - 1, idx)));
         report.poster = { file: posterFile, time: Math.min(last - 1, idx) / fps, baked: false, method: '40%' };
@@ -522,15 +701,16 @@ async function main() {
     const pr = await probe(outFile);
     report.probe = pr;
     if (pr.video) {
-      if (pr.video.frames && pr.video.frames !== nFrames) addWarn(`output has ${pr.video.frames} frames, expected ${nFrames}`);
+      if (pr.video.frames && pr.video.frames !== nOut) addWarn(`output has ${pr.video.frames} frames, expected ${nOut}`);
       if (Math.abs((pr.duration || 0) - outDur) > 1.5 / fps + 0.03) addWarn(`output duration ${pr.duration}s differs from ${outDur.toFixed(3)}s`);
     }
     if (!a['keep-frames']) fs.rmSync(framesDir, { recursive: true, force: true });
-    const creditLines = collectCredits(audio, proj.dir);
+    if (splice && !a['keep-frames']) fs.rmSync(splice.dir, { recursive: true, force: true });   // copies of the old render's stream
+    const creditLines = collectCredits(audio, proj.dir, jobFolder || enclosingJob(outFile));
     if (creditLines.length) {
       // lowercase credits.txt for the job's main video, <stem>.credits.txt for any other name (final-2.mp4, launch.mp4)
       const stem = path.basename(outFile, ext);
-      const credFile = path.join(outDir, !a.output || stem === 'final' ? 'credits.txt' : `${stem}.credits.txt`);
+      const credFile = path.join(outDir, !isSpan && (!a.output || stem === 'final') ? 'credits.txt' : `${stem}.credits.txt`);
       fs.writeFileSync(credFile, creditLines.join('\n') + '\n');
       report.credits = credFile;
     }
@@ -538,10 +718,10 @@ async function main() {
       // the full credits: exact attributions, courtesy credits, end-card line, the description block in share.txt
       // (finals only) and the Content ID note for music whose owner claims uncredited videos
       const stem = path.basename(outFile, ext);
-      const credName = !a.output || stem === 'final' ? 'credits.txt' : `${stem}.credits.txt`;
+      const credName = !isSpan && (!a.output || stem === 'final') ? 'credits.txt' : `${stem}.credits.txt`;
       const cargs = ['audio', 'credits', '--report', audio.mixReport, '--out-dir', outDir, '--name', credName, '--json'];
       if (report.credits) cargs.push('--merge', report.credits);
-      if (a.preview || partial) cargs.push('--no-share');
+      if (a.preview || isSpan) cargs.push('--no-share');
       const cr = await runPyCli(cargs, { timeout: 120000 });
       if (cr.code === 0) {
         try {
@@ -557,7 +737,7 @@ async function main() {
       }
     }
     timings.total = Date.now() - T0;
-    report.fps_overall = +(nFrames / (timings.total / 1000)).toFixed(2);
+    report.fps_overall = +(nCap / (timings.total / 1000)).toFixed(2);
     const reportFile = a.output ? path.join(workDir, 'render.json') : path.join(outDir, 'render.json');
     fs.writeFileSync(reportFile, JSON.stringify(report, null, 2));
     report.report = reportFile;
@@ -566,9 +746,15 @@ async function main() {
     const ledgerJob = jobFolder || enclosingJob(outFile);
     const studioMedia = !!ledgerJob && !path.relative(path.join(ledgerJob, 'studio'), outFile).startsWith('..') && !path.isAbsolute(path.relative(path.join(ledgerJob, 'studio'), outFile));
     if (ledgerJob && !partial && studioMedia) {
-      const r = await runPyCli(['job', 'note', ledgerJob, '--event', `studio render ${path.relative(ledgerJob, outFile)} (not a latest ${a.preview ? 'preview' : 'final'})`], { timeout: 120000 });
+      const r = await runPyCli(['job', 'note', ledgerJob, '--event', `studio render ${path.relative(ledgerJob, outFile)} (not a latest ${a.preview ? 'preview' : 'final'})`,
+        '--render', `preview=${path.basename(outFile)}`, '--seconds', String((timings.total / 1000).toFixed(1))], { timeout: 120000 });
       if (r.code === 0) report.job = ledgerJob;
-    } else if (ledgerJob && !partial) {
+    } else if (ledgerJob && isSpan) {
+      // a span clip: no latest pointer changes, but the receipt counts it as a partial render
+      await runPyCli(['job', 'note', ledgerJob, '--render', `partial=${path.basename(outFile)}`, '--render-span', `${from.toFixed(2)}-${(last / fps).toFixed(2)}`,
+        '--seconds', String((timings.total / 1000).toFixed(1)),
+        '--event', `span render ${path.relative(ledgerJob, outFile)} (${from.toFixed(2)}-${(last / fps).toFixed(2)}s only; the latest final is unchanged)`], { timeout: 120000 });
+    } else if (ledgerJob) {
       const outs = [`${a.preview ? 'preview' : 'final'}=${outFile}`];
       if (report.poster && report.poster.file && fs.existsSync(report.poster.file)) outs.push(`poster=${report.poster.file}`);
       if (report.credits) outs.push(`credits=${report.credits}`);
@@ -576,7 +762,11 @@ async function main() {
       // is logged as a variant and does not become the job's latest final/preview
       const args = ['job', 'note', ledgerJob, '--stage', a.preview ? 'preview' : 'render', '--seconds', String((timings.total / 1000).toFixed(1)),
         ...outs.flatMap((o) => ['--output', o]), '--auto', '--json',
-        '--event', `render ${path.basename(outFile)}${report.poster && report.poster.baked ? ` (poster ${report.poster.time}s baked into frame 0)` : ''}`];
+        // a splice is a full final whose frames were rendered for one span: the receipt counts it as a partial render
+        ...(splice ? ['--render', `partial=${path.basename(outFile)}`, '--render-span', `${from.toFixed(2)}-${(last / fps).toFixed(2)}`, '--render-base', path.basename(splice.base)]
+          : ['--render', `${a.preview ? 'preview' : 'full'}=${path.basename(outFile)}`]),
+        '--event', `render ${path.basename(outFile)}${splice ? ` (spliced ${from.toFixed(2)}-${(last / fps).toFixed(2)}s from ${path.basename(splice.base)})` : ''}` +
+          `${report.poster && report.poster.baked ? ` (poster ${report.poster.time}s baked into frame 0)` : ''}`];
       const r = await runPyCli(args, { timeout: 120000 });
       if (r.code === 0) {
         report.job = ledgerJob;
@@ -603,8 +793,21 @@ async function main() {
       process.stdout.write(JSON.stringify(report, null, 2) + '\n');
     } else {
       const aTxt = audio && audio.report ? `, audio ${audio.report.sources.join(' + ')}${audio.report.lufs !== null && audio.report.lufs !== undefined ? ` at ${audio.report.lufs.toFixed(1)} LUFS` : ''}` : ', no audio';
-      console.log(`${c.green('done')} ${path.basename(outFile)}  ${W}x${H} ${fps}fps ${outDur.toFixed(2)}s, ${nFrames} frames${aTxt}`);
-      console.log(`  time    capture ${fmtDuration(timings.capture)} (${capFps.toFixed(1)} fps) | encode ${fmtDuration(timings.encode)} | total ${fmtDuration(timings.total)} (${report.fps_overall} fps overall)`);
+      console.log(`${c.green('done')} ${path.basename(outFile)}  ${W}x${H} ${fps}fps ${outDur.toFixed(2)}s, ${nOut} frames${aTxt}`);
+      const projRel = shellPath(path.relative(process.cwd(), proj.dir) || '.');
+      const spanTxt = `${from.toFixed(2)}-${(last / fps).toFixed(2)}s`;
+      if (isSpan) {
+        // a span clip is easy to mistake for the video: say what it is and how to get the full one
+        console.log(c.yellow(`  span    only ${spanTxt} of the ${(total / fps).toFixed(2)}s video: a clip to look at, not the video to deliver (${spanWhy})`));
+        const jobArg = spanJob ? shellPath(spanJob) : '<job>';
+        if (a.preview && spanJob) console.log(`          the fix in the full video: showtime render ${projRel} --from ${a.from ?? 0} --to ${a.to ?? total / fps} --job ${jobArg} (spliced into the job's last full render)`);
+        else console.log(`          the full video with this fix: showtime render ${projRel} --job ${jobArg}; once a job has a full render, --from/--to --job splices a fix into it`);
+      } else if (splice) {
+        console.log(`  splice  ${spanTxt} re-rendered (${splice.segments.map(([s0, e0]) => `${(s0 / fps).toFixed(2)}-${(e0 / fps).toFixed(2)}s`).join(', ')}, whole GOPs) ` +
+          `into a copy of ${path.basename(splice.base)}${splice.mode === 'reencode' ? ' (encoded once as a whole)' : ''}: ${path.basename(outFile)} is the full video`);
+      }
+      const brief = briefOutput();
+      if (!brief) console.log(`  time    capture ${fmtDuration(timings.capture)} (${capFps.toFixed(1)} fps) | encode ${fmtDuration(timings.encode)} | total ${fmtDuration(timings.total)} (${report.fps_overall} fps overall)`);
       console.log(`  output  ${outFile} (${fmtBytes(size)}, ${mbps.toFixed(1)} Mb/s)`);
       if (renamedFrom) console.log(c.dim(`          ${path.basename(renamedFrom)} exists, so this is ${path.basename(outFile)} (renders never overwrite)`));
       if (size > SIZE_HINT_BYTES && !a.preview) console.log(c.dim(`          for a size cap (repos, chat, email): showtime deliver exports ${outFile} --targets original --max-mb 20`));
@@ -615,14 +818,16 @@ async function main() {
       if (report.share) console.log(`  share   ${report.share} (credits block for the video description)`);
       for (const n of report.credit_notes || []) console.log(c.yellow(`  note    ${n}`));
       console.log(`  report  ${reportFile}`);
-      console.log(`  log     ${logFile}`);
+      if (!brief) console.log(`  log     ${logFile}`);
       if (report.job) console.log(`  job     ${report.job}${studioMedia ? ' (studio media: the latest final/preview is unchanged)' : report.job_variant ? ` (logged as a variant, ${report.job_variant}: the latest ${a.preview ? 'preview' : 'final'} is unchanged; to make it the latest: showtime job note ${report.job} --output ${a.preview ? 'preview' : 'final'}=${outFile})` : ` (latest ${a.preview ? 'preview' : 'final'} -> ${path.basename(outFile)})`}`);
       if (warnings.length) console.log(`  ${c.yellow(`${warnings.length} warning(s)`)}, see above`);
+      // a second full render in the same place: the next fix is cheaper as a section render
+      if (prev && !a.preview && !partialRange) console.log(c.dim(`  next fix: prove it on the changed seconds first (showtime render ${path.relative(process.cwd(), proj.dir) || '.'} --from S --to S), then one full render`));
       // terminals only: what was made and the one next step (a preview: look at it; a final: qa)
       const qaTarget = report.job && !report.job_variant && !studioMedia ? report.job : outFile;
       showCard({
-        title: `${path.basename(outFile)} is ready`, file: outFile, facts: [fmtLen(outDur), `${W}x${H}`, fmtBytes(size)],
-        next: a.preview ? openHint(outFile) : `showtime qa ${shellPath(qaTarget)}`,
+        title: `${path.basename(outFile)} is ready${isSpan ? ` (a ${spanTxt} span, not the full video)` : ''}`, file: outFile, facts: [fmtLen(outDur), `${W}x${H}`, fmtBytes(size)],
+        next: isSpan ? `showtime look ${shellPath(outFile)}` : a.preview ? openHint(outFile) : `showtime qa ${shellPath(qaTarget)}`,
       });
     }
     return 0;
@@ -635,6 +840,72 @@ async function main() {
   } finally {
     setLogFile(null);
   }
+}
+
+/** "12", "2.5": a time in a span file name. */
+function spanNum(x) { return String(+Number(x).toFixed(2)); }
+
+/** render.json of a rendered video (<stem>.work/render.json, or render.json beside it), or null. */
+function renderReportFor(file) {
+  const dir = path.dirname(file), stem = path.basename(file, path.extname(file));
+  for (const rj of [path.join(dir, `${stem}.work`, 'render.json'), path.join(dir, 'render.json')]) {
+    const r = readJSON(rj, null);
+    if (r && r.output && path.basename(String(r.output)) === path.basename(file)) return r;
+  }
+  return null;
+}
+
+function describeEncode(rep) {
+  const e = (rep && rep.encode) || {};
+  return [e.crf !== undefined ? `crf ${e.crf}` : null, e.preset ? `preset ${e.preset}` : null].filter(Boolean).join(', ') || 'settings unknown';
+}
+
+/**
+ * The full render a span can be spliced into: the job's latest final (else its newest final*.mp4) or, for -o
+ * outside a job, the newest final*.mp4 beside the requested file. It must come from `showtime render` of this
+ * project and page (its render.json says so), be a whole video (not a span or preview) and have exactly this
+ * render's size, frame rate and frame count. -> {file, report} or {reason}.
+ */
+async function findSpliceBase({ job, beside, proj, W, H, fps, total }) {
+  const dir = job || path.dirname(beside);
+  const cands = [];
+  if (job) {
+    const ptr = ((readJSON(path.join(job, 'job.json'), null) || {}).outputs || {}).final;
+    if (ptr) cands.push(path.isAbsolute(ptr) ? ptr : path.join(job, ptr));
+  }
+  let names = [];
+  try { names = fs.readdirSync(dir); } catch { /* none */ }
+  cands.push(...names.filter((n) => /^final.*\.mp4$/i.test(n)).map((n) => path.join(dir, n))
+    .filter((f) => fs.existsSync(f)).sort((x, y) => fs.statSync(y).mtimeMs - fs.statSync(x).mtimeMs));
+  const seen = new Set();
+  let reason = `there is no full render of this project in ${path.basename(dir)} to splice it into`;
+  for (const file of cands) {
+    if (seen.has(file) || !fs.existsSync(file) || path.extname(file).toLowerCase() !== '.mp4') continue;
+    seen.add(file);
+    const rep = renderReportFor(file);
+    const name = path.basename(file);
+    if (!rep) { reason = `${name} has no render report (it was not made by showtime render)`; continue; }
+    // (a render from before 0.3.0 wrote a span as final-N.mp4: its range starts after 0)
+    if (rep.span || rep.preview || rep.kind === 'span' || rep.kind === 'preview' || (Array.isArray(rep.range) && Number(rep.range[0]) > 0)) {
+      reason = `${name} is not a full render`;
+      continue;
+    }
+    if (!rep.project || path.resolve(String(rep.project)) !== path.resolve(proj.dir) || (rep.page && rep.page !== proj.page)) {
+      reason = `${name} was rendered from another project or page`;
+      continue;
+    }
+    let pr = null;
+    try { pr = await probe(file); } catch { pr = null; }
+    const v = pr && pr.video;
+    if (!v || v.codec !== 'h264' || v.pix_fmt !== 'yuv420p') { reason = `${name} is not an H.264 render`; continue; }
+    if (v.width !== W || v.height !== H || Math.abs((v.fps || 0) - fps) > 1e-3 || v.frames !== total) {
+      // the newest full render decides: an older one at the old size would splice into a stale video
+      return { reason: `${name} is ${v.width}x${v.height} ${+(v.fps || 0).toFixed(3)} fps ${v.frames} frames and this render is ${W}x${H} ${fps} fps ${total} frames ` +
+        '(the size, frame rate or length changed), so the span cannot be spliced into it' };
+    }
+    return { file, report: rep };
+  }
+  return { reason };
 }
 
 /** The newest other final*.mp4 beside outFile: {file, size, settings} or null. */
@@ -662,8 +933,9 @@ function previousFinal(outFile, ext) {
   return best;
 }
 
-/** Credit lines for the video: the mix's CC-BY items plus the project's credits file (asset sidecars). */
-function collectCredits(audio, projDir) {
+/** Credit lines for the video: the mix's CC-BY items, the project's credits file (asset sidecars) and the
+ *  job's style references ("Style reference: <title>", written by `showtime reference`). */
+function collectCredits(audio, projDir, jobDir) {
   const lines = [];
   const add = (l) => { const t = String(l || '').trim(); if (t && !lines.some((x) => x.toLowerCase() === t.toLowerCase())) lines.push(t); };
   for (const l of (audio && audio.credits) || []) add(l);
@@ -673,6 +945,13 @@ function collectCredits(audio, projDir) {
   if (f) {
     // `showtime assets credits` format: a header, then one "- <credit>" line per item
     for (const l of fs.readFileSync(path.join(projDir, f), 'utf8').split(/\r?\n/)) if (/^\s*[-*] /.test(l)) add(l.replace(/^\s*[-*] /, ''));
+  }
+  if (jobDir) {
+    let refs = [];
+    try { refs = fs.readdirSync(path.join(jobDir, 'references')); } catch { /* none */ }
+    for (const r of refs.sort()) {
+      try { const j = JSON.parse(fs.readFileSync(path.join(jobDir, 'references', r, 'reference.json'), 'utf8')); if (j.credit) add(j.credit); } catch { /* not a reference */ }
+    }
   }
   return lines;
 }

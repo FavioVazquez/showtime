@@ -11,6 +11,54 @@ function of T**. The same `T` must always give the same pixels, whatever frame w
 
 ---
 
+## Essentials
+
+- Draw the whole frame in `scenes(T, g, F)` as a pure function of `T`: no state between frames (`x += v`,
+  pushing to arrays), no unseeded randomness or clocks; use `F.rng(seed)`, `F.hash`, `F.noise` (§11)
+- Start with `Film.start({look, design, scenes, fonts, images, score, acts})`; `design: [1920, 1080]` for 16:9,
+  `[1080, 1920]` for 9:16. `showtime.json` wins for size, fps and duration (§1, §2)
+- Derive every progress from T: `F.seg(T, a, b, ease)` (0..1), `F.win(T, a, b)` (visibility; 0 at exactly `b`,
+  so end it after the duration for the last frame), `F.tween`, `F.kf`, `F.stagger`, `F.springTo`, `F.timeline`,
+  `F.beats` (§3, §11)
+- Split scenes with `F.sequence(T, [{t0, t1, draw, in}])`. Transitions are centred on the cut: put the whoosh
+  or downbeat exactly on `t0`; use one or two transition types, `dip` only for chapter breaks (§4)
+- Keep every cut, click and hit time in one cue table (`cues.js`) shared by `scenes.js` and `score.js` (§11)
+- Text: `F.text`, `F.reveal` (by word or line; per-character only for 1-2 word titles), `F.typewriter`,
+  `F.counter`. Minimum 36 px body and 76 px or more for headlines in 1920x1080 design units (§5)
+- Never put arrows, `⌘`, `✓` or other symbols in text: draw them with `F.glyph` (`F.keycap`/`F.keyCombo`
+  do it for you) (§5)
+- Mark UI-mockup detail with `F.decor(() => ...)` or `{decor: true}`, never anything the viewer must read (§5)
+- Fonts are files, never system fonts: link the Fontsource CSS from `/_lib/` and list the weights in
+  `Film.start({fonts})`. Declare images in `Film.start({images})` or `F.image()` at setup, not in
+  `scenes()` (§9)
+- Wrap your own `g.globalAlpha`, `g.filter`, transform or clip changes in `g.save()`/`g.restore()`;
+  `g.filter = 'blur(...)'` is slow at 1080p, use it for a few elements only (§11)
+- First motion by 0.1-0.3 s, hero on screen by 0.5 s, never open on a black frame, leave `fadeIn` at 0 (§2, §3)
+- Entrances decelerate; exits accelerate and run 20-30 % faster; no overshooting springs on blocks of text (§3)
+- Walkthroughs: name UI parts once with `F.rects`, then `F.cursorPath`, `F.clickZoom`, `F.camera` +
+  `F.withCamera`, `F.fold` for UI state; draw step titles, keycaps and captions after `withCamera` (§8)
+- Charts (`F.bars`, `F.lineChart`): one insight per state, the headline states the takeaway, hold 2-3 s (§7)
+- Animated grain (`grainFps`) is incompressible: only when the film look is the point, and warn about size (§10)
+- Vertical films: author with `design: [1080, 1920]`, text inside x 64-916, y 220-1440 (§11)
+- Commands: `showtime render <dir>` (`--preview` for a 720p draft), `showtime preview <dir>`,
+  `showtime snap <dir> --at 2,4.5`, `showtime check <dir>`, `showtime score <dir>` (§1, §12)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| 1. Minimal film | 62-86 |
+| 2. Film.start(options) | 88-113 |
+| 3. Time: progress, windows, keyframes | 115-161 |
+| 4. Scenes and transitions | 163-187 |
+| 5. Text | 189-227 |
+| 6. Shapes, UI pieces and diagrams | 229-257 |
+| 7. Particles, charts, frames and images | 259-286 |
+| 8. Camera and tutorials | 288-353 |
+| 9. Fonts, images and cross-platform rules | 355-367 |
+| 10. Looks and file size | 369-386 |
+| 11. The pure-function-of-T rules (and the pitfalls they prevent) | 388-411 |
+| 12. Recipes | 413-465 |
+
 ## 1. Minimal film
 
 ```html

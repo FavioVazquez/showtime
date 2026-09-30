@@ -660,7 +660,8 @@ def doc_sources() -> List[Tuple[Path, str, str]]:
     extra = [(REPO / "CONTEXT.md", "docs/glossary.html"), (REPO / ".out-of-scope/README.md", "docs/out-of-scope.html"),
              (REPO / "skills/showtime/SKILL.md", "docs/skill.html"), (REPO / "assets/brand/BRAND.md", "docs/brand.html"),
              (REPO / "CONTRIBUTING.md", "docs/contributing.html"), (REPO / "CHANGELOG.md", "docs/changelog.html"),
-             (REPO / "docs" / "agents.md", "docs/agents.html")]
+             (REPO / "docs" / "agents.md", "docs/agents.html"),
+             (REPO / "docs" / "github-action.md", "docs/github-action.html")]
     for p, o in extra:
         if p.is_file():
             out.append((p, o, "backstage"))
@@ -702,7 +703,7 @@ def sidebar_groups(site: Site) -> List[Tuple[str, List[Tuple[str, str]]]]:
     groups.append(["The crew's briefs", crew])
     back = [("Glossary", "docs/glossary.html"), ("Out of scope", "docs/out-of-scope.html"), ("SKILL.md", "docs/skill.html"),
             ("Brand", "docs/brand.html"), ("Contributing", "docs/contributing.html"), ("Changelog", "docs/changelog.html"),
-            ("The agent's own map", "docs/index-claude.html")]
+            ("The GitHub Action", "docs/github-action.html"), ("The agent's own map", "docs/index-claude.html")]
     groups.append(["Backstage", [b for b in back if (site.out / b[1]).exists() or b[1] in site.pages.values()]])
     return [(g[0], g[1]) for g in groups]
 

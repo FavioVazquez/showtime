@@ -232,6 +232,26 @@ def is_terminal(stream: Any = None) -> bool:
         return False
 
 
+def brief_output(verbose: bool = False, stream: Any = None) -> bool:
+    """Lean mode: print a short summary (paths + verdict) instead of the full report?
+
+    On by default when nobody watches a terminal (agents, pipes, the MCP server); a terminal keeps the full
+    report. `verbose` (a command's --verbose), SHOWTIME_VERBOSE=1 or SHOWTIME_OUTPUT=full turn it off;
+    SHOWTIME_OUTPUT=brief turns it on.
+    """
+    mode = os.environ.get("SHOWTIME_OUTPUT", "").lower()
+    if verbose or os.environ.get("SHOWTIME_VERBOSE") == "1" or mode in ("full", "verbose"):
+        return False
+    if mode == "brief":
+        return True
+    stream = stream if stream is not None else sys.stdout
+    try:
+        tty = stream.isatty()
+    except (AttributeError, ValueError):
+        tty = False
+    return os.environ.get("SHOWTIME_MCP") == "1" or not tty
+
+
 def use_color(stream: Any = None) -> bool:
     """True when colored output should go to `stream` (default stderr).
 

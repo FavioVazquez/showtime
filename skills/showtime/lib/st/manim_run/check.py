@@ -18,6 +18,10 @@ Dry run (manim runs construct() without drawing a frame, a few seconds per scene
                             superscripts do not count)
   WARN   xheight_mismatch   math beside words whose x-height differs from the text's by more than 12 %
   WARN   mixed_type    Text and MathTex/Tex combined on one line by hand, not with mixed_line()/align_baseline()
+  WARN   black_segment, first_frame_black (ERROR), frozen  qa's black and frozen-frame detectors on a draft
+                        render (480p15, the scenes `manim render` caches), with qa's thresholds: Manim's
+                        near-black ground with sparse content and a small Indicate on an equation are what
+                        qa flagged in real runs; a hold the dry run already named is not repeated (--no-draft skips)
   INFO   estimated cues, scene lengths, short final hold
 """
 from __future__ import annotations
@@ -292,7 +296,8 @@ def _flush(run: Dict[str, Any], f: Findings, th: Dict[str, float], is_end: bool)
 
 
 def check(target: Path, scenes: Optional[List[str]] = None, cues_arg: Optional[str] = None,
-          brand: Optional[str] = None, dry_run: bool = True, aspect: Optional[str] = None) -> Dict[str, Any]:
+          brand: Optional[str] = None, dry_run: bool = True, aspect: Optional[str] = None,
+          draft: bool = True) -> Dict[str, Any]:
     from .render import kit_settings, manim_installed, resolve_theme, run_kit
     project = Project(target)
     f = Findings()
@@ -358,6 +363,12 @@ def check(target: Path, scenes: Optional[List[str]] = None, cues_arg: Optional[s
             else:       # a scene failed: judge each scene's own edges
                 for srec in summary:
                     join_holds([srec], f, th)
+    draft_info = None
+    broken = any(i["code"] in ("import_failed", "scene_failed", "cue_not_found", "latex_missing", "beat_unknown")
+                 for i in f.items)          # a hold ERROR does not stop the draft: qa's view is what we want
+    if dry_run and draft and not blocked and not broken and summary and len(summary) == len(names) and manim_installed():
+        from .draft import draft_findings
+        draft_info = draft_findings(target, project, f, scenes=scenes, aspect=aspect, cues_arg=cues_arg, brand=brand)
     for srec in summary:
         for k in ("_head", "_tail", "_fps"):
             srec.pop(k, None)
@@ -368,5 +379,5 @@ def check(target: Path, scenes: Optional[List[str]] = None, cues_arg: Optional[s
         it.pop("base", None)
     return {"ok": f.count("ERROR") == 0, "project": str(project.dir), "file": str(project.file), "aspect": aspect,
             "errors": f.count("ERROR"), "warnings": f.count("WARN"), "findings": f.items, "scenes": summary,
-            "duration": round(total, 3), "cues": None if not cues else {"source": cues["source"],
+            "duration": round(total, 3), "draft": draft_info, "cues": None if not cues else {"source": cues["source"],
                                                                          "estimated": bool(cues.get("estimated"))}}

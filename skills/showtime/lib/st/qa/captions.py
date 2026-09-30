@@ -225,6 +225,17 @@ def summary(cap: Dict[str, Any]) -> Dict[str, Any]:
             "under_flash": sum(1 for d in durs if d < R.FLASH_S)}
 
 
+def stats(cap: Dict[str, Any]) -> Dict[str, Any]:
+    """Longest line (characters), fastest reading speed (characters/s, cues the reading-speed rule covers)
+    and shortest cue of a parsed caption file: the numbers the phone-check summary quotes."""
+    cues = cap.get("cues") or []
+    longest = max((len(ln) for c in cues for ln in (c.get("lines") or [c["text"]])), default=0)
+    speeds = [R.cps(c["text"], c["end"] - c["start"]) for c in cues
+              if c["end"] > c["start"] and len(c["text"].split()) >= R.CPS_MIN_WORDS]
+    return {"cues": len(cues), "longest_line": longest, "max_cps": round(max(speeds), 1) if speeds else None,
+            "shortest_s": summary(cap)["shortest_s"]}
+
+
 def _placement(c: Dict[str, Any], play_res: Optional[Tuple[float, float]], W: int, H: int) -> Optional[str]:
     left, top, right, bottom = safe_box(W, H)
     sx = W / play_res[0] if play_res else 1.0

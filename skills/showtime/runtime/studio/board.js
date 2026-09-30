@@ -183,6 +183,7 @@
     /*ST:/DL*/
     // a host's frame may not keep this page's storage: then reactions last only until a reload
     if (HOSTED && !storageWorks()) note = 'This viewer does not keep your reactions if the page reloads: press "Copy for your agent" and paste the text into your chat before you leave.';
+    if (S.board && S.board.blind) note = 'Your votes are kept in this browser only. When you are done, press "Copy my votes" and paste the text into the chat.';
     $('#modeNote').textContent = (META_MODE === 'export' ? 'Shared copy of the board. ' : 'Offline copy. ') + note;
     if (HOSTED) document.documentElement.setAttribute('data-hosted', '');
     if (META_MODE === 'live') banner('The studio server is not running, so this page is a read-only snapshot. Restart it with <code>showtime studio open ' + esc(jobName()) + '</code>');
@@ -296,6 +297,7 @@
       html += ({ concepts: renderConcepts, storyboard: renderStoryboard, animatic: renderAnimatic, sound: renderSound, compare: renderCompare, decide: renderDecide })[s[0]]();
     });
     $('#main').innerHTML = html;
+    labelCopyButtons();
     setupSound(); setupAnimatic(); scrollSpy(); focusCard(S.ui.focus, false);
   }
 
@@ -309,10 +311,19 @@
       return '<li data-state="' + st + '"' + (st === 'current' ? ' aria-current="step"' : '') + '>' + esc(PHASE_LABEL[p]) + '</li>';
     }).join('') + '</ol>';
   }
+  // A blind vote (versions from different makers, e.g. a benchmark): the three steps and the copy button
+  // come first, so a voter on a phone knows the votes only leave the page when they paste them.
+  function renderVoteHowto() {
+    return '<section class="vote-howto" aria-labelledby="h-vote"><h2 id="h-vote">How to vote</h2><ol>' +
+      '<li><b>Watch</b> every version (under Watch: pick a letter, then play).</li>' +
+      '<li><b>Rate</b> each version 0-5 and answer the questions under Decide.</li>' +
+      '<li>Press <b>' + esc(copyLabel()) + '</b> and paste the text into the chat. Nothing is sent until you paste it.</li></ol>' +
+      '<button class="btn primary big" data-act="handoff">' + esc(copyLabel()) + '</button></section>';
+  }
   function renderIntro() {
     var b = S.board, r = b.round || {};
     var hist = (b.history || []).slice(0, 4);
-    return '<section class="intro"><div>' + renderPhases() + '<div class="eyebrow">' + esc(r.label || ('Round ' + (r.n || 1))) + '</div><h2>' + esc(r.prompt || b.brief || b.title) + '</h2>' +
+    return (b.blind ? renderVoteHowto() : '') + '<section class="intro"><div>' + (b.blind ? '' : renderPhases()) + '<div class="eyebrow">' + esc(r.label || ('Round ' + (r.n || 1))) + '</div><h2>' + esc(r.prompt || b.brief || b.title) + '</h2>' +
       '<p>' + esc(b.brief && r.prompt ? b.brief : (r.note || '')) + '</p>' +
       (b.brief && r.prompt && r.note ? '<p style="margin-top:8px">' + esc(r.note) + '</p>' : '') + '</div>' +
       (hist.length ? '<div class="changes"><h3>What changed</h3><ol>' + hist.map(function (h) { return '<li><b>r' + esc(h.rev) + '</b><span>' + esc(h.note) + '</span></li>'; }).join('') + '</ol></div>' : '<div></div>') +
@@ -485,7 +496,7 @@
       (copts ? '<div class="approve"><label for="apC"><b>Ready?</b> <span class="muted">Approve a concept to move on.</span></label><select id="apC">' + copts + '</select>' +
         '<label class="sr" for="apNote">Final notes</label><textarea id="apNote" maxlength="2000" placeholder="Final notes (optional)"></textarea>' +
         '<button class="btn primary" data-act="approve">' + ICON.check + 'Approve</button><div id="apState" class="muted" style="font-size:13px" role="status"></div>' +
-        '<div class="next" id="apNext" hidden><span><b>Last step:</b> copy this for your agent, then paste it in your chat. Nothing reaches your agent until you do.</span><button class="btn primary big" data-act="handoff">Copy for your agent</button></div></div>' : '') + '</div></div></section>';
+        '<div class="next" id="apNext" hidden><span><b>Last step:</b> copy this for your agent, then paste it in your chat. Nothing reaches your agent until you do.</span><button class="btn primary big" data-act="handoff">' + esc(copyLabel()) + '</button></div></div>' : '') + '</div></div></section>';
   }
 
   // ---------------------------------------------------------------- state -> DOM (cheap, never re-creates media)
@@ -514,6 +525,14 @@
     paintNotes();
   }
   function digestText() { return Core.digest(S.board, { job: jobName(), events: S.events }); }
+  function copyLabel() { return S.board && S.board.blind ? 'Copy my votes' : 'Copy for your agent'; }
+  function labelCopyButtons() {
+    ['#hoCopy', '#mCopy', '#copyBtn'].forEach(function (q) { var el = $(q); if (el) el.textContent = copyLabel(); });
+    if (S.board && S.board.blind) {
+      $('#hoTitle').textContent = 'Done? Press "' + copyLabel() + '", then paste the text into the chat.';
+      $('#hoSub').textContent = 'Your votes stay on this page until you paste them.';
+    }
+  }
 
   // ---------------------------------------------------------------- concept focus & frames
   function focusCard(i, scroll) {
@@ -685,7 +704,8 @@
   function copyDigest(auto) {
     var text = digestText();
     function done() {
-      toast(auto === 'approve' ? 'Approved and copied. Now paste it in your chat with your agent.' : 'Copied. Paste it into your chat with your agent.');
+      toast(S.board && S.board.blind ? 'Votes copied. Now paste them into the chat.'
+        : auto === 'approve' ? 'Approved and copied. Now paste it in your chat with your agent.' : 'Copied. Paste it into your chat with your agent.');
       if (!S.live) { $('#hoFallback').hidden = true; flashCopied(); }
     }
     function manual() {
@@ -715,7 +735,7 @@
   function flashCopied() {
     $$('[data-act="handoff"]').forEach(function (b) { b.textContent = 'Copied. Now paste it in your chat'; });
     clearTimeout(copiedTimer);
-    copiedTimer = setTimeout(function () { $$('[data-act="handoff"]').forEach(function (b) { b.textContent = 'Copy for your agent'; }); }, 6000);
+    copiedTimer = setTimeout(function () { $$('[data-act="handoff"]').forEach(function (b) { b.textContent = copyLabel(); }); }, 6000);
   }
   /*ST:DL*/
   function downloadFeedback() {

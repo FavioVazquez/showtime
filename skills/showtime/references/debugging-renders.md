@@ -4,6 +4,26 @@ Read this when a render fails, flickers, shows black or frozen frames, looks dif
 drops fonts or media, drifts out of sync, or when a fix you already tried did not work. For "the video came
 out wrong" reports from the user, start with `diagnosing.md` (intake and evidence), then come back here.
 
+## Essentials
+
+- Name the cause, with the output that shows it (start with the render's `log <path>`), before editing; no
+  sleeps or timeouts as fixes, gate on the thing itself (`ST.waitFor(promise)`) (§ Rules)
+- Rule out the machine: `showtime new dom st-probe --duration 3`, `showtime render st-probe --preview`; if that
+  fails too, `showtime doctor` (§ Rules)
+- One change per re-render (`showtime render <project> --from 4 --to 7 --preview`), compare `showtime snap` stills
+  at the same times; after three failed fixes, change the approach and tell the user (§ Rules)
+- Bisect in time: `showtime check <project> --find-first black|frozen|nondeterministic|error` (§ Bisect in time)
+- After the fix, re-run the command that showed it, quote its output, then `showtime qa` the new file (§ Symptom)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| Rules | 27-51 |
+| The pipeline and what reveals each hand-off | 53-68 |
+| Bisect in time, not in code | 70-82 |
+| Determinism | 84-94 |
+| Symptom → first move | 96-111 |
+
 ## Rules
 
 1. **Evidence first.** Name the cause, with the command output that shows it, before editing the project.

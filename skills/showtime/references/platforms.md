@@ -7,6 +7,40 @@ Numbers checked in September 2026. Platforms change limits often, so when a spec
 cutoff (a length cap, a file-size cap), say it's "as of 2026" and suggest the user double-check.
 `showtime deliver exports <video|job> --targets ...` builds the platform variants (`--help` lists the targets; a job means its latest final, and the job logs a `deliver` stage).
 
+## Essentials
+
+- Master: MP4, H.264 High, `yuv420p`, BT.709 tagged, `+faststart`, even pixel dimensions; 30 fps (60 only for
+  scroll- or cursor-heavy screen recordings, 24 for cinematic footage); never mix rates (§1)
+- −14 LUFS, ≤ −1.0 dBTP, LRA ≤ 8 LU; CRF 16 for finals, 14–16 plus 1.5–3% grain if a platform re-encodes (§1)
+- Variants: `showtime deliver exports <video|job> --targets ...`; a bare `--max-mb 20` caps `original`,
+  `github`, `chat`, `web` and image loops, never upload platforms; `--max-mb shorts:19` caps one target (§2)
+- A cap that decides a cutoff: say "as of 2026" and suggest a double-check (GitHub free ≤10 MB, chat ≤10 MB,
+  Shorts ≤3 min, X 2:20 without a paid tier) (§2)
+- README loops: `--targets webp,gif --from 2 --to 8`, a 3–12 s window starting and ending on similar frames;
+  no audio; qa the MP4 master before exporting (§2)
+- Vertical safe box x 64 → 916, y 220 → 1440 at 1080×1920; hook text at y 300–700, captions centered
+  on y 1150–1300; YouTube end screen covers the last 5–20 s (§3)
+- Poster: a hook complete at t=0 with `"poster": 0`; upload `poster.jpg` for YouTube and Reels/TikTok/Shorts
+  covers; EDL renders and outside videos: `showtime deliver poster <video|job> --at <s> --bake` (§4)
+- Thumbnail: `showtime deliver thumb <video|job> --at <s> -o thumb.jpg`; YouTube: 1280×720 JPG under 2 MB,
+  nothing bottom-right (§4)
+- Burn captions in for TikTok, Reels, Shorts, X and LinkedIn feed; also ship a `.srt`/`.vtt` for YouTube and
+  LinkedIn. Narration without captions is not finished for social (§5)
+- Cut-downs: re-lay out, don't crop; keep the safe core (center ~1080×1080 of 16:9); cut from the middle (§6)
+- Always write `share.txt`: 1–3 sentences, no "excited to share", no hashtag walls, no claims not in the
+  video; leave the Credits block in (§7)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| 1. Master encode (every export starts here) | 44-55 |
+| 2. Spec table: Image loops for READMEs, docs and chat (animated WebP + GIF) | 57-123 |
+| 3. Vertical safe zones (1080×1920) | 125-139 |
+| 4. Thumbnails, covers and posters | 141-161 |
+| 5. Captions | 163-169 |
+| 6. Cut-down strategy | 171-186 |
+| 7. Share copy per platform | 188-201 |
+
 ## 1. Master encode (every export starts here)
 
 - MP4, H.264 High profile, `yuv420p`, progressive, BT.709 primaries/transfer/matrix **tagged**, limited
@@ -99,6 +133,9 @@ x 64 → 916, y 220 → 1440 (top 220, bottom 480, left 64, right 164).
 | Shorts | 120–380 (search bar varies) | 380–420 | 60 | 120–140 |
 | Paid vertical ads (strict) | 14% (269) | 35% (672) | 6% (65) | 6% (65) |
 - Hook text sits at y 300–700 and captions center on y 1150–1300. Nothing essential goes below y 1440 or in the right 164 px.
+- `showtime check` enforces the universal box on any frame taller than wide (`safe_zone`; 4:5 uses the same box, scaled), and
+  landscape and square frames get `edge_margin` (3 % of an edge) and `control_strip` (small text in the bottom 8 %). They are the
+  zone part of the **phone check** that `showtime qa` prints as one line (qa.md, "Phone check").
 - For 16:9 on YouTube, the end screen can cover the last 5–20 s. Keep the end card's text center-top and leave room for 2–4 element slots.
 
 ## 4. Thumbnails, covers and posters

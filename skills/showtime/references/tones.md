@@ -9,6 +9,32 @@ user's words (section 3). Scene counts assume a ~20 s piece; scale them linearly
 Easing names are CSS-style: `expo-out` = cubic-bezier(0.16,1,0.3,1), `std-out` = (0.2,0,0,1),
 `in-out` = (0.65,0,0.35,1), `sine` = (0.37,0,0.63,1).
 
+## Essentials
+
+- Pick one preset, then adjust it with the user's words and say which changes you made. Scene counts assume a
+  ~20 s piece; scale them linearly (§1, §3)
+- Nothing specified: `default` (4–5 scenes of 3–5 s, `expo-out` entrances 0.4–0.6 s, hard cuts on beats with a
+  blur-dissolve at section changes; launches `upbeat-tech`, explainers and data a calm underscore) (§1)
+- No tone given: dev tool -> technical or default; consumer app -> playful; luxury, hardware -> polished or
+  minimal; people's stories -> documentary; big launch, trailer, event -> cinematic (§2)
+- Avoid the tone and look your last five videos used unless asked (`showtime history`) (§2)
+- `playful` sound only when the user or the product asks for it: under anything serious it reads as a kids'
+  game (§1)
+- `polished`: no whooshes, claps, bells or plucked leads, no overshoot; `chaotic`: flash frames ≤2 per video,
+  and legibility still wins (§1)
+- Blends take pacing and sound from the first word and the look from the second; on conflicts the readability
+  rules in `pacing.md` win (§3)
+- Every tone: one primary transition for 60–70% of cuts plus at most 1–2 accent types; one sound family in the
+  music's key; a "cheap" effect only in a parody, once or twice (§4)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| 1. Presets | 38-139 |
+| 2. Choosing a preset (when the user gave no tone) | 141-154 |
+| 3. Freeform direction → knobs | 156-175 |
+| 4. Invariants across every tone | 177-182 |
+
 ## 1. Presets
 
 **default**: clear, confident, modern. Use it when nothing else is specified.
@@ -123,6 +149,9 @@ Easing names are CSS-style: `expo-out` = cubic-bezier(0.16,1,0.3,1), `std-out` =
 | Mobile app store listing, feature tour | app-store |
 | Nonprofit, research, story of people | documentary |
 | Big launch, trailer, event | cinematic |
+| A reference video to match | the tone `showtime reference` suggests from its pace and sound |
+
+Avoid the tone and look your last five videos used unless asked (`showtime history`, `reference.md`).
 
 ## 3. Freeform direction → knobs
 

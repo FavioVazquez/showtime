@@ -7,6 +7,49 @@ music written in code inside a canvas film, read `synth-score.md`.
 
 Everything runs locally. Every command has `--help` with examples, and most accept `--json`.
 
+## Essentials
+
+- Music: a produced track with `showtime audio music pick --for launch --dur 45` (then `"catalog": "<id>"` in
+  the mix), or a composed bed with `showtime audio compose --style underscore --dur 45 --sections ...`; which
+  style: `music.md` (§1, §2)
+- With `"audio": "audio/mix.json"` in showtime.json, `showtime render` runs the mix itself. While iterating
+  run `showtime audio mix audio/mix.json -o audio/mix.wav` alone, then `showtime audio meter`: verify, never
+  guess (§1)
+- The mix masters to -14 LUFS / -1 dBTP by default (`master.lufs`, `master.true_peak`) (§5)
+- Each track has exactly one source: `file`, `lib`, `catalog` (pair it with `"fit": true`), `synth` or
+  `compose` (§5)
+- Levels (`"level": "auto"`, the default): voice -16 LUFS, music -20, ambience -32, sfx by category; `gain_db`
+  is relative to that; `"level": "raw"` keeps a file's own level (§5)
+- Place effects with `at` + `"align": "hit"` (reads the `.sfx.json` sidecar of `showtime audio sfx`); give
+  tonal effects the music's `--key`; `--variants 4` so repeats differ (§3, §5)
+- Ducking: `"duck": {"under": "voice", "depth_db": 12, "carve": 0.4}`; `carve` 0.3–0.5 is transparent, above
+  0.7 sounds hollow (§5)
+- A quiet intro is fixed with `gain_points` or `section_gain` on the bed, not with an sfx or by renaming a
+  section (§5)
+- Compose: every section marker lands on a downbeat, the file is exactly `--dur`, and the logo goes
+  on `end_hit` (take it from `mix.report.json`, not the cache); try 2 or 3 `--seed`s (§2, §5)
+- Read `mix.report.json` before you listen: `voice_to_music_db` aim 10–20; an sfx `above_bed_db` under 0 dB is
+  probably masked; read the warnings (§5)
+- CC-BY items must be credited: `showtime render` writes `credits.txt` and a Credits block in `share.txt`
+  (paste into the description); `--license cc0` avoids the question; a music `file` with no license match
+  warns (§4, §5)
+- Library: `showtime audio lib search --kind music --mood calm --min-dur 60`; the starter part (~41 MB) is
+  fetched on first use, `showtime audio lib fetch` gets the whole ~249 MB (§4)
+- `audio beats`: with `phrase_flow` the grid is fictional, cut on phrases and energy changes (§6)
+- Master to WAV and encode once at the end (AAC and MP3 add up to about 0.5 dB of overshoot) (§6)
+- MusicGen weights are CC-BY-NC: never use its output in a commercial video (§2, §7)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| 1. The five-minute path | 53-67 |
+| 2. Music | 69-121 |
+| 3. Sound effects | 123-139 |
+| 4. Library | 141-188 |
+| 5. The mix spec (audio/mix.json): Credits | 190-288 |
+| 6. Analysis and delivery | 290-306 |
+| 7. Platform notes | 308-318 |
+
 ## 1. The five-minute path
 
 ```bash

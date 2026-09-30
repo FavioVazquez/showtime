@@ -158,6 +158,15 @@ print(json.dumps({"es": [[t.text, t.spoken] for t in toks], "en": len(en)}))
         self.assertAlmostEqual(sum(w for _, w in d["blend"]), 1.0, places=6)
         self.assertEqual(d["es"], "ef_dora")
         self.assertEqual(d["piper"], "piper")
+        # the same word either side of a sentence break is heard as a stutter ("one one plus three")
+        stut = json.loads(py(r"""
+import json
+from st.voice import script as S
+print(json.dumps([bool(S.STUTTER_RE.search(t)) for t in (
+    "One. One plus three is four.", "Look at it. It changes.", "One plus three is four. Plus five is nine.",
+    "Look at this. Look closer: the corner.", "Add one. Then one more.")]))
+"""))
+        self.assertEqual(stut, [True, True, False, False, False])
 
         lst = js("voice", "list", "--json")
         kokoro = [v for v in lst["voices"] if v["engine"] == "kokoro"]

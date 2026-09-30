@@ -4,6 +4,26 @@ Read this when the user mentions their brand, asks for an "on-brand" video, give
 look the video should match, or when a `brand.json` exists near the project. A brand kit is optional: every
 workflow works without one.
 
+## Essentials
+
+- Always pass `-o`: `showtime brand init --from . -o <job>/brand.json` (or `--url`); without it the kit lands
+  in `./brand.json`, often the user's repo (§ Drafting one)
+- A drafted kit is a guess: in quick mode state the palette and fonts as assumptions and carry on; a
+  correction from the user sets `"status": "confirmed"` (§ Drafting one)
+- The kit is a default, never an override: the user's words win; a missing kit, key or logo falls back to the
+  theme, mentioned once (§ How workflows read it)
+- `showtime brand show` checks contrast and fonts; an accent under 4.5:1 is for shapes, not body text;
+  non-free brand fonts stay out (§ Drafting one, § How workflows read it)
+- Never invent brand facts (claims, numbers, customers) from the kit (§ How workflows read it)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| What it holds | 27-44 |
+| Brand first: showtime brand capture (launches, promos, product videos) | 46-76 |
+| Drafting one | 78-100 |
+| How workflows read it | 102-115 |
+
 ## What it holds
 
 `brand.json` (for tools) and `brand.md` (the human summary) sit at the repo root, or in the job folder
@@ -22,6 +42,38 @@ workflow works without one.
 | `tone` | 3-5 tone words | the tone preset (`tones.md`) and copy |
 | `other` | keywords, repository, license | context only |
 | `status` | `draft` until the user confirms, then `confirmed` | whether to state it as an assumption or rely on it silently |
+
+## Brand first: `showtime brand capture` (launches, promos, product videos)
+
+```
+showtime brand capture . --job my-launch                       # repo + its site folder (site/, docs/, public/, dist/ ...)
+showtime brand capture https://acme.dev --job my-launch         # a live site
+showtime brand capture . --url http://localhost:5173 --job my-launch   # the running app as the real UI
+showtime brand apply my-launch/project                          # after editing brand.json (new launch does it once)
+showtime brand skip my-launch --why "the user wants our house style"
+```
+
+One command before the storyboard. It drafts the kit from the repo (as `init --from`), serves and captures
+the repo's site folder or the URL (`site capture`, `--aspect 16:9,1:1,9:16` by default), and merges them:
+the rendered site's ground, ink and accent win (they are what people see), the repo fills the rest. On
+top of `init` it records: the **wordmark** as the site sets it (text runs with their colours, e.g. "quill"
+in ink + "sort" in the accent), the **code-block look** (the product window's colours), the **copy**
+verbatim with file:line (README title, tagline, install line, commands, features; the newest CHANGELOG
+release; the site's headline and buttons), the **real UI** (`web`: the captured screens; `cli`: the
+README's commands to run as evidence; a dev-server hint when `package.json` has one) and the **capture**
+(screens per aspect, contact sheet, inventory). It writes `<job>/brand/{brand.json,brand.md,capture/}`
+(without a job: `-o`, else `showtime-out/brand-<name>-<time>/`) and records the kit in `job.json`
+(`brand`, and an assumption line in SHOWTIME.md). Nothing in the repo is executed.
+
+`showtime new launch` (and promo/trailer/teaser/release kinds) applies the kit found for the project:
+a `<style id="st-brand">` block of tokens (`--bg --fg --muted --accent`, the window `--win-*` in the code
+colours, the world light), fonts that are installed or ship with setup, the end card's wordmark, version,
+value line, install command and URL where the template still says SLOT, and the web screens copied into
+`shots/brand/`. Text colours are only deepened to reach 4.8:1 (the result line also on its mark); each
+change is printed. `--no-brand` skips it. `showtime check` on a launch-kind project reports `brand`
+(info: in the kit's look), `brand_not_applied` (warning: a kit exists, the page uses other colours),
+`brand_missing` (warning in a job that neither has a kit nor records why) or `brand_none` (info: the
+reason recorded with `brand skip`).
 
 ## Drafting one
 

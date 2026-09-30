@@ -5,6 +5,27 @@ Read this when the user has a set of still images and wants a video: an event re
 photos with music"). The build is a `dom` project: one scene per image with a slow move (`ken-burns`),
 transitions, optional captions, and a music bed whose downbeats time the changes.
 
+## Essentials
+
+- Defaults: 2.5-4 s per image, `ken-burns` zoom 1.08-1.12 toward the subject (≤ 1.12 on small images), one
+  transition style, a bed composed to the exact length; state mood and order (§ Defaults)
+- `showtime assets sheet <folder> --sort date -o <job>/work/sheet.jpg` first; drop near-duplicates, order into
+  an arc (§ Steps)
+- `showtime new dom <job>/project --duration <total>`, one scene per image;
+  `showtime audio compose --style acoustic-folk --dur <total>`; scene starts on downbeats (§ Steps)
+- `showtime snap <job>/project --every 2` for bad crops; render with `--job <job>`, then `showtime qa <job>`
+  (§ Steps)
+- Never add names or captions you were not given (§ Pitfalls)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| Inputs | 29-32 |
+| Defaults | 34-41 |
+| Steps | 43-68 |
+| Pitfalls | 70-77 |
+| Read next | 79-82 |
+
 ## Inputs
 
 - The images (a folder), in the order the user wants or with a rule (date, filename).

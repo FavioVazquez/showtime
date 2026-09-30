@@ -4,6 +4,39 @@ Read this when you pick or compose music for a video: a produced track from the 
 bed or none; which suits the tone, tempo and key; how to line sections up with the edit; and how to
 end. The commands are in `audio.md`.
 
+## Essentials
+
+- Launch, trailer, story: a produced track (`showtime audio music pick --for launch --dur <len>`, then
+  `{"kind": "music", "catalog": "<id>", "fit": true}`); explainer, tutorial, data: a restrained underscore or
+  none; exact beats, stems: `showtime audio compose` (§0)
+- You cannot listen: read `audio music info <id>` (moods, energy, vocals, `ending`, highlight); a short cut of
+  a slow build: `"offset": "highlight"`; a disliked track: `audio music veto <id>` (§0)
+- Never use Pixabay, Mixkit, Uppbeat, Bensound or YouTube Audio Library files, or anything NC or ND. Credits
+  are automatic: write post copy above the Credits block in `share.txt`, never delete it (§0)
+- Restraint reads as premium: explainers, data, reports, math and team videos get `underscore`,
+  `minimal-pulse`, `ambient-pad`, `piano-emotional` or none; a bed under voice ducks 12 dB (§1)
+- Unless asked, avoid plucked or mallet leads for serious work, claps at 110+ bpm under data, and `build` ->
+  `drop` under charts; calm beds use `intro`, `verse`, `break`, `outro` (§1, §2)
+- Produced track under a short film: `showtime audio cuts --for launch --dur 30 --scenes 5` puts scene changes
+  on phrases (`--apply <project>` retimes the scenes) (§3)
+- Composed: storyboard times as `--sections`; read `bed.beats.json` (`downbeats` for cuts, `events`,
+  `end_hit`); cut picture 1–2 frames before the beat; tonal SFX get the music's `--key` (§2, §3)
+- `phrase_flow` or a low `bpm_confidence`: do not hard-cut on the grid; fixed music: snap scene boundaries to
+  the nearest downbeat (§3)
+- End on a button: the logo exactly on `end_hit`; never fade out mid-phrase; library music:
+  `audio fit --dur D` (`--ending song`) or a `logo-sting` with `align: hit` (§4)
+- Keep style, bpm, key, sections and seed in the project notes so a later edit can regenerate it (§5)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| 0. Produced track, composed bed, or none | 40-69 |
+| 1. Decide the job of the music first | 71-107 |
+| 2. Style catalog (showtime audio styles) | 109-164 |
+| 3. Sync music to the edit | 166-200 |
+| 4. Endings | 202-223 |
+| 5. Iterate cheaply | 225-232 |
+
 ## 0. Produced track, composed bed, or none
 
 | The video | Music | How |

@@ -1,6 +1,6 @@
 ---
 name: researcher
-description: "showtime crew. Dispatched by the showtime skill, not for general requests. Use before the final render of publish-bound or studio videos to fact-check every claim against its source and audit every asset's license and credits. Needs a TASK.md path."
+description: "showtime crew. Dispatched by the showtime skill, not for general requests. Use before the final render of videos that state facts or claims, publish-bound or studio videos, to fact-check every claim against its source and audit every asset's license and credits. Needs a TASK.md path."
 tools: ["read", "search", "edit", "execute", "web"]
 ---
 <!-- generated from the showtime crew; edit the source in the showtime plugin, not here -->

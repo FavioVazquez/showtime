@@ -291,7 +291,10 @@ class TestShim(Tmp):
         cp = launcher("doctor", "--quick", "--json", env=clean_env(HOME=user, SHOWTIME_HOME=home, SHOWTIME_OFFLINE="1"),
                       cwd=self.tmp, timeout=300)
         row = {r["check"]: r for r in json.loads(cp.stdout)["checks"]}["showtime command"]
-        self.assertEqual(row["status"], "pass", row)
+        # repaired (by the launcher's first run), and a warning that the command runs the newer kept copy
+        # (9.9.9), not this skill
+        self.assertEqual(row["status"], "warn", row)
+        self.assertIn("showtime 9.9.9 at %s" % kept, row["detail"])
         self.assertEqual(shim.recorded_skill(home), kept)
         self.assertTrue(shim.status(home)["ok"])
 

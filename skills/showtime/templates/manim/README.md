@@ -2,9 +2,11 @@
 
 Projects made with `showtime manim new <dir> [--template example|equation|graph|plane|refine|blank]`.
 
-- `example/`: a narrated explainer in two scenes ("odd numbers build squares"): the sum is written term
-  by term on each spoken number, tiles in the same colours build the square, the sum morphs into 4^2
-  and then into the general rule. Files: `manim.json` (settings, one colour per concept),
+- `example/`: a narrated explainer in two scenes ("odd numbers build squares"): each spoken number drops
+  into the sum while a running total ticks up, copies of each term fly down and become its band of
+  tiles in the same colour, the square is boxed and braced, the sum morphs into 4^2 and then into the
+  general rule. It passes `showtime manim check` with no warnings: the hook is on screen at t=0 and
+  something visible changes every 1-2 s. Files: `manim.json` (settings, one colour per concept),
   `scenes.py` (the beat sheet is its docstring), `narration.md` (one `## id` heading per beat).
 - `patterns/`: one-scene starters that run without narration: `equation.py` (walkthrough with morphs,
   focus and a note), `graph.py` (axes, faint preview, traced curve with a glowing tip), `plane.py`

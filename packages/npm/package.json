@@ -1,6 +1,6 @@
 {
   "name": "@faviovazquez/showtime-mcp",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "mcpName": "io.github.FavioVazquez/showtime",
   "description": "A local video studio for your coding agent: showtime's MCP server and command line. Describe a video. Your agent directs. Your machine renders.",
   "license": "MIT",

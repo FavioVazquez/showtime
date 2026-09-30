@@ -51,20 +51,22 @@ BUILTINS = {
     "mcp": "Run showtime's MCP server on stdio (for agent configs: <home>/bin/showtime mcp)",
     "help": "Show this help, or `showtime help <command>`",
 }
-STDLIB_CLI = ("paths", "new", "retime", "data", "install")   # stdlib-only commands that also run without the venv
+STDLIB_CLI = ("paths", "new", "retime", "data", "install", "guide", "config")   # stdlib-only commands that also run without the venv
 
 # Top-level help: groups in the order a video gets made. A command a module
 # adds later shows up under "more" until it is listed here. Examples are only
 # printed when their command exists in this install.
 GROUPS = [
     ("make", "Make a video from an HTML/canvas project",
-     ["new", "retime", "data", "preview", "render", "export", "check", "snap", "score", "motion", "code", "server",
-      "manim"],
+     ["new", "retime", "data", "adopt", "preview", "render", "export", "check", "look", "snap", "score", "motion", "code",
+      "server", "manim", "release-video"],
      ["showtime new dom my-launch --aspect 16:9",
       "showtime retime my-launch -d 20            # or --from-voice voice/timeline.json",
       "showtime preview my-launch",
+      "showtime check my-launch && showtime look my-launch   # one small image of the key frames",
       "showtime render my-launch --preview        # fast draft first",
       "showtime render my-launch -o final.mp4",
+      "showtime adopt launch-video/               # a page with seek/render/draw(t) or a Python frame script",
       "showtime manim new my-math                 # equations, proofs, graphs (Manim)"]),
     ("audio", "Music, sound effects, mixing and loudness",
      ["audio"],
@@ -92,20 +94,23 @@ GROUPS = [
       "showtime studio open launch-teaser",
       "showtime brand init --from ."]),
     ("job/qa", "Where a job stands, and proof it is done",
-     ["status", "qa", "review-pack", "job", "clean"],
+     ["status", "qa", "review-pack", "review-verdict", "job", "receipt", "clean"],
      ["showtime status",
       "showtime qa final.mp4 --project my-video",
-      "showtime review-pack showtime-out/launch-20260926-101500"]),
+      "showtime review-pack showtime-out/launch-20260926-101500",
+      "showtime receipt                # what the job took: rounds, renders, time, tokens, cost"]),
     ("deliver", "Posters, platform exports, thumbnails",
      ["deliver"],
      ["showtime deliver exports final.mp4 --targets youtube,reels,square",
       "showtime deliver poster final.mp4 --bake"]),
     ("setup", "Install, check and locate things",
-     ["setup", "doctor", "install", "report", "paths", "version", "mcp", "help"],
+     ["setup", "doctor", "config", "install", "report", "paths", "version", "mcp", "guide", "help"],
      ["showtime setup                 # core install, once",
       "showtime doctor",
+      "showtime guide components count-up   # one section of a reference (--find words searches them)",
       "showtime render my-launch --background   # long work in hosts with short command timeouts",
       "showtime setup --with asr-turbo",
+      "showtime config mode lean       # review mode for new jobs: quality (default, full review) or lean (draft pass)",
       "showtime install --agent codex  # skill, crew and MCP config for another agent"]),
 ]
 INSTALL_DOC = "https://github.com/faviovazquez/showtime#install"
@@ -719,7 +724,7 @@ def utf8_stdio(streams=None) -> None:
 
 NO_BACKGROUND = ("help", "version", "status", "mcp", "-h", "--help", "-V", "--version")
 # Commands that finish in seconds, print their own progress (doctor), or serve until stopped: no heartbeat.
-QUIET_COMMANDS = {"help", "version", "paths", "install", "status", "new", "retime", "data", "job", "clean", "brand", "report",
+QUIET_COMMANDS = {"help", "version", "paths", "install", "status", "config", "new", "retime", "data", "job", "clean", "brand", "report",
                   "doctor", "mcp", "server", "preview", "studio"}
 HEARTBEAT_DEFAULT = 45.0
 SUBCOMMAND_GROUPS = {"audio", "voice", "edit", "deliver", "export", "site", "demo", "doc", "assets", "manim",

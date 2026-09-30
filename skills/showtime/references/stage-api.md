@@ -4,6 +4,48 @@ Read this when you write or debug a showtime page (`index.html` + `showtime.json
 library (anime.js, Lottie, three.js, canvas, video) to a scene, or `showtime check` reports
 a determinism, timing or seek problem.
 
+## Essentials
+
+- Every frame is a pure function of `t`: the renderer calls `ST.seek(t)` per frame and screenshots; the same
+  `t` must give the same pixels in any order, on any machine (§ The one rule)
+- `<script src="/_st/stage.js"></script>` is the first script in `<head>`; fonts and packages from `/_lib/`,
+  fetched assets from `/_assets/`, the rest relative; nothing from the internet (§ Minimal page)
+- `showtime.json`: `width`/`height` (even), `fps` (30), `duration`, `background`, `title`, `poster`, `audio`,
+  `loudness` (-14 LUFS, -1 dBTP). It wins over `ST.config`; CLI flags win over both (§ Configuration)
+- Clips: an element with `data-start` shows only inside `[start, end)`; `data-dur` or `data-end`; values
+  `2.5`, `+0.5`, `#intro`, `#intro+0.3`. Visible clips get `data-active`, `--t` and `--p` (§ Clips)
+- CSS and Web Animations in a clip run on the clip's clock (`animation-delay` from the clip start);
+  `showtime retime` does not rescale `animation-delay`, check delays by hand after it (§ Clips)
+- Time reveals to words from the `VO` table (`showtime voice cues voice/timeline.json -o voice/cues.js`),
+  not typed numbers; run `voice cues` again after every re-voice (§ Clips)
+- Draw anything else in `ST.onSeek((t, frame) => ...)`, returning nothing or a real `Promise`, never a library
+  timeline. `ST.waitFor` for loading, `ST.rand(seed)`, `ST.noise`, `ST.progress`, `ST.ease.*` (§ API)
+- Never call `ST.seek` or `ST.ready` from scene code (§ API, § Readiness)
+- Libraries: create them paused and hand them over: `ST.anime(tl, {offset})`, `ST.lottie(anim, ...)`,
+  `ST.three(renderer, scene, camera, fn)` with `preserveDrawingBuffer: true`, `ST.gsap` (§ API)
+- Never: `setTimeout`/`setInterval` animation, class-toggled CSS `transition`, state between frames
+  (`x += v`), `Math.random()` for layout, remote files, system fonts, symbols as text, animated GIFs,
+  animating `left/top/width/height` instead of `transform` (§ Determinism)
+- Footage: VP9/WebM made with `showtime footage trim in.mp4 --webm --no-audio -o media/clip.webm` (never bare
+  ffmpeg), a proxy at the shown size; the page is always muted, sound goes in the `audio` mix (§ API)
+- Emoji in text become images: install each once with `showtime assets emoji` (§ Determinism)
+- Overlay pages for `render --alpha`: `"overlay": true` or `<body data-overlay>` (§ Configuration)
+- `showtime check` recaptures frames after a delay and in another order to prove determinism; scrub in
+  `showtime preview` (§ Determinism, § Preview mode)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| The one rule | 49-54 |
+| Minimal page | 56-91 |
+| Configuration | 93-109 |
+| Clips: data-start / data-dur | 111-151 |
+| API: Library helpers (built-in adapters), <video> in a page | 153-218 |
+| Determinism: what the render mode does and what to avoid | 220-251 |
+| Readiness | 253-258 |
+| Preview mode | 260-272 |
+| Scene transitions with shaders (layer protocol) | 274-280 |
+
 ## The one rule
 
 **Every frame is a pure function of time `t` (seconds).** Nothing plays during a render: the
@@ -76,6 +118,10 @@ frame. The stage sets on each visible clip:
 - CSS variables `--t` (seconds since the clip started) and `--p` (0..1 through the clip), and on
   `:root`: `--st-t` (video time) and `--st-p` (0..1 through the video)
 
+Outside its window a clip's `--t`/`--p` still depend only on the time: 0 before it starts, its last
+frame's values after it ends. A transition that keeps the outgoing scene on screen therefore shows
+the same frame however the video is seeked.
+
 Time grammar for `data-start` and `data-end`:
 
 | Value | Means |
@@ -114,7 +160,7 @@ plus the line's delay in the scene.
 | `ST.rand(seed)` | deterministic generator: `r()` in [0,1), `r.range(a,b)`, `r.int(a,b)`, `r.pick(arr)`, `r.sign()`. Seeds can be numbers or strings. |
 | `ST.noise(x, seed)`, `ST.noise2(x, y, seed)` | smooth deterministic noise in [-1, 1] (drift, wobble, handheld camera) |
 | `ST.progress(t, a, b, ease?)` | 0..1 position of `t` between `a` and `b`, optionally eased |
-| `ST.ease.*` | `linear inQuad outQuad inOutQuad outCubic inOutCubic outExpo inOutExpo outBack outElastic` |
+| `ST.ease.*` | `linear`, `in`/`out`/`inOut` + `Sine Quad Cubic Quart Expo Circ Back` (the same names as Film's `F.E`), `outElastic` |
 | `ST.clamp(x, a, b)`, `ST.lerp(a, b, p)` | helpers |
 | `ST.score = async (ctx, dest, info) => {...}` | optional score written in Web Audio: schedule everything from time 0 on `ctx` into `dest`. Rendered offline to a WAV by the renderer and played in sync by the preview player. `info = {duration, sampleRate, offline}` |
 | `ST.config(obj)` | set/merge config (see above); returns the effective config |

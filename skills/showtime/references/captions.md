@@ -7,6 +7,39 @@ are `showtime captions` (stand-alone) and the EDL field `captions` (rendered las
 instead (`components.md`; `clean-pop` for 9:16 shorts: sentence-case heavy sans, the spoken word in
 the accent). Both writers group the same way: phrase-sized cards that never end on a weak word.
 
+## Essentials
+
+- Footage captions: `showtime captions` or the EDL `captions` field (burned last by `showtime edit render`);
+  HTML/canvas projects use the runtime caption component (`components.md`) instead (§1, §6)
+- Default style: `bold-pop` for vertical social, `clean` for everything else; social edits always get captions;
+  `boxed` over bright or busy footage; `position: middle` for a tight 9:16 talking head (§1, §5)
+- Every style stays within the qa limits: ≤2 lines, ≤42 characters a line (32 vertical, 4:5 included), 3+ word
+  captions readable at 20 characters/s or slower; no caption ends on a weak word; word timings never move (§2)
+- SRT/VTT sidecars always follow the `clean` rules (0.83-7 s per cue, fillers removed); an `.srt`/`.vtt` input
+  keeps its cues unless `--regroup` (§2)
+- `--text-scale 1.2` (same as `--size-scale`, 0.5-2.5) enlarges the text and lowers the line cap to match (§3)
+- 9:16: platform UI covers about the bottom 25 %, the right 15 % and the top 7 %; baseline 25-30 % above the
+  bottom, margins 6 % left and 15 % right (§3)
+- Fonts: libass gets only the TTF/OTF files handed to it; never name a system font; `missing_glyphs` hints a font
+  (e.g. `--font noto-sans-jp`); emoji are removed unless `--keep-emoji` (§4)
+- Check: `captions.timing` `words_outside_group`, `overlaps`, `words_missing` all 0; qa WARNs `caption_flash`
+  under 0.4 s; frames with `showtime footage view final.mp4 --from 4 --to 7` (§5)
+- One highlighted word per caption at most, 3-5 in a 30 s short (§5)
+- `showtime captions t.json --style clean --aspect 16:9 -o subs.ass --srt subs.srt`; `--edl edit/edl.json` for
+  an edited timeline; `--burn clip.mp4 -o clip.captioned.mp4` to burn (§6)
+- An `--srt`/`--vtt` written into the job folder itself becomes the job's latest captions (a subfolder does not);
+  `--burn` onto the job's final makes the captioned copy the latest final (§6)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| 1. Pick a style | 43-66 |
+| 2. Grouping rules | 68-114 |
+| 3. Sizes and safe zones | 116-140 |
+| 4. Fonts | 142-158 |
+| 5. Checking captions | 160-172 |
+| 6. Commands | 174-203 |
+
 ## 1. Pick a style
 
 | Style | Looks like | Use for | Avoid for |

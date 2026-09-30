@@ -418,6 +418,50 @@ def repair(home: Path, skill: Path) -> Tuple[str, str]:
     return "repaired", "%s (%s)" % (shim_path(home), "; ".join(what))
 
 
+def _vstr(v: Tuple[int, ...]) -> str:
+    return ".".join(str(x) for x in v) if v else "unknown version"
+
+
+def drift(home: Path, running: Path, user_home: Optional[Path] = None) -> Optional[Dict[str, str]]:
+    """When <home>/bin/showtime and the skill running now are not the same showtime: {problem, fix}, else None.
+
+    Every run keeps the record on the newest skill (remember), so what is left after it is either a
+    record on a newer skill than this one (this agent runs an older copy: the command and the agent
+    disagree on templates and flags), or this skill recorded while a newer one sits in the usual skill
+    folders (an agent updated showtime but has not run it yet)."""
+    home, running = Path(home), Path(running)
+    if is_ephemeral(running) and valid_skill(home / COPY_NAME):
+        running = home / COPY_NAME          # a skill run from npm's cache is recorded as its kept copy
+    rec = recorded_skill(home)
+    if not valid_skill(rec) or not valid_skill(running):
+        return None
+    cmd = shim_path(home)
+    rv, sv = skill_version(rec), skill_version(running)
+    if not _same(rec, running):
+        if rv > sv:
+            return {"problem": "%s runs showtime %s at %s, but this is showtime %s at %s: the two differ in templates "
+                               "and flags" % (cmd, _vstr(rv), rec, _vstr(sv), running),
+                    "fix": "update showtime in the agent that runs %s (reinstall or update the plugin), then run "
+                           "`showtime doctor` again; until then use one of them for every command" % running}
+        # remember() re-records a newer or equal running skill; it failing means the record is not writable
+        return {"problem": "%s still runs %s (showtime %s), not this skill %s (showtime %s)"
+                           % (cmd, rec, _vstr(rv), running, _vstr(sv)),
+                "fix": "make %s writable and run `%s doctor` again (it re-points the command)"
+                       % (record_file(home), Path(running) / "bin" / "showtime")}
+    cands = find_skills(user_home)
+    plugin = os.environ.get("CLAUDE_PLUGIN_ROOT")
+    if plugin and valid_skill(Path(plugin) / "skills" / "showtime"):
+        cands.append(Path(plugin) / "skills" / "showtime")
+    newer = [d for d in cands if skill_version(d) > sv and not _same(d, running)]
+    if newer:
+        best = max(newer, key=skill_version)
+        return {"problem": "%s runs showtime %s at %s, but showtime %s is installed at %s"
+                           % (cmd, _vstr(sv), running, _vstr(skill_version(best)), best),
+                "fix": "run `%s doctor` once: it points the command at the newer skill"
+                       % (best / "bin" / ("showtime.cmd" if os.name == "nt" else "showtime"))}
+    return None
+
+
 # --------------------------------------------------------------------------- PATH advice (never applied)
 
 def user_path() -> str:

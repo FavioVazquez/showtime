@@ -25,11 +25,14 @@ Step = Union[str, Dict[str, Any]]
 
 def equation_walkthrough(scene: Any, steps: Sequence[Step], where: str = "center", colors: Optional[Dict[str, str]] = None,
                          hold: float = 1.0, arc_degrees: float = 40, write_time: float = 1.6,
-                         morph_time: float = 1.6) -> Eq:
+                         morph_time: float = 1.6, font_size: Optional[float] = None) -> Eq:
     """Walk an equation through its steps. A step is a TeX string or a dict:
         {"tex": ..., "cue": "word" (wait for it first), "key_map": {"+": "-"}, "focus": "c^2" (dim the rest
          and box it), "note": "3 words max" (a note under the line), "hold": seconds}
-    The first line is written; every later line only morphs, so symbols keep their identity."""
+    The first line is written; every later line only morphs, so symbols keep their identity.
+    font_size: the equation's size (eq()'s default 72 when None); each line still fits `where`. Math is
+    thin ink: at 72 on its own, a written or morphing line is too small a change for qa's frozen-frame
+    detector, so a walkthrough that is the whole picture wants 100-120."""
     cur: Optional[Eq] = None
     dimmed = False
     extras: List[Any] = []
@@ -37,7 +40,7 @@ def equation_walkthrough(scene: Any, steps: Sequence[Step], where: str = "center
         spec = {"tex": st} if isinstance(st, str) else dict(st)
         if spec.get("cue") is not None:
             scene.at(spec["cue"])
-        nxt = eq(spec["tex"], colors=colors)
+        nxt = eq(spec["tex"], colors=colors, **({"font_size": font_size} if font_size else {}))
         place(nxt, where)
         if extras:
             scene.play(*[FadeOut(x) for x in extras], run_time=0.4)
@@ -127,9 +130,12 @@ def _num(v: float) -> str:
 def graph_build(scene: Any, f: Callable[[float], float], x_range: Tuple[float, float] = (-3, 3),
                 y_range: Optional[Tuple[float, float]] = None, axes: Optional[Axes] = None, color: Optional[str] = None,
                 run_time: float = 3.0, preview: bool = True, dot: bool = True, linear_time: bool = True,
-                where: str = "center") -> Tuple[Axes, Any]:
+                where: str = "center", area: Union[bool, float] = False) -> Tuple[Axes, Any]:
     """Axes first (1 s), a faint preview of the whole curve, then the curve traced with a glowing tip.
-    Use linear_time for a time axis (constant speed), smooth for "here is the shape"."""
+    Use linear_time for a time axis (constant speed), smooth for "here is the shape".
+    area=True (or an opacity) fills the area under the curve as it is traced: a thin curve alone changes
+    too little of the frame for qa's frozen-frame detector over a long trace. The area stays on screen
+    as `graph.st_area`."""
     T = theme()
     col = T.color(color) if color else T.hue(1)
     if axes is None:
@@ -150,10 +156,28 @@ def graph_build(scene: Any, f: Callable[[float], float], x_range: Tuple[float, f
     if preview:
         pv = graph.copy().set_stroke(opacity=0.28)
         scene.play(FadeIn(pv), run_time=0.6)
+    fill = None
+    if area:
+        op = 0.3 if area is True else float(area)
+        x_lo = float(x_range[0])
+
+        def swept() -> Any:
+            x_tip = float(axes.p2c(graph.get_end())[0]) if graph.has_points() else x_lo
+            return axes.get_area(graph, x_range=[x_lo, max(x_tip, x_lo + 1e-3)], color=col, opacity=op,
+                                 stroke_width=0)
+        fill = always_redraw(swept)
+        scene.add(fill)
     if dot:
         tip = always_redraw(lambda: glow_dot(graph.get_end(), color=col, radius=0.26, layers=8))
         scene.add(tip)
     scene.play(Create(graph, rate_func=linear if linear_time else smooth), run_time=run_time)
+    if fill is not None:
+        scene.remove(fill)
+        still = axes.get_area(graph, x_range=[float(x_range[0]), float(x_range[1])], color=col, opacity=op,
+                              stroke_width=0)
+        scene.add(still)
+        scene.bring_to_front(graph)
+        graph.st_area = still  # type: ignore[attr-defined]
     if dot:
         scene.remove(tip)
         final = glow_dot(graph.get_end(), color=col, radius=0.26, layers=8)

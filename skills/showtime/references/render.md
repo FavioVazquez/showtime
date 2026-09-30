@@ -4,13 +4,61 @@ Read this when you are about to look at, check or render a showtime project; whe
 slow, fails, or looks different from the preview; or when you need the exact flags and outputs of
 `showtime render`, `check`, `snap`, `preview`, `server` and `retime`.
 
+## Essentials
+
+- Order: `showtime preview`, `showtime check`, `showtime look`, `showtime render <p> --preview`, then the
+  final `showtime render <p>`; every command takes `--help` and `--json` (§ The loop)
+- Run `showtime check <project>` before every final render: fix every error, read every warning. After
+  layout-only fixes re-check with `--no-timeline`; after timing changes run the full check (§ showtime check)
+- A full render is the expensive step: fix a job's video with `render <p> --from S --to S --job <job>`: the
+  seconds are re-rendered and spliced into a copy of its last full render, a full-length `final-N.mp4`. Without
+  that render (or after a size, fps or length change) it writes `<job>/work/span-S-S.mp4`, a clip, never the
+  video (§ The loop, § showtime render)
+- `showtime render <p>` writes a new job folder and never overwrites; `--job <job>` writes `<job>/final.mp4`
+  (`final-2.mp4` on a re-render) so `showtime qa <job>` checks it; not with `-o` (§ showtime render)
+- Defaults: CRF 16 / `medium`, JPEG capture, up to 3 workers, -14 LUFS / -1 dBTP; `--preview` is a 720p draft.
+  Keep CRF 16 for anything a platform re-encodes; encode settings you ship go in showtime.json
+  `"render": {...}` (flags still win) (§ showtime render)
+- Poster: best default is a hook complete at t=0 with `"poster": 0`; a poster unlike the opening is not baked
+  into frame 0 (`poster_not_baked`) unless `"render": {"poster_bake": "force"}` (§ showtime render)
+- `dead_air`: 1.5 s with no clip showing is an error; a still hold of 2.5 s or more, or an end hold over 4 s,
+  is a warning: add motion or another beat, or shorten with `showtime retime` (§ showtime check)
+- Check enforces text rules: contrast 4.5:1 (3:1 for text >= 24px); vertical safe box x 64-916, y 220-1440
+  at 1080x1920; landscape: 5% from the edges, no text under 32 px in the bottom 8% (§ showtime check)
+- Change the length only with `showtime retime <p> -d N` (`--dry-run` first); never retime one scene by hand.
+  `--from-voice voice/timeline.json` sets scene lengths from the narration; `--total N` keeps the video length
+  (§ showtime retime)
+- `showtime preview` started by an agent goes to the background (`--status`, `--stop`); give the user the
+  printed link as is, ending in `k=...` (§ showtime preview)
+- Speed: a final takes about 1-2x the video length at 1080p; keep JPEG and 2-3 workers; animate `transform`
+  and `opacity`; avoid `backdrop-filter` and full-screen `filter: blur()` above ~20px. Fonts only as files
+  (`/_lib/@fontsource/...` or `@font-face`), never system fonts or web font URLs (§ Speed)
+- After a failed or odd render read `render.log` first; no browser or ffmpeg: `showtime setup`; a `<video>`
+  black in renders: convert the clip to VP9/WebM (§ showtime render, § Troubleshooting)
+- Over 20 MB: `showtime deliver exports <file> --targets original --max-mb 20`; animated film grain
+  (`grainFps` above 0) is the usual cause of a huge final (§ showtime render)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| The loop | 54-88 |
+| showtime render <project> | 90-180 |
+| showtime check <project> | 182-234 |
+| showtime snap <project / video> | 236-257 |
+| showtime preview <project> | 259-276 |
+| showtime retime <project> -d <seconds> | 278-316 |
+| Speed | 318-348 |
+| Troubleshooting | 350-364 |
+| Platforms | 366-381 |
+
 ## The loop
 
 ```
 showtime new dom my-video -d 20     # or launch / film / short / data / tutorial; the whole timeline fits 20 s
 showtime preview my-video            # player with scrubber and audio; reloads on save
 showtime check my-video              # QA gate: fix every error, read every warning
-showtime snap my-video               # contact sheet (look at it) or --at 2.5,7 for stills
+showtime look my-video               # one small composite of the key frames (references/looking.md)
+showtime snap my-video               # contact sheet or --at 2.5,7 for stills (full size: for reviewers)
 showtime render my-video --preview   # quick 720p draft
 showtime render my-video             # final: showtime-out/<title>-<timestamp>/final.mp4
 showtime render my-video --job <job> # final into a job: <job>/final.mp4 (final-2.mp4 on a re-render)
@@ -19,7 +67,25 @@ showtime retime my-video --from-voice my-video/voice/timeline.json   # scene len
 ```
 
 Every command has `--help` with examples, prints the paths it wrote, and takes `--json` for a
-machine-readable result. Errors end with a `fix:` line; add `--debug` for a stack trace.
+machine-readable result. Errors end with a `fix:` line; add `--debug` for a stack trace. Without a
+terminal (agents, the MCP server) output is brief: verdict, findings to act on with fixes, paths; the
+full report goes to a file (`check`: `work/check/report.txt`) and `--verbose` prints it.
+
+A full render is the expensive step: `render` warns when the project changed after the last
+`showtime check` (or was never checked), and after a second full render in the same place it suggests
+proving the next fix with `--from S --to S` first.
+
+A fix after the first full render: `showtime render <p> --from 12 --to 18 --job <job>`. When the job's latest
+final comes from `showtime render` of this project at the same size, frame rate and length, only those seconds,
+widened to the keyframes around them (at most 2 s each side), are captured and encoded with the same settings;
+they replace exactly those frames in a copy of that render, whose other frames stay byte for byte. The result is
+the job's next full final (`final-2.mp4`, same length, audio mixed and mastered again for the whole video,
+poster as in a full render), recorded as `spliced: 12-18 from final.mp4` and counted by the receipt as a partial
+render. When the old render was encoded with other settings or another ffmpeg, the whole video is encoded once
+instead (old frames decoded, new ones from the capture). With no such render, after a size, fps or length
+change, with `--preview`, `--alpha` or `--size`, or without `--job`, the result is a span clip:
+`<job>/work/span-12-18.mp4` (without a job, `span-12-18.mp4` in a new folder). It is only those seconds: look at
+it (`showtime look <file>`), never deliver it; `qa <job>`, `look <job>` and the ledger skip span clips.
 
 ## `showtime render <project>`
 
@@ -31,7 +97,7 @@ A project is a folder with `showtime.json` and `index.html` (or pass an `.html` 
 | `--job JOB`, `-j` | none | a job folder or name: writes `<job>/final.mp4` (`final-2.mp4`... on a re-render, `preview.mp4` with `--preview`) and records it in job.json `outputs`, so `showtime qa <job>` checks it. Not with `-o` |
 | `--out-dir DIR` | `$SHOWTIME_OUT` or the current folder | job folder is `DIR/showtime-out/<title>-<timestamp>/` |
 | `--preview`, `-p` | off | a draft: at most 720p, x264 veryfast CRF 23, AAC 128k, no poster bake; the file is named `preview.mp4` |
-| `--from S --to S` | whole video | re-render one section (audio is cut to match; no poster bake) |
+| `--from S --to S` | whole video | re-render one section: with `--job` and a full render there, spliced into a copy of it (a full `final-N.mp4`); otherwise a span clip `span-S-S.mp4` (audio cut to match, no poster), never a final (§ The loop) |
 | `--fps N` | showtime.json | |
 | `--workers N`, `-w` | auto: up to 3 | separate browsers, each renders a contiguous range in order |
 | `--scale X` | 1 | `0.5` = half size, `2` = supersampled (sharper text, 4x the pixels) |
@@ -79,7 +145,7 @@ What happens:
    a built-in mixer handles file tracks with start/offset/gain/fades/loop). Everything is cut to
    the rendered range, padded/trimmed to the exact video length, brought to the loudness target
    (plain gain when the peaks allow it, else gain into an oversampled limiter with at most 6 dB of
-   limiting and a warning if the target is out of reach), encoded as AAC 192k in `.m4a` (keeps the
+   limiting and a warning if the target is out of reach), encoded as AAC 256k in `.m4a` (keeps the
    encoder delay, so sync is exact), checked for true peak, and muxed without re-encoding video.
 5. Poster: with a `poster` time, that frame is saved as `poster.jpg` and copied over frame 0
    before the single encode (feeds and chat apps show frame 0), but only when it looks like the
@@ -126,19 +192,25 @@ exactly like the renderer and reports findings with the time they happen and a f
 | `nondeterministic` | error | a frame differs when reached in another order (state kept between frames) |
 | `clip_timing`, `video` | error | bad `data-start`/`data-dur`, or a video that cannot be decoded/seeked |
 | `font_load_failed` | error | an `@font-face` file failed |
-| `low_contrast` | warning (error below 2:1) | WCAG contrast of text against the real pixels behind it: 4.5:1, or 3:1 for text >= 24px (>= 18.7px bold). Measured where each text is fully faded in, not blurred and outside scene transitions; a text seen only mid-transition gets an info note naming the transition. |
+| `low_contrast` | warning (error below 2:1) | WCAG contrast of text against the real pixels behind it: 4.5:1, or 3:1 for text >= 24px (>= 18.7px bold). Measured where each text is fully faded in, not blurred and outside scene transitions; a text seen only mid-transition gets an info note naming the transition. Large text (>= 4 % of the height) in the colours of the job's style reference (`reference-style.css`) at 3:1 or more is a note: the user asked for that look. |
 | `font_not_embedded` | warning | text is painted with a system font (differs between Mac, Windows and Linux) |
 | `text_off_canvas`, `text_clipped` | error | readable text runs off the frame or is cut by a container at a sample time (decor: info) |
 | `text_overlap` | warning | layout problems at the sample times; overlaps are measured on the painted glyphs (not line boxes, so big display type with tall leading is not a false alarm) and say how deep they are; `text_overlap` also covers text hidden under a badge, callout or pill ("X is hidden under Y"), in canvas films too (an `F.callout` card over readable text drawn before it). Found only mid-transition, they are info notes naming the transition ("mid-transition: push into #demo; the settled frame at 0:04.43 is judged on its own"): check samples the settled frame 2 frames after every transition too |
 | `labels_crowded` | warning | SVG labels (chart values and axes, map names) whose painted glyphs touch or sit closer than 0.15em side by side or stacked (`label_gap_em` in `runtime/thresholds.json`); one finding per graphic naming the worst pair. While a chart is still growing or morphing it is an info note. Fix: fewer bars, the default `valueLabels` (auto-thinning), a larger plot, or a line chart |
+| `chart_labels_hidden` | warning | the project's CSS hides chart labels while the chart moves (`[data-st-moving] .st-chart-val { opacity: 0 }`): every number blinks off when an item is added and back when it settles. Fix: delete the rule; labels ride their marks through a morph, an added item fades its label in, `count: false` shows real values only |
+| `slow_scene` | warning | a scene holds on past its last change (a component or CSS animation ending) and past the reading time of its text by more than 2.5 s (4 s for the last scene, an end card): a slow push keeps it from counting as a still hold, but it plays slow. Fix: a beat about every 2 s (a chart state, a callout or reference line arriving, a highlight, a count-up, the next line), or shorten the scene. `report.pacing` lists them |
+| `same_frame_entrance` | warning | 3 or more sibling items whose CSS entrance (from opacity 0) starts on the same frame: nothing leads, they land as one block. The message names the frame; fix: stagger them 2-4 frames apart in reading order (`animation-delay: calc(var(--i) * 0.1s)`) |
 | `callout_off_target` | warning | canvas film: an `F.callout` card is on screen but its anchor is off the frame (the camera moved away from what it points at), or the card itself runs off the frame |
 | `safe_zone` | warning | vertical video: text outside the box that feed UIs leave free (x 64-916, y 220-1440 at 1080x1920); the message names the edge ("top at y 185 < 220") |
 | `edge_margin` | warning | landscape: text fully in frame but within 3% of an edge (player controls, overscan); keep 5% (96 px at 1920) |
 | `control_strip` | warning | landscape: text under 32 px (at 1080p) in the bottom 8%, where a player's progress bar and controls sit |
-| `short_text` | warning | text on screen for less than it takes to read (17 characters/s + 0.3 s, min 1 s); mark text read along with the voice `data-caption` |
+| `short_text` | warning | text on screen for less than it takes to read (0.3 s + the longer of characters/17 and words/3, per language, min 1 s; part of the phone check, see qa.md); mark text read along with the voice `data-caption` |
+| `beat_words` | note | three or more 1-2 word texts shown one after another, each 0.35-1.2 s (a word per beat): read as one line at no more than words/3 per second, so not `short_text` |
+| `tiny_text` | warning | readable text under the phone minimum: points at 390 pt wide (16:9 5 pt, 1:1 10, 4:5 11, 9:16 15) and at least 2.2 % of the frame height; part of the phone check, `report.phone` has the sizes. UI-mockup detail marked `data-st-decor` is exempt; many small texts become one warning that lists them |
 | `poster_not_baked` | info | showtime.json `poster` is set, but the frame differs from the opening, so `render` (`--poster-bake auto`) will not bake it into frame 0 (it would flash on autoplay and loops); poster.jpg is still written. Start the video in the poster's state, or `"render": {"poster_bake": "force"}` |
 | `dead_air` | error / warning | error: for 1.5 s or more no clip is showing (a gap between scenes, or scenes that end before the video does; canvas: only the flat backdrop is drawn), listed in report.json `timeline_holes` (`from`, `to`, `at_end`, `detail`). Warning: a still hold of `--dead-air` seconds or more (default 2.5 s, the same rule as qa `frozen`, so check catches it before the render), or an end hold over 4 s. Fix: add motion (a slow push-in, drift, a progress element) or another beat, or shorten the scene with `showtime retime`. An overlay page for `--alpha` (`<body data-overlay>` or showtime.json `"overlay": true`) gets `overlay_gap` notes instead |
 | `final_hold` | info | a still hold that runs to the end, up to 4 s: fine for an end card (qa has the same rule) |
+| `look_repeat` | warning / info | the look repeats one of your last five videos (theme, palette, type pair, transitions, camera, music, structure; template or tone alone: info), with two alternatives per repeat; a repeat that follows the job's style reference is info (intended); `--no-history` skips it ([reference.md](reference.md)) |
 | `timeline_gap` | warning | only with `--no-timeline`: a gap in the clip table (the dense pass that measures holes was skipped) |
 | `blank_frames`, `first_frame_blank` | warning | black/white screens; a blank frame 0 is a bad thumbnail |
 | `timers`, `css_transitions`, `animated_gif`, `config_conflict`, `clip_after_end` | warning | see [stage-api.md](stage-api.md) |
@@ -172,6 +244,12 @@ frame shown is printed when it differs (two times on one frame are both written 
 to `work/check-...`), so runs never overwrite each other. One still as a named file (a frame from a
 clip for the page): `showtime snap clip.mp4 --at 7.5 --width 1920 -o media/map.jpg` (`--width` also
 upscales, with a note).
+
+`showtime look <project | video | job>` is the lean way to see a video: one composite (1280 px,
+`--width`) of the opening frame, each scene's settled frame from a current check report (else evenly
+spaced frames, `--count`), and the last frame; `--at` picks times (16 at most). It numbers looks per job
+(`<job>/work/look/look-N.jpg`), writes `look-N.md` (a brief a reviewer sub-agent follows) and
+`verdicts.md`, and warns past 12 looks; `--stills` adds full-size frames. Protocol: `references/looking.md`.
 
 A rendered video works too (a footage edit, the shipped final, an export), decoded with showtime's
 own ffmpeg: `showtime snap <job>/final-3.mp4 --at 12.9,13.0` (output `<job>/work/snap/<name>/`).
@@ -225,7 +303,9 @@ the scene lengths from the narration instead of one length for all:
   narration (an end card) keep their length; a scene with no line between narrated scenes is an error.
   `--total 30` keeps the video 30 s long: the end card after the narration grows or shrinks to
   absorb the difference (a warning under 2.5 s, an error under 1 s), so you never hand-edit its
-  `data-dur`. The report counts only values that really changed.
+  `data-dur`. When every scene is narrated (a narrated close), the last scene's hold after its last
+  line absorbs it instead; a `--total` that would cut into that line is an error that names the
+  shortest length that works. The report counts only values that really changed.
 - Every line becomes its own voice track in `audio/mix.json` (`vo-<id>`, file
   `voice/lines/NN-id.wav`) at scene start + pad; music without ducking gets `"duck": {"under":
   "voice"}`; music sections, sound effects and the poster move with their scenes. A project without

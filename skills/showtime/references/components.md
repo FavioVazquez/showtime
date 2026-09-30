@@ -6,6 +6,50 @@ notification UI, a checklist, a Ken Burns still, a map or an end card. For scene
 handoffs read `references/transitions.md`; for timing and taste read `references/motion-craft.md`.
 Run `showtime motion` for the live list.
 
+## Essentials
+
+- Setup: `/_st/stage.js`, a theme CSS, then `/_st/components/index.js` as a module. Any element with
+  `data-st="<component>"` mounts itself; options are kebab-case `data-*` (`data-exit-at` = `exitAt`) or JSON (§1)
+- `at` is seconds local to the clip the component sits in (the nearest ancestor with `data-start`); every other
+  time option (`cues`, `exitAt`, `path[].at`, `states[].at` ...) counts from the component's `at` (§1)
+- A title already on screen at t=0: `data-style="none"` (kinetic-type), never a negative `at` (it shifts every
+  exit too) (§1)
+- Seek-safe: components are pure functions of time, with no timers, CSS transitions or accumulated state; your
+  own components follow the same rules (compute from `lt`, measure in `setup` only) (§1, §8)
+- Size in container units (`cqw`, `cqh`, `cqmin`) so one page works at 16:9, 9:16 and 1:1; a padded `.scene`
+  shrinks them, so set `.scene { padding: 0 }` or pad an inner wrapper (§1)
+- Frame-exact cuts: `data-start`/`data-dur` within 1 ms of a frame boundary land on it (`7.0667` is frame 212 at
+  30 fps), so write beat-synced cuts with 4 decimals (§1)
+- Put SFX and narration on `sync` beats (`count-up.sync.land`, `cursor.sync.click1`) after `await c.ready`; videos
+  inside components are muted `<video data-st>` (§1)
+- Where options live: `kinetic-type`, `typewriter`, `caption-karaoke` §2; `lower-third`, `count-up`, `steps` §3;
+  `chart`, `world-map` §4; `browser-frame`, `device-frame`, `cursor`, `keystrokes`, `code-block`, `chat-thread`,
+  `notifications`, `feature-grid` §5; `camera`, `fit`, `portal`, `ken-burns`, `logo-reveal`, `end-card`, `grain`
+  §6; themes and tokens §7; writing your own §8. Live list: `showtime motion`
+- `caption-karaoke`: `clean-pop` is the default and the style for 9:16 shorts; 3-5 `emphasis` words, not more;
+  place the layer outside the scenes so it runs across cuts (§2)
+- `count-up` and `chart` take real numbers only; the chart title is the takeaway computed from the data; keep
+  numbers in a `src` JSON file; a chart needs a sized box (§3, §4)
+- Keep chart `valueLabels` on its auto-thinning default (`"all"` triggers `labels_crowded`); past ~12 labelled
+  bars (~6 at 9:16) label only the highlight and extremes, aggregate, or use a `line` chart (§4)
+- Chart from a table: `showtime data import <table> <project> --x <col> --y <col> --scene <id>` (§4)
+- Capture pages at the device's real viewport; code panels from `showtime code file.ts -o code.json` with a shiki
+  theme whose comments clear 4.5:1 (`showtime check` judges every token) (§5)
+- Chat and notification UI stays generic (never a real app's branding); no emoji icons (§5)
+- `end-card` holds >= 2.5 s; a 5-6 % `camera` push onto a result is the premium move (§6)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| 1. Setup (two lines) and the time model | 53-97 |
+| 2. Text: kinetic-type, typewriter, caption-karaoke | 99-158 |
+| 3. Identification and numbers: lower-third, count-up, steps | 160-187 |
+| 4. Data: chart, world-map | 189-240 |
+| 5. Product and UI: browser-frame / device-frame, cursor and keystrokes, code-block, ... | 242-304 |
+| 6. Camera, stills, closers, texture | 306-347 |
+| 7. Themes (runtime/themes) | 349-362 |
+| 8. Writing your own component | 364-383 |
+
 ## 1. Setup (two lines) and the time model
 
 ```html
@@ -237,7 +281,9 @@ Editor panel from `showtime code file.ts -o code.json` tokens (offline shiki; 65
 `src`/`tokens`/`code` (plain text fallback), `title`, `chrome` `window|none`, `lineNumbers`,
 `reveal` `lines|type|none`, `cps` 45 / `fit` (typing), `highlight` `[{lines:"4-6", at, color?}]`,
 `diffAt` + `diffDur` 0.7 (with `showtime code old.ts --to new.ts`: removed lines flash red and
-collapse, added lines open green), `focus` `[{line, at, dur}]` (scroll), `size` (cqmin), `dim` 0.35.
+collapse, added lines open green), `focus` `[{line, at, dur}]` (scroll), `size` (cqmin), `dim` 0.35,
+`firstLine` (an excerpt keeps its file's numbers: `data-first-line="258"` shows 258, 259, ... and
+`highlight`/`focus` take those numbers).
 Line numbers are 1-based and, for diffs, count the new file. Line numbers and diff gutters clear
 4.5:1 on the default panel (`--code-ln-opacity` 0.62, `--code-add`, `--code-del`); pick a shiki theme
 whose comments and punctuation also clear it (`houston` does; `vitesse-dark` draws comments at
@@ -265,7 +311,9 @@ with each OS's own font).
   camera or `[x%, y%]` (the point looked at), `to` `[x%, y%]` where it lands on screen (default the
   centre), `ease` (default `camera`). Zoom is interpolated in log space and the focus with the same
   curve, so a push reads even. `contain` (default true): at zoom >= 1 the content always covers the
-  frame. `drift` (zoom per second after the last move, capped at +6 %): holds keep breathing. Children
+  frame. `drift` (zoom per second after the last move, capped at +6 %): holds keep breathing;
+  `data-drift="hold"` is the documented hold push, 0.012 (1.2 %/s), which `check` and qa's `frozen`
+  detector both count as change on light and dark text frames (0.8 %/s is borderline, 0.4 %/s fails check). Children
   with `data-depth="k"` that fill the camera move k times as much (0.3 = a far layer: parallax).
   `keepText` (default true): while the camera moves, the union of the visible text stays inside the
   frame (the feed-safe box at 9:16), so a push never crops a headline; between moves (with `drift` 0,

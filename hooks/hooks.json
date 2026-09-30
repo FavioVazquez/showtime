@@ -1,0 +1,16 @@
+{
+  "description": "showtime: keep the job receipt (tokens and cost from this session's log) current when a turn ends",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/skills/showtime/bin/showtime\" receipt --hook",
+            "timeout": 60
+          }
+        ]
+      }
+    ]
+  }
+}

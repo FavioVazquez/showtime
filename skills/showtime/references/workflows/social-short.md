@@ -8,6 +8,42 @@ Two starting points: **made from scratch** (the `short` template) or **cut from 
 `footage-edit.md` with the vertical settings below. An audiogram (podcast or interview audio with
 animated captions) is the from-scratch path with the recording as the voice track (section below).
 
+## Essentials
+
+- A video to match ("same style as this"): `showtime reference <video> --job <job>` first; its brief and
+  `style.css` override the defaults below (`reference` §2)
+- Defaults: 9:16 at 1080x1920, 30 fps, 12-20 s; hook readable by 0.3 s, first change by 2 s; karaoke captions
+  (`clean-pop`, `bold-pop` for hype) whenever there is speech; loopable ending; -14 LUFS (§ Defaults)
+- Nothing important in the bottom 25 % or right 15 %; captions hang from 62 % height, never past 75 %. No
+  voice-over unless implied (say so) (§ Defaults)
+- 1: `showtime job init <name>-short --goal "..." --platform reels`. 2: 3-5 beats, the first 2 s carry the
+  promise. 3: `showtime new short <job>/project --duration <len>` (§ Steps (from scratch))
+- 4 (voice): `showtime voice script <job>/project/narration.md -o <job>/project/voice --fit <seconds>`
+  (`<len>` minus 0.3 s per narrated scene and any end card), then
+  `showtime retime <job>/project --from-voice <job>/project/voice/timeline.json`; never edit `data-dur`,
+  sections or effect times by hand (§ Steps (from scratch))
+- 5: `showtime check <job>/project` (0 errors, no safe-zone warnings), `showtime look <job>/project`; show it
+  and carry on (§ Steps (from scratch))
+- 6: `"poster"` on the strongest frame, `"expect"` with platform, duration and `"captions": true`;
+  `showtime render <job>/project --job <job>`, `showtime qa <job>` (§ Steps (from scratch))
+- 7: `showtime deliver exports <final> --targets reels,tiktok,shorts` for several platforms; one-line share
+  copy, one CTA (§ Steps (from scratch))
+- Cut-downs: re-lay out, never just crop 16:9; same edit, other shape: `showtime check <project> --size 9:16`,
+  then `showtime render <project> --job <job> --size 9:16` (§ Steps (cut-down of a longer video))
+- No logo sting, fade from black or "Introducing" at the start; emphasis on 3-5 words only; music composed to
+  the exact length (§ Pitfalls)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| Inputs | 47-50 |
+| Defaults | 52-59 |
+| Steps (from scratch) | 61-93 |
+| Audiogram (audio clip with captions) | 95-107 |
+| Steps (cut-down of a longer video) | 109-123 |
+| Pitfalls | 125-134 |
+| Read next | 136-139 |
+
 ## Inputs
 
 - The message (or the long video / footage to cut down), the platform, a length.
@@ -47,7 +83,7 @@ implies one; say so in the opening line.
    Never edit `data-dur`, sections or effect times by hand from the slots. Without a voice, delete
    the caption layer or feed it on-screen words.
 5. **First look.** `showtime check <job>/project` (reports safe-zone, short-text and still-hold problems at 9:16),
-   `showtime snap <job>/project --every 1`, look, show it and carry on (quick mode does not wait).
+   `showtime look <job>/project` (`looking.md`), show it and carry on (quick mode does not wait).
    *Done when:* 0 errors, no safe-zone warnings.
 6. **Final and verify.** Set `"poster"` to the strongest frame (Reels shows it as the cover), add
    `"expect": {"platform": "reels", "duration": <len>, "captions": true}`, then
@@ -84,7 +120,7 @@ implies one; say so in the opening line.
    (whole frame on a blurred fill) or `--fit crop --focus 0.4`; check framing fast with `--preview`.
 4. From footage: `showtime edit cut <transcript> --aspect 9:16 --captions bold-pop --keep-time <a-b>`
    (face-tracked reframe by default), preview, view, final (`footage-edit.md`).
-5. `showtime qa <job>` (the job's platform, or `--platform reels|tiktok|shorts`), look at the sheet.
+5. `showtime qa <job>` (the job's platform, or `--platform reels|tiktok|shorts`), `showtime look <job>`.
 
 ## Pitfalls
 

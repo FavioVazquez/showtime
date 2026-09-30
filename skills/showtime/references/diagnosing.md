@@ -4,6 +4,29 @@ Read this when the user says the video "came out wrong", "it's slow", "setup fai
 or wants to report a bug in showtime. It covers intake, where the evidence lives, how to read it without
 flooding the context, and the local bug report. The fix itself follows `debugging-renders.md`.
 
+## Essentials
+
+- Ask one question with a default: what did you expect, what did you see, at what time (offer a contact
+  sheet); never ask what `SHOWTIME.md` or the conversation already answers (§1)
+- Start with `showtime status` and `showtime job show`; fresh evidence from `showtime qa <job> --json` and
+  `showtime check <project> --json`; compare the path qa prints with the file the user watched (§2, §3)
+- Read logs with bounds (the last 40 lines, or `error|fail|exception` matches); never paste a whole log (§3)
+- Every finding cites its source (`work/logs/render.log:212`); numbers come from output, not memory (§4)
+- `showtime report [job] --problem "..."` writes a local `bug-report.md`: the user reads it before sharing;
+  show the exact issue text and wait for approval before any `gh` command (§6)
+- State the cause in one sentence with its evidence, fix it, record `showtime job note --verified "..."` (§7)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| 1. Intake: one question | 30-37 |
+| 2. Evidence on disk | 39-54 |
+| 3. Read with bounds | 56-66 |
+| 4. Findings cite their source | 68-72 |
+| 5. Where to look first | 74-84 |
+| 6. The bug report (local only) | 86-94 |
+| 7. Hand off | 96-100 |
+
 ## 1. Intake: one question
 
 A complaint is not yet a problem statement. Ask one question that gets all three parts, with a default:

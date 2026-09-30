@@ -29,7 +29,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from . import __version__
 from . import platform as plat
-from .common import ShowtimeError, fmt_duration, paint, paths, read_json, use_color
+from .common import ShowtimeError, brief_output, fmt_duration, paint, paths, read_json, use_color
 
 PASS, WARN, FAIL, SKIP = "pass", "warn", "fail", "skip"
 
@@ -206,6 +206,7 @@ class Doctor:
             self.state = {}
         self._setup_mod = None
         self.live = Live()
+        self.cached_age: Optional[int] = None     # seconds, when the rows come from the quick-check cache
 
     # ------------------------------------------------------------ plumbing
     def add(self, name: str, status: str, detail: str = "", hint: str = "", note: str = "", **data: Any) -> None:
@@ -299,6 +300,13 @@ class Doctor:
             self.add("showtime command", WARN, detail, "run `showtime setup` (it writes the command)")
             return
         hint = shim.path_hint(h)
+        d = shim.drift(h, self.p["skill"])
+        if d:
+            # a stale command runs another showtime than the agent's ("unknown template" for a template
+            # the agent's version has)
+            done = ("%s: %s; " % (code, detail)) if code in ("repaired", "installed") else ""
+            self.add("showtime command", WARN, done + d["problem"], d["fix"], note="\n".join(hint) if hint else "")
+            return
         self.add("showtime command", PASS, ("%s: " % code if code in ("repaired", "installed") else "") + detail,
                  note="\n".join(hint) if hint else "")
 
@@ -729,6 +737,24 @@ class Doctor:
     # ------------------------------------------------------------------ run
     def run(self) -> int:
         t0 = time.time()
+        result = self.collect()
+        counts = result["counts"]
+        report_path = None
+        if self.args.report is not None:
+            report_path = write_report(self.args.report or None, result, use_job_module=True)
+            result["report"] = str(report_path)
+        if self.args.json:
+            print(json.dumps(dict(result, review_mode=_mode_info()), indent=2, default=str))
+        else:
+            self.print_table(counts, time.time() - t0)
+            if report_path is not None:
+                sys.stdout.write("\nbug report written to %s\n  Review it before sharing; showtime never uploads "
+                                 "anything.\n" % report_path)
+        return 1 if counts[FAIL] else 0
+
+    def collect(self) -> Dict[str, Any]:
+        """Run every check; the result dict (ok, counts, checks). A quick run is remembered (save_quick)."""
+        t0 = time.time()
         self.live.start()
         try:
             self.guard("platform", self.check_platform)
@@ -747,18 +773,9 @@ class Doctor:
         counts = {s: sum(1 for r in self.rows if r["status"] == s) for s in (PASS, WARN, FAIL, SKIP)}
         result = {"ok": counts[FAIL] == 0, "version": __version__, "counts": counts,
                   "seconds": round(time.time() - t0, 1), "checks": self.rows}
-        report_path = None
-        if self.args.report is not None:
-            report_path = write_report(self.args.report or None, result, use_job_module=True)
-            result["report"] = str(report_path)
-        if self.args.json:
-            print(json.dumps(result, indent=2, default=str))
-        else:
-            self.print_table(counts, time.time() - t0)
-            if report_path is not None:
-                sys.stdout.write("\nbug report written to %s\n  Review it before sharing; showtime never uploads "
-                                 "anything.\n" % report_path)
-        return 1 if counts[FAIL] else 0
+        if self.args.quick and not self.args.verify:
+            save_quick(result)
+        return result
 
     def print_table(self, counts: Dict[str, int], secs: float) -> None:
         color = use_color(sys.stdout)
@@ -783,9 +800,39 @@ class Doctor:
             for line in (r.get("note") or "").splitlines():
                 out.append("  %s  %s  %s" % (" " * 4, " " * w, paint(line, "dim", force=color)))
         out.append("")
-        out.append("%d pass, %d warn, %d fail%s  (%.1fs)" % (
-            counts[PASS], counts[WARN], counts[FAIL], (", %d skipped" % counts[SKIP]) if counts[SKIP] else "", secs))
+        total = "%d pass, %d warn, %d fail%s  (%.1fs)" % (
+            counts[PASS], counts[WARN], counts[FAIL], (", %d skipped" % counts[SKIP]) if counts[SKIP] else "", secs)
+        if self.cached_age is not None:
+            total = total.replace("(%.1fs)" % secs, "(checked %s; --fresh checks again)" % _ago(self.cached_age))
+        out.append(total)
+        mode_line = _mode_line()
+        if mode_line:
+            out.append(mode_line)
         text = "\n".join(out) + "\n"
+        if brief_output(self.args.verbose):
+            # lean mode: problems with their fixes and the verdict; the full table goes to a file
+            saved = None
+            try:
+                home_dir = paths()["home"]
+                if not home_dir.is_dir():      # never create the home as a side effect (doctor reports it missing)
+                    raise OSError("no home yet")
+                d = home_dir / "logs"
+                d.mkdir(parents=True, exist_ok=True)
+                saved = d / "doctor.txt"
+                saved.write_text(re.sub(r"\x1b\[[0-9;]*m", "", text), encoding="utf-8")
+            except (OSError, ShowtimeError):
+                saved = None
+            short = ["showtime doctor %s: %s, %s" % (__version__, "not ready" if counts[FAIL] else "ready", total)]
+            for r in self.rows:
+                if r["status"] not in (WARN, FAIL):
+                    continue
+                short.append("  %s  %s  %s" % (tag(r["status"]), r["check"], r["detail"]))
+                if r["hint"]:
+                    short.append("        %s %s" % (paint("fix:", "green", force=color), r["hint"]))
+            if mode_line:
+                short.append(mode_line)
+            short.append("  details %s (--verbose prints them)" % saved if saved else "  --verbose prints every check")
+            text = "\n".join(short) + "\n"
         try:
             sys.stdout.write(text)
         except UnicodeEncodeError:
@@ -922,21 +969,145 @@ def build_parser() -> argparse.ArgumentParser:
                                         "repairs the stable command <home>/bin/showtime when it is missing or points at a\n"
                                         "skill folder that moved (a plugin update).")
     ap.add_argument("--json", action="store_true", help="machine-readable output")
-    ap.add_argument("--quick", action="store_true", help="skip the test encode and the browser launch")
+    ap.add_argument("--quick", action="store_true",
+                    help="skip the test encode and the browser launch; a healthy result is reused for an hour")
+    ap.add_argument("--fresh", action="store_true", help="--quick: check again instead of reusing the last result")
     ap.add_argument("--no-browser", action="store_true", help="skip only the browser launch")
     ap.add_argument("--verify", action="store_true", help="also sha256-check every model file (slow)")
     ap.add_argument("--offline", action="store_true", help="skip the network check (same as SHOWTIME_OFFLINE=1)")
     ap.add_argument("--gpu", default="auto", choices=["auto", "off"], help="GPU mode for the browser probe")
-    ap.add_argument("-v", "--verbose", action="store_true", help="list every model item, not only problems")
+    ap.add_argument("-v", "--verbose", action="store_true",
+                    help="the full table (default in a terminal; agents get problems + verdict) and every model item")
     ap.add_argument("--report", nargs="?", const="", metavar="JOB",
                     help="also write bug-report.md (environment, job.json, log tails; home paths and tokens "
                          "redacted) into JOB, or into the current folder; nothing is uploaded")
     return ap
 
 
+# ---------------------------------------------------------------------------
+# One quick check per session: a healthy `doctor --quick` result is reused for an hour by the next
+# `doctor --quick` and by `showtime job init` (same version, skill, home, agent and working folder).
+# ---------------------------------------------------------------------------
+
+QUICK_CACHE_MAX_AGE = 3600
+
+
+def _quick_key() -> Dict[str, str]:
+    try:
+        from .sandbox import detect_host
+        host = detect_host()
+    except Exception:  # noqa: BLE001 - the key only gets less specific
+        host = ""
+    p = paths()
+    return {"version": __version__, "skill": str(p["skill"]), "home": str(p["home"]), "host": host,
+            "cwd": os.getcwd(), "offline": os.environ.get("SHOWTIME_OFFLINE", "")}
+
+
+def _quick_cache_file() -> Path:
+    return paths()["cache"] / "doctor-quick.json"
+
+
+def cached_quick(max_age: float = QUICK_CACHE_MAX_AGE) -> Optional[Dict[str, Any]]:
+    """The last healthy quick result when it still applies (no FAIL, same key, younger than max_age)."""
+    try:
+        data = json.loads(_quick_cache_file().read_text(encoding="utf-8"))
+    except (OSError, ValueError, ShowtimeError):
+        return None
+    if not isinstance(data, dict) or data.get("key") != _quick_key():
+        return None
+    age = time.time() - float(data.get("at") or 0)
+    res = data.get("result") or {}
+    if not (0 <= age <= max_age) or not res.get("ok") or (res.get("counts") or {}).get(FAIL):
+        return None
+    res = dict(res)
+    res["cached_age_s"] = int(age)
+    return res
+
+
+def save_quick(result: Dict[str, Any]) -> None:
+    if not result.get("ok"):
+        try:
+            _quick_cache_file().unlink()        # a failing setup is always checked again
+        except (OSError, ShowtimeError):
+            pass
+        return
+    try:
+        home_dir = paths()["home"]
+        if not home_dir.is_dir():
+            return
+        f = _quick_cache_file()
+        f.parent.mkdir(parents=True, exist_ok=True)
+        tmp = f.with_name(f.name + ".%d.tmp" % os.getpid())
+        tmp.write_text(json.dumps({"key": _quick_key(), "at": time.time(), "result": result}, default=str),
+                       encoding="utf-8")
+        os.replace(str(tmp), str(f))
+    except (OSError, ShowtimeError):
+        pass
+
+
+def _mode_line() -> str:
+    """The review mode new jobs start in (not a check: it never changes the counts)."""
+    try:
+        from . import review_mode as rm
+        return "review mode: " + rm.describe(*rm.default_mode())
+    except Exception:  # noqa: BLE001 - decoration never breaks the report
+        return ""
+
+
+def _mode_info() -> Any:
+    try:
+        from . import review_mode as rm
+        return rm.info()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _ago(secs: float) -> str:
+    return "just now" if secs < 60 else "%d min ago" % (secs // 60)
+
+
+def quick_check() -> Dict[str, Any]:
+    """The quick check's result for other commands (`job init`): cached when fresh, else run silently."""
+    hit = cached_quick()
+    if hit is not None:
+        return hit
+    args = build_parser().parse_args(["--quick"])
+    d = Doctor(args)
+    d.live = Live(enabled=False)
+    return d.collect()
+
+
+def quick_lines(result: Dict[str, Any]) -> List[str]:
+    """One line when ready; otherwise the WARN/FAIL rows with their fixes."""
+    c = result.get("counts") or {}
+    when = (" (checked %s)" % _ago(result["cached_age_s"])) if "cached_age_s" in result else ""
+    if not c.get(FAIL):
+        head = "setup: ready%s: %d pass, %d warn" % (when, c.get(PASS, 0), c.get(WARN, 0))
+    else:
+        head = "setup: NOT READY: %d fail, %d warn (fix these before rendering)" % (c.get(FAIL, 0), c.get(WARN, 0))
+    out = [head]
+    for r in result.get("checks") or []:
+        if r.get("status") in (WARN, FAIL):
+            out.append("  %s  %s  %s" % (r["status"].upper(), r["check"], r.get("detail", "")))
+            if r.get("hint"):
+                out.append("        fix: %s" % r["hint"])
+    return out
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     args = build_parser().parse_args(argv)
     try:
+        if args.quick and not args.fresh and args.report is None and not args.verify:
+            hit = cached_quick()
+            if hit is not None:
+                d = Doctor(args)
+                d.rows = list(hit.get("checks") or [])
+                d.cached_age = hit["cached_age_s"]
+                if args.json:
+                    print(json.dumps(dict(hit, review_mode=_mode_info()), indent=2, default=str))
+                else:
+                    d.print_table(hit.get("counts") or {}, float(hit.get("seconds") or 0))
+                return 0
         return Doctor(args).run()
     except KeyboardInterrupt:
         return 130

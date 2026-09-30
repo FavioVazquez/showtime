@@ -2,7 +2,7 @@
 name: editor
 description: showtime crew. Dispatched by the showtime skill, not for general requests. Use for studio or publish-bound footage jobs (or very long raw footage) to transcribe, pick takes, write and check the EDL, preview, caption and reframe. Needs a TASK.md path.
 tools: Read, Glob, Grep, Write, Edit, Bash, PowerShell
-model: inherit
+model: sonnet
 effort: high
 maxTurns: 80
 omitClaudeMd: true

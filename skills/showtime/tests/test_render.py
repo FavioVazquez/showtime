@@ -306,7 +306,7 @@ class RenderTests(unittest.TestCase):
         cp = showtime("render", proj, "--out-dir", self.out, "--json", "--from", 1, "--to", 2.5, "--preview")
         rep = json.loads(cp.stdout)
         self.assertEqual(rep["frames"], 45)
-        self.assertEqual(Path(rep["output"]).name, "preview.mp4")
+        self.assertEqual(Path(rep["output"]).name, "span-1-2.5.mp4", "a section render is a span clip, never preview/final")
         info = probe_streams(rep["output"])
         a = [s for s in info["streams"] if s["codec_type"] == "audio"][0]
         self.assertAlmostEqual(float(a["duration"]), 1.5, delta=0.03)
@@ -649,7 +649,7 @@ class RenderTests(unittest.TestCase):
         codes = [(f["code"], f["severity"]) for f in rep["findings"]]
         self.assertIn(("final_hold", "info"), codes)
         self.assertNotIn(("dead_air", "warning"), codes)
-        cp = showtime("check", end, "--no-determinism", "--samples", "2", "--dead-air", "5", check=False)
+        cp = showtime("check", end, "--no-determinism", "--samples", "2", "--dead-air", "5", "--verbose", check=False)
         self.assertIn("no still holds of 5s or more", cp.stdout)
         # a few small characters typed over a still screen is still a hold (qa's freezedetect agrees)
         typing = self.tmp / "typinghold"

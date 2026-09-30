@@ -215,6 +215,8 @@ def measure(video: Path, dur: float, fps: float, scenes: Optional[List[float]] =
     mad = pic.pop("_mad")
     mus = music(video, dur)
     rep: Dict[str, Any] = {"picture": pic, "music": {k: v for k, v in (mus or {}).items() if k != "onsets"} if mus else None}
+    from .motion import dead_stops
+    rep["dead_stops"] = dead_stops(mad, fps, pic["hard_cuts"])
     if scenes:
         changes = []
         for s in scenes[1:]:

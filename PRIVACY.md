@@ -14,7 +14,10 @@ showtime connects to the internet only to:
 2. fetch media or pages when you ask it to, for example an Openverse, Wikimedia Commons or NASA search, or
    capturing a website you name.
 
-Everything it makes stays in folders on your machine. Its local preview and studio servers listen only on
+Everything it makes stays in folders on your machine. That includes the look history (`showtime history`): a
+file in `~/.showtime/history/` listing your recent jobs' names, folders and visual choices (theme, colours, fonts,
+transitions, music), kept only so the next video does not repeat them. It is never uploaded; turn it off with
+`showtime history off` (or `SHOWTIME_HISTORY=off`) and delete it with `showtime history clear`. Its local preview and studio servers listen only on
 127.0.0.1 and require a per-session key.
 
 Terms: showtime is provided under the [MIT License](LICENSE), "as is", without warranty. You are responsible for

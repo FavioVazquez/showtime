@@ -5,6 +5,40 @@ or grade real footage.
 
 Treat color like typography. Fewer choices, each doing one job, applied the same way everywhere.
 
+## Essentials
+
+- Declare the palette as CSS tokens before any scene: `--ground`, `--ink` (≥7:1 on the ground), `--muted`,
+  `--accent` (one hue, ≤15 % of the frame), optional `--accent-2`, `--surface`; each hex written once (§1)
+- Never pure `#000`/`#FFF` on large areas: near-black `#0B0B0D`–`#141416` or an off-white (§1)
+- Brand: quote exact values, map by role, not frequency; an accent that fails contrast keeps hue and chroma,
+  changes only OKLCH lightness, and you tell the user (§2)
+- No brand: polarity by subject, OKLCH from one hue; avoid purple-to-blue gradients, neon cyan on black, gradient
+  text, rainbow accents, glowing glassmorphism (§2)
+- Contrast: body ≥4.5:1, large display ≥3:1, ink on ground ≥7:1, accent text ≥4.5:1, accent shape ≥3:1; never
+  red vs green alone (§3)
+- Saturated strokes ≥3 px at 1080p, small text on a neutral ground; chroma down 5–10 % on large red or magenta
+  fields (§4)
+- No full-screen linear gradient on a dark ground: solid ground + 1–2 radial glows (peak opacity ≤0.45) + seeded
+  grain at 1.5–3 % (`ST.noise`/`ST.rand`) (§4)
+- Never grade UI, logos, screenshots or brand colors; grade real footage only: correct, match, look at 40–70 %,
+  protect skin, clean up (§5, §6)
+- LUTs: only the generated ones (`showtime footage luts`), via `showtime footage grade` at 40–70 %; one look per
+  video; never read a `.cube` file into context (§7)
+- Checks: every hex in the token block, contrast on real pixels mid-transition too, no banding at 200 %, brand
+  colors within about 2 levels in the MP4 (§8)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| 1. Palette roles | 42-57 |
+| 2. Palettes from the brand | 59-80 |
+| 3. Contrast and color vision | 82-89 |
+| 4. What video compression does to color | 91-104 |
+| 5. UI and motion graphics: don't grade | 106-111 |
+| 6. Grading real footage | 113-131 |
+| 7. LUTs | 133-143 |
+| 8. Checks | 145-151 |
+
 ## 1. Palette roles
 
 Every video declares these as CSS custom properties before any scene is built:

@@ -5,8 +5,8 @@ Files:
 - `audio/mix.json`: a restrained generated `underscore` bed (strings and a soft piano pulse, no drums,
   no build or drop) and one soft chime on the closing number, mastered to -14 LUFS. Serious data
   wants calm music or none (`references/music.md` section 1).
-- Transitions: a soft dissolve out of the title, dips between charts (one calm family; no pushes or
-  warps over a chart the viewer is reading, `references/transitions.md` section 3).
+- Transitions: dips throughout (one calm family; a blur dissolve smears two scenes' text into one muddy
+  frame, and pushes or warps move a chart the viewer is reading, `references/transitions.md` section 3).
 - `index.html`: four scenes. Charts are `data-st="chart"` elements that read `data/*.json`.
 - `data/build-time.json`, `data/deploys.json`: title (the takeaway), subtitle, units, the highlighted
   label, an optional callout, and the numbers. All values are sample data (labelled "sample data" on screen): never publish
@@ -22,8 +22,11 @@ writes `data/table.json` and points the scene's chart at it (`--chart line|hbar|
 `--annotate "text"`; `showtime data inspect table.csv` lists the columns).
 
 Craft: one insight per chart state, highlight one series and mute the rest, direct labels instead
-of legends, hold the settled chart 2-3 s (longer when narrated). For a longer cut (about 30 s) give
-the bar scene 2-3 `states` instead of one long hold: `retime` warns when a scene is stretched past 1.5x.
+of legends, a visible change about every 2 s, and each settled chart held as long as its text needs to
+be read (2-3 s, longer when narrated), not longer. For a longer cut (about 30 s) give the charts 2-3
+`states` or add scenes instead of one long hold: `retime` warns when a scene is stretched past 1.5x and
+`showtime check` reports `slow_scene`. Items that join in a later state are left out of the earlier ones
+(or `null`, never `0`); callouts name their datum (`{label}`, `{value}`; line charts prefix the label).
 
 Aspects: 16:9 as shipped; `--aspect 9:16` and `--aspect 1:1` also pass `showtime check` (charts
 reserve room for their end labels; tall frames keep clear of short-form app UI).

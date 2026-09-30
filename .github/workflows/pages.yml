@@ -29,6 +29,9 @@ on:
   #   gh api repos/FavioVazquez/showtime/dispatches -f event_type=examples-updated
   repository_dispatch:
     types: [examples-updated]
+  # a new benchmark report (release "benchmark-report-vX.Y.Z") or product release rebuilds the site
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -83,18 +86,24 @@ jobs:
         run: >-
           python site/build.py --examples _examples/examples --examples-repo "$EXAMPLES_REPO"
           --media-from _media --repo "$GITHUB_REPOSITORY" --out _site --clean
-      # The benchmark report names the tools it was compared with, so it is not in this repository: it is the
-      # asset of the release "benchmark-report" and is published at /benchmark/.
-      - name: Benchmark report (release asset)
+      # The benchmark reports name the tools they were compared with, so they are not in this repository: each
+      # is the index.html asset of a release "benchmark-report-vX.Y.Z". Every version is published at
+      # /benchmark/vX.Y.Z/ and the latest also at /benchmark/, with a bar that links the versions
+      # (site/tools/benchmark_pages.py). The first report's release, "benchmark-report", counts as v0.2.0
+      # until a "benchmark-report-v0.2.0" exists.
+      - name: Benchmark reports (release assets, one per version)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view benchmark-report --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-            mkdir -p _site/benchmark
-            gh release download benchmark-report --repo "$GITHUB_REPOSITORY" --pattern index.html --dir _site/benchmark --clobber
-          else
-            echo "::warning::release benchmark-report not found: /benchmark/ is not published"
+          mkdir -p _bench
+          for tag in $(gh release list --repo "$GITHUB_REPOSITORY" --limit 200 --json tagName -q '.[].tagName' | grep -E '^benchmark-report-v[0-9]+\.[0-9]+\.[0-9]+$'); do
+            gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern index.html --dir "_bench/${tag#benchmark-report-}" --clobber
+          done
+          if [ ! -f _bench/v0.2.0/index.html ] && gh release view benchmark-report --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release download benchmark-report --repo "$GITHUB_REPOSITORY" --pattern index.html --dir _bench/v0.2.0 --clobber
           fi
+          python site/tools/benchmark_pages.py --src _bench --out _site/benchmark
+          [ -f _site/benchmark/index.html ] || echo "::warning::no benchmark report release found: /benchmark/ is not published"
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:

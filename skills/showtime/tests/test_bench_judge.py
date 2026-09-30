@@ -404,6 +404,17 @@ class TestAskVerified(unittest.TestCase):
         self.assertFalse(res["ok"])
         self.assertEqual(len(log), 2)                                             # stops at the timeout
 
+    def test_pairwise_both_orders(self):
+        """An arm wins a pair only when it won with either arm shown first; else split or tie."""
+        import pairwise
+        rec = lambda a, b, first, w: {"task": "t1", "a": a, "b": b, "first": first, "winner": w}  # noqa: E731
+        recs = [rec("p", "q", "p", "p"), rec("p", "q", "q", "p"), rec("p", "q", "p", "p"),        # p both orders
+                rec("p", "r", "p", "p"), rec("p", "r", "r", "r"),                                   # first wins: split
+                rec("q", "r", "q", "tie"), rec("q", "r", "r", "tie"),
+                rec("q", "s", "q", "q")]                                                             # one order
+        self.assertEqual(pairwise.both_orders(recs)["t1"], {"p vs q": "p", "p vs r": "split", "q vs r": "tie",
+                                                            "q vs s": "one order only"})
+
     def test_rank_and_pairwise_use_the_proof(self):
         for name in ("rank.py", "pairwise.py", "factcheck.py"):
             text = (SCORING / name).read_text(encoding="utf-8")

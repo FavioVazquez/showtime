@@ -5,4 +5,4 @@ launcher, installer and doctor import (st.platform, st.common, st.ff,
 st.doctor) are stdlib-only and Python 3.8+ compatible; everything else runs
 inside the showtime virtualenv (~/.showtime/venv, Python 3.12).
 """
-__version__ = "0.2.0"
+__version__ = "0.3.0"

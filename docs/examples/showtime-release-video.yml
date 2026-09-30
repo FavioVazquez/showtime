@@ -1,0 +1,100 @@
+# A release video on every published GitHub release, made from the release notes. No API key, no agent.
+# Copy this file to .github/workflows/release-video.yml in your repository.
+#
+# What it does: the release's description becomes a short video (hook card, one scene per group of changes,
+# end card), which is checked, rendered, qa'd and exported as one HTML file, then attached to the release
+# page. A run started by hand ("Run workflow") takes the notes you type, or the section of CHANGELOG.md for
+# the version you give, and uploads the files as a workflow artifact instead.
+# Guide: docs/github-action.md in the showtime repository.
+name: release video
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to make the video for (the section of CHANGELOG.md); empty when you type notes"
+        type: string
+        default: ""
+      notes:
+        description: "Release notes as Markdown (empty: the CHANGELOG.md section of the version)"
+        type: string
+        default: ""
+
+permissions:
+  contents: write   # attaches the video to the release; use `contents: read` when upload is artifact or none
+
+jobs:
+  video:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      # only needed when the video reads a file of the repository (CHANGELOG.md here)
+      - uses: actions/checkout@v7
+
+      - id: video
+        uses: FavioVazquez/showtime/.github/actions/showtime-video@v0.3.0
+        with:
+          mode: release
+          # a published release: its tag, name and description come from the event; by hand: these
+          version: ${{ inputs.version }}
+          notes: ${{ inputs.notes }}
+          install: "npm install -g your-package@latest"   # shown on the end card; remove the line to show none
+          vertical: "true"                                # also a 9:16 version
+          upload: ${{ github.event_name == 'release' && 'release' || 'artifact' }}
+
+      - name: The verdict
+        if: always()
+        env:
+          QA: ${{ steps.video.outputs.qa }}
+          VIDEO: ${{ steps.video.outputs.video }}
+        run: echo "qa $QA; video $VIDEO"
+
+# ---------------------------------------------------------------------------------------------------
+# Variant: a short video for every pull request, from its title and description (no upload to a release;
+# the files are a workflow artifact). Use it in its own workflow file. A pull request from a fork has a
+# read-only token, which is all this needs. Put it under `on:` instead of the release trigger:
+#
+#   on:
+#     pull_request:
+#       types: [opened, ready_for_review]
+#
+#   permissions:
+#     contents: read
+#
+#   jobs:
+#     video:
+#       if: github.event.pull_request.draft == false
+#       runs-on: ubuntu-24.04
+#       timeout-minutes: 30
+#       steps:
+#         - uses: FavioVazquez/showtime/.github/actions/showtime-video@v0.3.0
+#           with:
+#             upload: artifact
+#
+# ---------------------------------------------------------------------------------------------------
+# Variant: a video you made earlier, committed in the repository (a showtime project folder with
+# showtime.json), rendered on every push to main that changes it:
+#
+#         - uses: actions/checkout@v7
+#         - uses: FavioVazquez/showtime/.github/actions/showtime-video@v0.3.0
+#           with:
+#             mode: project
+#             project: videos/launch
+#
+# ---------------------------------------------------------------------------------------------------
+# Variant: bring your own agent (optional). The Action runs your command with SHOWTIME_PROMPT,
+# SHOWTIME_BIN and SHOWTIME_JOB set, then checks the result itself. Your API key is your own secret,
+# given to the agent's environment here; the Action never reads it. The agent's own CLI must be
+# installed by an earlier step, and it must have showtime's skill (see docs/agents.md):
+#
+#         - uses: actions/checkout@v7
+#         - run: npm install -g @your-agent/cli
+#         - uses: FavioVazquez/showtime/.github/actions/showtime-video@v0.3.0
+#           env:
+#             YOUR_AGENT_API_KEY: ${{ secrets.YOUR_AGENT_API_KEY }}
+#           with:
+#             mode: agent
+#             prompt: "A 20 second launch video for this release: hook, the two main changes, install command."
+#             agent-command: 'your-agent --print "$SHOWTIME_PROMPT"'

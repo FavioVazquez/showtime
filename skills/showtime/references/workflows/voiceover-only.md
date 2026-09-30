@@ -5,6 +5,28 @@ product clip, a finished animation, a video whose narration should be replaced (
 this demo.mp4", "narrate this clip in a calm voice"). The picture is not re-edited; the voice is written
 to fit it, then mixed over the original sound.
 
+## Essentials
+
+- Defaults: `af_heart` or `am_michael` at 1.0, original audio 12 dB lower (muted when it is clashing speech),
+  narration from about 0.5 s to before the last second, captions as a sidecar, -14 LUFS final (§ Defaults)
+- Look before writing: `showtime footage probe <video>`, `showtime footage scenes <video> --job <job>`; one line
+  per shot at 2.5-3 words per second, never naming a thing before it appears (§ Steps)
+- `showtime voice script <job>/narration.md -o <job>/voice`: every line inside its shot; shorten overruns, never
+  speed a voice past 1.25x (§ Steps)
+- EDL with one range (`volume_db` -12 or `"mute": true`) plus the voice track, `showtime edit check`, then
+  `showtime edit render <job> --preview` and `showtime edit view <job>` to check sync (§ Steps)
+- `showtime edit render <job> -o <job>/final.mp4`, `showtime qa <job>`, `showtime look <job>`; name the voice and
+  its license in the delivery card (§ Steps)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| Inputs | 30-34 |
+| Defaults | 36-42 |
+| Steps | 44-77 |
+| Pitfalls | 79-86 |
+| Read next | 88-91 |
+
 ## Inputs
 
 - The video file. Optionally a script, or notes on what to say.
@@ -50,7 +72,7 @@ assumptions; ask only when the original is speech the user may want to keep.
 7. **Captions (optional).** `showtime captions <job>/voice/vo.words.json --style clean --size <WxH>
    -o <job>/edit/caps.ass --srt <job>/final.srt`; burn them with `"subtitles": "caps.ass"` in the EDL.
 8. **Final and verify.** `showtime edit render <job> -o <job>/final.mp4`,
-   `showtime qa <job>` (the latest final and the job's captions), look at the sheet.
+   `showtime qa <job>` (the latest final and the job's captions), `showtime look <job>`.
 9. **Deliver.** The delivery card, including the voice used and its license (Kokoro voices are
    Apache-2.0; some Piper voices need a credit line, listed by `showtime voice list --json`).
 

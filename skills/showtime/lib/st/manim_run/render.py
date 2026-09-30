@@ -189,6 +189,12 @@ def render(target: Path, *, scenes: Optional[List[str]] = None, quality: str = "
            size: Optional[Tuple[int, int]] = None) -> Dict[str, Any]:
     t_start = time.time()
     project = Project(target)
+    if mix:
+        # --mix is a path like any other on the command line: from the current folder first
+        # (`showtime manim render manim --mix manim/audio/mix.json` from the job folder), else the project's
+        mp = Path(mix).expanduser()
+        if not mp.is_absolute() and mp.is_file():
+            mix = str(mp.resolve())
     eng = engine or project.engine
     if eng == "gl":
         return render_gl(project, scenes=scenes, quality=quality, aspect=aspect, alpha=alpha, fps=fps, out=out,
@@ -407,13 +413,16 @@ def _audio(project: Project, names: List[str], logs: Dict[str, Dict[str, Any]], 
         if not mp.is_absolute():
             mp = project.dir / mix
         if not mp.is_file():
-            raise ShowtimeError("mix spec not found: %s" % mix, hint="see references/audio.md for the format")
+            raise ShowtimeError("mix spec not found: %s" % mix,
+                                why="looked in the current folder and in the project folder (%s)" % project.dir,
+                                hint="pass the path from where you run the command, or relative to the project "
+                                     "(--mix audio/mix.json); the format is in references/audio.md")
         user = json.loads(mp.read_text(encoding="utf-8"))
         base = mp.parent
         for t in user.get("tracks", []):
             if t.get("kind") == "voice" and voice:
                 continue          # the voice comes from the cues, placed on the measured clock
-            spec["tracks"].append(t)
+            spec["tracks"].append(_track_paths(t, [mp.parent, project.dir, Path.cwd()]))
         for k in ("sections", "master"):
             if k in user:
                 spec[k] = user[k]
@@ -433,6 +442,25 @@ def _audio(project: Project, names: List[str], logs: Dict[str, Dict[str, Any]], 
         raise ShowtimeError("the audio mix failed", why=(cp.stderr or cp.stdout).strip()[-600:],
                             hint="check %s (showtime audio mix %s)" % (specf, specf))
     return wav, "mixed: %d track(s) via showtime audio mix" % len(spec["tracks"])
+
+
+def _track_paths(tr: Any, bases: List[Path]) -> Any:
+    """A mix track with its relative file paths made absolute: a file is looked up beside the mix spec,
+    then in the Manim project folder (where scenes.py lives: "audio/bed.wav" in manim/audio/mix.json),
+    then in the current folder. A path found nowhere is left as written for the mix to report."""
+    if not isinstance(tr, dict):
+        return tr
+    out = dict(tr)
+    for k in ("file", "keystrokes"):
+        v = out.get(k)
+        if not isinstance(v, str) or not v or Path(os.path.expanduser(v)).is_absolute():
+            continue
+        for b in bases:
+            c = Path(b) / v
+            if c.is_file():
+                out[k] = str(c.resolve())
+                break
+    return out
 
 
 # ------------------------------------------------------------------ ManimGL (optional engine)

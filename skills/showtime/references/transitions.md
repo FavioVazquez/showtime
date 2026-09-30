@@ -5,6 +5,37 @@ when adding a shader (WebGL) transition. For real-footage edits (MP4 clips) the 
 ffmpeg crossfades instead. `showtime motion transitions` prints the catalog; the machine-readable
 version with moods and energy is `runtime/transitions/catalog.json`.
 
+## Essentials
+
+- Put `data-transition="push left 0.5"` on the incoming scene; spec
+  `<type> [left|right|up|down] [seconds] [start|center|end|peak]`; `cut` = hard cut;
+  `showtime motion transitions` prints the catalog (§1)
+- Keep the outgoing scene fully visible when the window starts: the transition is its exit, so no exit
+  animations on non-final scenes (§1)
+- One primary for 60-70 % of cuts (hard cuts count) plus one or two accents, not the last video's primary
+  (`showtime history`); cheap-tier ones only on purpose (§2, §3)
+- Launch, promo, release, trailer: `match` and dissolves, `blur-dissolve` or `dip` onto the end card, at most
+  one `through`; no push, pan, flash, glitch or shader in a launch film (§3)
+- Data stories: `dip` (0.5-0.7 s) or a hard cut; never push, warp or wipe a chart still being read; let each
+  chart settle before its scene ends (§3)
+- Never transition mid-sentence: handoffs sit in the pause between voice lines (§3)
+- One direction for every push/slide (leftward = forward); nothing longer than 1 s between UI shots; outro
+  `dip` or `crossfade`, 0.6-1 s; never more than 3 bright flashes per second (§3)
+- Busy scenes on both sides: `dip`, not `crossfade`. `match`: no entrance animation on the matched element
+  (§3)
+- WebGL windows smear text: fade labels out before and in after, or use a CSS transition; logo end card:
+  `dip`, not `domain-warp`. `render --alpha`: use a CSS transition (the shader canvas is opaque) (§3, §4)
+- A new shader returns scene A at `uP = 0` and B at `uP = 1`; randomness only from `rnd()` (§5)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| 1. Using them | 39-64 |
+| 2. Catalog | 66-98 |
+| 3. Choosing | 100-158 |
+| 4. How the WebGL transitions work (and on which machines) | 160-193 |
+| 5. Writing a new shader | 195-203 |
+
 ## 1. Using them
 
 Declarative (recommended): put `data-transition` on the **incoming** scene. The outgoing scene is
@@ -68,6 +99,8 @@ the style asks for it (retro, glitch aesthetics, irony).
 
 ## 3. Choosing
 
+- **Not the last video's primary.** `showtime history` lists the primaries of your recent videos; pick
+  another unless the brand asks for continuity (`check` warns with `look_repeat`).
 - **One primary + one or two accents.** 60-70 % of cuts use the same transition (hard cuts count;
   on the beat, a hard cut is the most premium transition there is). Repetition reads as intent.
 - **Energy.** Calm pieces: blur-dissolve / crossfade, 0.6-0.9 s, shaders domain-warp, morph-warp,
@@ -85,7 +118,7 @@ the style asks for it (retro, glitch aesthetics, irony).
   and slowest (dip or crossfade, 0.6-1 s).
 - **Data stories, reports, explainers.** A transition must say what changed: same topic, next chart =
   `dip` (0.5-0.7 s) or a hard cut when the axes stay; new chapter = a slower `dip`; title into the
-  first chart = `blur-dissolve`. Never push, warp or wipe a chart the viewer is still reading, and
+  first chart = `dip` too (a `blur-dissolve` between two scenes full of text smears both mid-window). Never push, warp or wipe a chart the viewer is still reading, and
   never mix three unrelated families in a four-scene piece (push + blur + shader reads as chopped).
   Let each chart finish settling (bars landed, callout shown) before its scene ends.
 - **Voice-led pieces: never transition mid-sentence.** A handoff sits in the pause between two

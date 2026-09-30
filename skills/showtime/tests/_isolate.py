@@ -15,3 +15,6 @@ import tempfile
 SCRATCH = tempfile.mkdtemp(prefix="st-test-cwd-")
 os.chdir(SCRATCH)
 atexit.register(shutil.rmtree, SCRATCH, True)
+# the look history (st.variety.history) of test jobs stays in the scratch folder, never in the user's
+# ~/.showtime/history (qa records a job's look when it passes)
+os.environ.setdefault("SHOWTIME_HISTORY_DIR", os.path.join(SCRATCH, ".look-history"))

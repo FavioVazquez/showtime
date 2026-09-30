@@ -133,7 +133,7 @@ def tree_top(dirs) -> set:
 LEGIT_TOP = {
     PLUGIN_ROOT: {".claude-plugin", ".git", ".gitattributes", ".github", ".gitignore", ".out-of-scope",
                   "CHANGELOG.md", "CONTEXT.md", "CONTRIBUTING.md", "LICENSE", "README.md", "agents", "assets",
-                  "benchmarks", "examples", "monitors", "scripts", "skills", "plugin.json", "mcp.json",
+                  "benchmarks", "examples", "hooks", "monitors", "scripts", "skills", "plugin.json", "mcp.json",
                   "mcp_config.json", "gemini-extension.json", "com.github.copilot"},
     SKILL_DIR: {"SKILL.md", "bin", "lib", "mcp", "references", "runtime", "scripts", "setup", "templates", "tests"},
 }

@@ -157,6 +157,14 @@ def register_new(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--job", "-j", metavar="JOB",
                    help="record the project in this job (folder or name); a <dir> inside a job folder is "
                         "recorded in that job without it")
+    p.add_argument("--no-brand", action="store_true",
+                   help="launch/promo templates: do not apply the brand kit found for the project (brand.json)")
+    p.add_argument("--mode", choices=["quality", "lean"],
+                   help="review mode for this video (showtime.json \"review_mode\", and its job's): quality (the "
+                        "default: full review, a critic round before delivery) or lean (a draft pass: no critic round "
+                        "unless publish-bound or asked, one look per stage)")
+    p.add_argument("--no-reference-style", action="store_true",
+                   help="do not link the job's style reference (references/*/style.css) into the page")
     p.add_argument("--json", action="store_true", help="print the created project as JSON")
     p.set_defaults(func=cmd_new)
 
@@ -210,7 +218,7 @@ def register_new(sub: argparse._SubParsersAction) -> None:
                    help="--from-voice: leave the caption layer's data-src alone")
     p.add_argument("--total", type=float, metavar="S",
                    help="--from-voice: keep the video S seconds long (the end card after the narration grows or "
-                        "shrinks; it warns under 2.5 s)")
+                        "shrinks; it warns under 2.5 s; when every scene is narrated, the hold after the last line does)")
     p.add_argument("--cuts", metavar="T,T,...",
                    help="put the scene changes at these times (seconds, one per scene change, e.g. from `showtime "
                         "audio cuts`: the music's phrase starts); with --duration the video also gets that length")
@@ -248,8 +256,11 @@ def cmd_new(args: argparse.Namespace) -> int:
                                 why="that folder holds studio board files, not a video project",
                                 hint="for a studio session run `showtime studio init <job>`; project templates: %s"
                                      % ", ".join(names))
+        from . import __version__
         raise ShowtimeError("unknown template %r" % args.template,
-                            hint="available: %s" % (", ".join(names) or "(none installed)"))
+                            why="this is showtime %s at %s" % (__version__, paths()["skill"]),
+                            hint="available: %s (a template the docs name but this list lacks means an older "
+                                 "showtime is running: `showtime doctor` says which)" % (", ".join(names) or "(none installed)"))
     if not args.dir:
         raise ShowtimeError("missing destination folder", hint="showtime new %s my-video" % args.template)
     if args.duration is not None and not (0 < args.duration <= 3600):
@@ -278,11 +289,14 @@ def cmd_new(args: argparse.Namespace) -> int:
         if v is not None:
             cfg[k] = int(v) if k == "fps" and float(v).is_integer() else v
     cfg["title"] = args.title if args.title else _title_from(dst.name, cfg.get("title"))
+    cfg.setdefault("template", args.template)   # read by the look history (st.variety)
     cfg.setdefault("width", 1920)
     cfg.setdefault("height", 1080)
     cfg.setdefault("fps", 30)
     cfg.setdefault("duration", 10.0)
     cfg.setdefault("background", "#000")
+    if getattr(args, "mode", None):
+        cfg["review_mode"] = args.mode      # read by qa's review rule when the job has no mode of its own
     for dim in ("width", "height"):
         if int(cfg[dim]) % 2:
             raise ShowtimeError("%s must be even for H.264 (got %s)" % (dim, cfg[dim]))
@@ -300,8 +314,22 @@ def cmd_new(args: argparse.Namespace) -> int:
     for n in notes:
         warn(n)
     job_rec = _attach_to_job(dst, job_dir)
+    if job_rec and getattr(args, "mode", None):
+        try:
+            from .job import ledger
+            ledger.note(job_rec, review_mode=args.mode)
+        except Exception as e:  # noqa: BLE001 - never fail `new` over the ledger
+            warn("could not record the review mode in job %s: %s" % (job_rec, e))
+    branded = _brand_new_project(dst, cfg, job_rec or job_dir, getattr(args, "no_brand", False))
+    ref_style = None
+    if not getattr(args, "no_reference_style", False):
+        from .variety import restyle
+        ref_style = restyle.apply_to_project(dst, job_rec or job_dir, brand_applied=bool(branded and branded.get("applied")))
+        if ref_style and ref_style.get("linked"):
+            cfg = read_json(cfg_path, cfg)
     result = {"project": str(dst), "template": args.template, "config": cfg, "retime": retimed, "notes": notes,
-              "job": str(job_rec) if job_rec else None,
+              "review_mode": getattr(args, "mode", None),
+              "job": str(job_rec) if job_rec else None, "brand": branded, "reference_style": ref_style,
               "template_notes": str(src / "README.md") if (src / "README.md").is_file() else None}
     if args.json:
         print_json(result)
@@ -315,10 +343,44 @@ def cmd_new(args: argparse.Namespace) -> int:
                 warn(n)
         if job_rec:
             log("job %s: project -> %s" % (job_rec.name, dst))
+        if branded and branded.get("applied"):
+            from .brand.commands import report as _brand_report
+            _brand_report(branded["applied"])
+        elif branded and branded.get("hint"):
+            log(branded["hint"])
+        for line in (ref_style or {}).get("log") or []:
+            log(line)
         if (src / "README.md").is_file():
             log("template notes (not copied into the project): %s" % (src / "README.md"))
         print(str(dst))
     return 0
+
+
+LAUNCH_KINDS = ("launch", "promo", "trailer", "teaser", "release")
+
+
+def _brand_new_project(dst: Path, cfg: Dict[str, Any], job: Optional[Path], skip: bool) -> Optional[Dict[str, Any]]:
+    """Brand first: a launch/promo project starts in the product's look when a brand kit is found
+    (the job's brand/ folder, the project or its parents); otherwise say how to get one or record why not."""
+    if str(cfg.get("kind") or "").lower() not in LAUNCH_KINDS or skip:
+        return None
+    try:
+        from . import brand as brandmod
+        from .brand.apply import apply_project
+        kit = brandmod.load(dst)
+        if kit is not None:
+            return {"applied": apply_project(dst, kit)}
+        from .brand.capture import job_brand
+        rec = job_brand(job)
+        if rec and rec.get("none"):
+            return {"none": rec["none"]}
+        where = " --job %s" % job.name if job else ""
+        return {"hint": "no brand kit found: capture the product first (`showtime brand capture <repo|url>%s`), then "
+                        "`showtime brand apply %s`; or record why not: `showtime brand skip%s --why \"...\"`" % (
+                            where, dst, (" " + job.name) if job else "")}
+    except Exception as e:  # noqa: BLE001 - never fail `new` over the brand kit
+        warn("brand kit not applied: %s" % e)
+        return None
 
 
 def _attach_to_job(project: Path, job: Optional[Path]) -> Optional[Path]:
@@ -1011,9 +1073,10 @@ def _stretch_notes(scenes: List[Dict[str, Any]]) -> List[str]:
             long.append("%s x%.1f (+%.1fs)" % (sc["name"], ratio, extra))
     if not long:
         return []
-    return ["scenes stretched more than %gx hold still after their last animation: %s. Add content or motion "
-            "to them (another beat or chart state, a slow push-in, a second line of text), or `showtime check` "
-            "will flag still holds of %gs or more" % (STRETCH_WARN, ", ".join(long), STILL_HOLD_S)]
+    return ["scenes stretched more than %gx hold still after their last animation: %s. Add beats to them "
+            "(another chart state, a callout, a second line of text, the next command) or more scenes: a slow "
+            "push-in alone still plays slow. `showtime check` flags still holds of %gs or more (dead_air) and "
+            "scenes that hold on past their last change and reading time (slow_scene)" % (STRETCH_WARN, ", ".join(long), STILL_HOLD_S)]
 
 
 def _rel(path: Path, proj: Path) -> str:
@@ -1326,16 +1389,27 @@ def voice_plan(proj: Path, timeline: Path, mapping: Optional[str] = None, pad: f
     new = _r(cursor)
     if total is not None:
         last_i = len(plan) - 1
-        if last_i in by_scene:
-            raise ShowtimeError("--total needs an unnarrated last scene (an end card) to absorb the difference",
-                                hint="add an end card after the narration, or drop --total")
         ns, ne = plan[last_i]
         ne2 = _on_frame(ne + (float(total) - new), fps)
-        if ne2 - ns < 1.0:
-            raise ShowtimeError("--total %g leaves the end card %.2fs long (the narration takes %.2fs)" % (
-                total, ne2 - ns, ns), hint="shorten the script (voice script --fit), or raise --total")
-        if ne2 - ns < 2.5:
-            notes.append("the end card is only %.2fs long to fit --total %g (2.5 s or more reads as a hold)" % (ne2 - ns, total))
+        if last_i in by_scene:
+            # every scene is narrated (a narrated close): the last scene holds after its last line,
+            # longer or shorter, but never cuts into the speech
+            ln, at = [(x, a) for x, a in placed if x is by_scene[last_i][-1]][0]
+            speech_end = _on_frame(at + float(ln.get("duration") or ln["slot"].get("duration") or 0), fps)
+            if ne2 < speech_end - 1e-6:
+                raise ShowtimeError("--total %g would cut the last line: the narration ends at %.2fs" % (total, speech_end),
+                                    why="every scene is narrated, so only the pause after the last line can change",
+                                    hint="use --total %g or more, shorten the script (voice script --fit), or add an "
+                                         "end card after the narration" % (math.ceil(speech_end * 10) / 10.0))
+            if ne2 > ne + 1e-6:
+                notes.append("every scene is narrated: the last scene (%s) holds %.2fs after its last line to fit --total %g"
+                             % (names[last_i] or last_i + 1, ne2 - speech_end, total))
+        else:
+            if ne2 - ns < 1.0:
+                raise ShowtimeError("--total %g leaves the end card %.2fs long (the narration takes %.2fs)" % (
+                    total, ne2 - ns, ns), hint="shorten the script (voice script --fit), or raise --total")
+            if ne2 - ns < 2.5:
+                notes.append("the end card is only %.2fs long to fit --total %g (2.5 s or more reads as a hold)" % (ne2 - ns, total))
         plan[last_i] = (ns, ne2)
         new = _r(float(total))
     tl_dir = tl_path.parent

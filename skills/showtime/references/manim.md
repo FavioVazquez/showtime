@@ -5,6 +5,59 @@ transform, or any math or diagram explainer, or asks for Manim by name. It cover
 the project, the `st_manim` scene kit, the craft rules (with numbers), narration sync, integration
 with pages and footage, and LaTeX setup per OS.
 
+## Essentials
+
+- Order: `showtime job init <slug> --goal "..."`, beat sheet and narration, `showtime manim new <job>/manim`
+  (`--template equation|graph|plane|refine|blank`, `--aspect 9:16`), then
+  `showtime voice script <job>/manim/narration.md -o <job>/manim/voice/` (`--fit <s>`) (§2)
+- `showtime manim cues <job>/manim` prints the line ids and numbered words that `beat()`, `at()` and
+  `fit(until=)` take; never name a line after a word the narration says (`cue_ambiguous`) (§2, §9)
+- `showtime manim check <job>/manim` until 0 errors and every WARN read; for a 9:16 cut also run it with
+  `--aspect 9:16` (§2)
+- Draft `showtime manim render <job>/manim` (480p15 + contact sheet): every scene's last frame must look
+  finished. Final `--quality final -o <job>/final.mp4`, then `showtime qa <job>` (§2)
+- Write scenes with `from st_manim import *` on `ShowScene` (`ShowCameraScene`, `Show3DScene`), never a plain
+  `Scene`: its waits are frame-snapped (§9, §12)
+- `self.beat("<line id>")` starts a beat; `self.at(cue)` starts 0.3 s before the word; `self.fit(anim,
+  until=cue)` ends as the word starts; `self.hold(s)`; `self.mark("poster")` (§9)
+- Scenes sit on the voice's clock: no animation before the first beat. Fix `cue_late` by shortening what comes
+  before or cueing an earlier word, never by speeding the voice (§10)
+- Frame 0 is the thumbnail: `self.add()` the hook (title, first equation or picture) right after the first
+  `beat()`, never fade it in from the empty ground. On an empty scene `beat()` holds the voice's lead-in on
+  whatever you add() next, so `self.beat("hook"); self.add(hook)` opens on the hook
+- Place by region (`place(mob, "top")`), not absolute coordinates: the short side is always 8 units (§3, §9)
+- Plan beats first: one beat = one narration line = 1-3 animation calls + a hold; 3-6 beats per scene (§4)
+- Pacing: a visual change every 3-6 s, first motion within 0.5 s, no still over 2.5 s mid-video (WARN from
+  2.5 s, FAIL from 6 s), final hold 2-3 s (§5)
+- Equations: build with `eq(tex)`, write the headline once and then only `morph(a, b)`; one change per step;
+  every frame is a true statement that matches the picture (§6)
+- Colour: one emphasis colour `T.emph`, never on a variable; 3-5 hues bound to concepts in `manim.json`
+  `"colors"`; scaffolding in greys (§7)
+- On screen: titles 4 words, labels 3, callouts and notes 8, never the narration itself (§8)
+- Words and math on one line: `mixed_line()` or `align_baseline()`, never `arrange(aligned_edge=DOWN)` (§8, §12)
+- Seed randomness inside `construct`; no `add_sound`; `counter()` needs no LaTeX (`DecimalNumber` does) (§12)
+- Remove a group's members (`self.remove(x, y)`), never a fresh `VGroup(x, y)` (§12)
+- showtime never installs LaTeX; `showtime doctor` and `showtime manim check` print the install line (§13)
+- Clip for a page: `--alpha --fps 30 -o <page>/media/proof.webm`; VP9 alpha does not play in Safari, so for
+  `showtime export html` bake the page to MP4 or render without `--alpha` (§11)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| 1. When Manim, and which engine | 61-79 |
+| 2. Quick path | 81-99 |
+| 3. The project | 101-125 |
+| 4. Planning: the beat sheet first | 127-137 |
+| 5. Pacing (numbers) | 139-154 |
+| 6. Equations | 156-177 |
+| 7. Colour | 179-191 |
+| 8. Craft by topic | 193-253 |
+| 9. The kit (from st_manim import *) | 255-288 |
+| 10. Narration sync | 290-319 |
+| 11. Integration | 321-335 |
+| 12. Pitfalls | 337-363 |
+| 13. Setup and LaTeX per OS | 365-389 |
+
 ## 1. When Manim, and which engine
 
 | Build it with | When |
@@ -13,7 +66,7 @@ with pages and footage, and LaTeX setup per OS.
 | canvas film (`references/film-api.md`) | illustrated or stylised explainers, metaphors, characters of your own |
 | DOM page (`references/components.md`) | UI, product, text-heavy motion graphics |
 
-Mixing is normal: a Manim clip can be a layer in a page or an overlay on footage (section 9).
+Mixing is normal: a Manim clip can be a layer in a page or an overlay on footage (section 11).
 
 **Engines.** Manim Community (the `manim` extra, pinned 0.21.x) is the default: released, CPU-only
 (cairo), headless on every OS, encoded by PyAV. The `st_manim` kit, cues, checks and caching all use
@@ -34,9 +87,11 @@ depth-correct; everything else belongs in Manim Community.
 4. `showtime manim cues <job>/manim` lists each line id and its numbered words: the names `beat()`,
    `at()` and `fit(until=)` take.
 5. Write the scenes. `showtime manim check <job>/manim` until it reports 0 errors and you have read
-   every WARN (its still-hold rule uses qa's thresholds). For a 9:16 cut, also
+   every WARN (its still-hold rule uses qa's thresholds, and after the dry run it renders the draft and runs qa's
+   black and frozen-frame detectors on it, so the near-black default ground with sparse content and a small
+   `Indicate` on an equation show up here, not after the final; `--no-draft` skips that). For a 9:16 cut, also
    `showtime manim check <job>/manim --aspect 9:16`: the portrait layout has its own holds and safe area.
-6. `showtime manim render <job>/manim` (draft: 480p15 plus a contact sheet). Read the sheet: every
+6. `showtime manim render <job>/manim` (draft: 480p15 plus a contact sheet). Judge the sheet once (`looking.md`): every
    scene's last frame must look like a finished composition.
 7. `showtime manim render <job>/manim --quality final -o <job>/final.mp4`, then `showtime qa <job>`.
 
@@ -88,7 +143,7 @@ ignores every cache.
 | a visual change | every 3-6 s, one per narrated clause |
 | start the motion before its word | 0.2-0.5 s (`at()` default lead 0.3 s) |
 | hold between small beats / after a result / after the payoff | 1 s / 2-3 s / 3-5 s |
-| longest still frame | under 2.5 s mid-video (check and qa WARN from 2.5 s, FAIL from 6 s; end hold up to 4 s). A thin line, a small label or a slow sweep of a radius does not count as movement for either |
+| longest still frame | under 2.5 s mid-video (check and qa WARN from 2.5 s, FAIL from 6 s; end hold up to 4 s). A thin line, a small label, a slow sweep of a radius or an `Indicate` on one equation does not count as movement for either: check reports what qa's detector sees on the draft as `frozen`. qa calls a frame black only when almost nothing is visible (99.5 % of it dark): a title or an equation on Manim's near-black ground is fine, an empty ground between beats is not; for a light look, `"light": true` in manim.json |
 | run times: fade, label, pulse / write, draw / meaningful transform / process / camera sweep | 0.5-1 / 1-2 / 2-4 / 5-10 / 10-20 s |
 | stagger (`lag_ratio`): 2-4 items / 3-20 / hundreds | 0.3-0.5 / 0.1-0.25 / 0.01-0.05 (the whole wave 1-2 s) |
 | first motion | within 0.5 s of the start |
@@ -117,7 +172,9 @@ there-and-back for pulses.
 - Focus without deleting: `dim_others(e, ["x"])` (to 35 %), a `highlight()` box, then `undim(e)`.
 - Braces carry 1-3 word labels. Derivations stack with aligned relation signs (`stack()`), at most 3-4
   lines, older lines faded.
-- `equation_walkthrough(self, steps)` does all of this with `cue`, `focus`, `note` and `key_map` per step.
+- `equation_walkthrough(self, steps)` does all of this with `cue`, `focus`, `note` and `key_map` per step;
+  `font_size=100-120` when the equation is the whole picture (math is thin ink: at 72 a morph alone is a
+  hold for qa), and a slow camera push (`ShowCameraScene`, 5 %) keeps long walkthroughs moving.
 
 ## 7. Colour
 
@@ -147,7 +204,8 @@ two `refine()` calls: the second one with `start=` the first one's result. Show 
 picture first when it is common.
 
 **Graphs.** Axes first (1 s), tick labels only where needed. `graph_build()` shows a faint preview of
-the whole curve, then traces it (linear when x is time) with a glowing tip. Compare curves on one set
+the whole curve, then traces it (linear when x is time) with a glowing tip; `area=True` fills the area under
+it with the trace (a thin curve alone is too small a change for qa's frozen-frame detector). Compare curves on one set
 of axes in two hues; rescale axes smoothly instead of cutting to new ones.
 
 **Grids and matrices.** `plane_transform(self, [[1, 1], [0, 1]])`: a faint static grid stays as
@@ -204,7 +262,7 @@ class Proof(ShowScene):             # ShowCameraScene (movable frame), Show3DSce
         self.beat("hook")           # the narration line "hook" starts here
         t = title("Same frame, same pieces")
         place(t, "top")             # regions: top middle bottom main center upper lower left right *_third
-        self.play(FadeIn(t, shift=0.2 * UP))
+        self.add(t)                 # on screen at t=0: frame 0 is the thumbnail
         e = eq(r"a^2 + b^2 = c^2")  # parts coloured from manim.json "colors"
         self.at("squared")          # 0.3 s before the word
         self.play(Write(e))
@@ -245,6 +303,20 @@ class Proof(ShowScene):             # ShowCameraScene (movable frame), Show3DSce
   `ambient-pad`, sections `intro`/`verse`/`outro`) or none; never a bright corporate or plucky
   style (`music.md` section 1). Effects on events: one or two (a soft click on a count-up, a chime
   on the payoff), not a pop on every step, at the times `showtime manim cues` prints.
+
+**Silent film (music and on-screen words, no voice).**
+1. Leave `narration.md` without lines (the stub's comment alone is fine) or delete it. `check` and
+   `render` treat that as no narration: no cues, no estimate, no error.
+2. Pace with `play(run_time=...)` and `self.hold(s)`, not `beat()`/`at()`; the on-screen words carry
+   the story, so give each a read-time hold (section 5). `showtime manim check <p>` prints each
+   scene's seconds; their sum is the length.
+3. Music cut to that length: `showtime audio compose --style underscore --dur <total> --sections
+   "0:intro,<t>:verse,<t>:outro" -o <p>/audio/bed.wav`, then `<p>/audio/mix.json` with
+   `{"tracks": [{"id": "bed", "kind": "music", "file": "audio/bed.wav", "fade_out": 1.5}]}` plus one
+   or two effects (`"at"` = the scene start + the event's time in it). A track's `file` is found
+   beside the mix spec, then in the Manim folder, then in the current folder.
+4. `showtime manim render <p> --quality final --mix audio/mix.json -o <job>/final.mp4` (or `"mix":
+   "audio/mix.json"` in `manim.json`). `--mix` is read from the current folder first, then the project.
 
 ## 11. Integration
 

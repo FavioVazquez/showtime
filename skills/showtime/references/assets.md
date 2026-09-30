@@ -5,6 +5,44 @@ cut out of its background, or a credits file. Every asset is fetched without API
 `~/.showtime/assets`, and written with a `<file>.license.json` sidecar so credits are automatic.
 For material from the product itself (screens, logos, copy) read `references/capture.md`.
 
+## Essentials
+
+- Free licenses (CC0, public domain, OFL-1.1, MIT, ISC, Apache-2.0 ...) are used by default; CC BY only with
+  `--allow-attribution`, CC BY-SA only with `--allow-share-alike`; NC, ND and unknown never (§1)
+- Credits: `showtime assets credits <project>` writes `CREDITS.txt`; `showtime render` merges them into
+  `credits.txt` beside the final, the file that ships. Put credits in the video description, and in an end
+  card when the license asks (§1)
+- Voice, fonts and a composed score have no sidecar: add those lines by hand for a full credits page (§1)
+- Fonts: `showtime assets font "<family>" --copy-to <project>/fonts` for a portable copy (prints the `<link>`
+  and CSS lines); `--path --weight 700` prints a TTF path; `showtime assets fonts --search <term>` (§2)
+- Pages link `font.css` (variable WOFF2); captions (libass) need TTF through `fontsdir=`, WOFF2 silently falls
+  back; never rely on system font names (§2)
+- Icons: `showtime assets icon lucide <name> --color "#hex" --size 128` (lucide is the default set);
+  `simple-icons` only to depict that brand; search with `showtime assets icons <term>` (§3)
+- Emoji are images, never emoji fonts: `showtime assets emoji <emoji>` (Noto SVG by default) (§4)
+- Stock: `showtime assets media search "<query>" --preview sheet.jpg`, look at the sheet, then
+  `showtime assets media fetch <source>:<id> --project <dir>`; try Openverse, Commons, NASA, then museums (§5)
+- A file by URL only with the license you read on its page: `fetch <url> --license public-domain
+  --source-page <page>` (§5)
+- Look at every file before use (public domain is not on-brand); no recognisable people in ads unless the
+  source says releases exist; never NASA logos or insignia (§5)
+- A folder of images: `showtime assets sheet <folder>` before a slideshow (§6)
+- Cutouts: `showtime assets cutout <file>` writes `<name>.cutout.png`; stills only; long side capped at
+  2048 px (`--max-size`) (§7)
+- `SHOWTIME_OFFLINE=1` stops all network access; cached assets keep working (§8)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| 1. License policy (applies to every command) | 46-70 |
+| 2. Fonts | 72-102 |
+| 3. Icons | 104-125 |
+| 4. Emoji | 127-142 |
+| 5. Stock photos and video (CC0 / public domain) | 144-195 |
+| 6. Contact sheets of a folder | 197-211 |
+| 7. Cutouts (background removal) | 213-229 |
+| 8. Where things live | 231-244 |
+
 ## 1. License policy (applies to every command)
 
 | Class | Licenses | Used by default? |

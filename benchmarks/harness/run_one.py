@@ -84,8 +84,12 @@ def deliverable_files(ws: Path, kind: str, exclude: set) -> List[Path]:
     return out
 
 
-def pick_primary(ws: Path, kind: str, exclude: set, final_text: str) -> Dict:
+def pick_primary(ws: Path, kind: str, exclude: set, final_text: str, expect: Optional[Dict] = None) -> Dict:
+    """The deliverable: named in the agent's last message, called final, not a draft, a playable video, and (a
+    tie-break added in round 4) as long as the task asked. A partial re-render written next to the full video
+    (an 18 s final-2.mp4 beside the 82 s final.mp4, both named in the message) no longer wins by being newer."""
     cands = deliverable_files(ws, kind, exclude)
+    span = (expect or {}).get("duration")
     info = []
     for p in cands:
         rel = str(p.relative_to(ws))
@@ -102,6 +106,8 @@ def pick_primary(ws: Path, kind: str, exclude: set, final_text: str) -> Dict:
         pr = common.probe(p) if kind == "video" else {"ok": True, "bytes": p.stat().st_size}
         if kind == "video" and (not pr.get("ok") or (pr.get("duration") or 0) < 0.5 or not pr.get("video")):
             score -= 20
+        elif kind == "video" and span and span[0] <= (pr.get("duration") or 0) <= span[1]:
+            score += 2
         info.append({"path": rel, "score": score, "mtime": p.stat().st_mtime, "probe": pr})
     info.sort(key=lambda x: (x["score"], x["mtime"]), reverse=True)
     primary = info[0] if info and info[0]["score"] > -20 else None
@@ -262,12 +268,17 @@ def asks_user(s: Session) -> bool:
 
 def run_one(arm_id: str, task_id: str, run_name: str, cap_min: Optional[float] = None, budget: float = 15.0,
             model: Optional[str] = None, effort: Optional[str] = None, max_continues: int = 1,
-            force: bool = False) -> Dict:
-    """Run one cell under a lock file, so two run_matrix processes can share a round safely."""
+            force: bool = False, cell_name: Optional[str] = None) -> Dict:
+    """Run one cell under a lock file, so two run_matrix processes can share a round safely.
+    cell_name: the cell's folder (default: the arm id); a second run of the same arm in one round uses
+    another name (e.g. showtime-rep2) and is otherwise identical."""
     task = common.load_tasks([task_id])[0]
+    cell_name = cell_name or arm_id
+    if not re.match(r"^[a-z0-9][a-z0-9._-]*$", cell_name):
+        raise SystemExit("cell name %r: use lower-case letters, digits, dot, dash or underscore" % cell_name)
     cell = common.bench_home() / "runs" / run_name / task["id"]
     cell.mkdir(parents=True, exist_ok=True)
-    lock = cell / (arm_id + ".lock")
+    lock = cell / (cell_name + ".lock")
     try:
         fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
     except FileExistsError:
@@ -277,25 +288,26 @@ def run_one(arm_id: str, task_id: str, run_name: str, cap_min: Optional[float] =
             return {"skipped": "running elsewhere"}
         except (ValueError, ProcessLookupError, PermissionError):
             lock.unlink(missing_ok=True)  # stale lock from a process that died
-            return run_one(arm_id, task_id, run_name, cap_min, budget, model, effort, max_continues, force)
+            return run_one(arm_id, task_id, run_name, cap_min, budget, model, effort, max_continues, force, cell_name)
     with os.fdopen(fd, "w") as f:
         f.write(str(os.getpid()))
     try:
-        return _run_one_locked(arm_id, task_id, run_name, cap_min, budget, model, effort, max_continues, force)
+        return _run_one_locked(arm_id, task_id, run_name, cap_min, budget, model, effort, max_continues, force, cell_name)
     finally:
         lock.unlink(missing_ok=True)
 
 
 def _run_one_locked(arm_id: str, task_id: str, run_name: str, cap_min: Optional[float] = None, budget: float = 15.0,
                     model: Optional[str] = None, effort: Optional[str] = None, max_continues: int = 1,
-                    force: bool = False) -> Dict:
+                    force: bool = False, cell_name: Optional[str] = None) -> Dict:
     cfg = common.load_arms([arm_id])
     arm, ccfg = cfg["arms"][0], cfg["common"]
     task = common.load_tasks([task_id])[0]
     home = common.bench_home()
-    rdir = home / "runs" / run_name / task["id"] / arm["id"]
+    cell_name = cell_name or arm["id"]
+    rdir = home / "runs" / run_name / task["id"] / cell_name
     if (rdir / "meta.json").exists() and not force:
-        common.log("skip %s/%s (done; --force to redo)" % (task["id"], arm["id"]))
+        common.log("skip %s/%s (done; --force to redo)" % (task["id"], cell_name))
         return common.read_json(rdir / "meta.json")
     if rdir.exists():
         shutil.rmtree(rdir)
@@ -303,7 +315,7 @@ def _run_one_locked(arm_id: str, task_id: str, run_name: str, cap_min: Optional[
     tmpl = armlib.arm_dir(arm["id"]) / "cfg-template"
     if not tmpl.exists():
         raise SystemExit("arm %s not set up. FIX: python benchmarks/harness/arms.py setup --arms %s" % (arm["id"], arm["id"]))
-    slot = common.ws_root() / common.opaque("%s/%s/%s/%f" % (run_name, task["id"], arm["id"], time.time()), 10)
+    slot = common.ws_root() / common.opaque("%s/%s/%s/%f" % (run_name, task["id"], cell_name, time.time()), 10)
     ws, cfg_dir, tmp = slot / "project", slot / "cfg", slot / "tmp"
     exclude = set(make_workspace(task, ws))
     shutil.copytree(tmpl, cfg_dir)
@@ -312,7 +324,7 @@ def _run_one_locked(arm_id: str, task_id: str, run_name: str, cap_min: Optional[
     cap_s = 60.0 * (cap_min or task.get("cap_minutes", 20))
     before = operator_state()
 
-    meta = {"schema": "showtime.bench.run/1", "run": run_name, "task": task["id"], "arm": arm["id"],
+    meta = {"schema": "showtime.bench.run/1", "run": run_name, "task": task["id"], "arm": arm["id"], "cell": cell_name,
             "prompt": task["prompt"], "model": model or ccfg["model"], "effort": effort or ccfg["effort"],
             "cap_s": cap_s, "budget_usd": budget, "workspace": str(ws), "started": common.now_iso(),
             "auth": "present" if armlib.auth_env() else "missing"}
@@ -357,7 +369,7 @@ def _run_one_locked(arm_id: str, task_id: str, run_name: str, cap_min: Optional[
     after = operator_state()
 
     final_text = "\n".join((s.result.get("result") or s.last_text or "") for s in sessions)
-    picked = pick_primary(ws, kind, exclude, final_text)
+    picked = pick_primary(ws, kind, exclude, final_text, task.get("expect"))
     usage = {"input_tokens": 0, "output_tokens": 0, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
     cost, turns, api_ms = 0.0, 0, 0
     tools: Dict[str, int] = {}
@@ -396,7 +408,7 @@ def _run_one_locked(arm_id: str, task_id: str, run_name: str, cap_min: Optional[
     })
     common.write_json(rdir / "meta.json", meta)
     common.log("%s/%s: wall %.0fs, ttfo %s, cost $%.2f, primary %s%s" % (
-        task["id"], arm["id"], wall, ttfo["s"], cost, picked["primary"], " (CAPPED)" if meta["capped"] else ""))
+        task["id"], cell_name, wall, ttfo["s"], cost, picked["primary"], " (CAPPED)" if meta["capped"] else ""))
     return meta
 
 
@@ -411,8 +423,9 @@ def main() -> int:
     ap.add_argument("--effort")
     ap.add_argument("--max-continues", type=int, default=1)
     ap.add_argument("--force", action="store_true")
+    ap.add_argument("--cell", help="the cell's folder name (default: the arm id), e.g. showtime-rep2 for a second run")
     a = ap.parse_args()
-    m = run_one(a.arm, a.task, a.run, a.cap_min, a.budget, a.model, a.effort, a.max_continues, a.force)
+    m = run_one(a.arm, a.task, a.run, a.cap_min, a.budget, a.model, a.effort, a.max_continues, a.force, a.cell)
     print(json.dumps({k: m.get(k) for k in ("task", "arm", "wall_s", "ttfo_s", "cost_usd", "num_turns", "questions",
                                             "capped", "is_error")}, indent=2))
     print("primary:", (m.get("deliverable") or {}).get("primary"))

@@ -207,6 +207,28 @@ class TestPackages(unittest.TestCase):
         self.assertIn("inside the repository", cp.stderr)
         self.assertFalse((REPO / "dist-test-should-not-exist").exists())
 
+    def test_07_openai_plugin_zip(self):
+        """The OpenAI directory upload: one folder, the listing it needs, skills only (no hooks, no local MCP)."""
+        import zipfile
+        r = self.res["openai"]
+        with zipfile.ZipFile(r["zip"]) as z:
+            names = z.namelist()
+            man = json.loads(z.read("showtime/plugin.json"))
+        self.assertEqual({n.split("/")[0] for n in names}, {"showtime"})
+        ui = man["extensions"]["com.openai"]["interface"]
+        self.assertLessEqual(len(ui["displayName"]), 30)
+        self.assertLessEqual(len(ui["shortDescription"]), 30)
+        self.assertLessEqual(len(ui["defaultPrompt"]), 3)
+        self.assertEqual(man["version"], self.pkg["version"])
+        for key in ("logo", "composerIcon"):
+            self.assertIn("showtime/" + ui[key][2:], names)
+        self.assertIn("showtime/skills/showtime/SKILL.md", names)
+        self.assertIn("showtime/skills/showtime/bin/showtime", names)
+        bad = [n for n in names if n.startswith(("showtime/hooks/", "showtime/agents/", "showtime/commands/",
+                                                   "showtime/skills/showtime/mcp/", "showtime/skills/showtime/tests/"))
+               or n.endswith((".mcpb", "/mcp.json", "/.mcp.json"))]
+        self.assertEqual(bad, [])
+
 
 @unittest.skipUnless((REPO / "llms-install.md").is_file(), "llms-install.md is not here (skill-only install)")
 class TestLlmsInstall(unittest.TestCase):

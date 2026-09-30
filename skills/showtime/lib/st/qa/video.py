@@ -21,10 +21,11 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 from .. import ff
 from ..common import ShowtimeError, log, read_json, write_json
 from . import captions as capmod
+from . import phone as phonemod
 from . import media
 
 
-_THRESHOLD_DEFAULTS = {"still_hold_s": 2.5, "launch_hold_s": 5.0, "final_hold_max_s": 4.0, "frozen_fail_s": 6.0, "freeze_noise_db": -50.0}
+_THRESHOLD_DEFAULTS = {"still_hold_s": 2.5, "launch_hold_s": 3.5, "final_hold_max_s": 4.0, "frozen_fail_s": 6.0, "freeze_noise_db": -50.0}
 THRESHOLDS_FILE = Path(__file__).resolve().parents[3] / "runtime" / "thresholds.json"
 
 
@@ -87,7 +88,12 @@ RULES = {
     "ends_black": "the video ends on black",
     "frozen": "the picture does not change for a long stretch",
     "final_hold": "the last seconds are a still hold",
+    "dead_stop": "a fast move halts in one frame with no ease-out (reads as a glitch)",
     "held_shot": "a long held camera shot with sound (live footage, e.g. a speaker holding still; not frozen)",
+    "phone_size": "text smaller than the phone minimum (points at 390 pt wide, per aspect; from showtime check)",
+    "phone_reading": "text on screen for less than it takes to read (from showtime check)",
+    "phone_zone": "text under platform UI, a player control strip or at the frame edge (from showtime check)",
+    "phone_unverified": "the phone check could not verify type size, reading time or UI zones (no showtime check report)",
     "captions_past_end": "captions run past the end of the video",
     "captions_timing": "a caption ends before it starts",
     "captions_overlap": "two captions are on screen at once",
@@ -111,6 +117,9 @@ RULES = {
     "must_show": "a must-show text was not found on screen",
     "must_show_unverified": "a must-show text exists in the project but was not verified on screen",
     "expect_invalid": "the expect block has an unknown key or a bad value",
+    "reference_copy": "the render copies its style reference (near-copy guard: sampled frames + cut rhythm)",
+    "reference_close": "some frames look like frames of the style reference",
+    "reference_credit": "the \"Style reference:\" credit is missing from credits.txt or share.txt",
 }
 
 
@@ -236,7 +245,7 @@ def target_for(name: Optional[str]) -> Optional[Dict[str, Any]]:
             list(TARGETS) + list(EXTRA_TARGETS)))
     return {"name": n, "width": t.width or None, "height": t.height or None, "max_duration": t.max_duration,
             "min_duration": t.min_duration, "lufs": t.lufs, "true_peak": t.true_peak, "audio": None,
-            "max_mb": None, "note": t.note}
+            "max_mb": None, "note": t.note, "native": t.native}
 
 
 def raw_probe(video: Path) -> Dict[str, Any]:
@@ -258,12 +267,15 @@ def raw_probe(video: Path) -> Dict[str, Any]:
 def run(video: PathLike, *, project: Optional[PathLike] = None, expect_file: Optional[PathLike] = None,
         out_dir: Optional[PathLike] = None, platform: Optional[str] = None, lufs: Optional[float] = None,
         captions: Sequence[str] = (), sheet: bool = True, sheet_count: Optional[int] = None,
-        quiet: bool = False, record: bool = True) -> Dict[str, Any]:
+        quiet: bool = False, record: bool = True, steps: bool = True) -> Dict[str, Any]:
     t0 = time.time()
     vpath = Path(video).expanduser().resolve()
     if not vpath.is_file():
         raise ShowtimeError("video not found: %s" % vpath, hint="pass the rendered file, e.g. showtime-out/<job>/final.mp4")
-    say = (lambda m: None) if quiet else (lambda m: log(m))
+    # steps=False (brief output): drop the progress lines, keep the notes (which captions, which picture area)
+    progress = ("qa: probing", "qa: measuring loudness", "qa: scanning for black", "qa: contact sheet",
+                "qa: measuring the edit rhythm")
+    say = (lambda m: None) if quiet else (lambda m: None if not steps and m.startswith(progress) else log(m))
     proj = find_project(vpath, project)
     expect, expect_src = load_expect(proj, expect_file)
     cfg = read_json(proj / "showtime.json", {}) if proj and (proj / "showtime.json").is_file() else {}
@@ -375,9 +387,13 @@ def run(video: PathLike, *, project: Optional[PathLike] = None, expect_file: Opt
     # ---------------------------------------------------------- captions, credits, texts
     caps = caption_files(vpath, proj, captions, W, H, say)
     rep["captions"] = [str(c) for c in caps]
+    n_before = len(F.items)
     _check_captions(F, vpath, caps, expect, dur, W, H, proj)
+    cap_items = F.items[n_before:]
     _check_credits(F, vpath, proj, expect)
     _check_must_show(F, proj, expect)
+    rep["phone"] = _check_phone(F, vpath, proj, W, H, caps, cap_items)
+    _check_reference(F, vpath, say)
 
     # ---------------------------------------------------------- frames + sheet
     times = sorted({f["t"] for f in F.items if f.get("t") is not None})
@@ -539,7 +555,11 @@ def _check_platform(F: Findings, tgt: Optional[Dict[str, Any]], expect: Dict[str
         F.add("too_short", "FAIL", "%.1fs is shorter than %s accepts (%.1fs)" % (dur, name, tgt["min_duration"]))
     if tgt.get("width") and tgt.get("height") and W and H:
         want = tgt["width"] / float(tgt["height"])
-        if abs(W / float(H) - want) > 0.02:
+        nat = tgt.get("native")
+        if abs(W / float(H) - want) > 0.02 and nat and nat[0] - 0.01 <= W / float(H) <= nat[1] + 0.01:
+            # x and linkedin play a 1:1 or 4:5 master as it is (deliver exports keeps its aspect)
+            F.ok("aspect %dx%d plays as is on %s (the feed keeps %.2f to %.2f)" % (W, H, name, nat[0], nat[1]))
+        elif abs(W / float(H) - want) > 0.02:
             F.add("aspect", "WARN", "%dx%d does not match %s (%dx%d); the export will crop or pad" % (
                 W, H, name, tgt["width"], tgt["height"]),
                 fix="build an aspect-specific layout, then: showtime deliver exports <video> --targets %s" % name)
@@ -689,7 +709,8 @@ def _check_picture(F: Findings, det: Dict[str, List[Tuple[float, float]]], first
     black0 = next((b for b in det["black"] if b[0] <= frame * 0.5), None)
     st = media.image_stats(first) if first else None
     if st is not None:
-        is_black = st["mean"] < 14 and st["p99"] < 40
+        # black = nothing visible: a dark design with a title or an equation on it is not black
+        is_black = st["mean"] < 14 and st["p99"] < 40 and st.get("p999", 0.0) < 60
         if is_black:
             ln = (black0[1] - black0[0]) if black0 else frame
             F.add("first_frame_black", "FAIL", "frame 0 is black%s: feeds, chat apps and players show it as the thumbnail" % (
@@ -727,7 +748,7 @@ def _check_picture(F: Findings, det: Dict[str, List[Tuple[float, float]]], first
     th = thresholds()
     hold, end_max, fail_s = th["still_hold_s"], th["final_hold_max_s"], th["frozen_fail_s"]
     if launch_kind:
-        hold = th.get("launch_hold_s", 5.0)     # a still camera on a settled result is the launch grammar
+        hold = th.get("launch_hold_s", 3.5)     # a settled result may breathe a little longer in a launch film
     any_frozen = False
     for s, e in det["freeze"]:
         ln = e - s
@@ -795,6 +816,11 @@ def _check_rhythm(F: Findings, vpath: Path, dur: float, fps: float, proj: Option
     r["launch"] = launch
     r["summary"] = rhythm.summary(r)
     rep["rhythm"] = r
+    # motion defects on every video (st.qa.motion): a fast move that halts in one frame
+    from . import motion
+    for d in r.get("dead_stops") or []:
+        txt = motion.describe(d, fps)
+        F.add("dead_stop", "WARN", txt["message"], t=d["t"], fix=txt["fix"])
     if not launch:
         return
     L = rhythm.LIMITS
@@ -1024,6 +1050,48 @@ def _check_captions(F: Findings, vpath: Path, files: Sequence[Path], expect: Dic
                   "expect.captions is true but no caption sidecar (.srt/.vtt/.ass) was found" +
                   ("" if texts is not None else " and burned-in captions could not be verified"),
                   fix="make captions: showtime captions <transcript> -o captions.srt, or mark caption text with data-caption and re-run showtime check")
+
+
+def _check_phone(F: Findings, vpath: Path, proj: Optional[Path], W: int, H: int, caps: Sequence[Path],
+                 cap_items: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+    """The phone check (st.qa.phone): type size, reading time and UI zones from the project's last
+    `showtime check`, caption line length and speed from the sidecars; one summary line."""
+    stats = []
+    for p in caps:
+        try:
+            stats.append(capmod.stats(capmod.parse(p)))
+        except OSError:
+            pass
+    return phonemod.evaluate(F, vpath, proj, W, H, list(caps), cap_items, stats)
+def _check_reference(F: Findings, vpath: Path, say: Any) -> None:
+    """Style references of the job (`showtime reference`): near-copy guard and credit line."""
+    try:
+        from ..variety import guard
+        guard.qa_check(F, vpath, say)
+    except ShowtimeError as e:
+        F.add("reference_copy", "INFO", "near-copy guard skipped: %s" % e.message)
+    except Exception as e:  # noqa: BLE001 - a guard failure must not hide the other findings
+        from ..common import debug
+        debug("reference guard failed: %s" % e)
+
+
+def _record_look(vpath: Path, rep: Dict[str, Any]) -> None:
+    """A passing qa on the job's latest final records the job's look in the local history (st.variety)."""
+    if rep.get("verdict") not in ("PASS", "WARN"):
+        return
+    try:
+        from ..job import ledger
+        job = ledger.enclosing_job(vpath)
+        if job is None:
+            return
+        cur, kind = ledger.latest_video(job)
+        if kind != "final" or cur is None or cur.resolve() != vpath.resolve():
+            return
+        from ..variety import history
+        history.record_job(job)
+    except Exception as e:  # noqa: BLE001 - the history is a convenience
+        from ..common import debug
+        debug("could not record the look history: %s" % e)
 
 
 def _check_credits(F: Findings, vpath: Path, proj: Optional[Path], expect: Dict[str, Any]) -> None:
@@ -1260,11 +1328,58 @@ def _finish(rep: Dict[str, Any], F: Findings, out: Path, t0: float, vpath: Path,
         except Exception as e:  # noqa: BLE001 - the ledger is a convenience
             from ..common import debug
             debug("could not record qa in job ledger: %s" % e)
+        _record_look(vpath, rep)
     return rep
 
 
-def format_text(rep: Dict[str, Any], verbose: bool = False) -> str:
-    """Human summary for the terminal."""
+def _format_brief(rep: Dict[str, Any]) -> str:
+    pr = rep.get("probe") or {}
+    head = Path(rep["video"]).name
+    if pr:
+        head += "  %sx%s @ %sfps, %.2fs, %.1f MB" % (pr.get("width"), pr.get("height"), ("%.3f" % (pr.get("fps") or 0)).rstrip("0").rstrip("."),
+                                                   pr.get("duration") or 0, (pr.get("size_bytes") or 0) / 1e6)
+    lines = [head]
+    tg = rep.get("target") or {}
+    if tg.get("name"):
+        lines.append("  platform  %s%s" % (tg["name"], " (from %s)" % tg["source"] if tg.get("source") else ""))
+    else:
+        lines.append("  platform  none (generic checks; pass --platform reels|youtube|... to check length, aspect and loudness)")
+    passed = list(rep.get("passed", []))
+    loud = [p for p in passed if p.startswith("loudness")]
+    rest = [re.split(r"[:(]", p)[0].strip() for p in passed if not p.startswith("loudness")]
+    if loud or rest:
+        lines.append("  PASS  %s" % "; ".join(loud + (["also " + ", ".join(rest)] if rest else [])))
+    if (rep.get("phone") or {}).get("line"):
+        lines.append("  %s" % rep["phone"]["line"])
+    notes = 0
+    for f in rep.get("findings", []):
+        if f["severity"] == "INFO":
+            notes += 1
+            continue
+        t = ("  t=%.2fs" % f["t"]) if f.get("t") is not None else ""
+        lines.append("  %-4s  %s%s  %s" % (f["severity"], f["rule"], t, f["message"]))
+        if f.get("frame"):
+            lines.append("        frame: %s" % f["frame"])
+        if f.get("fix"):
+            lines.append("        fix: %s" % f["fix"])
+    rh = rep.get("rhythm") or {}
+    if rh.get("summary"):
+        lines.append("  rhythm  %s" % rh["summary"])
+    if rep.get("sheet"):
+        lines.append("  sheet   %s (for reviewers)" % rep["sheet"])
+    lines.append("  look    showtime look %s   (one small image; references/looking.md)" % rep["video"])
+    lines.append("  report  %s%s" % (rep.get("report"), " (%d note(s) there; --verbose prints them)" % notes if notes else ""))
+    s = rep.get("summary", {})
+    lines.append("verdict: %s (%d fail, %d warn, %d note) for %s in %.1fs" % (
+        rep.get("verdict"), s.get("fail", 0), s.get("warn", 0), s.get("info", 0), Path(rep["video"]).name, rep.get("seconds", 0)))
+    return "\n".join(lines)
+
+
+def format_text(rep: Dict[str, Any], verbose: bool = False, brief: bool = False) -> str:
+    """Human summary for the terminal. brief (lean mode, agents): the loudness line, FAIL/WARN findings with
+    frame and fix, notes as a count, paths and the verdict."""
+    if brief:
+        return _format_brief(rep)
     lines = []
     pr = rep.get("probe") or {}
     head = Path(rep["video"]).name
@@ -1279,6 +1394,8 @@ def format_text(rep: Dict[str, Any], verbose: bool = False) -> str:
         lines.append("  platform  none (generic checks; pass --platform reels|youtube|... to check length, aspect and loudness)")
     for p in rep.get("passed", []):
         lines.append("  PASS  %s" % p)
+    if (rep.get("phone") or {}).get("line"):
+        lines.append("  %s" % rep["phone"]["line"])
     for f in rep.get("findings", []):
         if f["severity"] == "INFO" and not verbose and len(rep["findings"]) > 20:
             continue

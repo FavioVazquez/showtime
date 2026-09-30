@@ -28,7 +28,7 @@ and what that arm's own install puts on disk (a CLI, a Python environment, a run
 
 ## Tasks
 
-Eight realistic one-sentence requests (`tasks/t*.md`; each file has a JSON spec block the harness reads):
+Ten realistic one-sentence requests (`tasks/t*.md`; each file has a JSON spec block the harness reads):
 
 | id | request (abridged) | inputs |
 |---|---|---|
@@ -40,9 +40,12 @@ Eight realistic one-sentence requests (`tasks/t*.md`; each file has a JSON spec 
 | t6 | shareable single-file HTML video report | NOAA Mauna Loa CO2 CSV |
 | t7 | 5 s animated logo sting with sound | an SVG logo + brand notes (fictional) |
 | t8 | 45 s visual math explainer | none |
+| t9 | 60-90 s explainer of a repo for newcomers | small fictional CLI repo (README, CHANGELOG, code, tests) |
+| t10 | 20 s announcement in the style of a reference video | a 20 s reference drawn by `fixtures/make_reference.py` + event notes |
 
 Inputs and licences: `fixtures/SOURCES.md`. The one media file is fetched and trimmed by
-`fixtures/fetch_fixtures.py` (pinned URL and SHA-256), never stored in git. None of the inputs overlap with
+`fixtures/fetch_fixtures.py` (pinned URL and SHA-256), never stored in git; the t10 reference is drawn by
+`fixtures/make_reference.py` (ffmpeg only, pinned OFL font) and not stored either. None of the inputs overlap with
 the examples that ship with showtime.
 
 ## How a run works (`harness/`)
@@ -72,13 +75,24 @@ Authentication: headless children cannot use an interactive login. Run `claude s
 once and save the token to `<bench home>/oauth-token` (`chmod 600`), or export
 `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY`. The harness hands it to child processes only.
 
+## Rounds (`rounds/`)
+
+A round can also be described by a manifest (`rounds/<run>.json`, plan and estimate in `rounds/<run>.md`) and
+driven by `harness/round.py plan | reuse | run | score | report | all` (`--fake` for the stand-in CLI). A
+manifest lists cells per task: `new` cells are run (two cells may run the same arm, e.g. `showtime-rep2`, a
+second run to see the spread), `reuse` cells are copied from an earlier round's bench home (meta, stream and a
+verified fact check; everything else is scored again, and a cell made for another prompt or whose deliverable is
+gone is refused). `scoring/round_report.py` appends per-cell stream metrics (cost, tokens, calls, images in the
+main context and in sub-agents, largest context, tool text, full renders, receipt, showtime folders touched
+outside the arm) and the manifest's release gates (PASS / FAIL / PENDING) to the round's report.
+
 ## Scoring (`scoring/`)
 
 | Layer | How | Output |
 |---|---|---|
 | Automatic | `auto_metrics.py`: ffprobe + full decode; task spec (duration, aspect, audio, voice, captions); `showtime qa` on a copy of the file in a neutral folder with the task's expect block (loudness, true peak, clipping, silence, black and frozen stretches, frame 0, caption timing); local ASR for voice tasks; for t4 fillers left, content words kept in order, long pauses left; for t6 a headless-Chrome probe with the network blocked (`html_probe.mjs`) | `score/auto.json` |
 | Invented claims | `factcheck.py`: a blind judge lists every factual claim (spoken via the transcript, on screen via frames) and labels it supported / unsupported / contradicted against the task's sources | `score/factcheck.json` |
-| Blind pairwise | `pairwise.py`: every pair of arms per task, 3 judges each, fresh session per judgment, Read-only, packets named `video-1` / `video-2`, order alternated per judge, JSON-schema verdict with 7 criteria; win rate, Bradley-Terry, first-position bias check | `pairwise.jsonl`, `pairwise_summary.json` |
+| Blind pairwise | `pairwise.py`: every pair of arms per task, 3 judges each, fresh session per judgment, Read-only, packets named `video-1` / `video-2`, order alternated per judge, JSON-schema verdict with 7 criteria; win rate, Bradley-Terry, first-position bias check, and per pair the arm that won in both orders (else split or tie) | `pairwise.jsonl`, `pairwise_summary.json` |
 | Blind ranking | `rank.py`: one judge per task (or `--judges N`) sees every delivered output at once as `video-1..N`, order shuffled per task and rotated per judge, same criteria and blinding as pairwise, ranks them; cheaper than pairwise when a task has few arms | `rank.jsonl`, `rank_summary.json` |
 | Proof of looking | every judge (`judge.py`, used by `rank.py`, `pairwise.py` and `factcheck.py`) must prove it opened the pictures it judges: the session's own tool calls must show that every frame image of its packet was opened, and every image carries a random 5-digit number in a strip at the bottom (stamped on every image of every candidate alike) that the judge must report back (at most 10 percent wrong). A judgment without both is discarded and asked again in a fresh session; every attempt, the images opened and the numbers reported against the true ones are kept in `rank.jsonl` | `attempts` in `rank.jsonl`, `proof` in `factcheck.json` |
 | Human blind A/B | `human_board.py`: a showtime studio board per task with shuffled letters, each candidate's video embedded (all candidates re-encoded with identical settings to fit one <= 15 MB page; HTML deliverables screen-recorded by one procedure, `html_record.mjs`), up to 5 A/B questions and 0-5 ratings; exported as one file for a private artifact; answers mapped back through a key kept off the board | `human/<run>/*.html`, `human_summary.json` |

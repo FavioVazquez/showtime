@@ -2,7 +2,9 @@
 // baseline with a short stagger, lines draw on with their points and end label riding the
 // draw front, values count up, one datum can be highlighted (everything else muted) and a
 // callout appears after the marks settle. `states` morph the same chart to new data with
-// object constancy (axis rescales first, then marks move; bars re-rank in hbar charts).
+// object constancy (axis rescales first, then marks move; bars re-rank in hbar charts). An item
+// missing from a state (or null) is absent there: added items grow in and light their own labels,
+// the other labels stay lit on their marks; a line's end label reads the point under the drawn tip.
 // Scales and path generation come from d3 (served locally at /_lib/d3).
 //
 //   <div data-st="chart" data-type="bar" data-title="Build time fell 74%" data-suffix=" min"
@@ -10,11 +12,14 @@
 //        data-highlight="Mar" data-annotate='{"label":"Mar","text":"new cache"}'></div>
 import { define, h, svg, clamp, ease, lerp, stagger, d3 as loadD3, formatNumber, loadJSON, pageLocale } from './core.js';
 
+// a value of null (or a missing label) is "not in this state": the item is absent, not zero. It
+// has no mark and no label; a state that adds it grows it in, a state that drops it shrinks it out.
+const num0 = (v) => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
 function normalize(data) {
-  // -> { labels, series: [{name, values, color}] }
+  // -> { labels, series: [{name, values, color}] } (values: numbers, or null for absent)
   if (!data) return { labels: [], series: [] };
-  if (Array.isArray(data)) return { labels: data.map((d) => String(d.label ?? d.x ?? '')), series: [{ name: '', values: data.map((d) => Number(d.value ?? d.y) || 0) }] };
-  return { labels: (data.labels || []).map(String), series: (data.series || []).map((s) => ({ name: s.name || '', values: (s.values || []).map(Number), color: s.color })) };
+  if (Array.isArray(data)) return { labels: data.map((d) => String(d.label ?? d.x ?? '')), series: [{ name: '', values: data.map((d) => num0(d.value ?? d.y)) }] };
+  return { labels: (data.labels || []).map(String), series: (data.series || []).map((s) => ({ name: s.name || '', values: (s.values || []).map(num0), color: s.color })) };
 }
 
 const DEFAULTS = {
@@ -76,18 +81,51 @@ export const Chart = define({
     const isHl = (label, i) => hl != null && (label === hl || String(i) === hl);
     const E = ease(motion.easeOut), M = ease(motion.easeMove);
 
-    // value of series s at label index i at local time lt (staged state morphs)
+    // progress of state k's morph for label index li at local time lt (the axis rescales first,
+    // then the marks move, a little staggered)
+    const morphQ = (k, li, lt) => M(clamp((lt - states[k].at - 0.35 - li * 0.03) / 0.8));
+    // the raw value of series si at label index li in state k: a number, or null (absent)
+    const rawOf = (k, si, li) => { const st = states[k]; const idx = st.labels.indexOf(labels[li]); const v = idx >= 0 && st.series[si] ? st.series[si].values[idx] : null; return v == null ? null : v; };
+    // value of series s at label index i at local time lt (staged state morphs; absent counts as 0)
     const valueAt = (si, li, lt) => {
       let v = 0;
       states.forEach((st, k) => {
-        const idx = st.labels.indexOf(labels[li]);
-        const nv = idx >= 0 && st.series[si] ? st.series[si].values[idx] ?? 0 : 0;
+        const nv = rawOf(k, si, li) ?? 0;
         if (k === 0) { v = nv; return; }
-        v = lerp(v, nv, M(clamp((lt - st.at - 0.35 - li * 0.03) / 0.8)));
+        v = lerp(v, nv, morphQ(k, li, lt));
       });
       return v;
     };
-    const maxOf = (st) => Math.max(1e-9, ...st.series.flatMap((s) => s.values));
+    // presence (0..1) of an item at lt: 1 while it is in the data, blended across morphs like the
+    // values, so an added item grows in and a dropped one shrinks out while the others stay put
+    const presAt = (si, li, lt) => {
+      let p = 0;
+      states.forEach((st, k) => {
+        const np = rawOf(k, si, li) == null ? 0 : 1;
+        if (k === 0) { p = np; return; }
+        p = lerp(p, np, morphQ(k, li, lt));
+      });
+      return p;
+    };
+    // the value a label shows with count: false: the real value of the state it is in (it switches
+    // at the middle of a morph, never shows an in-between number); an added item shows its value
+    const shownAt = (si, li, lt) => {
+      let v = rawOf(0, si, li);
+      states.forEach((st, k) => {
+        if (k === 0) return;
+        const nv = rawOf(k, si, li);
+        if (nv != null && (v == null || morphQ(k, li, lt) >= 0.5)) v = nv;
+      });
+      return v ?? 0;
+    };
+    // states whose data really change (a state that only swaps the title moves nothing)
+    const sameData = (a, b) => labels.every((_, li) => Array.from({ length: Math.max(a.series.length, b.series.length) }, (__, si) => si).every((si) => {
+      const va = (() => { const i = a.labels.indexOf(labels[li]); return i >= 0 && a.series[si] ? a.series[si].values[i] ?? null : null; })();
+      const vb = (() => { const i = b.labels.indexOf(labels[li]); return i >= 0 && b.series[si] ? b.series[si].values[i] ?? null : null; })();
+      return va === vb;
+    }));
+    const moves = states.map((st, k) => k > 0 && !sameData(states[k - 1], st));
+    const maxOf = (st) => Math.max(1e-9, ...st.series.flatMap((s) => s.values).filter(Number.isFinite));
     // negative values (anomalies, profit/loss, deltas): the axis reaches below zero
     const minOf = (st) => Math.min(0, ...st.series.flatMap((s) => s.values).filter(Number.isFinite));
     // bars: the value label under the lowest negative bar (baseline fs*1.25 below the bar end) keeps
@@ -156,13 +194,32 @@ export const Chart = define({
     });
 
     let marks = [];
-    const callout = o.annotate ? h('div', { class: 'st-chart-callout' }, String(o.annotate.text || '')) : null;
-    if (callout) plot.append(callout);
     const annIdx = o.annotate ? (o.annotate.label != null ? labels.indexOf(String(o.annotate.label)) : Number(o.annotate.index) || 0) : -1;
+    // the callout names its datum: "{label}" and "{value}" in the text are filled from the data (the
+    // value of the last state it is in, formatted like the labels), and on a line chart, where the
+    // point has no category label of its own, a text that names neither the label nor "{label}"
+    // gets it as a prefix ("2015: first year above 400 ppm"); annotate.prefix: false turns that off
+    const calloutText = (() => {
+      if (!o.annotate) return '';
+      let t = String(o.annotate.text || '');
+      const lab = annIdx >= 0 ? labels[annIdx] : null;
+      if (lab == null) return t;
+      const lastVal = (() => { for (let k = states.length - 1; k >= 0; k--) { const v = rawOf(k, 0, annIdx); if (v != null) return v; } return null; })();
+      const hadLabel = t.includes('{label}') || t.includes(lab);
+      t = t.split('{label}').join(lab);
+      if (lastVal != null) t = t.split('{value}').join(fmt(lastVal));
+      const auto = o.annotate.prefix !== false && String(o.annotate.prefix) !== 'false';
+      if (type === 'line' && auto && !hadLabel && t) t = lab + ': ' + t;
+      return t;
+    })();
+    const callout = o.annotate ? h('div', { class: 'st-chart-callout' }, calloutText) : null;
+    if (callout) plot.append(callout);
     const growEnd = stagger(nL - 1, nL, 0.045, { cap: 0.6 }) + Number(o.grow);
     const drawEnd = Number(o.draw) + (nS - 1) * 0.25;
     const settle = (type === 'line' ? drawEnd : growEnd) + 0.2;
-    const annAt = o.annotate && o.annotate.at != null ? Number(o.annotate.at) : settle + 0.1;
+    // beats, not a pile-up: with a reference line drawing on at the settle, the callout arrives a second
+    // later (a visible change about every second or two, `workflows/data-story.md` Pacing)
+    const annAt = o.annotate && o.annotate.at != null ? Number(o.annotate.at) : settle + 0.1 + (ref && ref.at == null ? 1.0 : 0);
     if (zeroLine) g.append(zeroLine);
     const refAt = ref ? (ref.at != null ? ref.at : settle + 0.05) : 0;
     if (ref) g.append(ref.grp);
@@ -238,8 +295,10 @@ export const Chart = define({
       // category labels' ink (~fs*0.9 under the plot)
       if (vlOn) negRoom = fs * 0.85;
     } else {
-      // hbar: ranked rows, re-ordered smoothly between states
-      const band = ih / Math.max(1, nL);
+      // hbar: ranked rows, re-ordered smoothly between states. Rows are sized for the most items any
+      // one state holds (an item that joins later takes the place of one that leaves, not a new slot)
+      const nRows = Math.max(1, ...states.map((st, k) => labels.filter((_, li) => rawOf(k, 0, li) != null).length));
+      const band = ih / nRows;
       marks = labels.map((lab, li) => {
         const hi = hl == null || isHl(lab, li);
         const row = svg('g', { class: 'st-chart-row' });
@@ -258,6 +317,9 @@ export const Chart = define({
     // keep the highlighted, annotated, max, min, last and first labels, then the others by |value|,
     // hiding the rest (they fade with the morph, never pop). A label wider than its slot that would sit
     // on a neighbouring bar (a rising series in a narrow frame) hides too, unless it is highlighted.
+    // Across states the plan is stable: a label shown in the previous state keeps its place ahead of
+    // the others (an added item never makes a settled neighbour's label blink off and on), and items
+    // absent from a state neither show a label nor crowd the others.
     const morphEnd = (st) => st.at + 0.35 + 0.8 + nL * 0.03 + 0.1;
     let labelPlan = null; // per state: { s: font scale, show: [0|1 per mark] }
     let valFs = fs * 1.05; // .st-chart-val
@@ -268,10 +330,15 @@ export const Chart = define({
       const floorPx = parseFloat(getComputedStyle(probe).fontSize) || 0;
       probe.remove();
       const kMin = Math.min(1, Math.max(0.8, floorPx / valFs));
-      const finalOf = (k, si, li) => { const st = states[k]; const idx = st.labels.indexOf(labels[li]); return idx >= 0 && st.series[si] ? Number(st.series[si].values[idx]) || 0 : 0; };
-      labelPlan = states.map((st, k) => {
+      const finalOf = (k, si, li) => rawOf(k, si, li) ?? 0;
+      labelPlan = [];
+      states.forEach((st, k) => { labelPlan.push(planState(st, k, labelPlan[k - 1])); });
+      function planState(st, k, prevPlan) {
         const n = marks.length;
-        if (vlMode === 'all') return { s: 1, show: marks.map(() => 1) };
+        const inK = marks.map((m) => rawOf(k, m.si, m.li) != null);
+        if (vlMode === 'all') return { s: 1, show: inK.map((x) => (x ? 1 : 0)) };
+        // a state that only changes the title keeps the plan it inherits
+        if (prevPlan && !moves[k]) return prevPlan;
         // the settled axis of this state
         const next = states[k + 1];
         const lt = Math.max(k === 0 ? settle : st.at + 2, 0);
@@ -288,27 +355,30 @@ export const Chart = define({
         const hit = (a, b, gp) => Math.min(a.b, b.b) - Math.max(a.t, b.t) > -gp * 0.3 && Math.max(a.l, b.l) - Math.min(a.r, b.r) < gp;
         // the settled bars: a label must not sit on another bar
         const bars = marks.map((m, i) => { const bw = m.rect.width.baseVal.value, x = m.cx - bw / 2, y = lin(vals[i]), z = lin(0); return { l: x, r: x + bw, t: Math.min(y, z), b: Math.max(y, z) }; });
-        const onBar = (a, i, gp) => bars.some((q, j) => j !== i && Math.min(a.b, q.b) - Math.max(a.t, q.t) > 0 && Math.min(a.r, q.r) - Math.max(a.l, q.l) > -gp * 0.3);
-        const clean = (bx, gp) => { for (let i = 0; i < n; i++) { if (onBar(bx[i], i, gp)) return false; for (let j = i + 1; j < n; j++) if (hit(bx[i], bx[j], gp)) return false; } return true; };
-        for (let sc = 1; sc >= kMin - 1e-6; sc -= 0.05) if (clean(boxes(sc), gapAt(sc))) return { s: sc, show: marks.map(() => 1) };
+        const onBar = (a, i, gp) => bars.some((q, j) => j !== i && inK[j] && Math.min(a.b, q.b) - Math.max(a.t, q.t) > 0 && Math.min(a.r, q.r) - Math.max(a.l, q.l) > -gp * 0.3);
+        const clean = (bx, gp) => { for (let i = 0; i < n; i++) { if (!inK[i]) continue; if (onBar(bx[i], i, gp)) return false; for (let j = i + 1; j < n; j++) if (inK[j] && hit(bx[i], bx[j], gp)) return false; } return true; };
+        for (let sc = 1; sc >= kMin - 1e-6; sc -= 0.05) if (clean(boxes(sc), gapAt(sc))) return { s: sc, show: inK.map((x) => (x ? 1 : 0)) };
         const sc = kMin, bx = boxes(sc), gp = gapAt(sc);
-        const idx = marks.map((_, i) => i);
-        const argBy = (f) => idx.reduce((a, i) => (f(vals[i], vals[a]) ? i : a), 0);
+        const idx = marks.map((_, i) => i).filter((i) => inK[i]);
+        const argBy = (f) => idx.reduce((a, i) => (f(vals[i], vals[a]) ? i : a), idx[0]);
         const must = [...idx.filter((i) => hl != null && marks[i].hi), ...idx.filter((i) => marks[i].li === annIdx)];
-        const pref = [argBy((a, b) => a > b), argBy((a, b) => a < b), ...idx.filter((i) => marks[i].li === nL - 1), ...idx.filter((i) => marks[i].li === 0),
+        const lastIn = idx.filter((i) => marks[i].li === Math.max(...idx.map((j) => marks[j].li)));
+        const firstIn = idx.filter((i) => marks[i].li === Math.min(...idx.map((j) => marks[j].li)));
+        const pref = [...(prevPlan ? idx.filter((i) => prevPlan.show[i] > 0.5) : []),
+          argBy((a, b) => a > b), argBy((a, b) => a < b), ...lastIn, ...firstIn,
           ...idx.slice().sort((a, b) => Math.abs(vals[b]) - Math.abs(vals[a]) || a - b)];
         const keep = [];
-        for (const i of must) if (!keep.includes(i)) keep.push(i);
+        for (const i of must) if (inK[i] && !keep.includes(i)) keep.push(i);
         for (const i of pref) if (!keep.includes(i) && !onBar(bx[i], i, gp) && keep.every((j) => !hit(bx[i], bx[j], gp))) keep.push(i);
         return { s: sc, show: marks.map((_, i) => (keep.includes(i) ? 1 : 0)) };
-      });
+      }
     }
     // a label's plan at time lt: blended across state morphs like the values (fades, no pops)
     const planAt = (i, li, lt) => {
       let s = labelPlan[0].s, show = labelPlan[0].show[i];
       states.forEach((st, k) => {
         if (k === 0) return;
-        const q = M(clamp((lt - st.at - 0.35 - li * 0.03) / 0.8));
+        const q = morphQ(k, li, lt);
         s = lerp(s, labelPlan[k].s, q); show = lerp(show, labelPlan[k].show[i], q);
       });
       return { s, show };
@@ -337,7 +407,7 @@ export const Chart = define({
         const yMin = yMinAt(lt, yMax);
         // marks still growing, drawing or morphing: `showtime check` reads label collisions on these
         // frames as notes (the settled frame is judged on its own)
-        el.toggleAttribute('data-st-moving', lt < settle || states.slice(1).some((st) => lt >= st.at && lt < morphEnd(st)));
+        el.toggleAttribute('data-st-moving', lt < settle || states.some((st, k) => moves[k] && lt >= st.at && lt < morphEnd(st)));
         const lin = d3.scaleLinear().domain([yMin, yMax]).range(type === 'hbar' ? [0, iw] : [ih, 0]);
         const tickVals = d3.scaleLinear().domain([yMin, yMax]).nice(o.ticks).ticks(o.ticks).filter((v) => v <= yMax && v >= yMin - 1e-9);
         // tick labels carry as many decimals as their step needs (0, 0.5, 1.0 -> one decimal)
@@ -373,25 +443,31 @@ export const Chart = define({
             if (m.hiFill) m.rect.setAttribute('fill', lt >= hlAt ? m.hiFill : 'var(--chart-muted, var(--chart-muted-default, #8a8f98))');
             if (m.val) {
               m.val.setAttribute('y', (v < 0 ? y + fs * 1.25 : y - fs * 0.5).toFixed(2));
-              // count: false shows the real value only (it fades in as the bar lands), never a count in progress
-              m.val.textContent = fmt(o.count ? v : full);
+              // count: false shows the real value only (it fades in as the bar lands), never a count in
+              // progress, also across a morph. The label rides its bar; an item added by a state fades
+              // its label in as it lands, one dropped fades it out as it shrinks; the others stay lit.
+              m.val.textContent = fmt(o.count ? v : shownAt(m.si, m.li, lt));
               const plan = labelPlan ? planAt(mi, m.li, lt) : { s: 1, show: 1 };
+              const inData = clamp((presAt(m.si, m.li, lt) - 0.5) / 0.5);
               m.val.style.fontSize = plan.s < 0.999 ? (valFs * plan.s).toFixed(2) + 'px' : '';
-              m.val.style.opacity = ((o.count ? clamp(p * 3 - 0.5) : clamp((p - 0.85) / 0.15)) * plan.show).toFixed(3);
+              m.val.style.opacity = ((o.count ? clamp(p * 3 - 0.5) : clamp((p - 0.85) / 0.15)) * plan.show * inData).toFixed(3);
             }
           });
         } else if (type === 'hbar') {
           // rank order at time lt (by current values), rows glide to their rank
           const vals = marks.map((m) => valueAt(0, m.li, lt));
+          const pres = marks.map((m) => presAt(0, m.li, lt));
+          // items not in the data rank below every present one (an added row rises from the bottom)
+          const rankV = vals.map((v, i) => (pres[i] >= 0.999 ? v : lerp(yMin - (yMax - yMin) - 1, v, pres[i])));
           // while a state change runs: soft rank (rows glide as values cross); settled: hard rank
           // (ties and near-ties get one row each, in data order)
-          const moving = states.slice(1).some((st) => lt >= st.at && lt < st.at + 0.35 + 0.8 + nL * 0.03 + 0.1);
+          const moving = states.some((st, k) => moves[k] && lt >= st.at && lt < morphEnd(st));
           let rankOf;
           if (moving) {
             const delta = Math.max(1e-9, (yMax - yMin) * 0.025);
-            rankOf = vals.map((vi, i) => vals.reduce((r, vj, j) => (j === i ? r : r + 1 / (1 + Math.exp(-(vj - vi + (j < i ? 1e-9 : -1e-9)) / delta))), 0));
+            rankOf = rankV.map((vi, i) => rankV.reduce((r, vj, j) => (j === i ? r : r + 1 / (1 + Math.exp(-(vj - vi + (j < i ? 1e-9 : -1e-9)) / delta))), 0));
           } else {
-            const order = vals.map((v, i) => [v, i]).sort((a, b) => b[0] - a[0] || a[1] - b[1]);
+            const order = rankV.map((v, i) => [v, i]).sort((a, b) => b[0] - a[0] || a[1] - b[1]);
             rankOf = new Array(vals.length);
             order.forEach(([, i], r) => { rankOf[i] = r; });
           }
@@ -405,7 +481,7 @@ export const Chart = define({
             m.rect.setAttribute('width', Math.abs(w - base0).toFixed(2));
             if (m.val) {
               let vx = v < 0 ? w - fs * 0.5 : w + fs * 0.5;
-              m.val.textContent = fmt(o.count ? v : vals[i]);
+              m.val.textContent = fmt(o.count ? v : shownAt(0, m.li, lt));
               // a reference line through the label (a bar ending just short of the target): the label
               // slides past the line as the line draws on, so the line never strikes through the number
               if (ref && lt > refAt) {
@@ -415,21 +491,29 @@ export const Chart = define({
               }
               m.val.setAttribute('x', vx.toFixed(2));
               m.val.setAttribute('text-anchor', v < 0 ? 'end' : 'start');
-              m.val.style.opacity = clamp(p * 3 - 0.5).toFixed(3);
+              m.val.style.opacity = (clamp(p * 3 - 0.5) * clamp((pres[i] - 0.5) / 0.5)).toFixed(3);
             }
-            m.row.style.opacity = clamp(p * 4).toFixed(3);
+            m.row.style.opacity = (clamp(p * 4) * pres[i]).toFixed(3);
           });
         } else {
           for (const m of marks) {
             const p = ease('power2.inOut')(clamp((lt - 0.25 - m.si * 0.25) / o.draw));
             const pts = labels.map((lab, li) => [m.x(lab), lin(valueAt(m.si, li, lt))]);
+            // a point absent from the data (null) is a gap in the line, not a dip to zero
+            const inLine = labels.map((_, li) => presAt(m.si, li, lt) >= 0.5);
             const curve = o.curve === 'linear' ? d3.curveLinear : d3.curveMonotoneX;
-            m.path.setAttribute('d', d3.line().curve(curve)(pts));
+            m.path.setAttribute('d', d3.line().defined((_, i) => inLine[i]).curve(curve)(pts) || '');
             m.path.style.strokeDasharray = '1 1';
             m.path.style.strokeDashoffset = (1 - p).toFixed(4);
-            m.area.setAttribute('d', d3.area().curve(curve).y0(yMin < 0 ? base0 : ih)(pts));
+            m.area.setAttribute('d', d3.area().defined((_, i) => inLine[i]).curve(curve).y0(yMin < 0 ? base0 : ih)(pts) || '');
             m.area.style.opacity = (E(clamp((lt - 0.25 - m.si * 0.25 - o.draw * 0.7) / 0.6)) * (m.hi ? 0.16 : 0.06)).toFixed(3);
-            const front = p * (nL - 1);
+            // the draw front is where the drawn tip really is (the dash runs along the path's length,
+            // which a noisy stretch makes longer than its share of the x axis): dots and the end
+            // label's value follow the tip's x, so the label always reads the point it sits on
+            const len = m.path.getTotalLength();
+            const pt = len > 0 ? m.path.getPointAtLength(len * p) : { x: 0, y: 0 };
+            const x0p = m.x(labels[0]), stepX = nL > 1 ? m.x(labels[1]) - x0p : 1;
+            const front = len > 0 && stepX > 0 ? clamp((pt.x - x0p) / stepX, 0, nL - 1) : p * (nL - 1);
             // dots help a few points; above ~40 they turn the line into beads
             const showDots = o.dots === true || o.dots === 'true' || (o.dots === 'auto' && nL <= 40);
             m.dots.forEach((d, i) => {
@@ -438,11 +522,11 @@ export const Chart = define({
               d.setAttribute('cx', pts[i][0]); d.setAttribute('cy', pts[i][1]);
               d.setAttribute('r', (fs * 0.32 * ease('back.out(2)')(q)).toFixed(2));
             });
-            // end label rides the draw front
-            const len = m.path.getTotalLength();
-            const pt = len > 0 ? m.path.getPointAtLength(len * p) : { x: 0, y: 0 };
+            // end label rides the draw front and reads the point under the tip (the last one drawn
+            // once the line is complete)
             m.label.setAttribute('x', (pt.x + fs * 0.6).toFixed(2)); m.label.setAttribute('y', (pt.y + fs * 0.35).toFixed(2));
-            const vi = Math.min(nL - 1, Math.round(front));
+            let vi = p >= 1 ? nL - 1 : Math.min(nL - 1, Math.round(front));
+            while (vi > 0 && !inLine[vi]) vi--;
             // one series: the title names it, so the end label is only the value
             m.label.textContent = (m.name && nS > 1 ? m.name + ' ' : '') + fmt(valueAt(m.si, vi, lt));
             m.label.style.opacity = p > 0 ? clamp(p * 5).toFixed(3) : 0;
@@ -488,8 +572,37 @@ export const Chart = define({
           else { const m = marks[annIdx]; ax = pad.l + lin(valueAt(0, annIdx, lt)) + fs * 4; ay = pad.t + parseFloat(m.row.getAttribute('transform').split(',')[1]); }
           // keep the box inside the plot (narrow frames): the arrow still points at the datum
           const bw = callout.offsetWidth || cfs * 8;
-          const bx = Math.min(Math.max(ax, bw / 2), Math.max(bw / 2, W - bw / 2));
-          callout.style.setProperty('--arrow-x', (50 + ((ax - bx) / bw) * 100).toFixed(2) + '%');
+          let bx = Math.min(Math.max(ax, bw / 2), Math.max(bw / 2, W - bw / 2));
+          // a line's end label (the latest value) stays readable: a callout that would sit on it slides
+          // left of it (a label that names its year is wider than the old text)
+          if (type === 'line') {
+            const bh = callout.offsetHeight || cfs * 2.2;
+            const boxB = ay - cfs * 1.4, boxT = boxB - bh;
+            for (const m of marks) {
+              if (!(parseFloat(m.label.style.opacity) > 0.05) || !m.label.textContent) continue;
+              const r = m.label.getBBox();
+              const L = pad.l + r.x, T = pad.t + r.y, B = T + r.height;
+              if (B > boxT && T < boxB && bx + bw / 2 > L - fs * 0.4 && bx - bw / 2 < L + r.width) bx = Math.max(bw / 2, L - fs * 0.4 - bw / 2);
+            }
+          }
+          // nor does it cover a reference line's label ("Warmest before 2015: ..."): it slides past it
+          if (ref && parseFloat(ref.lab.style.opacity) > 0.05) {
+            const bh = callout.offsetHeight || cfs * 2.2;
+            const lift = (type === 'bar' ? 0.6 : 1.4) * cfs;
+            const boxB = ay - lift, boxT = boxB - bh;
+            const r = ref.lab.getBBox();
+            const L = pad.l + r.x, R = L + r.width, T = pad.t + r.y, B = T + r.height;
+            const hits = (l, rr) => B > boxT && T < boxB && bx + bw / 2 > l && bx - bw / 2 < rr;
+            if (hits(L, R)) {
+              const right = R + fs * 0.4 + bw / 2;
+              // hbar: the label can sit on the other side of its line (free space above the top bar)
+              const pv = lin(ref.value), fL = pad.l + pv - fs * 0.4 - r.width, fR = pad.l + pv - fs * 0.4;
+              if (right + bw / 2 <= W) bx = right;
+              else if (type === 'hbar' && fL >= 0 && !hits(fL, fR)) { ref.lab.setAttribute('x', (pv - fs * 0.4).toFixed(2)); ref.lab.setAttribute('text-anchor', 'end'); }
+              else if (L - fs * 0.4 - bw >= 0) bx = L - fs * 0.4 - bw / 2;
+            }
+          }
+          callout.style.setProperty('--arrow-x', clamp(50 + ((ax - bx) / bw) * 100, 8, 92).toFixed(2) + '%');
           ax = bx;
           callout.style.left = ax.toFixed(1) + 'px';
           callout.style.top = ay.toFixed(1) + 'px';

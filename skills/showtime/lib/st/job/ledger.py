@@ -30,6 +30,8 @@ SCHEMA = 1
 MODES = ("quick", "studio")
 STATUSES = ("started", "done", "failed", "skipped")
 NOTES_HEAD = "## Notes"
+REQUEST_MAX = 4000                       # characters of the request kept verbatim (job.json "request")
+RENDER_KINDS = ("full", "preview", "partial")
 
 
 def now_iso() -> str:
@@ -347,6 +349,11 @@ def parse_output(spec: str) -> Tuple[Optional[str], str]:
     return infer_kind(spec), spec
 
 
+def _secs(x: Any) -> str:
+    """12.0 -> "12", 2.5 -> "2.5" (seconds in a ledger line)."""
+    return ("%.2f" % float(x)).rstrip("0").rstrip(".")
+
+
 def _mtime_iso(p: Path) -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(p.stat().st_mtime))
 
@@ -374,6 +381,33 @@ def in_studio(job: Path, path: PathLike) -> bool:
 
 
 LATEST_EXTS = (".mp4", ".m4v")
+SPAN_PREFIX = "span-"
+
+
+def is_span_report(r: Any) -> bool:
+    """A render.json of a span clip (`render --from/--to` that was not spliced into a full final): the report
+    says kind "span" (0.3.0), or its range starts after 0 (before 0.3.0 a span was written as final-N.mp4)."""
+    if not isinstance(r, dict):
+        return False
+    if r.get("span") or r.get("kind") == "span" or r.get("deliverable") is False:
+        return True
+    rng = r.get("range")
+    try:
+        return isinstance(rng, list) and float(rng[0]) > 1e-6
+    except (TypeError, ValueError, IndexError):
+        return False
+
+
+def is_span_video(video: PathLike) -> bool:
+    """True for a span clip: named span-*, or its render report says it is one. Never a job's deliverable."""
+    v = Path(video)
+    if v.name.lower().startswith(SPAN_PREFIX):
+        return True
+    for rj in (v.parent / (v.stem + ".work") / "render.json", v.parent / "render.json"):
+        r = read_json(rj, None) if rj.is_file() else None
+        if isinstance(r, dict) and r.get("output") and Path(str(r["output"])).name == v.name:
+            return is_span_report(r)
+    return False
 _LATEST_NAME = {"final": ("final",), "preview": ("preview", "draft", "final")}
 
 
@@ -440,12 +474,15 @@ def latest_output(job: Path, kind: str, data: Optional[Dict[str, Any]] = None) -
                 continue
             if kind == "credits" and not c.name.lower().endswith(".txt"):
                 continue
+            # a span clip (render --from/--to) is only a few seconds: never the job's final or preview
+            if kind in ("final", "preview") and is_span_video(c):
+                continue
             cands.append(c)
     if kind in ("final", "preview"):
         for rj in [job / "render.json"] + sorted(job.glob("*.work/render.json")):
             r = read_json(rj, None) if rj.is_file() else None
             if isinstance(r, dict) and r.get("output") and Path(r["output"]).is_file() \
-                    and bool(r.get("preview")) == (kind == "preview"):
+                    and bool(r.get("preview")) == (kind == "preview") and not is_span_report(r):
                 cands.append(Path(r["output"]))
     if not cands:
         return None
@@ -516,14 +553,15 @@ def media_arg(arg: Optional[PathLike], kind: str = "video", *, say: Any = None,
 def record_outputs(target: PathLike, outputs: Sequence[str], *, stage: Optional[str] = None,
                    seconds: Optional[float] = None, event: Optional[str] = None,
                    baked: Optional[Dict[str, float]] = None, project: Optional[PathLike] = None,
-                   auto: bool = True) -> Optional[Path]:
+                   auto: bool = True, render: Optional[Dict[str, Any]] = None) -> Optional[Path]:
     """Set latest pointers for files produced inside a job (no-op outside one). Returns the job.
     auto: a variant video (variant_reason) is logged without becoming the latest final/preview."""
     first = Path(parse_output(outputs[0])[1]) if outputs else Path(target)
     job = enclosing_job(target) or enclosing_job(first)
     if job is None:
         return None
-    data = note(job, stage=stage, seconds=seconds, outputs=outputs, event=event, baked=baked, project=project, auto=auto)
+    data = note(job, stage=stage, seconds=seconds, outputs=outputs, event=event, baked=baked, project=project, auto=auto,
+                render=render)
     for o in data.get("_recorded") or []:
         if o.get("variant"):
             log("job %s: %s logged as a variant, not the latest %s (%s). To make it the latest: showtime job note %s "
@@ -628,21 +666,26 @@ def ensure_self_ignored(root: Path) -> bool:
 
 def new_data(slug: str, mode: str, goal: Optional[str], job_dir: Path, project: Optional[Path]) -> Dict[str, Any]:
     return {
-        "schema": SCHEMA, "slug": slug, "mode": mode, "goal": goal or "", "dir": str(job_dir),
+        "schema": SCHEMA, "slug": slug, "mode": mode, "goal": goal or "", "request": "", "dir": str(job_dir),
         "project": str(project) if project else None, "created": now_iso(), "updated": now_iso(),
         "command": " ".join(sys.argv[1:])[:300], "env": env_snapshot(),
         "stage": None, "stages": [], "verified": [], "assumed": [], "questions": [], "next": None,
         "platform": None, "pointers": {}, "outputs": {}, "output_log": [], "warnings": [],
-        "cache": {"hits": 0, "misses": 0}, "qa": None,
+        "cache": {"hits": 0, "misses": 0}, "qa": None, "renders": [],
         "history": [{"at": now_iso(), "event": "job created (%s mode)" % mode}],
     }
 
 
 def init(slug: str, mode: str = "quick", goal: Optional[str] = None, base: Optional[PathLike] = None,
          project: Optional[PathLike] = None, assumed: Sequence[str] = (), questions: Sequence[str] = (),
-         next_cmd: Optional[str] = None, platform: Optional[str] = None) -> Tuple[Path, Dict[str, Any]]:
+         next_cmd: Optional[str] = None, platform: Optional[str] = None,
+         request: Optional[str] = None, review_mode: Optional[str] = None) -> Tuple[Path, Dict[str, Any]]:
     if mode not in MODES:
-        raise ShowtimeError("unknown mode %r" % mode, hint="use quick or studio")
+        raise ShowtimeError("unknown mode %r" % mode, hint="use quick or studio (and lean or quality for the review)")
+    from .. import review_mode as rmode
+    if review_mode is not None and rmode.normalize(review_mode) is None:
+        raise ShowtimeError("unknown review mode %r" % review_mode, hint="use quality (the default) or lean")
+    rv, rv_src = rmode.resolve(review_mode)
     root = Path(base).expanduser().resolve() if base else Path(os.environ.get("SHOWTIME_OUT") or Path.cwd()).resolve()
     if root.name != "showtime-out":
         root = root / "showtime-out"
@@ -658,6 +701,12 @@ def init(slug: str, mode: str = "quick", goal: Optional[str] = None, base: Optio
     (d / "work" / "logs").mkdir(parents=True)
     proj = Path(project).expanduser().resolve() if project else None
     data = new_data(slugify(slug), mode, goal, d, proj)
+    data["review_mode"], data["review_mode_source"] = rv, rv_src
+    data["history"][-1]["event"] = "job created (%s mode, %s review from %s)" % (mode, rv, rmode.SOURCES.get(rv_src, rv_src))
+    if request:
+        data["request"] = str(request).strip()[:REQUEST_MAX]
+        if not goal:   # `--request` alone is enough: the goal line is its first 200 characters on one line
+            data["goal"] = " ".join(data["request"].split())[:200]
     for a in assumed:
         _add_item(data["assumed"], a, "init")
     for q in questions:
@@ -688,7 +737,11 @@ def adopt(job: Path) -> Dict[str, Any]:
                                "seconds": round((tm.get("total") or 0) / 1000.0, 1) or None,
                                "ended": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime((job / "render.json").stat().st_mtime))})
         data["stage"] = "render"
-        if rj.get("output"):
+        if rj.get("output") and is_span_report(rj):
+            # a span clip (render --from/--to): logged, never the latest final
+            data["output_log"].append({"path": rj["output"], "at": data["stages"][-1]["ended"], "stage": "render",
+                                       "kind": None, "span": rj.get("span") or rj.get("range")})
+        elif rj.get("output"):
             data["output_log"].append({"path": rj["output"], "at": data["stages"][-1]["ended"], "stage": "render",
                                        "kind": "preview" if rj.get("preview") else "final"})
             data["outputs"]["preview" if rj.get("preview") else "final"] = rj["output"]
@@ -717,6 +770,7 @@ _DEFAULTS: Dict[str, Any] = {
     "schema": SCHEMA, "mode": "quick", "goal": "", "project": None, "stage": None, "stages": [], "verified": [],
     "assumed": [], "questions": [], "next": None, "platform": None, "pointers": {}, "outputs": {}, "output_log": [],
     "warnings": [], "cache": {"hits": 0, "misses": 0}, "qa": None, "history": [], "env": {},
+    "request": "", "renders": [],
 }
 
 
@@ -793,7 +847,9 @@ def note(job: Path, *, stage: Optional[str] = None, status: Optional[str] = None
          warnings: Sequence[str] = (), goal: Optional[str] = None, outputs: Sequence[str] = (),
          cache_hits: int = 0, cache_misses: int = 0, event: Optional[str] = None,
          mode: Optional[str] = None, platform: Optional[str] = None, project: Optional[PathLike] = None,
-         baked: Optional[Dict[str, float]] = None, auto: bool = False) -> Dict[str, Any]:
+         baked: Optional[Dict[str, float]] = None, auto: bool = False,
+         request: Optional[str] = None, render: Optional[Dict[str, Any]] = None,
+         review_mode: Optional[str] = None) -> Dict[str, Any]:
     """Update the ledger. `outputs` entries are paths or KIND=PATH (KIND: final, preview, edl, poster,
     share, credits, captions, animatic); each is logged, and a known kind becomes that kind's latest
     pointer. A final/preview video under <job>/studio/ is recorded as the animatic instead.
@@ -801,8 +857,29 @@ def note(job: Path, *, stage: Optional[str] = None, status: Optional[str] = None
     `baked` maps video paths to the poster time baked into their frame 0.
     auto: the outputs come from a tool (render, edit render, captions --burn, deliver): a variant
     video (an alpha overlay, a bumper.mp4, see variant_reason) is logged but updates no pointer.
+    request: the user's request as typed (kept verbatim in job.json "request"; the receipt quotes it).
+    render: one render for the receipt, {"kind": full|preview|partial, "file": name, "seconds": s,
+    "span": [from, to], "base": name}; appended to job.json "renders" (a span clip makes no output pointer; a
+    partial render with a "base" was spliced into a copy of that full render, and its output entry says so).
     The returned data carries "_recorded" (not saved): what each output became."""
     data = load(job)
+    if request is not None and str(request).strip():
+        data["request"] = str(request).strip()[:REQUEST_MAX]
+    if render:
+        rk = str(render.get("kind") or "")
+        if rk not in RENDER_KINDS:
+            raise ShowtimeError("unknown render kind %r" % rk, hint="use one of: " + ", ".join(RENDER_KINDS))
+        rec_r = {"kind": rk, "file": Path(str(render.get("file") or "")).name, "at": now_iso()}
+        if render.get("seconds") is not None:
+            rec_r["seconds"] = round(float(render["seconds"]), 1)
+        if render.get("span"):
+            rec_r["span"] = [round(float(x), 2) for x in list(render["span"])[:2]]
+        if render.get("base"):
+            if rk != "partial" or not rec_r.get("span"):
+                raise ShowtimeError("a render base is only for a partial render with a span",
+                                    hint="--render partial=FILE --render-span A-B --render-base FILE")
+            rec_r["spliced_from"] = Path(str(render["base"])).name
+        data["renders"] = (list(data.get("renders") or []) + [rec_r])[-200:]
     if project is not None and str(project) != "":
         _set_project(data, project)
     if platform is not None:
@@ -812,8 +889,16 @@ def note(job: Path, *, stage: Optional[str] = None, status: Optional[str] = None
         data["goal"] = goal
     if mode:
         if mode not in MODES:
-            raise ShowtimeError("unknown mode %r" % mode, hint="use quick or studio")
+            raise ShowtimeError("unknown mode %r" % mode, hint="use quick or studio (and lean or quality for the review)")
         data["mode"] = mode
+    if review_mode:
+        from .. import review_mode as rmode
+        rv = rmode.normalize(review_mode)
+        if rv is None:
+            raise ShowtimeError("unknown review mode %r" % review_mode, hint="use quality (the default) or lean")
+        if data.get("review_mode") != rv:
+            data["history"].append({"at": now_iso(), "event": "review mode %s -> %s" % (data.get("review_mode") or "default", rv)})
+        data["review_mode"], data["review_mode_source"] = rv, "flag"
     if stage:
         st = status or "done"
         if st not in STATUSES:
@@ -879,6 +964,9 @@ def note(job: Path, *, stage: Optional[str] = None, status: Optional[str] = None
         asked = kind
         kind = role_kind(job, kind, op, auto, data)
         entry = {"path": op, "at": now_iso(), "stage": cur, "kind": kind}
+        if render and render.get("base") and render.get("span") and Path(op).name == Path(str(render.get("file"))).name:
+            # a full final made by splicing a re-rendered span into a copy of an earlier final
+            entry["spliced"] = "%s-%s from %s" % (_secs(render["span"][0]), _secs(render["span"][1]), Path(str(render["base"])).name)
         if why:
             entry["variant"] = asked
             entry["why"] = why
@@ -1020,6 +1108,9 @@ def record_qa(video: Path, rep: Dict[str, Any]) -> bool:
         line += " (not the latest %s; the job's qa verdict is unchanged)" % (_kind or "video")
     data["history"].append({"at": now_iso(), "event": line})
     save(job, data)
+    if is_latest:
+        from . import receipt
+        receipt.refresh(job, share=False)   # the receipt follows the latest render; the share.txt line waits for deliver
     return True
 
 
@@ -1158,12 +1249,20 @@ def suggest_next(job: Path, data: Dict[str, Any]) -> str:
                     ": " + "; ".join(dict.fromkeys(fixes)) if fixes else "", rerender, jn))
     last_stage = (data.get("stages") or [{}])[-1] if data.get("stages") else {}
     if verdict in ("PASS", "WARN") and last_stage.get("name") in ("deliver", "done") and last_stage.get("status") == "done":
+        rv = _review(job, data, vid) if kind == "final" else {}
+        if rv.get("pending") and rv.get("next"):
+            return "%s   (delivered, but the quality-mode critic round is still open)" % rv["next"]
         return "nothing required: %s was checked (qa %s) and delivered. To change it: edit, %s, then showtime qa %s" % (
             vid.name if vid is not None else "the final", verdict, rerender, jn)
     if verdict == "PASS":
         if kind == "preview":
             return "%s   (qa passed the preview; now the final)" % (rerender if rerender != "re-render" else
                                                                   "render the final into %s" % jn)
+        rv = _review(job, data, vid)
+        if rv.get("pending") and rv.get("next"):
+            return "%s   (quality mode: the critic round comes before delivery)" % rv["next"]
+        if rv.get("mode") == "quality":
+            return "showtime deliver exports %s --targets <platforms>" % jn
         return "showtime deliver exports %s --targets <platforms>   (or showtime review-pack %s)" % (jn, jn)
     if vid is not None:
         return "showtime qa %s" % jn
@@ -1173,6 +1272,15 @@ def suggest_next(job: Path, data: Dict[str, Any]) -> str:
         return "showtime edit render %s --preview" % jn
     return ("showtime new <template> %s   (the job records the project itself; then showtime check it and "
             "showtime render it --job %s)" % (job / "project", jn))
+
+
+def _review(job: Path, data: Dict[str, Any], video: Optional[Path] = None) -> Dict[str, Any]:
+    """The job's review state (st.job.review_state); {} when it cannot be read (never breaks status)."""
+    try:
+        from . import review_state
+        return review_state.state(job, data, video)
+    except Exception:  # noqa: BLE001 - the review line is a convenience
+        return {}
 
 
 def _ago(iso: Optional[str]) -> str:
@@ -1195,7 +1303,9 @@ def status_lines(job: Path, data: Optional[Dict[str, Any]] = None, absolute: boo
     where = ("%s %s" % (st["name"], st.get("status", ""))) if st else "not started"
     goal = (" | goal: " + _short(data["goal"], 60)) if data.get("goal") else ""
     when = (data.get("updated") or "")[:16].replace("T", " ") if absolute else _ago(data.get("updated"))
-    l1 = "%s (%s): %s, updated %s%s" % (job.name, data.get("mode", "quick"), where, when, goal)
+    rv = _review(job, data)
+    l1 = "%s (%s%s): %s, updated %s%s" % (job.name, data.get("mode", "quick"),
+                                          ", %s review" % rv["mode"] if rv.get("mode") else "", where, when, goal)
     lo = last_output(job, data)
     qa = qa_of(data, latest_video(job, data)[0])
     open_q = [q for q in data.get("questions", []) if not q.get("answer")]
@@ -1204,6 +1314,10 @@ def status_lines(job: Path, data: Optional[Dict[str, Any]] = None, absolute: boo
         l2 += "; last output %s (%s)" % (_rel(lo[0], job), lo[1][:16].replace("T", " ") if absolute else _ago(lo[1]))
     if qa.get("verdict"):
         l2 += "; qa %s" % qa["verdict"]
+    if rv.get("status") in ("pending", "waiting", "not ready"):
+        l2 += "; review pending"
+    elif rv.get("status") in ("done", "cap"):
+        l2 += "; " + rv["message"]
     studio = studio_state(job)
     if studio is not None:
         l2 += "; " + _studio_text(studio)
@@ -1223,6 +1337,10 @@ def _rel(p: str, job: Path) -> str:
         return str(p)
 
 
+_REVIEW_TEXT = {"quality": "full review: looks, qa and a critic round before delivery",
+                "lean": "a draft pass: the critic round only when publish-bound or asked"}
+
+
 def render_md(job: Path, data: Dict[str, Any], notes: str = "") -> str:
     L: List[str] = []
     L.append("# SHOWTIME: %s" % data.get("slug", job.name))
@@ -1233,8 +1351,12 @@ def render_md(job: Path, data: Dict[str, Any], notes: str = "") -> str:
     L.append("## Goal")
     L.append(data.get("goal") or "(not recorded yet: `showtime job note %s --goal \"...\"`)" % job.name)
     L.append("")
-    L.append("Mode: %s. Created %s.%s" % (data.get("mode", "quick"), (data.get("created") or "")[:16].replace("T", " "),
-                                            " Project: `%s`." % data["project"] if data.get("project") else ""))
+    rv = _review(job, data)
+    L.append("Mode: %s%s. Created %s.%s" % (data.get("mode", "quick"),
+                                          (", %s review (%s)" % (rv["mode"], _REVIEW_TEXT.get(rv["mode"], "")))
+                                          if rv.get("mode") else "",
+                                          (data.get("created") or "")[:16].replace("T", " "),
+                                          " Project: `%s`." % data["project"] if data.get("project") else ""))
     L.append("")
     L.append("## Where we are")
     for line in status_lines(job, data, absolute=True)[:2]:
@@ -1242,6 +1364,8 @@ def render_md(job: Path, data: Dict[str, Any], notes: str = "") -> str:
     qa = qa_of(data, latest_video(job, data)[0])
     if qa.get("verdict"):
         L.append("- QA %s (%s fail, %s warn), report `%s`" % (qa["verdict"], qa.get("fail"), qa.get("warn"), qa.get("report")))
+    if rv.get("message") and rv.get("status") not in ("lean", "no final"):
+        L.append("- %s%s" % (rv["message"], (" -> `%s`" % rv["next"]) if rv.get("next") else ""))
     L.append("")
     L.append("## Verified")
     if data.get("verified"):

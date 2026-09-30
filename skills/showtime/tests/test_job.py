@@ -497,6 +497,9 @@ class JobTests(unittest.TestCase):
         self.assertIn("--find-first frozen", md.split("## Next command")[1].split("##")[0])
         data = ledger.load(job)
         data["qa"]["verdict"] = "PASS"
+        # quality mode (the default): the critic round comes before exports; lean goes straight to exports
+        self.assertEqual(ledger.suggest_next(job, data).split()[:3], ["showtime", "review-pack", job.name + ","])
+        data["review_mode"] = "lean"
         self.assertEqual(ledger.suggest_next(job, data).split()[:4], ["showtime", "deliver", "exports", job.name])
         time.sleep(1.1)
         (job / "final-2.mp4").write_bytes(b"xx")
@@ -521,6 +524,11 @@ class JobTests(unittest.TestCase):
         showtime("job", "note", job, "--stage", "deliver", cwd=base)
         data = ledger.load(job)
         data["qa"] = {"verdict": "PASS", "report": str(qa_dir / "qa.json"), "video": str(job / "final-2.mp4")}
+        ledger.save(job, data)
+        # quality mode (the default) without a critic round: delivered, but the round is still named
+        self.assertIn("critic round is still open", ledger.suggest_next(job, ledger.load(job)))
+        data = ledger.load(job)
+        data["review_mode"] = "lean"
         ledger.save(job, data)
         self.assertTrue(ledger.suggest_next(job, ledger.load(job)).startswith("nothing required"))
         # job names resolve from inside the job folder too

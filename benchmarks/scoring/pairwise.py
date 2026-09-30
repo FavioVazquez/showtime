@@ -13,7 +13,9 @@ Blinding
   - Every judge is a fresh headless session with only the Read tool.
   - A judgment counts only with proof that the judge looked at every image (see rank.py and judge.py).
 Output: <bench home>/runs/<run>/pairwise.jsonl (one line per judgment) and pairwise_summary.json
-(win rate per arm with ties = 0.5, Bradley-Terry strengths, first-position win rate as a bias check).
+(win rate per arm with ties = 0.5, Bradley-Terry strengths, first-position win rate as a bias check, and
+"both_orders": per task and pair, the arm that won when shown first AND when shown second, else "split" or
+"tie"; a pair judged in one order only says so, as with --judges 1).
 """
 import argparse
 import itertools
@@ -85,11 +87,24 @@ def is_html(auto: Dict) -> bool:
     return bool(auto.get("html")) and not (auto.get("probe") or {}).get("video")
 
 
+_REC_GUARD = threading.Lock()
+_REC_LOCKS: Dict[str, threading.Lock] = {}
+
+
 def html_recording(run: str, task_id: str, arm: str) -> Optional[Path]:
     """The screen recording human_board.py makes of an HTML deliverable (played like a viewer would), made
-    now when the boards were not built yet. None when the page could not be recorded."""
-    import human_board
+    now when the boards were not built yet. None when the page could not be recorded.
+    One recording per file at a time: parallel judges of one task used to record the same page into the same
+    file at once (round 4 dry run: a corrupt recording)."""
     rec = common.bench_home() / "human" / run / "recordings" / task_id / (arm + ".mp4")
+    with _REC_GUARD:
+        lock = _REC_LOCKS.setdefault(str(rec), threading.Lock())
+    with lock:
+        return _html_recording(run, task_id, arm, rec)
+
+
+def _html_recording(run: str, task_id: str, arm: str, rec: Path) -> Optional[Path]:
+    import human_board
     rep = common.read_json(rec.with_suffix(".json")) or {}
     if rec.exists() and (rep.get("report") or {}).get("ok"):
         return rec
@@ -238,6 +253,27 @@ def main() -> int:
     return 0
 
 
+def both_orders(recs: List[Dict]) -> Dict[str, Dict[str, str]]:
+    """Per task and pair: the arm that won (by majority) in each order it was shown in. It counts as the
+    winner only when it won both orders; otherwise "split" (the preference followed the position) or "tie"."""
+    seen: Dict[tuple, Dict[str, List[str]]] = {}
+    for r in recs:
+        seen.setdefault((r["task"], r["a"], r["b"]), {}).setdefault("a_first" if r["first"] == r["a"] else "b_first",
+                                                                   []).append(r["winner"])
+    out: Dict[str, Dict[str, str]] = {}
+    for (task, a, b), d in sorted(seen.items()):
+        def major(ws: List[str]) -> str:
+            pts = sum(1.0 if w == a else 0.0 if w == b else 0.5 for w in ws) / len(ws)
+            return a if pts > 0.5 else b if pts < 0.5 else "tie"
+        if len(d) < 2:
+            res = "one order only"
+        else:
+            wa, wb = major(d["a_first"]), major(d["b_first"])
+            res = wa if wa == wb and wa != "tie" else ("tie" if wa == wb else "split")
+        out.setdefault(task, {})["%s vs %s" % (a, b)] = res
+    return out
+
+
 def summarize(root: Path) -> Dict:
     recs = [json.loads(l) for l in (root / "pairwise.jsonl").read_text(encoding="utf-8").splitlines() if l.strip()]
     recs = [r for r in recs if r.get("ok")]
@@ -258,6 +294,7 @@ def summarize(root: Path) -> Dict:
             decided += 1
             first_wins += r["winner"] == r["first"]
     summary = {"judgments": len(recs),
+               "both_orders": both_orders(recs),
                "win_rate": {a: round(v["points"] / v["games"], 3) for a, v in per.items() if v["games"]},
                "per_task": {t: {a: round(v["points"] / v["games"], 3) for a, v in d.items()} for t, d in per_task.items()},
                "bradley_terry_log_strength": bradley_terry(arms, games) if games else {},

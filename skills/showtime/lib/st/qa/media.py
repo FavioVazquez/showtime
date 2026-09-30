@@ -77,7 +77,7 @@ def detect(video: PathLike, duration: float, *, black_min: float = 0.04, freeze_
     padded export. Returns {"black": [(s, e)], "freeze": [(s, e)]}.
     """
     pre = ("crop=%d:%d:%d:%d," % (int(crop[2]), int(crop[3]), int(crop[0]), int(crop[1]))) if crop else ""
-    vf = (pre + "scale=%d:-2,blackdetect=d=%.3f:pic_th=0.98:pix_th=0.10,"
+    vf = (pre + "scale=%d:-2,blackdetect=d=%.3f:pic_th=0.995:pix_th=0.10,"
           "freezedetect=n=%gdB:d=%.3f" % (width, black_min, freeze_noise_db, freeze_min))
     cp = ff.run_ffmpeg(["-i", os.fspath(video), "-an", "-sn", "-vf", vf, "-f", "null", "-"],
                        loglevel="info", overwrite=False, check=False)
@@ -191,13 +191,21 @@ def frame_name(t: float, ext: str = "jpg") -> str:
 def extract_frames(video: PathLike, times: Sequence[float], out_dir: PathLike, *, width: Optional[int] = None,
                    duration: Optional[float] = None, fps: Optional[float] = None,
                    ext: str = "jpg", names: Optional[Sequence[str]] = None) -> List[Path]:
-    """Write one image per time (accurate seek). Existing files are reused."""
+    """Write one image per time (accurate seek). Existing files are reused only when they are newer than the
+    video: a re-render to the same path (final.mp4 again) must never show the old render's frames."""
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     paths: List[Path] = []
+    try:
+        vmtime = os.stat(os.fspath(video)).st_mtime
+    except OSError:
+        vmtime = None
     for i, t in enumerate(times):
         tt = clamp_time(float(t), duration, fps)
         dest = out / (names[i] if names else frame_name(tt, ext))
+        stale = dest.is_file() and vmtime is not None and dest.stat().st_mtime < vmtime
+        if stale:
+            dest.unlink()
         if not dest.is_file():
             vf = "scale=%d:-2:flags=lanczos" % width if width else "null"
             args: List[str] = ["-ss", "%.6f" % tt, "-i", os.fspath(video), "-frames:v", "1", "-vf", vf]
@@ -268,7 +276,7 @@ def image_stats(path: PathLike) -> Dict[str, float]:
     a = np.asarray(im).astype("float32")
     y = 0.2126 * a[..., 0] + 0.7152 * a[..., 1] + 0.0722 * a[..., 2]
     return {"mean": float(y.mean()), "std": float(y.std()), "p01": float(np.percentile(y, 1)),
-            "p99": float(np.percentile(y, 99)),
+            "p99": float(np.percentile(y, 99)), "p999": float(np.percentile(y, 99.9)),
             "chroma": float(np.abs(a - a.mean(axis=2, keepdims=True)).mean())}
 
 

@@ -5,6 +5,19 @@ All notable changes to showtime. Each entry says what changed and why, so this f
 `skills/showtime/lib/st/__init__.py` and `python3 scripts/check_release.py` keeps the plugin manifests, the registry files and
 `setup/package.json` in sync with it.
 
+## 0.3.1 (2026-09-30)
+
+- **The plugin's end-of-turn hook no longer fails before setup.** Installing the plugin and working a few turns before
+  `showtime setup` made the Stop hook (`showtime receipt --hook`, which keeps a job's token and cost receipt current)
+  print "needs the showtime environment" and fail at the end of every turn. Before setup there is no job to refresh, so
+  the hook now exits quietly: from the launcher when the environment is missing, and from `bin/showtime` when there
+  is no Python yet. A real command run before setup still says what to install.
+- **Setup is the user's call.** In a test in the Claude app, the agent judged the one-time setup too big for a
+  five-second clip and made the video with bare ffmpeg instead. SKILL.md and `references/onboarding.md` now say it
+  plainly: give the size and time and run setup; if the user declines, say what cannot be made without it; never make
+  the video another way.
+- **SKILL.md's description is one line** (it was a folded YAML block, which one directory's importer read as ">").
+
 ## 0.3.0 (2026-09-30)
 
 - **Quality first: every finished video gets the full review by default; lean is an opt-in.** Benchmark round 4

@@ -694,6 +694,8 @@ def run_python_cli(args: list, env: dict, home: Path) -> int:
         os.environ.update(env)
         from st.cli import main as cli_main
         return cli_main(args)
+    if cmd == "receipt" and "--hook" in args[1:]:
+        return 0   # the plugin's Stop hook: before setup there is no job to refresh, so say nothing, every turn
     sys.stderr.write(first_run_message(cmd, home))
     return 2
 

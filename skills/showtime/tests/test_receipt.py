@@ -19,6 +19,7 @@ import _isolate  # noqa: F401  (run from a scratch folder: never write into the 
 
 import calendar
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -432,6 +433,20 @@ class CliTests(unittest.TestCase):
         for stdin in ("", "not json", json.dumps({"cwd": str(empty)}), json.dumps({"cwd": str(self.tmp), "transcript_path": "/nope"})):
             cp = showtime("receipt", "--hook", cwd=empty, stdin_text=stdin)
             self.assertEqual((cp.returncode, cp.stdout, cp.stderr), (0, "", ""))
+
+    def test_hook_silent_before_setup(self):
+        """A plugin installed before `showtime setup`: the Stop hook must say nothing and exit 0 every turn."""
+        home = Path(tempfile.mkdtemp(prefix="st-nosetup-"))
+        env = {k: v for k, v in os.environ.items() if k not in ("SHOWTIME_PYTHON", "SHOWTIME_HOME")}
+        env.update(HOME=str(home), USERPROFILE=str(home), SHOWTIME_HOME=str(home / ".showtime"))
+        cp = subprocess.run([sys.executable, str(SKILL / "lib" / "st" / "launcher.py"), "receipt", "--hook"],
+                            input="{}", capture_output=True, text=True, env=env, timeout=120)
+        self.assertEqual((cp.returncode, cp.stdout, cp.stderr), (0, "", ""))
+        cp = subprocess.run([sys.executable, str(SKILL / "lib" / "st" / "launcher.py"), "receipt", "somejob"],
+                            capture_output=True, text=True, env=env, timeout=120)
+        self.assertEqual(cp.returncode, 2)                          # a real command still says to run setup
+        self.assertIn("showtime setup", cp.stderr)
+        shutil.rmtree(home, ignore_errors=True)
 
     def test_hook_manifest_and_mcp_tool(self):
         hooks = json.loads((REPO / "hooks" / "hooks.json").read_text(encoding="utf-8"))

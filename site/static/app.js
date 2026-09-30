@@ -60,7 +60,7 @@
     var b = e.target.closest('button.watch'); if (!b) return;
     var screen = b.closest('.screen');
     var v = document.createElement('video'); v.controls = true; v.playsInline = true; v.preload = 'auto';
-    v.src = b.getAttribute('data-film'); v.poster = b.getAttribute('data-poster'); v.setAttribute('aria-label', 'The showtime launch film');
+    v.src = b.getAttribute('data-film'); v.poster = b.getAttribute('data-poster'); v.setAttribute('aria-label', b.getAttribute('data-label') || 'The showtime film');
     if (teaser) teaser.remove();
     screen.classList.add('playing'); screen.insertBefore(v, b); v.play().catch(function () {}); v.focus();
   });

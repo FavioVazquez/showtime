@@ -215,7 +215,7 @@ class Site:
         asset = ASSET_BY_PATH.get(repo_rel)
         fallback = self.release_url(asset) if asset else self.gh(repo_rel)
         is_html = repo_rel.endswith(".html")
-        if self.only is not None and folder[:2] not in self.only and not is_html and folder not in ("_launch", "_crew"):
+        if self.only is not None and folder[:2] not in self.only and not is_html and not folder.startswith("_"):
             return None, fallback
         src = self.find_media(repo_rel)
         if not src:
@@ -436,7 +436,7 @@ def shell(site: Site, page: str, title: str, body: str, active: str = "", desc: 
 <footer class="site"><div class="wrap">
 <span><span class="word">showtime</span>&nbsp; {version}, MIT licensed. A local video studio for your coding agent.</span>
 <nav aria-label="Footer"><a href="{gallery}">Examples</a><a href="{crew}">Crew</a><a href="{docs}">Docs</a>{exrepo}</nav>
-<span>No trackers, no cookies. Fonts are served from this site. Launch film music: \u201cWith These Hands\u201d by Scott Buckley, CC BY 4.0.</span>
+<span>No trackers, no cookies. Fonts are served from this site. Film music by Scott Buckley, CC BY 4.0: \u201cBorn Of The Sky\u201d (the 0.3.0 showreel), \u201cWith These Hands\u201d (the launch film), \u201cArtemis\u201d (the crew film).</span>
 </div></footer>
 <script src="{js}"></script>
 </body>
@@ -575,10 +575,25 @@ def build_gallery(site: Site, groups, exs) -> None:
                 if e["num"] == "02" and not live:
                     live = ('<div class="htmlvid"><iframe src="%s" title="HTML video: %s" loading="lazy" allow="fullscreen"></iframe></div>'
                             % (rel(page, hl), esc(e["title"])))
+    # the 0.2.0 launch film (examples/_launch): plays at the top of the gallery (gallery.html#launch-film) when this build
+    # has it, else links to the release asset
+    lfilm, lfilm_fb = site.media("examples/_launch/launch-16x9.mp4", "_launch")
+    lposter = src_path("examples/_launch/poster.jpg")
+    lpa = ' poster="%s"' % rel(page, site.copy_asset(lposter)) if lposter.is_file() else ""
+    lcredit = ('The 0.2.0 launch film, 40 seconds, made with showtime: every frame is from a real showtime example. '
+               'Music: \u201cWith These Hands\u201d by Scott Buckley, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>.')
+    if lfilm:
+        launch = ('<div class="players" id="launch-film" style="grid-template-columns:1fr;scroll-margin-top:96px"><figure><video controls '
+                  'playsinline preload="metadata"%s src="%s" aria-label="The showtime 0.2.0 launch film"></video><figcaption>%s</figcaption>'
+                  '</figure></div>' % (lpa, rel(page, lfilm), lcredit))
+    else:
+        launch = ('<p class="note" id="launch-film" style="margin-top:24px"><a class="link-arrow" href="%s">Watch the 0.2.0 launch film (40 s) '
+                  '<span>\u2192</span></a> %s</p>' % (esc(lfilm_fb or "#"), lcredit))
     body = """<div class="wrap">
 <header class="room-head"><h1 class="title">Now showing</h1>
 <p class="lede">Twenty-two videos, each made from a single request by an agent acting as a user. Hover to preview, press play for
 the full video with sound, or open the story behind it.</p>{exrepo}
+{launch}
 <div class="filters" role="group" aria-label="Filter by use case">{tabs}</div>
 <p class="count" aria-live="polite"></p></header>
 <div class="films">{cards}</div>
@@ -589,7 +604,7 @@ control and links to a moment. This one is live; click it and press <kbd>?</kbd>
 {live}
 <ul class="htmllist">{htmls}</ul>
 </section>
-</div>""".format(tabs="".join(tabs), cards=cards, live=live, exrepo=(
+</div>""".format(tabs="".join(tabs), cards=cards, live=live, launch=launch, exrepo=(
         '\n<p class="lede">All 22 examples, with their projects and full-quality videos, live in <a href="https://github.com/%s">%s</a>.</p>'
         % (esc(EXAMPLES_REPO), esc(EXAMPLES_REPO.split("/")[-1]))) if EXAMPLES_REPO else "",
                   htmls="".join(htmls) or "<li class='muted'>Not included in this build.</li>")
@@ -874,15 +889,18 @@ def build_landing(site: Site, exs) -> None:
     page = "index.html"
     hero_cfg = CONFIG.get("hero") or {}
     launch = hero_cfg.get("folder", "examples/_launch")
-    poster = rel(page, site.copy_asset(REPO / "assets/readme/launch-poster-plain.jpg"))
+    poster = rel(page, site.copy_asset(src_path(hero_cfg.get("poster", "assets/readme/launch-poster-plain.jpg"))))
     tmp4 = rel(page, site.copy_asset(src_path(launch + "/teaser-16x9.mp4")))
     twebm = rel(page, site.copy_asset(src_path(launch + "/teaser-16x9.webm")))
-    film, film_fb = site.media(launch + "/" + hero_cfg.get("film", "launch-16x9.mp4"), "_launch")
+    film, film_fb = site.media(launch + "/" + hero_cfg.get("film", "launch-16x9.mp4"), launch.split("/")[-1])
+    length = esc(hero_cfg.get("length", "0:40"))
     if film:
-        watch = ('<button class="watch" type="button" data-film="%s" data-poster="%s">%s<span>Watch the film</span><em>0:40, sound on</em></button>'
-                 % (rel(page, film), poster, ICON_PLAY))
+        watch = ('<button class="watch" type="button" data-film="%s" data-poster="%s" data-label="%s">%s<span>Watch the film</span><em>%s, sound on</em></button>'
+                 % (rel(page, film), poster, esc(hero_cfg.get("label", "The showtime launch film")), ICON_PLAY, length))
     else:
-        watch = ('<a class="watch" href="%s">%s<span>Watch the film</span><em>0:40, sound on</em></a>' % (esc(film_fb or "#"), ICON_PLAY))
+        watch = ('<a class="watch" href="%s">%s<span>Watch the film</span><em>%s, sound on</em></a>' % (esc(film_fb or "#"), ICON_PLAY, length))
+    credit = hero_cfg.get("credit") or ('The launch film: every frame is from a real showtime example. Music: \u201cWith These Hands\u201d by '
+                                        'Scott Buckley, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>.')
     hero = ('<div class="screen lights"><video class="teaser" muted loop playsinline preload="auto" poster="%s" aria-hidden="true">'
             '<source src="%s" type="video/webm"><source src="%s" type="video/mp4"></video>%s</div>' % (poster, twebm, tmp4, watch))
     teaser = [e for e in exs if e["num"] in ("02", "12", "17", "19")]
@@ -893,8 +911,7 @@ from one sentence, with no cloud AI services, no API keys and no uploads. It wor
 and in any agent that supports <a href="https://agentskills.io">Agent Skills</a>.</p></div>
 <div class="actions"><a class="btn primary" href="#start">Get started</a><a class="link-arrow" href="gallery.html">See the examples <span>→</span></a></div></div>
 {hero}
-<p class="credit">The launch film: every frame is from a real showtime example. Music: \u201cWith These Hands\u201d by Scott Buckley,
-<a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>.</p>
+<p class="credit">{credit}</p>
 </div></section>
 
 <section class="section" id="start"><div class="wrap">
@@ -942,7 +959,7 @@ when you ask for something from the web.</p></div>
 <div><h3>Checked before it is done</h3><p><code>showtime qa</code> checks loudness, black or frozen frames, captions and platform specs.</p></div></div>
 <p class="more"><a class="link-arrow" href="docs/index.html">Read the docs <span>→</span></a></p>
 </div></section>
-""".format(hero=hero, market=esc(site.repo or CONFIG.get("marketplace", "FavioVazquez/showtime")),
+""".format(hero=hero, credit=credit, market=esc(site.repo or CONFIG.get("marketplace", "FavioVazquez/showtime")),
            pipeline=art(site, page, "diagrams/pipeline", "How showtime works: one sentence, your agent directs, a first look, a local render, showtime qa, an MP4 and an HTML video."),
            teaser="".join(card(site, page, e, show_what=False) for e in teaser),
            runs=art(site, page, "diagrams/runs-where", "What runs where: the director in your coding agent, the studio on your machine; the web only when you ask."),

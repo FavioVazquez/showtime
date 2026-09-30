@@ -9,11 +9,11 @@ the site itself, under their OFL licenses in `static/fonts/`).
 | Path | What it is |
 |---|---|
 | `build.py` | the build: Markdown to HTML (markdown-it-py), pages, search index, media copy |
-| `config.json` | the one value to set: `repo` (`owner/name`); plus the version and the hero film's asset name |
+| `config.json` | the one value to set: `repo` (`owner/name`); plus the version and the hero film (its folder, film, still, length and credit) |
 | `content/crew.json` | the one-line job of each crew member, as the crew page shows it |
 | `content/previews.json` | the 4-second window of each example the gallery previews on hover |
 | `static/` | `style.css`, `app.js` (theme, gallery filters and players, copy buttons, search), fonts |
-| `tools/hero_loop.py` | cuts a seamless loop (dissolving its end into its start) from a film; it made the hero teaser in `examples/_launch/` |
+| `tools/hero_loop.py` | cuts a seamless loop (dissolving its end into its start) from a film; it made the 0.2.0 hero teaser in `examples/_launch/` |
 
 ## Build it locally
 
@@ -65,11 +65,14 @@ Do these once, in order, when the repository goes public.
    `https://github.com/FavioVazquez/showtime-examples/releases/download/<that tag>/`; if the tag changes,
    regenerate them (`python3 scripts/publish_media.py --links`).
 3. **Launch film.** `python3 scripts/publish_media.py --upload` (in showtime-examples) publishes the films in `examples/_launch/`
-   (16:9, 1:1, 9:16 and the HTML video) with the rest of the media. The landing page loops the silent teaser
-   (`examples/_launch/teaser-16x9.mp4` and `.webm`, in git) with the brand poster, and its one button,
-   "Watch the film", plays `launch-16x9.mp4` with sound (downloaded from the release at deploy time).
-   Viewers who ask for reduced motion see the poster only. The music credit is under the film and in the
-   footer; the composer's terms mean the audio never ships as a separate file.
+   (16:9, 1:1, 9:16 and the HTML video) and `examples/_showreel/` (the 0.3.0 showreel and its HTML video)
+   with the rest of the media. The landing page loops the showreel's silent teaser
+   (`examples/_showreel/teaser-16x9.mp4` and `.webm`, in git) over its still (`teaser-16x9.jpg`), and its
+   one button, "Watch the film", plays `showreel-16x9.mp4` with sound (downloaded from the release at deploy
+   time); `hero` in `config.json` names these files. The 0.2.0 launch film plays at the top of the gallery
+   (`gallery.html#launch-film`) and the crew film on the crew page (`crew.html#film`). Viewers who ask for
+   reduced motion see the still only. Each film's music credit is under it and in the footer; the
+   composer's terms mean the audio never ships as a separate file.
 4. **Turn on Pages.** Settings > Pages > Build and deployment > Source: **GitHub Actions**. Then
    Actions > pages > Run workflow (or push to `main`). The site appears at
    `https://faviovazquez.github.io/showtime/`.

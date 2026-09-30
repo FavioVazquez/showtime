@@ -29,9 +29,6 @@ on:
   #   gh api repos/FavioVazquez/showtime/dispatches -f event_type=examples-updated
   repository_dispatch:
     types: [examples-updated]
-  # a new benchmark report (release "benchmark-report-vX.Y.Z") or product release rebuilds the site
-  release:
-    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -90,7 +87,9 @@ jobs:
       # is the index.html asset of a release "benchmark-report-vX.Y.Z". Every version is published at
       # /benchmark/vX.Y.Z/ and the latest also at /benchmark/, with a bar that links the versions
       # (site/tools/benchmark_pages.py). The first report's release, "benchmark-report", counts as v0.2.0
-      # until a "benchmark-report-v0.2.0" exists.
+      # until a "benchmark-report-v0.2.0" exists. After publishing a new report, rebuild from main (a release
+      # event runs on its tag, which the github-pages environment refuses to deploy):
+      #   gh workflow run pages.yml --repo FavioVazquez/showtime --ref main
       - name: Benchmark reports (release assets, one per version)
         env:
           GH_TOKEN: ${{ github.token }}

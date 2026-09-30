@@ -8,6 +8,9 @@ short exchange: what is there, what is missing, one decision, then the install, 
 
 - Look first: `showtime doctor --json --quick` (read `checks[]`) and `showtime setup --estimate`; one table by
   area, then one question: install the default now (recommended), with the printed numbers (§1, §2)
+- Setup is the user's call, not yours: a quick test is no reason to skip it. Say the size and time and run it; if the
+  user declines, say what cannot be made without it and stop. Never make the video another way instead (bare ffmpeg,
+  your own script): that is not showtime, and nothing checks it.
 - Install with `showtime setup` (idempotent, resumes), or `--background` and
   `showtime status <id> --wait 240`; done when `showtime doctor` shows 0 fail (§3)
 - Missing uv or Node.js 20+: show the printed command and let the user run it (or run it after a yes); in a
@@ -19,12 +22,12 @@ short exchange: what is there, what is missing, one decision, then the install, 
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| 1. Look before you talk | 29-40 |
-| 2. Tell the user in one table, then ask one thing | 42-59 |
-| 3. Install | 61-84 |
-| 4. What works now, what arrives later | 86-107 |
-| 5. Where things live | 109-113 |
-| 6. If setup fails | 115-120 |
+| 1. Look before you talk | 32-43 |
+| 2. Tell the user in one table, then ask one thing | 45-62 |
+| 3. Install | 64-87 |
+| 4. What works now, what arrives later | 89-110 |
+| 5. Where things live | 112-116 |
+| 6. If setup fails | 118-123 |
 
 ## 1. Look before you talk
 

@@ -3,7 +3,7 @@
   "name": "io.github.FavioVazquez/showtime",
   "title": "showtime",
   "description": "Local video studio for your coding agent: scenes, voice, music and captions, on your machine.",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "websiteUrl": "https://faviovazquez.github.io/showtime/",
   "repository": {
     "url": "https://github.com/FavioVazquez/showtime",
@@ -26,7 +26,7 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@faviovazquez/showtime-mcp",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"

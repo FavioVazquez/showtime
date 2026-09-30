@@ -1,16 +1,6 @@
 ---
 name: showtime
-description: >
-  Use when the user wants a video made, edited or finished: a launch or promo video, product demo,
-  explainer, trailer or teaser, tutorial or walkthrough, a screen recording turned into a demo,
-  social short, reel, TikTok or YouTube Short, photo slideshow, animated chart or data story, motion
-  graphics or animation, an animated logo intro, outro or sting, lower thirds, an audiogram, music
-  video; captions or subtitles for a video; a voice-over or narration; music or sound effects for a
-  video; a video thumbnail or poster frame; footage edits such as cutting the ums, removing silences,
-  tightening a talking head, podcast or interview clips; reframing to vertical; re-voicing or
-  subtitling a video in another language; turning a repo, website, pull request or changelog into a
-  video; or when they type /showtime. Not for editing still images, writing a caption for a photo
-  post, or code unrelated to a video.
+description: "Use when the user wants a video made, edited or finished: a launch or promo video, product demo, explainer, trailer or teaser, tutorial or walkthrough, a screen recording turned into a demo, social short, reel, TikTok or YouTube Short, photo slideshow, animated chart or data story, motion graphics or animation, an animated logo intro, outro or sting, lower thirds, an audiogram, music video; captions or subtitles for a video; a voice-over or narration; music or sound effects for a video; a video thumbnail or poster frame; footage edits such as cutting the ums, removing silences, tightening a talking head, podcast or interview clips; reframing to vertical; re-voicing or subtitling a video in another language; turning a repo, website, pull request or changelog into a video; or when they type /showtime. Not for editing still images, writing a caption for a photo post, or code unrelated to a video."
 compatibility: Any Agent Skills client with a shell, on macOS, Linux or Windows. Needs Python 3.8+ (or uv) and Node.js 20+; a one-time `showtime setup` downloads the local tools and models into ~/.showtime (or $SHOWTIME_HOME) and needs the network for that step.
 ---
 
@@ -50,8 +40,9 @@ use its latest file and say which.
 Log each stage boundary: `showtime job note <job> --stage <name> --verified ... --assumed ... --next ...`.
 
 0. **Start.** `showtime job init <slug> --request "<verbatim>"` (`--platform reels|youtube|...` when
-   named; qa checks it) checks setup. NOT READY: `showtime setup --estimate`, tell the user
-   size and time, then `showtime setup` (`references/onboarding.md`). *Done when:* it says ready.
+   named; qa checks it) checks setup. NOT READY: `showtime setup --estimate`, give size
+   and time, then `showtime setup`; skipping it is the user's call, never a bare-ffmpeg
+   stand-in (`references/onboarding.md`). *Done when:* it says ready.
 1. **Understand.** Gather the inputs: repo, URL, footage, brief.
    Inspect before asking; with no path given, look in the working folder (one candidate: use
    it and say so). Launch/promo: `showtime brand capture <repo|url> --job <job>` first; else a

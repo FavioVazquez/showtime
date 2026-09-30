@@ -38,6 +38,9 @@ for uv in "$(command -v uv 2>/dev/null)" "${XDG_BIN_HOME:-}/uv" "$HOME/.local/bi
   fi
 done
 
+# the plugin's Stop hook (receipt --hook) must never fail a turn, even before Python is installed
+case " $* " in *" receipt "*" --hook "*) exit 0 ;; esac
+
 echo "showtime: no Python 3.8+ found." >&2
 echo "  Install uv (https://docs.astral.sh/uv/getting-started/installation/) or Python 3," >&2
 echo "  then run: $bin_dir/showtime setup" >&2

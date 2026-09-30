@@ -1,7 +1,7 @@
 {
-  "_comment": "Timing and design thresholds shared by `showtime check` (scripts/check.mjs, before the render), `showtime qa` (lib/st/qa, on the final file) and `showtime retime` (lib/st/cli_core.py). Change them here only, so check and qa agree. min_contrast: WCAG ratio every text needs (an error for text >= 1% of the frame height). tiny_text_frac: readable text below this fraction of the frame height is a tiny_text warning (UI mockups marked data-st-decor are exempt). freeze_noise_db: the picture counts as unchanged while the mean absolute difference from the start of a hold stays under this level (qa: ffmpeg freezedetect n=, check: the same mean on its 64x36 luma samples), so small typing or a 2 px playhead is still a hold in both. label_gap_em: SVG labels in one graphic (chart values and axes, map names) that touch, or sit side by side or stacked closer than this fraction of their font size, are labels_crowded in `showtime check`. launch_hold_s: the still-hold limit for launch, promo, release and trailer films (showtime.json \"kind\"): a settled result or a still hook is how premium launch films breathe (their longest still stretches measure 4.3-5.5 s).",
+  "_comment": "Timing and design thresholds shared by `showtime check` (scripts/check.mjs, before the render), `showtime qa` (lib/st/qa, on the final file) and `showtime retime` (lib/st/cli_core.py). Change them here only, so check and qa agree. min_contrast: WCAG ratio every text needs (an error for text >= 1% of the frame height). tiny_text_frac: readable text below this fraction of the frame height is a tiny_text warning (UI mockups marked data-st-decor are exempt). freeze_noise_db: the picture counts as unchanged while the mean absolute difference from the start of a hold stays under this level (qa: ffmpeg freezedetect n=, check: the same mean on its 64x36 luma samples), so small typing or a 2 px playhead is still a hold in both. label_gap_em: SVG labels in one graphic (chart values and axes, map names) that touch, or sit side by side or stacked closer than this fraction of their font size, are labels_crowded in `showtime check`. launch_hold_s: the still-hold limit for launch, promo, release and trailer films (showtime.json \"kind\"): a settled result or a still hook may breathe a little longer than in other videos, but the round-4 benchmark judges marked every 3.6-4.9 s still stretch in launch films as frozen, so launch films warn from 3.5 s (the end card holds up to final_hold_max_s). Phone check (scripts/lib/phone.mjs; references/qa.md): phone_width_pt is the portrait phone width a video fills; phone_min_pt is the smallest readable text in points at that width, per aspect (on-screen px * phone_width_pt / frame width; tiny_text also keeps the older floor tiny_text_frac); reading is the on-screen reading speed per language (cps = characters/s, wps = words/s, the longer time applies; no wps for languages written without spaces), plus reading_lead_s to find the text and reading_min_s as the shortest hold. Sources, checked against the published guides on 2026-09-29: references/qa.md (Phone check).",
   "still_hold_s": 2.5,
-  "launch_hold_s": 5.0,
+  "launch_hold_s": 3.5,
   "final_hold_max_s": 4.0,
   "frozen_fail_s": 6.0,
   "empty_timeline_s": 1.5,
@@ -9,5 +9,29 @@
   "min_contrast": 4.5,
   "tiny_text_frac": 0.022,
   "freeze_noise_db": -50,
-  "label_gap_em": 0.15
+  "label_gap_em": 0.15,
+  "phone_width_pt": 390,
+  "phone_min_pt": {
+    "9:16": 15,
+    "4:5": 11,
+    "1:1": 10,
+    "16:9": 5
+  },
+  "reading_lead_s": 0.3,
+  "reading_min_s": 1.0,
+  "reading": {
+    "default": {
+      "cps": 17,
+      "wps": 3.0
+    },
+    "ja": {
+      "cps": 4
+    },
+    "zh": {
+      "cps": 9
+    },
+    "ko": {
+      "cps": 12
+    }
+  }
 }

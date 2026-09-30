@@ -136,10 +136,25 @@ def upsert_block(text: str, block: str) -> str:
     pat = re.compile(re.escape(BLOCK_START) + r".*?" + re.escape(BLOCK_END), re.S)
     if not block:
         return pat.sub("", text).rstrip() + ("\n" if text.strip() else "")
+    # a "Style reference:" line that `showtime reference` put in share.txt moves into the block
+    for l in block.splitlines():
+        if l.startswith("Style reference: "):
+            text = _drop_outside(text, l, pat)
     if pat.search(text):
         return pat.sub(lambda _m: block, text)
     base = text.rstrip()
     return (base + "\n\n" if base else "") + block + "\n"
+
+
+def _drop_outside(text: str, line: str, pat: "re.Pattern[str]") -> str:
+    """`text` without standalone copies of `line` outside the credits block."""
+    out, pos = [], 0
+    for m in pat.finditer(text):
+        out.append(re.sub(r"(?m)^%s[ \t]*(\n|$)" % re.escape(line), "", text[pos:m.start()]))
+        out.append(m.group(0))
+        pos = m.end()
+    out.append(re.sub(r"(?m)^%s[ \t]*(\n|$)" % re.escape(line), "", text[pos:]))
+    return re.sub(r"\n{3,}", "\n\n", "".join(out))
 
 
 def write(out_dir: Path, items: Iterable[Any], credits_name: str = "credits.txt", share: bool = True,

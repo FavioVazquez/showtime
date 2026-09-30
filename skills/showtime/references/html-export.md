@@ -12,6 +12,44 @@ showtime export html <project> --folder -o site/   # index.html + assets/ for we
 showtime export html <project> --target artifact -o launch.html   # to publish as an HTML artifact
 ```
 
+## Essentials
+
+- `showtime export html <project>` writes one offline `.html`; `-o launch.html` names it, `--folder -o site/`
+  writes `index.html` + `assets/` for hosting, `--target artifact` for an artifact or docs page (§ Options)
+- After a render, offer the HTML version in one line when the destination is a browser; share an MP4 for
+  social platforms, video hosts, editors, long footage or pages that are heavy to draw (§ MP4 or HTML?)
+- Publishing is the user's call: offer it, never do it unasked (§ Sharing and hosting)
+- Leave `--audio` at `auto` (`score` only when `ST.score` is the only sound, else `embed`); `--audio score` on a
+  narrated film drops the voice (§ Audio modes)
+- `embed` is AAC at `--bitrate` (default 96k, about 12 KB per second) at -14 LUFS; `--codec opus` is about a
+  third smaller and plays in Chromium builds without proprietary codecs (§ Audio modes)
+- A hand-written `ST.score` that honours `run.from` sets `ST.score.seekable = true`, else it renders whole
+  before playing (§ Audio modes)
+- The file must stay under `--max-mb` (default 16 MB); a bigger export writes nothing and lists sizes by kind.
+  Ways down: `--bitrate 64k`, `--codec opus --bitrate 48k`, recompressed footage, `--folder` (§ Size budget)
+- One chapter per step for tutorials and demos: showtime.json `"chapters": [[0, "Intro"], [4.5, "Demo"]]`, else
+  `Film.start` `acts`, else the top-level clips (§ Options)
+- Start screen: `--subtitle`/`--kicker` (or showtime.json); `--poster T` (default 40 %) should have space in a
+  corner for the title; `"startTitle": false` when the poster frame is a hook (§ What you get, § Options)
+- Embeds: `--controls none --autoplay-muted --loop` in an `<iframe>`, driven by `window.showtimePlayer`
+  (§ Sharing and hosting)
+- `-o` never overwrites (`-2`, `-3`); `--lang CODE` sets the player's words (en, es, fr, pt, de) (§ Options)
+- A video report (charts, numbers) is a data story first: build and pace it with `workflows/data-story.md` (a
+  change about every 2 s, holds as long as reading needs, callouts that name their year), then export it
+- Use the MP4 for footage-led videos and slow-to-draw pages: playing is drawing. Sound always needs a click;
+  a `--folder` export opened from `file://` cannot `fetch()` footage, serve it over http (§ Limitations)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| What you get | 53-110 |
+| MP4 or HTML? | 112-122 |
+| Audio modes (--audio): How the live score streams (and why seeking is exact) | 124-155 |
+| Size budget | 157-178 |
+| Sharing and hosting | 180-205 |
+| Options | 207-233 |
+| Limitations | 235-267 |
+
 ## What you get
 
 One `.html` file (default) that holds the whole project: the stage runtime, the page, its

@@ -16,6 +16,41 @@ already inside a job keeps its outputs beside it; `-o` picks any path. `transcri
 beside the footage); older `<media folder>/edit/transcripts/` files are still found by `edit cut`
 and `footage view`. `--edit-dir` picks any folder, e.g. next to the footage when the user asks.
 
+## Essentials
+
+- Look first: `showtime footage probe <file>` and `showtime footage scenes <file>` (`--every 5` for a quick
+  look); read the contact sheet before planning B-roll or cutaways (§ Inventory: probe and scenes)
+- Excerpts and proxies: `showtime footage trim <file> --from 61 --to 142 -o ...`, `--width 1280` for a page
+  proxy, `--webm --no-audio` for VP9; use it instead of a one-range EDL or bare ffmpeg (§ Trim and proxies)
+- Raw interview recordings and live shots have fillers to cut; resource reels and press soundbites are already
+  edited (§ Trim and proxies)
+- Self-review: `showtime footage view <file> --from 12 --to 20`, and `showtime edit view edit/edl.json` around
+  every cut (§ Timeline views)
+- Reframe: `showtime footage reframe <file> --aspect 9:16` (face-tracked); screen recordings and slides use
+  `--fit blur` (cropping cuts off UI); enlarging over 1.5x looks soft (§ Reframe)
+- Denoise: `showtime footage denoise <file> -o ...` (`--strength` below 1 keeps room tone); never on clean
+  studio audio; before loudness mastering; in an EDL `"audio": {"denoise": "auto"}` (§ Denoise speech)
+- Stabilise: `showtime footage stabilize <file> --strength 0.7 -o ...`; no `--compare`: judge by watching, or
+  compare framing with `showtime snap ... --compare` (§ Stabilise)
+- Colour: correct first (`--auto`), then a look at 40-70 % (`--look teal-orange --strength 0.5`); `--analyze`
+  for stats, `--compare --at 4` for before/after. Grade real footage only, never UI captures or motion
+  graphics (§ Colour: correction and looks)
+- Heavy steps (transcription, renders) use all cores: run them one after another, not in parallel with browser
+  captures; `showtime doctor` lists what your ffmpeg has (§ Platform notes)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| Inventory: probe and scenes | 54-71 |
+| Trim and proxies | 73-85 |
+| Timeline views (self-review) | 87-96 |
+| Reframe (16:9 -> 9:16, 1:1, 4:5) | 98-115 |
+| Denoise speech | 117-135 |
+| Stabilise | 137-149 |
+| Colour: correction and looks | 151-169 |
+| Screen recordings: auto zoom | 171-174 |
+| Platform notes | 176-185 |
+
 ## Inventory: probe and scenes
 
 ```bash

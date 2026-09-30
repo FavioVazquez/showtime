@@ -112,8 +112,14 @@ def main() -> int:
     ap.add_argument("--run", required=True)
     ap.add_argument("--task")
     ap.add_argument("--arm")
+    ap.add_argument("--skip-done", action="store_true",
+                    help="keep a cell's fact check when it already has a verified one (a cell reused from an earlier round)")
     a = ap.parse_args()
     for rd in auto_metrics.run_dirs(a.run, a.task, a.arm):
+        old = common.read_json(rd / "score" / "factcheck.json") or {}
+        if a.skip_done and old.get("ok") and old.get("claims") is not None:
+            print("%-18s %-9s invented=%s (kept: already checked)" % (rd.parent.name, rd.name, old.get("invented")))
+            continue
         r = check(rd)
         print("%-18s %-9s invented=%s %s" % (rd.parent.name, rd.name, r.get("invented"), r.get("skipped") or r.get("error") or ""))
     return 0

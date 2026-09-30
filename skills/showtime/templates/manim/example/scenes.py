@@ -1,15 +1,23 @@
 """Odd numbers build squares: a narrated math explainer in two scenes.
 
-Beat sheet (one narration line per beat; ids match the `## id` headings in narration.md):
+Beat sheet (one narration line per beat; ids match the `## id` headings in narration.md, and no id is
+a word the voice says, so at("square") can only mean the word):
 
-  scene    beat    on screen
-  Sum      hook    the sum is written term by term on each spoken number; a running total ticks up;
-                   "Sixteen" boxes the answer
-  Squares  tiles   one tile, then a band of three wraps it, then a band of five; each band's colour is
-                   its term's colour, and a copy of the band flies into its term
-           square  the band of seven closes the square; the bands ripple in turn; braces read 4 and 4;
-                   the answer becomes 4^2
-           rule    the sum becomes the general rule, a label for the picture already on screen
+  scene    beat     on screen
+  Sum      hook     t=0: the question, large. "odd": it steps up into a heading. Each spoken number
+                    drops into the sum, large, while a running total ticks up; "Sixteen" sends the total
+                    into the answer and boxes it
+  Squares  tiling   the sum moves up out of the way. "tiles": the 1 drops down and becomes one tile;
+                    "three", "five": copies of the term fly down and become the tiles of its band, the
+                    band wrapping the square before it; each band's colour is its term's colour
+           closing  "seven" closes the square; "every": the bands ripple in turn; "four": braces read
+                    4 and 4; "four" again: 16 becomes 4^2 and the square is outlined
+           rule     the sum becomes the general rule, a label for the picture already on screen;
+                    "squared": the picture grows a little and the outline thickens
+
+Motion: something visibly changes every 1-2 s (qa reads a still stretch of 2.5 s as a hold), and the
+changes are big enough to see: whole numbers flying, tiles landing, a heading moving; a thin line or
+an Indicate on one small symbol alone is too little.
 
 Colours: manim.json "colors" binds each odd number to one hue (term and band alike) and the square
 to the emphasis colour, for the whole video. Timing: every reveal waits for its word (self.at),
@@ -18,12 +26,12 @@ in audio/mix.json ducked under it.
 """
 from st_manim import *
 
-TILE = 0.8
+TILE = 1.0          # side of one tile (frame units; the short side of the frame is 8)
+BIG = 1.3           # the sum's size in the hook, relative to its size as the heading in Squares
 
 
 def tile_grid(n: int, size: float = TILE) -> VGroup:
     """n bands of tiles: band k (1-based) holds the 2k-1 tiles whose row or column index is k-1."""
-    T = theme()
     bands = VGroup()
     for k in range(1, n + 1):
         band = VGroup()
@@ -39,78 +47,111 @@ def tile_grid(n: int, size: float = TILE) -> VGroup:
     return bands
 
 
-def the_sum() -> Eq:
+def square_picture() -> VGroup:
+    """The tile square with its braces and "4" labels, fitted (with room to grow 6 %) under the sum.
+    Returns VGroup(bands, brace_below, brace_right, label_below, label_right)."""
+    bands = tile_grid(4)
+    b1 = Brace(bands, DOWN, buff=0.12, color=T.muted)
+    b2 = Brace(bands, RIGHT, buff=0.12, color=T.muted)
+    l1 = label("4", size=48).next_to(b1, DOWN, buff=0.12)
+    l2 = label("4", size=48).next_to(b2, RIGHT, buff=0.12)
+    pic = VGroup(bands, b1, b2, l1, l2)
+    x0, y0, x1, y1 = region("main")
+    pic.scale(min(0.8 * (x1 - x0) / pic.width, 0.9 * (y1 - y0) / pic.height))   # fill it in any aspect (room
+    # for the square to sit on the centre line and to grow 6 % at the end)
+    pic.move_to(region_center("main"))
+    pic.shift((region_center("main")[0] - bands.get_center()[0]) * RIGHT)   # the square itself on the centre line
+    return pic
+
+
+def the_sum(big: bool = False) -> Eq:
+    """The sum as the heading (Squares), or large in the middle (the hook)."""
     s = eq(r"1 + 3 + 5 + 7 = 16")
-    place(s, "top")
+    if big:
+        s.scale(BIG)
+        fit_width(s, 0.9)
+        s.move_to(region_center("middle") + 0.35 * UP)
+    else:
+        place(s, "top")
     return s
+
+
+def drop(term: VMobject) -> Animation:
+    """A spoken number arrives large just above its slot and drops into the sum (a big, visible change
+    on each word; a term that only fades in at the sum's size is a small one). Above, not below: the
+    running total sits under the sum."""
+    big = term.copy().scale(1.7).move_to(term.get_center() + 0.8 * UP)
+    return ReplacementTransform(big, term)
 
 
 class Sum(ShowScene):
     def construct(self):
         self.beat("hook")
-        s = the_sum()
-        total = counter(0, font_size=40, color=T.muted)
-        running = VGroup(note("running total"), total).arrange(RIGHT, buff=0.3)
-        align_baseline(running[0], total)             # words and number on one baseline (see manim.md)
-        running.next_to(s, DOWN, buff=0.9)
-        q = callout("Add the odd numbers")
+        q = title("Add the odd numbers")
+        fit_width(q, 0.9)
         q.move_to(region_center("middle"))
-        self.add(q)                                   # the hook is on screen at t=0
+        self.add(q)                                   # the hook is on screen at t=0 (the voice starts a
+        #                                               moment later: the kit holds that lead-in on it)
         self.play(q.animate.scale(1.08), run_time=0.8)
+        heading = q.copy().scale(0.62 / 1.08).set_fill(T.muted)
+        heading.move_to(region_center("top"))
+        self.at("odd")                                # the question steps up into a heading
+        self.play(Transform(q, heading), run_time=0.7)
+
+        s = the_sum(big=True)
+        total = counter(0, font_size=96)
+        running = VGroup(label("running total", color=T.muted), total).arrange(RIGHT, buff=0.35)
+        align_baseline(running[0], total)             # words and number on one baseline (see manim.md)
+        running.next_to(s, DOWN, buff=0.8)
         self.at("one")
-        self.play(FadeOut(q), Write(s["1"]), FadeIn(running), count_to(total, 1), run_time=0.6)
+        self.play(drop(s["1"]), FadeIn(running, shift=0.2 * UP), count_to(total, 1), run_time=0.6)
         acc = 1
         for word, term in (("three", "3"), ("five", "5"), ("seven", "7")):
             self.at(word)
             acc += int(term)
-            self.play(FadeIn(s.part("+", int(term) // 2), shift=0.1 * RIGHT), Write(s[term]),
+            self.play(FadeIn(s.part("+", int(term) // 2), shift=0.15 * RIGHT), drop(s[term]),
                       count_to(total, acc), run_time=0.6)
-        self.at("sixteen")
-        self.play(Write(s["="]), ReplacementTransform(total.copy().clear_updaters(), s["16"]), run_time=0.7)
-        box = highlight(s["16"])
-        self.play(Create(box), FadeOut(running), run_time=0.4)
-        self.play(FadeOut(box), run_time=0.3)
+        self.at("sixteen")                            # the total becomes the answer; the question leaves
+        self.play(Write(s["="]), ReplacementTransform(total.copy().clear_updaters(), s["16"]),
+                  FadeOut(q, shift=0.3 * UP), run_time=0.7)
+        self.play(Create(highlight(s["16"])), FadeOut(running), run_time=0.4)
 
 
 class Squares(ShowScene):
-    def fly(self, band: VGroup, term: VMobject) -> None:
-        """Picture to symbol: a copy of the band morphs into its term (the term stays put)."""
-        ghost_term = term.copy()
-        self.play(TransformFromCopy(band, ghost_term), Indicate(term, color=term.get_color(), scale_factor=1.15),
-                  run_time=0.9)
-        self.remove(ghost_term)
+    def lay(self, term: VMobject, band: VGroup, run_time: float = 0.9) -> None:
+        """Symbol to picture: copies of the term fly down and become the band's tiles (the term stays)."""
+        self.play(LaggedStart(*[ReplacementTransform(term.copy(), t) for t in band], lag_ratio=0.1),
+                  Indicate(term, color=term.get_color(), scale_factor=1.25), run_time=run_time)
 
     def construct(self):
-        self.beat("tiles")
-        s = the_sum()
-        self.add(s)                                   # opens on the last frame of Sum
-        bands = tile_grid(4)
-        bands.move_to(region_center("middle") + 0.25 * DOWN)
-        self.play(FadeIn(bands[0], scale=0.6), run_time=0.6)
-        self.fly(bands[0], s["1"])
+        self.beat("tiling")
+        s = the_sum(big=True)
+        box = highlight(s["16"])
+        self.add(s, box)                              # opens on the last frame of Sum
+        head = the_sum()
+        self.play(s.animate.scale(head.width / s.width).move_to(head), FadeOut(box), run_time=0.8)
+        pic = square_picture()
+        bands, b1, b2, l1, l2 = pic
+        self.at("tiles")                              # "...out as tiles": the 1 becomes the first tile
+        self.lay(s["1"], bands[0], run_time=0.6)
         for word, k in (("three", 1), ("five", 2)):
             self.at(word)
-            self.play(LaggedStart(*[FadeIn(t, scale=0.6) for t in bands[k]], lag_ratio=0.12), run_time=0.9)
-            self.fly(bands[k], s[str(2 * k + 1)])
+            self.lay(s[str(2 * k + 1)], bands[k])
 
-        self.beat("square")
+        self.beat("closing")
         self.at("seven")
-        self.play(LaggedStart(*[FadeIn(t, scale=0.6) for t in bands[3]], lag_ratio=0.1), run_time=0.9)
-        self.fly(bands[3], s["7"])
+        self.lay(s["7"], bands[3])
         self.at("every")                              # ripple: each band in turn, as "every band" is said
-        self.play(LaggedStart(*[Indicate(b, color=b[0].get_fill_color(), scale_factor=1.06) for b in bands],
+        self.play(LaggedStart(*[Indicate(b, color=b[0].get_fill_color(), scale_factor=1.08) for b in bands],
                               lag_ratio=0.3), run_time=1.5)
-        self.at("four")
-        b1 = Brace(bands, DOWN, buff=0.12, color=T.muted)
-        b2 = Brace(bands, RIGHT, buff=0.12, color=T.muted)
-        l1 = label("4").next_to(b1, DOWN, buff=0.12)
-        l2 = label("4").next_to(b2, RIGHT, buff=0.12)
-        self.play(GrowFromCenter(b1), GrowFromCenter(b2), FadeIn(l1), FadeIn(l2), run_time=0.8)
+        self.at("four")                               # "Four odd numbers": box the four terms; four by four
+        terms = highlight(VGroup(*s.submobjects[:7]))
+        self.play(Create(terms), GrowFromCenter(b1), GrowFromCenter(b2), FadeIn(l1, shift=0.3 * UP),
+                  FadeIn(l2, shift=0.3 * LEFT), run_time=0.8)
         sq = eq(r"1 + 3 + 5 + 7 = 4^2").move_to(s)
         self.at("four#2")
-        self.play(morph(s, sq, key_map={"16": "4^2"}), run_time=1.1)
-        outline = SurroundingRectangle(bands, buff=0.06, color=T.emph, stroke_width=4)
-        self.play(Create(outline), run_time=0.5)
+        outline = SurroundingRectangle(bands, buff=0.06, color=T.emph, stroke_width=5)
+        self.play(morph(s, sq, key_map={"16": "4^2"}), FadeOut(terms), Create(outline), run_time=1.1)
         self.mark("poster")
 
         self.beat("rule")
@@ -119,6 +160,7 @@ class Squares(ShowScene):
         self.at("n")
         self.play(morph(sq, rule), run_time=1.2)
         self.at("squared")
-        self.play(Indicate(rule["n^2"], color=T.emph), outline.animate.set_stroke(width=7), run_time=0.7)
-        self.play(VGroup(bands, outline, b1, b2, l1, l2).animate.scale(1.04), run_time=1.2)
-        self.hold(1.8)                                # end on the image
+        picture = VGroup(pic, outline)
+        self.play(Indicate(rule["n^2"], color=T.emph, scale_factor=1.3), outline.animate.set_stroke(width=8),
+                  picture.animate.scale(1.06), run_time=1.2)
+        self.hold(2.0)                                # end on the image

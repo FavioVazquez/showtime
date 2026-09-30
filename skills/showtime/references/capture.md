@@ -6,6 +6,45 @@ a public website, or a PDF (paper, report, deck). It covers what to inspect in a
 click-through recordings read `references/tutorial-recording.md`; for fonts, icons and stock
 media read `references/assets.md`.
 
+## Essentials
+
+- Show the real product, in this order: the running app (`showtime demo record`, or
+  `showtime site capture http://localhost:3000`), its real components, the public site
+  (`showtime site capture <url>`), and only then an HTML recreation from the extracted tokens (§1)
+- Never invent numbers, quotes, customer names or features: copy comes from the README, the site or the
+  user (§1)
+- Nothing secret leaves the repo: skip `.env*`, key files, `secrets/`, credentials and anything gitignored; no
+  internal hostnames, tokens, real customer names or emails in a plan, frame or caption (§2)
+- Install the repo's open font with `showtime assets font "<family>" --copy-to <project>/fonts`; for a
+  commercial font or a system stack use the closest open family (Inter or Geist) and say so (§2)
+- Serve static builds with `--serve ./dist`, not `file://`. Never capture through `showtime server` or
+  `showtime preview`; check that the printed title is the product's (§3)
+- In a job pass `<job>/work/capture` as the outdir; read `inventory.md` and `contact-sheet.jpg` first (§4)
+- Flags: `--aspect 16:9,9:16,1:1`, `--dark auto|on|off`, `--max-shots N`, `--budget MB`, `--json`; use
+  `shots/9x16/` for vertical videos, never a desktop screen squeezed into a phone frame (§4)
+- Move screenshots in a frame (pan, zoom, parallax) instead of redrawing them; quote testimonials verbatim
+  with the name as shown, or not at all (§4)
+- One element: `showtime site component <url> "<selector>"`; a scroll-through: `showtime site record <url>`
+  (`--dpr 2` when you will zoom in) (§5)
+- PDFs: `showtime doc extract <file.pdf> -o <job>/sources/<name>`; quote numbers with their page; credit lines
+  are not licenses, ask before using a document's images outside a video about it (§5b)
+- Bot wall (exit code 3, `BLOCKED.md`): never bypass it; tell the user in one line and ask for screenshots,
+  another URL, their local build or an allow-list entry (§6)
+- Captured logos, product shots and copy belong to their owners: only in a video about that product (§7)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| 1. The rule: real material first | 48-64 |
+| 2. Inspecting a code repository | 66-97 |
+| 3. Reusing real components by serving the app | 99-119 |
+| 4. showtime site capture <url> [outdir] | 121-175 |
+| 5. site component and site record | 177-195 |
+| 5b. Documents: showtime doc extract <file.pdf> | 197-223 |
+| 6. Bot walls: report, never bypass | 225-237 |
+| 7. Downloads, privacy and safety | 239-249 |
+| 8. Cross-platform notes | 251-256 |
+
 ## 1. The rule: real material first
 
 A video about a product should show that product. Prefer, in this order:
@@ -19,6 +58,10 @@ A video about a product should show that product. Prefer, in this order:
 
 Never invent numbers, quotes, customer names or features. Copy that appears in the video comes
 from the README, the site, or the user.
+
+For a launch or promo, `showtime brand capture <repo|url> --job <job>` does the brand part of this in
+one step (kit, site or app capture, copy, real UI; `brand-kit.md`); the sections below are what it
+automates and what to do by hand when it cannot.
 
 ## 2. Inspecting a code repository
 

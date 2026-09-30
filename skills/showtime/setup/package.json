@@ -1,6 +1,6 @@
 {
   "name": "showtime-runtime",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Node dependencies for showtime (installed by setup.py into ~/.showtime/node). Versions are pinned exactly. Icon sets are not installed here: they are fetched per icon on first use (manifest.json \"icon_packs\").",
   "license": "MIT",

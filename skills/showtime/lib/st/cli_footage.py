@@ -605,7 +605,8 @@ def cmd_edit_render(args) -> int:
     if srt.is_file() and srt.stat().st_mtime >= outp.stat().st_mtime - 600:
         outs.append("captions=%s" % srt)
     job = _record(outp, outs, stage="preview" if args.preview else "render", seconds=rep.get("seconds"),
-                  event="edit render %s -> %s" % (Path(edl).name, outp.name))
+                  event="edit render %s -> %s" % (Path(edl).name, outp.name),
+                  render={"kind": "preview" if args.preview else "full", "file": outp.name, "seconds": rep.get("seconds")})
     rep["job"] = str(job) if job else None
     if args.json:
         print_json(rep)

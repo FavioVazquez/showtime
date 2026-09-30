@@ -33,8 +33,8 @@ def register(sub: argparse._SubParsersAction) -> None:
         "  new     a project folder from a template (manim.json, scenes.py, narration.md)\n"
         "  render  scenes -> one video: draft (480p15 + contact sheet) or final (1080p30), 16:9/9:16/1:1,\n"
         "          --alpha for overlays, voice on the same clock, cached per scene\n"
-        "  check   static checks + a dry run: cue words, still holds (qa's thresholds), word budgets, colours,\n"
-        "          LaTeX, words and math on one line (baseline, x-height, mixed_line)\n"
+        "  check   static checks + a dry run + qa's black/frozen detectors on a draft: cue words, still holds,\n"
+        "          word budgets, colours, LaTeX, words and math on one line (baseline, x-height, mixed_line)\n"
         "  cues    the narration's lines and numbered words (what beat()/at()/fit() accept)\n\n"
         "Guide: references/manim.md. ManimGL scene files (`from manimlib import *`) render with the optional\n"
         "engine: showtime setup --with manimgl."),
@@ -101,7 +101,10 @@ def register(sub: argparse._SubParsersAction) -> None:
                                  "thin line or a small label moving does not count as change, as in qa),\n"
                                  "too many words on screen, one concept in two colours, words and math (or a number)\n"
                                  "side by side on different baselines or at different x-heights, LaTeX missing (with\n"
-                                 "the FIX line for this OS). Exit code 1 on errors (--strict: on warnings too).",
+                                 "the FIX line for this OS). It then renders the draft (the one `render` reuses) and runs\n"
+                                 "qa's black and frozen-frame detectors on it: a near-black ground with sparse content and\n"
+                                 "a small Indicate on an equation are flagged here as qa flags them, with a fix\n"
+                                 "(--no-draft skips it). Exit code 1 on errors (--strict: on warnings too).",
                      epilog="Examples:\n  showtime manim check my-math\n  showtime manim check my-math --aspect 9:16"
                             "   (the portrait layout: safe area, holds)\n  showtime manim check scenes.py --json")
     p.add_argument("target")
@@ -111,6 +114,8 @@ def register(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--cues")
     p.add_argument("--brand")
     p.add_argument("--static", action="store_true", help="skip the dry run (no manim needed)")
+    p.add_argument("--no-draft", action="store_true",
+                   help="skip the draft render that runs qa's black and frozen-frame detectors")
     p.add_argument("--strict", action="store_true")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_check)
@@ -254,7 +259,7 @@ def _card(res: Dict[str, Any], args: argparse.Namespace) -> None:
 def cmd_check(args: argparse.Namespace) -> int:
     from .manim_run.check import check
     res = check(Path(args.target), scenes=args.scene, cues_arg=args.cues, brand=args.brand, dry_run=not args.static,
-                aspect=args.aspect)
+                aspect=args.aspect, draft=not args.no_draft)
     if args.json:
         print_json(res)
     else:
@@ -282,8 +287,9 @@ def cmd_cues(args: argparse.Namespace) -> int:
         c = cm.load(None, pr.dir, pr.cfg.get("voice", "voice/timeline.json"), pr.cfg.get("narration", "narration.md"),
                     args.fps)
         if c is None:
-            raise ShowtimeError("no voice timeline or narration.md in %s" % t,
-                                hint="write narration.md with one `## <beat>` heading per line")
+            raise ShowtimeError("no narration in %s: no voice timeline, and no narration.md with lines" % t,
+                                why="a film without narration has no cues: its scenes run on their own timing",
+                                hint="for a narrated film, write narration.md with one `## <beat>` heading per line")
     else:
         c = cm.load(str(t), t.parent, None, None, args.fps)
     assert c is not None

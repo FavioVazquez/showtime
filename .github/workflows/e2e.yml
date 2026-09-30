@@ -1,6 +1,7 @@
 name: e2e
 
-# End-to-end platform test, started by hand (Actions > e2e > Run workflow) or by pushing a branch named e2e/*
+# End-to-end platform test, started by hand (Actions > e2e > Run workflow), by pushing a branch named e2e/*, or
+# by a pull request into main from a release/* branch (every push to it; a newer push replaces the run)
 # (a workflow_dispatch workflow can only be started by hand once it is on the default branch).
 # On each runner image, from nothing: a fresh `showtime setup` (default tier), doctor, a short voiced render
 # with qa, HTML export, transcription, captions (SRT/VTT and burned), the MCP server handshake and the fast
@@ -15,6 +16,8 @@ name: e2e
 on:
   push:
     branches: ['e2e/**']
+  pull_request:
+    branches: [main]
   workflow_dispatch:
     inputs:
       os:
@@ -31,7 +34,7 @@ permissions:
 
 concurrency:
   group: e2e-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   PYTHONUTF8: "1"
@@ -42,6 +45,8 @@ jobs:
   # which runner images: the dispatch input, else the branch e2e/<image>/... runs that one image only
   # (e2e/windows-11-arm/fix), else all four
   plan:
+    # on a pull request, only a release candidate (head branch release/*) runs the four platforms
+    if: ${{ github.event_name != 'pull_request' || startsWith(github.head_ref, 'release/') }}
     runs-on: ubuntu-latest
     outputs:
       os: ${{ steps.p.outputs.os }}

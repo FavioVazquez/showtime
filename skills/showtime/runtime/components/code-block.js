@@ -2,7 +2,7 @@
 // `showtime code file.ts -o code.json`), with line-by-line or typed reveal, line highlights
 // (band sweep + dim the rest), diff reveal (removed lines collapse red, added lines grow in
 // green) and focus scrolling. Lines are positioned with transforms only, so collapsing and
-// scrolling stay sub-pixel smooth. Line numbers are 1-based everywhere.
+// scrolling stay sub-pixel smooth. Line numbers are 1-based (from firstLine for an excerpt).
 //
 //   <div data-st="code-block" data-src="code.json" data-title="app.ts" data-reveal="lines"
 //        data-highlight='[{"lines":"4-6","at":2.5}]'></div>
@@ -13,7 +13,7 @@ import { typingTimeline, stateAt, caretOn } from './typewriter.js';
 export const CodeBlock = define({
   name: 'code-block',
   defaults: {
-    at: 0, src: null, tokens: null, code: null, title: '', chrome: 'window', lineNumbers: true,
+    at: 0, src: null, tokens: null, code: null, title: '', chrome: 'window', lineNumbers: true, firstLine: null,
     reveal: 'lines', revealDur: null, cps: 45, fit: null, size: null, maxLines: null,
     highlight: [], diffAt: null, diffDur: 0.7, focus: [], bg: null, dim: 0.35, enter: true,
   },
@@ -41,7 +41,9 @@ export const CodeBlock = define({
 
     // Build lines. Each token becomes [typed part][rest]; only the typed reveal uses the split.
     let charCount = 0;
-    let num = 0;
+    // firstLine: an excerpt keeps its file's numbering (lines 258-290 of qa/video.py show 258-290);
+    // highlight and focus then take those file line numbers too
+    let num = Math.max(1, Math.round(Number(o.firstLine ?? doc.firstLine) || 1)) - 1;
     const numToRow = {};
     const L = lines.map((line, i) => {
       // displayed numbers follow the "after" file: removed lines get no number
@@ -72,7 +74,8 @@ export const CodeBlock = define({
     body.append(probe);
     const chW = probe.getBoundingClientRect().width / 1000; // em per char
     probe.remove();
-    const longest = Math.max(8, ...lines.map((l) => (l.tokens || []).reduce((a, t) => a + t.c.length, 0) + (o.lineNumbers ? 5 : 1)));
+    const lnW = o.lineNumbers ? Math.max(5, String(num).length + 2) : 1;
+    const longest = Math.max(8, ...lines.map((l) => (l.tokens || []).reduce((a, t) => a + t.c.length, 0) + lnW));
     const avail = view.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
     const minSide = Math.min(el.closest('.stage, .scene')?.clientWidth || innerWidth, el.closest('.stage, .scene')?.clientHeight || innerHeight);
     let fontPx = o.size ? (Number(o.size) * minSide) / 100 : clamp(avail / (longest * chW), minSide * 0.016, minSide * 0.034);

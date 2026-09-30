@@ -160,7 +160,7 @@ def leak_check(page: Path, terms: List[str]) -> Dict:
 
 # ---------------------------------------------------------------- board
 
-def build(run: str, task_id: str, focal: str, seed: int, rerecord: bool = False) -> Dict:
+def build(run: str, task_id: str, focal: str, seed: int, rerecord: bool = False, skip=()) -> Dict:
     home = common.bench_home()
     task = common.load_tasks([task_id])[0]
     root = home / "human" / run
@@ -169,7 +169,7 @@ def build(run: str, task_id: str, focal: str, seed: int, rerecord: bool = False)
     for rd in auto_metrics.run_dirs(run, task["id"], None):
         auto = common.read_json(rd / "score" / "auto.json") or {}
         meta = common.read_json(rd / "meta.json") or {}
-        if auto.get("produced"):
+        if auto.get("produced") and rd.name not in skip:
             cands[rd.name] = {"auto": auto, "path": Path(meta["workspace"]) / meta["deliverable"]["primary"]}
     if len(cands) < 2:
         return {"task": task["id"], "skipped": "fewer than 2 deliverables"}
@@ -226,6 +226,9 @@ def build(run: str, task_id: str, focal: str, seed: int, rerecord: bool = False)
 
     playable = [l for l in sorted(key) if cands[key[l]]["src"] is not None]
     total = sum(cands[key[l]]["probe"]["duration"] for l in playable)
+    ref = reference_for(task)  # T10: the style reference, shown for comparison (not a candidate, never tallied)
+    if ref:
+        total += ref["probe"]["duration"]
     out_html = root / ("%s.html" % task["id"])
     media_budget = (PAGE_MAX_BYTES - SHELL_BYTES) * 3 / 4  # base64 grows 4/3
     tmp = Path(tempfile.mkdtemp(prefix="board-"))
@@ -242,6 +245,11 @@ def build(run: str, task_id: str, focal: str, seed: int, rerecord: bool = False)
                 encode(c["src"], dst, s, has_audio, tmp)
                 sizes[letter] = dst.stat().st_size
                 poster(c["src"], max(0.0, c["probe"]["duration"] * 0.6), sdir / "media" / "thumbs" / (letter + ".jpg"))
+            if ref:
+                dst = sdir / "media" / "animatic" / (REF_TAG + ".mp4")
+                encode(ref["src"], dst, s, bool(ref["probe"].get("audio")), tmp)
+                sizes[REF_TAG] = dst.stat().st_size
+                poster(ref["src"], ref["probe"]["duration"] * 0.6, sdir / "media" / "thumbs" / (REF_TAG + ".jpg"))
             enc_total = sum(sizes.values())
             if enc_total > media_budget and attempt < 5:
                 log("%s: media %.1f MB over the %.1f MB budget at %s; re-encoding all candidates smaller" % (
@@ -253,7 +261,8 @@ def build(run: str, task_id: str, focal: str, seed: int, rerecord: bool = False)
                 grown = True
                 alloc *= min(1.6, media_budget / max(enc_total, 1) * 0.95)
                 continue
-            board = board_json(task, jdir, key, cands, playable, notes, s, recorded, strip_audio, focal, arms, rng_seed=(run, seed))
+            board = board_json(task, jdir, key, cands, playable, notes, s, recorded, strip_audio, focal, arms, rng_seed=(run, seed),
+                               ref=ref)
             common.write_json(sdir / "board.json", board)
             r = st(["studio", "board", str(jdir)], root, root)
             if r.returncode != 0:
@@ -285,13 +294,28 @@ def build(run: str, task_id: str, focal: str, seed: int, rerecord: bool = False)
     leak = leak_check(out_html, leak_terms())
     if not leak["ok"]:
         raise RuntimeError("the board names a tool or an output path: %s" % json.dumps(leak["hits"])[:1500])
-    return {"task": task["id"], "html": str(out_html), "bytes": size, "candidates": len(board["concepts"]),
+    return {"task": task["id"], "html": str(out_html), "bytes": size, "candidates": len(key), "reference": bool(ref),
             "playable": len(playable), "no_media": sorted(notes), "encode": s, "audio_stripped": strip_audio,
             "export_skipped": exp.get("skipped"), "warnings": warns, "leak_check": {"ok": leak["ok"], "chrome": leak["chrome"]}}
 
 
+REF_TAG = "REF"
+
+
+def reference_for(task: Dict):
+    """The task's style reference video (spec "judge_reference"), probed, or None."""
+    jr = task.get("judge_reference") or {}
+    if not jr:
+        return None
+    src = (common.BENCH / "fixtures" / "media" / (jr["fetch"] + ".mp4")) if jr.get("fetch") else common.BENCH / jr["from"]
+    if not src.exists():
+        raise RuntimeError("reference %s missing. FIX: python benchmarks/fixtures/fetch_fixtures.py" % src)
+    pr = common.probe(src)
+    return {"src": src, "probe": pr} if pr.get("ok") and pr.get("video") else None
+
+
 def board_json(task: Dict, jdir: Path, key: Dict, cands: Dict, playable: List[str], notes: Dict, s: Dict,
-               recorded: bool, strip_audio: bool, focal: str, arms: List[str], rng_seed) -> Dict:
+               recorded: bool, strip_audio: bool, focal: str, arms: List[str], rng_seed, ref=None) -> Dict:
     concepts = []
     for letter in sorted(key):
         c = cands[key[letter]]
@@ -316,6 +340,17 @@ def board_json(task: Dict, jdir: Path, key: Dict, cands: Dict, playable: List[st
                       "animatic": {"src": "media/animatic/%s.mp4" % letter, "poster": "media/thumbs/%s.jpg" % letter,
                                    "duration": dur}})
         concepts.append(entry)
+    if ref:
+        pr = ref["probe"]
+        v = pr.get("video") or {}
+        dur = round(pr.get("duration") or 0, 1)
+        concepts.append({"id": "cand-" + REF_TAG, "tag": REF_TAG, "title": "Reference (not a candidate)",
+                         "duration": dur, "logline": "The style to match: the video the request asked to imitate. %.1f s · %s. Do not rate it."
+                         % (dur, common.aspect_label(v.get("width") or 0, v.get("height") or 0)),
+                         "frames": [{"id": "cand-%s-f1" % REF_TAG, "src": "media/thumbs/%s.jpg" % REF_TAG,
+                                     "thumb": "media/thumbs/%s.jpg" % REF_TAG, "caption": "Frame at 60%"}],
+                         "animatic": {"src": "media/animatic/%s.mp4" % REF_TAG, "poster": "media/thumbs/%s.jpg" % REF_TAG,
+                                      "duration": dur}})
     if len(playable) < len(key):
         none_svg = jdir / "studio" / "media" / "thumbs" / "none.svg"
         none_svg.parent.mkdir(parents=True, exist_ok=True)
@@ -346,7 +381,7 @@ def board_json(task: Dict, jdir: Path, key: Dict, cands: Dict, playable: List[st
             "round": {"n": 1, "label": "Blind A/B",
                       "prompt": "Play each version, rate each 0-5, then answer the A/B questions. Nothing says which tool made which.",
                       "note": " ".join(small)},
-            "history": [{"rev": 1, "note": "%d blind candidates" % len(concepts)}],
+            "history": [{"rev": 1, "note": "%d blind candidates" % len(key) + (" and the reference" if ref else "")}],
             "concepts": concepts, "questions": questions}
 
 
@@ -430,12 +465,14 @@ def main() -> int:
     ap.add_argument("--seed", type=int, default=11)
     ap.add_argument("--file")
     ap.add_argument("--rerecord", action="store_true", help="screen-record HTML deliverables again (default: reuse)")
+    ap.add_argument("--skip-cells", default="", help="build: comma list of cell folders to leave off the boards (e.g. a second run)")
     a = ap.parse_args()
     if a.command == "build":
         failed = 0
         for t in common.load_tasks([a.task] if a.task else None):
             try:
-                print(json.dumps(build(a.run, t["id"], a.focal, a.seed, a.rerecord)), flush=True)
+                print(json.dumps(build(a.run, t["id"], a.focal, a.seed, a.rerecord,
+                                       {x for x in a.skip_cells.split(",") if x})), flush=True)
             except Exception as e:  # one task's failure never stops the others
                 failed += 1
                 log("%s: FAILED: %s" % (t["id"], e))

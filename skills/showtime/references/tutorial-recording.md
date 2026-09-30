@@ -8,6 +8,48 @@ walkthrough drawn entirely in code see `templates/tutorial`, and for a **series*
 one look, sound motif and product UI (drawn in code, targeted by named rects) read
 `references/series.md` (`showtime new series`).
 
+## Essentials
+
+- Pipeline: `showtime demo init walkthrough.mjs`,
+  `showtime demo record walkthrough.mjs --url http://localhost:3000` (or `--serve ./dist`), then
+  `showtime autozoom <demo-folder>` (§1)
+- In a job pass `<job>/work/demo` as the outdir; never record through `showtime server` or `preview` (exit 1,
+  "wrong page") (§1)
+- Helpers advance a virtual clock; gate on app state with `waitFor` (not recorded, so loading never shows),
+  never on fixed sleeps (§2)
+- Pointer actions glide 0.35-0.9 s first: to hit a narration word at `w`, start the action about 0.4 s before
+  the word (or pass a short `move`) (§2)
+- Record with `--platform mac` when the narration names Mac shortcuts; keep time-of-day text out of shots (§2)
+- Capture at `--dpr 2` with a 1280x800 to 1440x900 viewport; one action per sentence; hold 1.5-2.5 s
+  on anything to read; type at 12-16 characters/s and never type a paragraph (§3)
+- Park the pointer near what you talk about, never on a label the voice names; never show a real wait
+  over 1 s; dead air over 0.7 s gets cut or covered by a camera move (§3)
+- Clean stage: seeded demo data, no personal data, tokens or real customer names, no notification badges or
+  dev overlays; use fictional names and say so (§3, §6)
+- Episodes of 60-120 s: a 3-5 s hook showing the end result, 3-5 steps of 10-25 s, a 5 s recap/CTA; over 2
+  minutes add chapters (`demo.chapter`) (§3)
+- Autozoom: `--max-zoom` defaults to 2.0; vertical: `--look plain --size 1080x1920 --fit cover`; `--preview`
+  for a fast half-size pass. Outputs never overwrite (`autozoom-2.mp4`): copy the file it names (§4)
+- Change the camera without a new take: `--hints hints.json` (`focus`, `wide`, `drop`, `key`) and
+  `--cursor-offset` (§4)
+- Your own recording: `showtime autozoom screen.mp4 --cursor-log cursor.csv --cursor-scale 2`; without a log,
+  zooms follow screen changes and no cursor is drawn (§4)
+- In an HTML project: `showtime footage trim rec/demo.mp4 --width 1920 -o <job>/project/media/demo.mp4`, a
+  `<video data-st>` layer with `data-offset`; voice lines at chapter time plus 0.3-0.6 s;
+  `retime --from-voice` does not apply (§5)
+- Before rendering: the script runs twice with the same frame count, every click lands on something visible,
+  zoom never cuts off the subject (else `--max-zoom 1.6`), and the final passes `showtime qa` (§6)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| 1. The pipeline | 53-68 |
+| 2. Writing a demo script | 70-127 |
+| 3. Pacing rules | 129-144 |
+| 4. Auto zoom | 146-195 |
+| 5. events.json (for compositions): Composing a recording into an HTML project | 197-236 |
+| 6. Checklist before rendering the episode | 238-245 |
+
 ## 1. The pipeline
 
 ```

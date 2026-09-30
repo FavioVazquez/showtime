@@ -4,10 +4,11 @@ The critic (a fresh sub-agent, or a person) gets a folder, never the session:
 contact sheets (1 per second, every scene, every transition midpoint), key
 frames, full-size crops of the largest text lines (the type detail pass), a loudness graph, the qa verdict, copies of the brief/storyboard/ledger
 and a CRITIC.md brief with the severity scale and the answer format. Each pack
-is one round: review/round-1/, review/round-2/. The protocol allows two critic
+is one round: review/round-1/, review/round-2/. The protocol allows three critic
 rounds; a round counts once a critic's FINDINGS.md is in it, so a round without
 one (the critic has not answered yet, a newer final, an interrupted pack) is
-rebuilt in place instead of using up a round.
+rebuilt in place instead of using up a round. `--against` builds a blind pairwise
+round instead (st.qa.pairwise: old vs new, judged in both orders).
 """
 from __future__ import annotations
 
@@ -25,7 +26,7 @@ from . import video as qa_video
 
 PathLike = Union[str, "os.PathLike[str]"]
 
-MAX_ROUNDS = 2
+MAX_ROUNDS = 3
 CONTEXT_NAMES = ("brief.md", "storyboard.md", "script.md", "plan.md", "SHOWTIME.md", "share.txt", "share-copy.txt",
                  "credits.txt", "CREDITS.txt", "decisions.md", "feedback.md", "vo.srt", "captions.srt", "final.srt",
                  "mix.report.json", "brand.md")
@@ -41,7 +42,7 @@ def resolve_video(target: Optional[PathLike], say: Any = None) -> Tuple[Path, Op
     t = Path(str(target)).expanduser() if target not in (None, "") else None
     if t is not None and t.is_dir() and not ledger.is_job(t.resolve()) and ledger.enclosing_job(t) is None:
         rj = read_json(t / "render.json", None) if (t / "render.json").is_file() else None
-        if isinstance(rj, dict) and rj.get("output") and Path(rj["output"]).is_file():
+        if isinstance(rj, dict) and rj.get("output") and Path(rj["output"]).is_file() and not ledger.is_span_report(rj):
             return Path(rj["output"]), None
     try:
         video, job, _ = ledger.media_arg(target, "video", say=say)
@@ -221,8 +222,11 @@ def _rounds(root: Path) -> List[int]:
 
 
 def _has_findings(d: Path) -> bool:
-    f = d / "FINDINGS.md"
-    return f.is_file() and f.stat().st_size > 0
+    """A critic answered in this round (a pairwise round: in either order's folder)."""
+    for f in [d / "FINDINGS.md"] + sorted(d.glob("order-*/FINDINGS.md")):
+        if f.is_file() and f.stat().st_size > 0:
+            return True
+    return False
 
 
 def _next_round(root: Path, force: bool = False) -> Tuple[int, bool]:
@@ -234,6 +238,29 @@ def _next_round(root: Path, force: bool = False) -> Tuple[int, bool]:
     if not force and not _has_findings(root / ("round-%d" % last)):
         return last, True
     return last + 1, False
+
+
+def open_round(root: Path, force_round: bool, video: Path, say: Any) -> Tuple[int, Path]:
+    """Pick the round folder (the round cap, a rebuild of an unanswered round) and mark it INCOMPLETE."""
+    n, rebuild = _next_round(root, force=force_round)
+    answered = critic_rounds(root)
+    if not rebuild and len(answered) >= MAX_ROUNDS and not force_round:
+        raise ShowtimeError("%s already has %d critic rounds (FINDINGS.md in %s); the critic protocol stops at %d" % (
+            root, len(answered), ", ".join("round-%d" % r for r in answered), MAX_ROUNDS),
+            hint="ship the best version with its open findings listed (showtime review-verdict names it after a "
+                 "pairwise round) and show them to the user instead of looping. Polish after a \"ship\" verdict needs "
+                 "no new pack: snap before/after (showtime snap <video> --at T --compare <old video>), run qa, log it in "
+                 "work/feedback.md. --force-round makes round %d anyway" % n)
+    pack = root / ("round-%d" % n)
+    if rebuild:
+        say("review-pack: round-%d has no FINDINGS.md yet, so it is rebuilt for %s (a critic that answered in chat: save "
+            "its answer as round-%d/FINDINGS.md first)" % (n, video.name, n))
+        shutil.rmtree(pack, ignore_errors=True)
+    pack.mkdir(parents=True)
+    # an interrupted pack stays marked, so nobody hands it to a critic; the next run rebuilds it
+    (pack / "INCOMPLETE").write_text("this pack is being built or was interrupted; run showtime review-pack again\n",
+                                     encoding="utf-8")
+    return n, pack
 
 
 def critic_rounds(root: Path) -> List[int]:
@@ -286,23 +313,8 @@ def build(target: Optional[PathLike] = None, *, out: Optional[PathLike] = None, 
     say = (lambda m: None) if quiet else log
     video, job = resolve_video(target, say=log)  # always say which file (stderr), even with --json
     root = Path(out).expanduser().resolve() if out else ((job / "review") if job else video.parent / (video.stem + ".review"))
-    n, rebuild = _next_round(root, force=force_round)
-    answered = critic_rounds(root)
-    if not rebuild and len(answered) >= MAX_ROUNDS and not force_round:
-        raise ShowtimeError("%s already has %d critic rounds (FINDINGS.md in %s); the critic protocol stops at %d" % (
-            root, len(answered), ", ".join("round-%d" % r for r in answered), MAX_ROUNDS),
-            hint="show the user the open findings instead of looping. Polish after a \"ship\" verdict needs no new pack: "
-                 "snap before/after (showtime snap <video> --at T --compare <old video>), run qa, log it in work/feedback.md. "
-                 "--force-round makes round %d anyway" % n)
-    pack = root / ("round-%d" % n)
-    if rebuild:
-        say("review-pack: round-%d has no FINDINGS.md yet, so it is rebuilt for %s (a critic that answered in chat: save "
-            "its answer as round-%d/FINDINGS.md first)" % (n, video.name, n))
-        shutil.rmtree(pack, ignore_errors=True)
+    n, pack = open_round(root, force_round, video, say)
     (pack / "frames").mkdir(parents=True)
-    # an interrupted pack stays marked, so nobody hands it to a critic; the next run rebuilds it
-    (pack / "INCOMPLETE").write_text("this pack is being built or was interrupted; run showtime review-pack again\n",
-                                     encoding="utf-8")
     pr = ff.probe(video)
     dur = float(pr.get("duration") or 0)
     fps = float(pr.get("fps") or 30.0)
@@ -427,20 +439,7 @@ def build(target: Optional[PathLike] = None, *, out: Optional[PathLike] = None, 
     except Exception as e:  # noqa: BLE001 - the crops help the critic; they must not stop the pack
         say("review-pack: text crops skipped (%s)" % e)
 
-    loud_png = None
-    lj = read_json(pack / "qa" / "loudness.json", None)
-    loud = q.get("loudness") or {}
-    if isinstance(lj, dict) and lj.get("short_term"):
-        hop = float(lj.get("hop", 0.1))
-        m, s = lj.get("momentary") or [], lj.get("short_term") or []
-        tm = [i * hop + 0.4 for i in range(len(m))]
-        ts = [i * hop + 3.0 for i in range(len(s))]
-        # plot both on the momentary grid: short-term value at the same end time
-        smap = {round(t, 2): v for t, v in zip(ts, s)}
-        s_on_m = [smap.get(round(t, 2)) for t in tm]
-        loud_png = str(images.loudness_graph(tm, m, s_on_m, pack / "loudness.png", target=loud.get("target_lufs"),
-                                             integrated=loud.get("integrated_lufs"), true_peak=loud.get("true_peak_dbtp"),
-                                             gaps=loud.get("silent_gaps") or [], duration=dur, title=video.name))
+    loud_png = loudness_png(pack / "qa", q, pack / "loudness.png", dur, video.name)
 
     say("review-pack: copying context")
     ctx = pack / "context"
@@ -514,6 +513,24 @@ def build(target: Optional[PathLike] = None, *, out: Optional[PathLike] = None, 
     return manifest
 
 
+def loudness_png(qa_dir: Path, q: Dict[str, Any], out: Path, dur: float, title: str) -> Optional[str]:
+    """The loudness graph from a qa run's loudness.json (None when qa measured no audio)."""
+    lj = read_json(qa_dir / "loudness.json", None)
+    loud = q.get("loudness") or {}
+    if not (isinstance(lj, dict) and lj.get("short_term")):
+        return None
+    hop = float(lj.get("hop", 0.1))
+    m, s = lj.get("momentary") or [], lj.get("short_term") or []
+    tm = [i * hop + 0.4 for i in range(len(m))]
+    ts = [i * hop + 3.0 for i in range(len(s))]
+    # plot both on the momentary grid: short-term value at the same end time
+    smap = {round(t, 2): v for t, v in zip(ts, s)}
+    s_on_m = [smap.get(round(t, 2)) for t in tm]
+    return str(images.loudness_graph(tm, m, s_on_m, out, target=loud.get("target_lufs"),
+                                     integrated=loud.get("integrated_lufs"), true_peak=loud.get("true_peak_dbtp"),
+                                     gaps=loud.get("silent_gaps") or [], duration=dur, title=title))
+
+
 def _rel(p: Optional[str], base: Path) -> str:
     if not p:
         return "(none)"
@@ -540,7 +557,7 @@ Measured by qa: {rhythm}
 - Scenes: 4-6 in 20-45 s, one message each. A new layout per feature, or more than 6, reads as a slide deck.
 - Scene changes: a shared element carried across (match) or a soft dissolve; at most one fly-through and one
   deliberate hard cut. A push, pan, wipe or whip on every beat is choppy.
-- Holds: each scene's result is on screen, settled, for at least 1.5 s; nothing is frozen for more than ~4 s.
+- Holds: each scene's result is on screen, settled, for at least 1.5 s; nothing is frozen for more than ~3.5 s mid-film (the end card holds 3-4 s).
 - Opening: frame 0 is the hook, complete and readable at phone size (a Blocker when it is blank or a logo).
 - Type: one display face and one mono, headline >= 6 % of the frame height, commands and UI text >= 3.5 %;
   one accent colour on one ground for the whole film.
@@ -552,6 +569,34 @@ Measured by qa: {rhythm}
 - End card: name, one-line value, install command or CTA exactly as the sources give it, URL; held >= 3 s.
 - Honesty: every command and output line matches the evidence in context/; any claim without a source is a Blocker.
 """
+
+
+QUESTIONS = """Answer these eight questions for yourself first; they are what the findings weigh:
+1. Hook: at 1.5 s, does a stranger know what this is about and want to keep watching?
+2. Clarity: after the whole video, could they say what it is, who it is for and how to get it?
+3. Readability: is any text too small, too short-lived, low-contrast or in a platform UI zone?
+4. Craft: alignment, spacing, consistent type and colour, clean transitions (check the mid-cut frames),
+   no muddy double exposures, no effects the tone does not justify. Include the **type detail pass**:
+   open every text crop above and every title or text frame in `frames/` at full size (never judge type
+   from the sheets) and check, line by line: words, math and numbers on one line share one baseline
+   (a formula, a superscript or a number must not sit lower or higher than the words beside it); they
+   look one size (x-heights match) and one weight (thin math beside bold words reads broken); kerning
+   and word spacing are even (no collisions, no gaps); no widow (one word alone on a last line) or
+   orphaned punctuation. Any of these in a title, the hook or the poster is a Should-fix.
+5. Distinctness: could these frames belong to a different product unchanged?
+6. Poster: which single frame would you post as the thumbnail? Is frame 0 that frame?
+7. Honesty: does anything look like an invented claim, number, testimonial or fake UI presented as real?
+8. Story logic: go shot by shot through the scene list: what would a stranger think each shot is, and what
+   job does it do (show the product, prove a claim, set up the next beat)? A shot that is only there because
+   it looks good, or that only makes sense to the author, is a finding."""
+
+SEVERITY = """Severity:
+- **Blocker**: an invented or wrong claim, a misspelled product or person name; black, frozen or garbage
+  frames; wrong aspect or duration for the platform; clipped or missing voice; text cut off or outside the safe
+  zone; a missing license credit.
+- **Should-fix**: a shot with no clear job or one a stranger would misread (a Blocker at the hook or payoff); text not readable at phone size or for as long as it is on screen; a title or text line whose parts sit on different baselines or differ in size or weight; music masking the voice;
+  a dead stretch over ~2s; off-brand colours; captions more than ~150 ms out of sync.
+- **Polish**: easing taste, 1-2 frame timing, colour nuance."""
 
 
 def critic_brief(m: Dict[str, Any], q: Dict[str, Any], pack: Path) -> str:
@@ -616,35 +661,10 @@ target platform would expect (a vertical social cut is mostly watched muted, so 
 Measure geometry (sizes, offsets, margins) in pixels on the full-size frames in `frames/`, not by eye on the
 sheets. If the brief withholds something until a reveal (a name, a price), check every frame before the reveal.
 
-Answer these eight questions for yourself first; they are what the findings weigh:
-1. Hook: at 1.5 s, does a stranger know what this is about and want to keep watching?
-2. Clarity: after the whole video, could they say what it is, who it is for and how to get it?
-3. Readability: is any text too small, too short-lived, low-contrast or in a platform UI zone?
-4. Craft: alignment, spacing, consistent type and colour, clean transitions (check the mid-cut frames),
-   no muddy double exposures, no effects the tone does not justify. Include the **type detail pass**:
-   open every text crop above and every title or text frame in `frames/` at full size (never judge type
-   from the sheets) and check, line by line: words, math and numbers on one line share one baseline
-   (a formula, a superscript or a number must not sit lower or higher than the words beside it); they
-   look one size (x-heights match) and one weight (thin math beside bold words reads broken); kerning
-   and word spacing are even (no collisions, no gaps); no widow (one word alone on a last line) or
-   orphaned punctuation. Any of these in a title, the hook or the poster is a Should-fix.
-5. Distinctness: could these frames belong to a different product unchanged?
-6. Poster: which single frame would you post as the thumbnail? Is frame 0 that frame?
-7. Honesty: does anything look like an invented claim, number, testimonial or fake UI presented as real?
-8. Story logic: go shot by shot through the scene list: what would a stranger think each shot is, and what
-   job does it do (show the product, prove a claim, set up the next beat)? A shot that is only there because
-   it looks good, or that only makes sense to the author, is a finding.
-
-Severity:
-- **Blocker**: an invented or wrong claim, a misspelled product or person name; black, frozen or garbage
-  frames; wrong aspect or duration for the platform; clipped or missing voice; text cut off or outside the safe
-  zone; a missing license credit.
-- **Should-fix**: a shot with no clear job or one a stranger would misread (a Blocker at the hook or payoff); text not readable at phone size or for as long as it is on screen; a title or text line whose parts sit on different baselines or differ in size or weight; music masking the voice;
-  a dead stretch over ~2s; off-brand colours; captions more than ~150 ms out of sync.
-- **Polish**: easing taste, 1-2 frame timing, colour nuance.
-
+{judging}
 Rule: **every finding cites a timestamp and a frame path** from this folder (or a track name for audio). A finding
-without a location is dropped. Quote numbers (sizes, seconds, colours) in fixes.
+without a location is dropped. Quote numbers (sizes, seconds, colours) in fixes. No scores: do not rate the
+video on a number scale; the verdict and the findings carry the judgment.
 
 ## Answer in exactly this format (write it to FINDINGS.md in this folder)
 ```
@@ -662,10 +682,11 @@ DECLINED TO JUDGE (what you could not or chose not to assess, e.g. audio quality
 BEST POSTER FRAME: t=..s because ...
 ```
 
-Limits: at most {maxr} critic rounds per video. The second round checks only the fixes. If blockers remain
-after that, stop: the maker shows your findings to the user instead of looping.
+Limits: at most {maxr} critic rounds per video. A later round checks only the fixes. If blockers remain
+after the last one, stop: the maker shows your findings to the user instead of looping.
 """.format(skill=_skill_dir(), round=m["round"], maxr=m["max_rounds"], video=m["video"], w=m["size"][0], h=m["size"][1], fps=m["fps"],
            dur=m["duration"], verdict=q["verdict"], nf=q["summary"]["fail"], nw=q["summary"]["warn"],
            qa=_rel(q["report"], pack), sheet=_rel(m["sheet"], pack), scenes=_rel(m["scenes_sheet"], pack),
            loud=_rel(m["loudness_graph"], pack), thumb=_rel(m["thumbnail_preview"], pack), keys=key_list, ctx=ctx_list,
-           qa_list=qa_list, prev=prev, cuts=_rel(m.get("cut_strips"), pack), others=others, text_list=text_list)
+           qa_list=qa_list, prev=prev, cuts=_rel(m.get("cut_strips"), pack), others=others, text_list=text_list,
+           judging=QUESTIONS + "\n\n" + SEVERITY + "\n")

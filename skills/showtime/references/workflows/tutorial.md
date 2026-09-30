@@ -6,6 +6,29 @@ X"). Two builds: **record the real app** with a scripted demo plus auto zoom (de
 can run here), or **draw it** with the canvas `tutorial` template when there is no runnable app or the
 UI is conceptual.
 
+## Essentials
+
+- Defaults: 60-120 s, 16:9 1920x1080 30 fps, `--look framed` auto zoom, one action per sentence, captions as a
+  sidecar, -16 LUFS for voice-heavy tutorials when the platform allows (`qa --lufs -16`) (§ Defaults)
+- Seed fictional data, never real credentials, names or tokens; hide notifications and dev overlays (§ Inputs)
+- Voice first (`showtime voice script <job>/narration.md -o <job>/voice`), then `showtime demo record`; gate on
+  `demo.waitFor`, never fixed sleeps; keep the default `--dpr 2` (§ Steps (recorded app), § Pitfalls)
+- `showtime autozoom <job>/rec --preview` and look before the full run; then the EDL, `showtime edit check`,
+  `showtime edit render <job> --preview`, and the final with `-o <job>/final.mp4` (§ Steps (recorded app))
+- Verify with `showtime qa <job>` and `showtime look <job>`: each step on screen as it is said; chapters in
+  `share.txt` from 0:00, at least three, each ≥10 s (§ Steps (recorded app))
+- No runnable app: `showtime new tutorial <job>/project` (§ Steps (drawn tutorial, no runnable app))
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| Inputs | 32-37 |
+| Defaults | 39-46 |
+| Steps (recorded app) | 48-80 |
+| Steps (drawn tutorial, no runnable app) | 82-87 |
+| Pitfalls | 89-95 |
+| Read next | 97-100 |
+
 ## Inputs
 
 - The app: a repo that runs locally, a static build (`dist/`), a staging URL, or the user's own screen
@@ -50,7 +73,7 @@ it is silent, state your choice as an assumption.
 7. **Captions.** `showtime captions <job>/voice/vo.words.json --style clean --size 1920x1080
    -o <job>/edit/caps.ass --srt <job>/final.srt`, or `"captions"` in the EDL to burn them.
 8. **Final.** `showtime edit render <job> -o <job>/final.mp4`.
-9. **Verify.** `showtime qa <job>` (the latest final and the job's captions), look at the sheet; check that
+9. **Verify.** `showtime qa <job>` (the latest final and the job's captions), `showtime look <job>`; check that
    every step named in the narration is on screen when it is said.
 10. **Deliver.** Chapters in `share.txt` (first at 0:00, at least three, each at least 10 s), exports,
     the delivery card. Series: keep the demo script, voice settings and look per episode in SHOWTIME.md

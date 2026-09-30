@@ -97,6 +97,24 @@ first look (stills or a fast draft) before the full-quality render, then checks 
 > a look, a music bed and a storyboard before anything is built. Say **"no crew"** to keep the whole job in
 > one session.
 
+**What's new in 0.3.0** (the full list is [below](#new-in-030)):
+
+- **A full review on every video, and quieter runs.** Each finished video gets looks, qa and a critic round before
+  delivery; say "lean" for a lighter pass. Commands print a short verdict and keep the detail in a file, references
+  are read by the piece (`showtime guide`), and looks at frames go to a disposable reviewer, so less piles up in your
+  agent's context.
+- **Videos that differ from each other.** A local look history warns when a video repeats a recent one, and
+  `showtime reference` learns pace and type scale from a video you like, never its content.
+- **Checks for what viewers complain about.** A phone check (text you can read at phone size, held long enough),
+  and pairwise review, where a new version ships only if the critic prefers it in both orders.
+- **New kinds of video.** Repo and paper explainers, release and PR videos (`showtime release-video`, and a GitHub
+  Action), launches that start from your product's real brand, and `showtime adopt` for video code you already have.
+- **A receipt for every job:** your request as typed, the rounds, renders and time, and tokens and cost where your
+  agent reports them.
+
+In my blind vote in [benchmark](#benchmark) round 4, 0.3.0 in lean mode was preferred to 0.2.0 on 4 of 6 tasks and to
+plain Claude Code on 7 of 8; the full-review default came after that round and was not part of it.
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/readme/divider-dark.svg">
   <img alt="" src="assets/readme/divider-light.svg" width="100%">
@@ -306,10 +324,12 @@ setup:
 is the same server from npm ([@faviovazquez/showtime-mcp](https://www.npmjs.com/package/@faviovazquez/showtime-mcp),
 also listed in the [MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.FavioVazquez/showtime)
 as `io.github.FavioVazquez/showtime` and on [Smithery](https://smithery.ai/servers/favio-vazquezp/showtime)), and
-[`showtime-0.2.0.mcpb`](https://github.com/FavioVazquez/showtime/releases/download/v0.2.0/showtime-0.2.0.mcpb) from
-the v0.2.0 release opens in Claude Desktop with a double click. Setup still runs once on your machine: the
+[`showtime-0.3.0.mcpb`](https://github.com/FavioVazquez/showtime/releases/download/v0.3.0/showtime-0.3.0.mcpb) from
+the v0.3.0 release opens in Claude Desktop with a double click. Setup still runs once on your machine: the
 models and tools never travel inside a package. Long tools answer with a task id after about 20 seconds when a
-client stops calls early; the `status` tool reports progress and the result.
+client stops calls early; the `status` tool reports progress and the result. Besides the tools that mirror the commands,
+`guide` reads a reference by the piece and `receipt` writes a job's receipt (tokens and cost are "not reported by this
+agent" through MCP).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/readme/divider-dark.svg">
@@ -416,6 +436,12 @@ changed. Click a preview to open the example. Each one has a card with its promp
 </tr>
 </table>
 
+Two more kinds of developer video have a workflow but no example in this gallery yet: a **repo explainer** (what the
+code does, a map of it, one request traced through real files and lines, every claim tied to a file and a commit) and
+a **paper explainer** (claims tied to pages, figures shown only when their license allows, Manim for the math). Say
+"explain this repo" or give your agent a paper's PDF or arXiv link. For release notes and pull requests with no agent at all,
+`showtime release-video` and the [GitHub Action](docs/github-action.md) make a short film in CI.
+
 
 <p align="center"><sub>All 22 examples, with their projects and full-quality videos, live in <a href="https://github.com/FavioVazquez/showtime-examples"><b>showtime-examples</b></a>.</sub></p>
 
@@ -482,15 +508,42 @@ Every model and tool is downloaded once into `~/.showtime`, the small ones at se
 first time a video needs them. After that it goes online only when you ask for something from the web: public-archive media search (Openverse, Wikimedia Commons, NASA) and website
 capture fetch pages and files, and send nothing of yours.
 
+### Quiet, checked and on the record
+
+The 0.2.0 benchmark showed where an agent's budget goes with showtime: images kept in its context, long command
+output and reference files read whole. 0.3.0 trims those without removing a check:
+
+- **Check first, then one render.** `showtime check` (with the phone check and the look-repeat warning) runs before
+  the full render, and a fix re-renders only the seconds that changed (`render --from S --to S`).
+- **One picture per look.** `showtime look` makes a single 1280 px composite of the key frames plus a brief for a
+  disposable reviewer that answers in text; your agent never has to open the image itself. About 12 images per job
+  is the budget ([looking guide](skills/showtime/references/looking.md)).
+- **Short output.** Without a terminal, `check`, `qa`, `doctor` and `render` print the verdict, the findings with
+  their fixes and the paths; the full report is in a file. `--verbose` prints everything.
+- **References by the piece.** Every guide opens with its rules, and `showtime guide <topic> [section]` prints just
+  that part.
+- **A receipt.** Each job ends with `receipt.md` and `receipt.json`: the request as typed, assumptions, review rounds,
+  full and partial renders, images made for looking, wall time, and tokens and cost when your agent's session log is
+  named. Anything unknown says "not reported by this agent"; nothing is estimated. Claude Code costs are labelled
+  API-equivalent, since a plan does not pay per video ([format](skills/showtime/references/receipt.md)).
+
+Every finished video gets the full review by default (quality mode: looks, qa and a critic round before delivery).
+Say "lean" (or run `showtime config mode lean`) for a cheaper draft pass without the critic, and "show me options
+first" for the full studio.
+
 ## Benchmark
 
-In a small benchmark (6 one-sentence tasks, one run each), showtime was compared with plain Claude Code on Opus 5.5
-and with an open-source tool built for each kind of job, scored by automatic checks, an AI judge that must prove it
-looked at every frame, and a blind vote by me. In the latest round my pick was a showtime video on 5 of the 6 tasks,
-and 0.2.0 beat plain Claude Code on all 6 in that vote; the launch video lost all three rounds to a tool built only
-for launch videos. I'm showtime's author, so treat it as 6 anecdotes, not a result. Every number, limit and loss is
-in the [benchmark report](https://faviovazquez.github.io/showtime/benchmark/); the method and the code to rerun it
-are in [`benchmarks/`](benchmarks/).
+A small benchmark: one-sentence video tasks, one run each, scored by automatic checks, an AI judge that must prove it
+looked at every frame, and a blind vote by me. Round 4 compared showtime 0.3.0 **in lean mode** (the lighter review
+setting, which was the default when the round ran) with 0.2.0 in its default mode, plain Claude Code on Opus 5.5 and,
+for the launch video, an open-source tool built only for launch videos.
+
+In my blind vote, 0.3.0 was preferred to 0.2.0 on 4 of 6 tasks and to plain Claude Code on 7 of 8, and its launch
+video beat the launch-only tool for the first time in four rounds. The AI judge preferred 0.2.0's polish on most
+tasks; that is why 0.3.0 ships with the full review (a critic round on every video) as the default, and that default
+was not part of the round. I'm showtime's author, so treat these as anecdotes, not a result. Every number, limit and
+loss is in the [benchmark report](https://faviovazquez.github.io/showtime/benchmark/), with each earlier version a
+click away; the method and the code to rerun it are in [`benchmarks/`](benchmarks/).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/readme/divider-dark.svg">
@@ -538,6 +591,12 @@ Let's make a launch trailer for this repo. Show me options first.
 The agents live in [`agents/`](agents/); their briefs, in
 [`skills/showtime/references/crew/`](skills/showtime/references/crew/), work on any agent host, and the
 [crew guide](skills/showtime/references/crew.md) has the dispatch rules.
+
+For a video you will publish, a fix is judged by preference, not by a score. After a fix, `showtime review-pack --against best`
+sets the new render beside the best one so far as a blind pair, and two fresh critics judge it, one in each order.
+`showtime review-verdict` applies the rule: the new render wins only when it is preferred both times; a tie or a split
+keeps the older one. There are up to three rounds, then the best version ships with its open findings listed
+([review guide](skills/showtime/references/review.md)).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/readme/divider-dark.svg">
@@ -634,15 +693,16 @@ render. Press <kbd>?</kbd> in the player for the key map.
 <tr>
 <td width="33%" valign="top"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/readme/icons/crew-dark.svg"><img src="assets/readme/icons/crew-light.svg" width="44" alt=""></picture><br><b>A crew of ten</b><br><sub>Optional specialist sub-agents from creative director to critic; your agent stays the director and the only one who talks to you.</sub></td>
 <td width="33%" valign="top"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/readme/icons/html-dark.svg"><img src="assets/readme/icons/html-light.svg" width="44" alt=""></picture><br><b>HTML videos</b><br><sub>One self-contained file per video: chapters, keyboard control, links to a moment, zero network requests.</sub></td>
-<td width="33%" valign="top"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/readme/icons/qa-dark.svg"><img src="assets/readme/icons/qa-light.svg" width="44" alt=""></picture><br><b>QA before done</b><br><sub>Pre-render checks, then <code>showtime qa</code> on the final: loudness, black or frozen frames, captions, platform specs.</sub></td>
+<td width="33%" valign="top"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/readme/icons/qa-dark.svg"><img src="assets/readme/icons/qa-light.svg" width="44" alt=""></picture><br><b>QA before done</b><br><sub>Pre-render checks and a phone check, then <code>showtime qa</code> on the final: loudness, black or frozen frames, captions, platform specs.</sub></td>
 </tr>
 </table>
 
 Also: 20 motion components, 23 transitions (CSS and WebGL) and 6 themes, website capture (screenshots, copy, brand colours and fonts), scripted app recordings with smooth
 auto-zoom, cursor and keycaps, PDF import, CSV and JSON to charts, a brand kit, posters baked into frame
 0, exports for YouTube, X, LinkedIn, Reels, TikTok, Shorts and square feeds, README loops (animated WebP
-and GIF, like the previews on this page), and credits written automatically when an asset needs
-attribution.
+and GIF, like the previews on this page), credits written automatically when an asset needs
+attribution, a look history so videos do not repeat, style references, adopting video code you already wrote
+(`showtime adopt`), and a receipt for every job.
 
 <details>
 <summary><b>Every command</b></summary>
@@ -651,15 +711,15 @@ attribution.
 
 | Group | Commands |
 |---|---|
-| Make | `new` (templates: dom, film, short, tutorial, data, series, manim), `retime`, `data`, `preview`, `render`, `export`, `check`, `snap`, `score`, `motion`, `code`, `server`, `manim` |
+| Make | `new` (templates: dom, film, short, tutorial, data, series, manim), `adopt`, `release-video`, `retime`, `data`, `preview`, `render`, `export`, `check`, `snap`, `look`, `score`, `motion`, `code`, `server`, `manim` |
 | Audio | `audio compose`, `sfx`, `lib`, `beats`, `fit`, `mix`, `meter`, `master` |
 | Voice | `voice say`, `voice script` (narration with word timings, fitted to a length) |
 | Footage | `transcribe`, `pack`, `edit`, `captions`, `footage`, `autozoom` |
 | Capture and assets | `site`, `demo`, `doc`, `assets` |
-| Studio | `studio`, `brand` |
-| Job and QA | `status`, `qa`, `review-pack`, `job`, `clean` |
+| Studio | `studio`, `brand` (`init`, `capture`, `apply`, `skip`) |
+| Job and QA | `status`, `qa`, `review-pack`, `review-verdict`, `receipt`, `history`, `reference`, `job`, `clean` |
 | Deliver | `deliver` (posters, platform exports, thumbnails, README loops) |
-| Setup | `setup`, `doctor`, `report`, `paths`, `version`, `help` |
+| Setup | `setup`, `doctor`, `report`, `paths`, `guide`, `version`, `help` |
 | More | `series` (a tutorial series sharing one kit) |
 
 ```bash
@@ -673,6 +733,10 @@ showtime render my-video -o final.mp4        # full quality
 showtime qa final.mp4                        # PASS/WARN/FAIL: loudness, black/frozen frames, captions, platform
 showtime deliver exports final.mp4 --targets youtube,reels,square
 showtime export html my-video                # a single-file interactive HTML video
+showtime look my-video                       # one composite of the key frames, for a quick visual check
+showtime reference clip.mp4 --job my-job     # a video's pace, shots and type scale, as a brief (never its content)
+showtime adopt my-page/                      # a page that already has seek(t) gets check, sound, qa and export
+showtime release-video notes.md -o my-video  # release notes to a ready-to-render project, no agent needed
 ```
 
 </details>
@@ -708,9 +772,79 @@ lands on
 $$A = \tfrac{1}{2} \cdot 2\pi r \cdot r = \pi r^2$$
 
 with a vertical cut for Shorts from the same scenes. An optional OpenGL engine (the `manimgl` extra) runs
-scene files written for it.
+scene files written for it. `showtime manim check` also renders a draft and runs qa's black-frame and frozen-frame
+detectors on it, so a near-black scene or a barely visible change is reported before the full render.
 
 </details>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/readme/divider-dark.svg">
+  <img alt="" src="assets/readme/divider-light.svg" width="100%">
+</picture>
+
+## New in 0.3.0
+
+**Quieter runs, full review by default**
+
+- **Lean mode, when you ask for it.** The full review stays the default; say "lean" (or run
+  `showtime config mode lean`) for a lighter pass without the critic round. In both modes `showtime look` makes one
+  composite image that a disposable reviewer reads (your agent does not), `render` says when a project was not
+  checked first and names the cheaper `--from/--to` fix after a second full render, and `check`, `qa`, `doctor` and
+  `render` print a short summary by default (`--verbose` for everything). Every reference opens with its rules
+  (`showtime guide <topic>` prints them). No check was removed. In benchmark round 4, lean runs read a median of 4.5
+  images into the agent's context and made a median of one full render per job.
+- **`showtime job init` checks your setup** and prints `setup: ready` or the failures with their fixes, so it is the
+  one command to start with.
+
+**Better videos**
+
+- **Variety guard.** Each finished job's look (template, theme, palette, type pair, transitions, camera moves, music,
+  structure, tone) goes into a local history that never leaves your machine (`showtime history off` turns it off).
+  `showtime check` warns `look_repeat` when a project repeats one of the last five, with two concrete alternatives.
+- **Style references.** `showtime reference <video>` writes a brief with the video's cut rhythm, shot lengths, how
+  scenes change, palette, camera moves, rough type scale and loudness curve, and a contact sheet. The storyboard
+  borrows the grammar, never the words, logos or shots; the credit "Style reference: ..." is written for you, and
+  `showtime qa` fails a render that copies the reference's pictures ([guide](skills/showtime/references/reference.md)).
+- **Phone check.** `showtime check` ends with `phone check: PASS` or `FAIL` with timestamps: each text held long
+  enough to read (per language), a minimum type size at phone width (16:9 5 pt, 1:1 10, 4:5 11, 9:16 15) and nothing
+  under a platform's buttons or at the edge. In `qa`, a failure is a warning, never a FAIL.
+- **Brand first for launches.** `showtime brand capture <repo|url> --job <job>` takes the product's palette with
+  roles, fonts, logo, wordmark, real copy (with file and line) and real UI before the storyboard, and `showtime new
+  launch` applies it. A launch job with no kit says why (`showtime brand skip`), and `check` warns when it does not.
+- **Pairwise review.** See [the crew](#meet-the-crew): a new version ships only if the critic prefers it in both orders.
+- **Fixes where agents tripped:** a clip's frames no longer depend on the order the frames were asked for,
+  `retime --from-voice --total` works when every scene is narrated, Manim silent films and `--mix` paths work, `doctor`
+  warns when the `showtime` command on your path is not the agent's, and font errors name the exact missing
+  characters and the fix.
+
+**New kinds of video**
+
+- **Repo explainers and paper explainers** (workflows `repo-explainer` and `paper-explainer`), described
+  [above](#for-developers).
+- **`showtime release-video`** turns release notes, a CHANGELOG section or a PR description into a ready-to-render
+  project with no agent: the notes' own words, reading-time holds, the people credited.
+- **A GitHub Action** that renders a release or PR video on the runner, checks it, exports an HTML video and a copy
+  under 10 MB, and uploads them ([guide](docs/github-action.md)). It needs no API key unless you choose the mode that
+  runs your own agent.
+- **`showtime adopt <folder | page | script>`** takes a video someone already wrote as a function of time (an HTML
+  page with `seek(t)`, a canvas `draw(t)`, a CSS-animated page, a Python frame function) and gives it showtime's checks,
+  sound, captions, qa, HTML export and review, without a rewrite. The originals are never changed
+  ([guide](skills/showtime/references/adopt.md)).
+
+**Honesty**
+
+- **Receipts.** Every job ends with `receipt.md`, `receipt.json` and a line in `share.txt` (see
+  [above](#quiet-checked-and-on-the-record)).
+
+**In progress** (landing before the release):
+
+- A fix to a few seconds (`render --from A --to B --job <job>`) splices into a complete new final: only those frames change, the audio is mastered again, and a span is never mistaken for the video.
+- Every Manim template passes its own check, and a scene's first element is on screen at frame 0.
+
+Limits: the phone check and the look history read the project files and cannot judge whether a video is good; a
+model reviewer's preference is steadier than its score but is still an opinion; tokens and cost appear only for
+agents that expose their session log (Claude Code and Codex, as numbers only), and everything else says "not reported
+by this agent". The full list is in the [changelog](CHANGELOG.md).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/readme/divider-dark.svg">
@@ -1016,7 +1150,7 @@ features are used only when present, with portable fallbacks.
 showtime ships an MCP server (`skills/showtime/mcp/server.mjs`, Node only, no extra install) with a
 small set of coarse tools: `doctor`, `new_project`, `render`, `check`, `snap`, `qa`, `voice_say`,
 `voice_script`, `transcribe`, `audio_compose`, `audio_sfx`, `audio_mix`, `audio_search`, `export_html`,
-`studio_open`, `studio_feedback`, `deliver_exports` and `status`. Each runs the matching `showtime`
+`studio_open`, `studio_feedback`, `deliver_exports`, `receipt` and `status`. Each runs the matching `showtime`
 command on your machine and answers with a short summary and the paths it wrote; a tool that runs longer than about
 20 seconds answers with a task id, and `status` reports progress and the result. The plugins register it for you.
 For Claude Desktop or any other MCP client, run `~/.showtime/bin/showtime mcp` (see [MCP only](#mcp-only) for the
@@ -1030,7 +1164,7 @@ language, a CPU limit) and the render progress monitor.
 
 <p align="center"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/readme/diagrams/docs-map-dark.svg">
-  <img alt="The documentation map: twelve workflows (launch video, explainer, tutorial, social short, data story, footage edit, trailer, slideshow, changelog video, music video, voice-over only, localize), then five acts and a finale of guides, from onboarding to qa and review." src="assets/readme/diagrams/docs-map-light.svg" width="100%">
+  <img alt="The documentation map: fourteen workflows (launch video, explainer, tutorial, social short, data story, footage edit, trailer, slideshow, changelog video, music video, voice-over only, localize, repo explainer, paper explainer), then five acts and a finale of guides, from onboarding to qa and review." src="assets/readme/diagrams/docs-map-light.svg" width="100%">
 </picture></p>
 
 The [documentation map](docs/README.md) is the way in: every guide, grouped by what you are making, from

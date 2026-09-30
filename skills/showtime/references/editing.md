@@ -10,6 +10,49 @@ Everything runs locally: speech recognition, speaker labels, audio events, face 
 You cannot watch or listen to the result, so every step below ends with something you can read
 (JSON, a packed transcript, a PNG) instead.
 
+## Essentials
+
+- Order: `showtime footage probe <file>`, `showtime transcribe raw/ --edit-dir <job>/edit`, `showtime pack <job>`
+  (read all of `takes_packed.md`), a 3-6 line plan, `showtime edit cut ...`, `showtime edit check edl.json` (§1)
+- Then `showtime edit render edl.json --preview` and `showtime edit view edl.json`; final `showtime edit render
+  edl.json` (a workflow's `-o <job>/final.mp4` wins), `showtime deliver exports` if needed (§1)
+- Ask at most 1-2 questions; the user confirms the plan only when it drops content (takes, sentences, order);
+  tell them the transcription time up front for anything long (§1)
+- Transcripts: Parakeet (`auto`) covers 25 European languages, others need `--language xx`; never pick
+  `--model crisper` for the user; `--speakers N`, `--from`/`--to` for a window (§2)
+- Fix spelling in `text` only; never move `start`/`end` by hand (§2)
+- Never cut inside a word: keep 30-200 ms of padding (defaults 50 ms before, 80 ms after); keep ~0.3 s of breath
+  where material was removed (0.2 s at a filler) (§5)
+- Keep the last clean take of a repeated sentence; never splice half of two takes (§5)
+- Never compute output offsets yourself; read them from `edit check` or the render report (§5)
+- Loudness is mastered once: -14 LUFS / -1 dBTP by default; another level only when asked (`--lufs N`,
+  `--keep-loudness`, `"loudness": false`) (§5)
+- Outputs are never overwritten without `--overwrite`: use the printed path (`name-2.mp4`); everything lives in
+  `<job>/edit/`, never beside the user's footage (§5)
+- `edit cut`: fillers go by default (`--keep-fillers`); "mm-hmm" is a word; "you know", "este" go only with
+  `--filler-set en-discourse`/`es-discourse`; `--remove w40-w52` drops a retake (§4)
+- `output.fit` `auto`: same aspect `cover`, a taller source into a wider frame `blur`, wider into taller
+  `reframe` (face-tracked crop) (§4)
+- Leave jump cuts in a talking head; no punch-in on every other range (one scale 1.06-1.12 per section, with a
+  reason) (§6)
+- After every render: report `frames_ok: true`, `warnings` empty, loudness within 1 LU, `captions.timing` all
+  zeros; read every `edit view` PNG; say what you could not check (you did not listen) (§6)
+- Published work: `showtime transcribe final.mp4 --edit-dir edit/qa` to confirm no fillers or clipped words;
+  stop after 3 fix-and-render passes and ask (§6)
+- Copy range times from `takes_packed.md` or `edit cut`, never from memory (§8)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| 1. The workflow | 56-73 |
+| 2. Transcripts | 75-120 |
+| 3. Reading the material | 122-127 |
+| 4. The EDL | 129-179 |
+| 5. Hard rules (correctness) | 181-216 |
+| 6. Self-evaluation (you cannot watch it) | 218-238 |
+| 7. Recipes | 240-252 |
+| 8. Red flags | 254-263 |
+
 ## 1. The workflow
 
 | Step | Command | Done when |

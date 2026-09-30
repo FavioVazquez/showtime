@@ -6,6 +6,7 @@
 
 Each media/<id>.source.json pins a public-domain file by URL and SHA-256 and says how to trim it.
 The download is cached in <bench home>/cache/ so re-running is instant.
+media/style-reference.mp4 (T10) is not downloaded: make_reference.py draws it with ffmpeg.
 """
 import argparse
 import hashlib
@@ -17,6 +18,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "harness"))
+sys.path.insert(0, str(HERE))
 import common  # noqa: E402
 
 
@@ -75,6 +77,16 @@ def main() -> int:
             continue
         prepare(spec, fetch(spec, cache), out)
         print("%-10s ready: %s (%.1f MB)" % (spec["id"], out.name, out.stat().st_size / 1e6))
+    import make_reference
+    ref = make_reference.OUT
+    if a.check:
+        print("%-10s %s" % ("style-reference", "present" if ref.exists() else "MISSING (run fetch_fixtures.py)"))
+        ok = ok and ref.exists()
+    elif ref.exists():
+        print("%-10s present: %s" % ("style-reference", ref.name))
+    else:
+        make_reference.build(ref)
+        print("%-10s ready: %s (%.1f MB, drawn by make_reference.py)" % ("style-reference", ref.name, ref.stat().st_size / 1e6))
     return 0 if ok else 1
 
 

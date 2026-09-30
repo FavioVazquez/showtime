@@ -6,6 +6,40 @@ narration can fit, or how long a format should run.
 The pace comes from cuts and motion. It never comes from pulling text off the screen before it
 can be read. The rule is **fast in, then hold**. Never fast in, then gone.
 
+## Essentials
+
+- Fast in, then hold: never pull text before it can be read; count holds from when the whole line has settled (§1)
+- Minimum settled holds: label 0.8 s, headline `max(1.2, 0.3 × words)` s, text with no voice `max(1.0, 0.5 +
+  chars / 13)` s, number 1.2 s after the count-up lands, diagram/code/chart 1.5–2.5 s, end card ≥2.5 s (§1)
+- Reading ceiling about 3 words/s (≤17 characters/s for captions); no text that adds information while the voice
+  says something else (§1)
+- Whole stagger group ≤0.5 s; first motion 0.1–0.3 s into a scene, hero visible by 0.5 s; hold ≥0.5 s
+  (short-form) or ≥1.0 s (explainer) after a settle (§2)
+- Short-form: something changes every 2–4 s; vary shot lengths (short-short-long); one held beat of 1–2 s (§3)
+- Cut 1–2 frames before the beat; moves that must land start 40–190 ms early; readable text ≥1 beat, a sentence
+  ≥2 beats; at most one camera move per 4-bar phrase (§4)
+- Sparse, drumless music: pace by phrases, never hard-cut on the invented grid; a `showtime audio compose` grid
+  is exact (§4)
+- Safety: ≤3 flashes in any 1 s window; flash frames at most 1–2 times per video; faster flashing under 25 % of
+  the frame (§5)
+- Word budget = `duration × wps × 0.85` (2.5 wps default; 30 s ≈ 64 words); ≤19 words per scene; the voice starts
+  0.3–0.6 s in and ends ≥1.0 s before the logo lands (§6)
+- Real audio length wins: set scene durations from the measured clips; never stretch or squeeze the voice (§6)
+- Lengths: social launch 20–45 s, vertical short 15–45 s, hero 60–90 s (cap 120 s), tutorial 2–8 min (§7)
+- Quantize to frames, `t = round(t × fps) / fps`; windows are `[start, end)`, so finish a frame early (§8)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| 1. Readability timing (text on screen) | 43-59 |
+| 2. Motion durations | 61-75 |
+| 3. Cut rhythm | 77-96 |
+| 4. Beat sync | 98-118 |
+| 5. Flash and strobe limits (safety, not taste) | 120-126 |
+| 6. Narration word budgets | 128-143 |
+| 7. Durations by format | 145-161 |
+| 8. Frame math | 163-168 |
+
 ## 1. Readability timing (text on screen)
 
 Hold time is counted from the moment the **whole line has settled**, not from when it starts to enter.

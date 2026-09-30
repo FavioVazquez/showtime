@@ -4,6 +4,53 @@ Read this when a video needs a voice-over. That covers picking a voice or langua
 
 Everything runs locally. Kokoro is the default engine. It gives exact word timings and 54 voices across 9 languages. The text never leaves the machine.
 
+## Essentials
+
+- Defaults: `af_heart` (English), `ef_dora` (Spanish), `bf_emma` (British English), `ff_siwis` (French). Never
+  swap a voice the user named; otherwise use the default and say which voice you used (§ Choosing a voice)
+- Narration: `showtime voice script narration.md -o voice/`, one `## <scene id>` per scene; `--fit 15` lands
+  it on 15 s; on "cut about N words", cut them and rerun (§ Script → timeline → scenes)
+- Outputs: `vo.wav` (−16 LUFS, the `voice` track in `audio/mix.json`), `timeline.json` (slots, word times),
+  `vo.words.json` (for `showtime captions`), `vo.srt`, `lines/NN-id.wav` (§ Script → timeline → scenes)
+- The voice sets scene lengths: DOM projects run `showtime retime <project> --from-voice voice/timeline.json`;
+  canvas films load `showtime voice cues voice/timeline.json -o voice/cues.js`. Never hand-edit durations;
+  trigger a reveal at the `start` of the word that names it (§ Script → timeline → scenes)
+- To change a line, edit it and rerun: only that line re-synthesizes; later `start` values move, so reread
+  `timeline.json` (§ Script → timeline → scenes)
+- Budget about 2.8–3.3 words/s in English at speed 1.0, 2.9 in Spanish, 2.4 for a calm read; leave 10–20 % of
+  the video without speech (§ Word budgets)
+- One idea per sentence, 8–16 words; end on the payoff word with 0.5–1 s of tail. Directions go in
+  `<!-- comments -->` or `> quote` lines, never in the spoken text (§ Writing for the ear)
+- Speed: 0.9–0.95 for explainers, 1.0 natural, 1.05–1.15 for hooks; above 1.2 sounds rushed. When a fit leaves
+  a line faster than x1.1, cut words rather than accept it (§ Choosing a voice, § Script → timeline → scenes)
+- Wrong word: `showtime voice ipa "Word" [--lang es]`, then a `lexicon.json` entry (`ipa` Kokoro only, `say`
+  every engine) or inline `[SQL](sequel)` (§ Pronunciation fixes)
+- Spanish voices read English names with Spanish rules: add the product name to the lexicon in every Spanish
+  video. `--lang es` is Castilian, `--lang es-419` Latin American (§ Pronunciation fixes, § Choosing a voice)
+- Supertonic is not reproducible: keep its WAVs and `timeline.json`. You cannot listen: compare candidates
+  with `showtime transcribe` round-trips and `voice ipa` (§ Choosing a voice)
+- Narration masters to −16 LUFS / −1.5 dBTP; keep it there and let `audio mix` duck the music (§ Mastering)
+- Never imitate a real person; say the voice is synthetic where the platform expects it; CC-BY Piper voices
+  need their credit line (§ Engines and licensing)
+- Synthesize the voice before a long browser render; "Kokoro is not ready": `showtime setup`
+  (§ Performance, § Platform notes and troubleshooting)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| Commands | 54-66 |
+| Choosing a voice | 68-107 |
+| Writing for the ear | 109-120 |
+| Word budgets | 122-133 |
+| Script → timeline → scenes (timing-driven editing) | 135-188 |
+| Captions from TTS timings | 190-196 |
+| Pronunciation fixes | 198-220 |
+| Aligning a recorded voice (or another engine's output) | 222-237 |
+| Mastering | 239-255 |
+| Engines and licensing | 257-267 |
+| Performance (measured on a 6-core Intel i5-8500, CPU only, load ~3) | 269-284 |
+| Platform notes and troubleshooting | 286-299 |
+
 ## Commands
 
 | Command | What it does |
@@ -64,6 +111,7 @@ candidates with `showtime transcribe` round-trips and `voice ipa`, and state the
 - **One idea per sentence, 8–16 words.** Long sentences lose the listener and make captions wrap badly.
 - **Write numbers the way they should be said** when it matters: "twenty twenty-six", "three and a half". Common forms are handled already. "3.5" becomes "3 point 5". "in 2026" becomes "twenty twenty-six". "Dr." becomes "doctor". "e.g." becomes "for example". "showtime.dev" becomes "showtime dot dev". "v2.0" becomes "version 2 point 0". A bare year after "the" is not covered ("the 1973 Nobel" is read "nineteen hundred seventy three"): write it inline, `the [1973](nineteen seventy-three) Nobel`.
 - **Spanish (and French, Portuguese, Italian, German) numbers** are read as written in those languages: "60 000" and "60.000" are one number ("sesenta mil", not digit by digit), "13,7" is "trece coma siete". The Hawaiian ʻokina (U+02BB, or ‘ between letters) is silent instead of spelled out ("Hawaiʻi").
+- **Math and sequences by ear.** A listener hears no punctuation: "One. One plus three is four." is heard as "one one plus three". Never end a sentence and start the next on the same word; say a running sum as steps ("Start with one. Add three, and you have four. Add five: nine.") and symbols as words ("n squared", "two n minus one"). `voice script` warns when a line repeats a word across a sentence break.
 - **Front-load the subject:** "Showtime renders on your machine", not "On your machine, rendering is done by Showtime".
 - **Name what is on screen at the moment it appears.** The voice sets the timing, so a reveal happens when its word is spoken, and not before.
 - **Use contractions and plain words.** "It's", "you'll", "use". Avoid "utilize". Read the script aloud once in your head.

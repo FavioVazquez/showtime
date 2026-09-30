@@ -50,6 +50,10 @@ Setup also writes the stable command `~/.showtime/bin/showtime` (Windows: `showt
 working when a plugin update moves the skill folder. `showtime` below means that command, or the
 skill's own `bin/showtime`.
 
+Review mode, the same in every agent: quality (the default) reviews every finished video with a critic round
+before delivery; ask your agent for "lean" or run `showtime config mode lean` (or set `SHOWTIME_MODE=lean`;
+MCP clients: the `new_project` tool's `mode`) for a cheaper draft pass.
+
 ## showtime install
 
 For agents that do not install plugins from this repository, one command puts each piece where that
@@ -284,7 +288,17 @@ Any client that starts local (stdio) servers can use showtime's MCP server on it
 ([@faviovazquez/showtime-mcp](https://www.npmjs.com/package/@faviovazquez/showtime-mcp), also in the MCP Registry as
 `io.github.FavioVazquez/showtime`),
 `{"command": "npx", "args": ["-y", "@faviovazquez/showtime-mcp"]}` (see
-[`packages/npm/README.md`](../packages/npm/README.md)), and [`showtime-0.2.0.mcpb`](https://github.com/FavioVazquez/showtime/releases/download/v0.2.0/showtime-0.2.0.mcpb) from the v0.2.0 release, which
+[`packages/npm/README.md`](../packages/npm/README.md)), and [`showtime-0.3.0.mcpb`](https://github.com/FavioVazquez/showtime/releases/download/v0.3.0/showtime-0.3.0.mcpb) from the v0.3.0 release, which
 Claude Desktop opens with a double click. Setup still runs once on your machine, because the models and tools
 never travel inside a package. Long tools answer with a task id after about
 20 s when a client stops calls early; the `status` tool reports progress and the result.
+
+The MCP server has a `guide` tool that reads a reference by the piece (its rules, one section, or the lines that
+mention something), so a client without the skill does not have to load whole files, and a `receipt` tool that writes a
+job's receipt. Tokens and cost are "not reported by this agent" through MCP.
+
+## In CI: the GitHub Action
+
+To make a release or pull-request video on a runner, with no agent and no API key, use the
+[showtime GitHub Action](github-action.md). Its `agent` mode runs a coding-agent command you configure, with your own
+key as a secret; only the plumbing of that mode is tested here, not a particular agent.

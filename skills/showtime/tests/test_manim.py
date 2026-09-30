@@ -480,14 +480,16 @@ class T10Check(unittest.TestCase):
                '        self.play(FadeIn(t), run_time=0.5)\n        self.wait(5)\n'
                '        self.play(FadeOut(t), run_time=0.5)\n        self.hold(2)\n')
         d = project("slow", src, narration="## hook\nA short line.\n")
-        cp = showtime("manim", "check", d, "--json", check=False)
+        # the dry run alone (--no-draft): the draft pass adds qa's black-frame FAIL for this label on a dark ground
+        # (tests/test_manim_draft.py); exit codes below are about the dry run's warnings
+        cp = showtime("manim", "check", d, "--json", "--no-draft", check=False)
         res = json.loads(cp.stdout)
         codes = {i["code"]: i for i in res["findings"]}
         self.assertIn("static_hold", codes, res["findings"])
         self.assertAlmostEqual(codes["static_hold"]["seconds"], 5.0, places=1)
         self.assertIn("word_budget", codes)
         self.assertEqual(cp.returncode, 0, "warnings alone pass")
-        self.assertEqual(showtime("manim", "check", d, "--strict", check=False).returncode, 1)
+        self.assertEqual(showtime("manim", "check", d, "--strict", "--no-draft", check=False).returncode, 1)
         # an unknown cue word is an error (static), with the fix pointing at the cue list
         (d / "scenes.py").write_text(src.replace('self.wait(5)', 'self.at("nowhere")'), encoding="utf-8")
         res = json.loads(showtime("manim", "check", d, "--json", check=False).stdout)

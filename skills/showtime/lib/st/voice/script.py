@@ -158,6 +158,10 @@ def load_script(path: PathLike) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     return cfg, lines
 
 
+# the same word either side of a sentence break ("One. One plus three is four.") sounds like a stutter
+STUTTER_RE = re.compile(r"\b(\w+)[.!?;:]\s+\1\b", re.I | re.U)
+
+
 def normalize(cfg: Dict[str, Any], lines: List[Dict[str, Any]], overrides: Dict[str, Any]
               ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     c = dict(DEFAULTS)
@@ -177,6 +181,10 @@ def normalize(cfg: Dict[str, Any], lines: List[Dict[str, Any]], overrides: Dict[
             lid = "%s-%d" % (lid, i)
         seen.add(lid)
         item = {"id": lid, "index": i, "text": str(ln["text"]).strip()}
+        m = STUTTER_RE.search(item["text"])
+        if m:
+            warn("line %s: \"%s\" is heard as \"%s %s\" (the listener hears no full stop): say it once, or "
+                 "change the second (\"Start with one. Add three: four.\")" % (lid, m.group(0), m.group(1), m.group(1)))
         for k in ("voice", "speed", "style", "lang", "engine"):
             item[k] = ln.get(k) if ln.get(k) is not None else c.get(k)
         item["speed"] = float(item["speed"] or 1.0)

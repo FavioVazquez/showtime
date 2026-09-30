@@ -18,11 +18,12 @@
 // out, so nothing else is pushed off frame; default [50, 50]), ease (default "camera").
 // contain (default true): at zoom >= 1 the content always covers the frame (no empty borders).
 // drift: after the last move, a slow push-in of this much zoom per second (capped at +6 %), so a
-// hold is never frozen. Children with data-depth="k" (0..1) move k times as much as the camera
+// hold is never frozen; data-drift="hold" is the documented default for holds (0.012 = 1.2 %/s). Children with data-depth="k" (0..1) move k times as much as the camera
 // (parallax); they must fill the camera box (position: absolute; inset: 0).
 import { define, clamp, ease, lerp, $$ } from './core.js';
 
 const num = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
+export const HOLD_DRIFT = 0.012;
 
 export const Camera = define({
   name: 'camera',
@@ -59,7 +60,11 @@ export const Camera = define({
     // depth layers: net motion = camera^k (see the matrix note in update)
     const layers = $$('[data-depth]', el).filter((d) => d.parentElement === el).map((d) => ({ el: d, k: clamp(num(d.dataset.depth, 1), 0, 2) }));
     for (const L of layers) L.el.style.transformOrigin = '0 0';
-    const drift = Math.max(0, num(o.drift, 0));
+    // drift: true / "hold" = HOLD_DRIFT, the documented hold push (1.2 % per second: `showtime check` and
+    // qa's frozen detector both count it as change on light and dark text frames; 0.8 %/s is borderline
+    // and 0.4 %/s fails check on a light text frame, measured 2026-09-30)
+    const rawDrift = el.getAttribute('data-drift') ?? o.drift;   // read as written: "hold" is not a number
+    const drift = ['true', 'hold', 'auto'].includes(String(rawDrift).trim().toLowerCase()) || rawDrift === true ? HOLD_DRIFT : Math.max(0, num(rawDrift, 0));
     // keepText: the union of every visible text box stays inside the frame (minus a margin) while the
     // camera moves, so a push or a lean never slides a headline off the edge
     let tb = null;

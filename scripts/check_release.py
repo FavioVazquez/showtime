@@ -23,6 +23,9 @@ Checks:
               rules.md and its brief in references/crew/ (relative to the skill folder, so any host can
               follow it), runs showtime without ${CLAUDE_PLUGIN_ROOT}, carries the return contract, and
               every brief has an agent
+  guides      every reference (not index.md or the crew briefs) opens with a `## Essentials` block of at
+              most 40 lines whose section pointers (§3, § Speed) name real sections, followed by the
+              table of its sections and their line ranges; the tables are fixed (rewritten) unless --check
   paths       no machine-specific paths (a developer's home folder, temp folders) in shipped files
   names       no names of outside projects this repo must not mention (list kept encoded below)
   terms       words CONTEXT.md says to avoid (warning only)
@@ -771,7 +774,7 @@ def check_directory(f: Findings, files: Sequence[Path]) -> Dict[str, Any]:
 def run_checks(fix: bool = False, set_version: Optional[str] = None,
                only: Optional[Iterable[str]] = None) -> Findings:
     f = Findings()
-    default = ["versions", "skill", "links", "commands", "agents", "paths", "names", "terms", "media"]
+    default = ["versions", "skill", "links", "commands", "agents", "guides", "paths", "names", "terms", "media"]
     if not (REPO / "examples").is_dir():
         default.append("directory")   # the plugin repository (the examples have their own)
     want = set(only or default)
@@ -786,6 +789,8 @@ def run_checks(fix: bool = False, set_version: Optional[str] = None,
         check_commands(f)
     if "agents" in want:
         check_agents(f)
+    if "guides" in want:
+        check_guides(f, fix)
     if want & {"paths", "names"}:
         check_paths_and_names(f, shipped_files())
     if "terms" in want:
@@ -795,6 +800,61 @@ def run_checks(fix: bool = False, set_version: Optional[str] = None,
     if "directory" in want:
         check_directory(f, shipped_files())
     return f
+
+
+def load_guide():
+    """skills/showtime/lib/st/guide.py as a module (stdlib only; loaded by path, no package import)."""
+    import importlib.util
+    path = LIB / "st" / "guide.py"
+    spec = importlib.util.spec_from_file_location("showtime_guide", str(path))
+    mod = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+    sys.modules["showtime_guide"] = mod
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    return mod
+
+
+_POINTER_RE = re.compile(r"\(§\s*([^()]+)\)")
+
+
+def check_guides(f: Findings, fix: bool = False, refs: Optional[Path] = None) -> None:
+    """Essentials blocks, their section pointers, and the section tables (rewritten when fix)."""
+    g = load_guide()
+    refs = refs or SKILL / "references"
+    for name, path in g.topics(refs).items():
+        if not g.needs_essentials(name):
+            continue
+        text = read(path)
+        doc = g.Doc(path, text)
+        where = rel(path)
+        ess = doc.essentials()
+        if ess is None:
+            f.add("guides", "error", "no `## Essentials` block after the opening paragraph (the rules for this "
+                  "step, then the section table)", where)
+            continue
+        if doc.body_sections() and doc.sections[0] is not ess:
+            f.add("guides", "error", "the Essentials block must be the first `## ` section", where)
+        body = doc.essentials_body()
+        if len(body) > g.ESSENTIALS_MAX_LINES:
+            f.add("guides", "error", "the Essentials block is %d lines (max %d): keep the rules, move detail into "
+                  "the sections" % (len(body), g.ESSENTIALS_MAX_LINES), where)
+        if not any(l.lstrip().startswith("- ") for l in body):
+            f.add("guides", "error", "the Essentials block has no bullets", where)
+        for i, line in enumerate(body, ess.start + 1):
+            for m in _POINTER_RE.finditer(line):
+                for sel in re.split(r",\s*(?:§\s*)?", m.group(1)):
+                    sel = sel.strip()
+                    if sel and g.find_section(doc, sel)[0] is None:
+                        f.add("guides", "error", "Essentials points at §%s, which is not a section of this file"
+                              % sel, "%s:%d" % (where, i))
+        new = g.with_table(text, path)
+        if new != text:
+            if fix:
+                with open(str(path), "w", encoding="utf-8", newline="\n") as fh:
+                    fh.write(new)
+                f.add("guides", "info", "section table rewritten (line ranges current)", where)
+            else:
+                f.add("guides", "error", "the section table is missing or out of date: run "
+                      "`python scripts/check_release.py --only guides`", where)
 
 
 def load_publish_media():
@@ -842,7 +902,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                         "  python scripts/check_release.py --check --only commands,links")
     ap.add_argument("--check", action="store_true", help="report only; never modify files")
     ap.add_argument("--set-version", metavar="X.Y.Z", help="bump every version field to X.Y.Z")
-    ap.add_argument("--only", help="comma list: versions,skill,links,commands,agents,paths,names,terms,media,directory")
+    ap.add_argument("--only", help="comma list: versions,skill,links,commands,agents,guides,paths,names,terms,media,"
+                                   "directory")
     ap.add_argument("--json", action="store_true", help="print findings as JSON")
     args = ap.parse_args(argv)
     if args.check and args.set_version:
@@ -857,7 +918,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         for it in f.items:
             print("%-7s %-9s %s%s" % (it["level"].upper(), it["check"], it["message"],
                                       ("  (%s)" % it["where"]) if it["where"] else ""))
-        warns = len(f.items) - len(errs)
+        warns = sum(1 for i in f.items if i["level"] == "warning")
         print("check_release: %d error(s), %d warning(s), version %s" % (len(errs), warns,
                                                                          args.set_version or lib_version()))
     return 1 if errs else 0

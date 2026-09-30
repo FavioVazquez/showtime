@@ -131,7 +131,8 @@ def estimate(narration: Path, fps: float, wps: float = EST_WPS) -> Dict[str, Any
 def load(cues_arg: Optional[str], project_dir: Path, voice_rel: Optional[str], narration_rel: Optional[str],
          fps: float) -> Optional[Dict[str, Any]]:
     """The cues for a render/check: --cues, else manim.json `voice` when it exists, else an estimate
-    from narration.md, else None (scenes then run on their own timing)."""
+    from narration.md, else None (scenes then run on their own timing; also for a narration.md without
+    lines, a silent film)."""
     if cues_arg:
         p = Path(cues_arg)
         if not p.is_absolute() and not p.exists():
@@ -146,6 +147,10 @@ def load(cues_arg: Optional[str], project_dir: Path, voice_rel: Optional[str], n
     if voice_rel and (project_dir / voice_rel).is_file():
         return from_timeline(project_dir / voice_rel, fps)
     if narration_rel and (project_dir / narration_rel).is_file():
+        # a narration.md with no lines (only the stub's comment, or a note such as "no voice-over")
+        # is a silent film: the scenes run on their own timing
+        if not parse_narration((project_dir / narration_rel).read_text(encoding="utf-8")):
+            return None
         return estimate(project_dir / narration_rel, fps)
     return None
 

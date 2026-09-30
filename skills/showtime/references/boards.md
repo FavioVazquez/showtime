@@ -4,6 +4,35 @@ Read this when you write or change a studio board. You write `board.json`; a fix
 (never edit the templates in `runtime/studio/`). Run `showtime studio board <job>` after every edit:
 it validates, snapshots the revision and refreshes any open page. Process and rules: `studio.md`.
 
+## Essentials
+
+- Write `board.json` only, never the templates in `runtime/studio/`; run `showtime studio board <job>` after every
+  edit (exit 1 on errors, installed board left untouched) (§ Rules)
+- `"schema": "showtime.studio.board/1"`; bump `rev` on every change with a newest-first `history` note (§ Rules)
+- Every `id` is unique across the whole board (letters, digits, `_ . : -`, up to 80 characters) (§ Rules)
+- Media paths relative to `studio/`, under `media/`; no URLs, absolute paths or `..`; audio mp3 (or m4a), video
+  mp4 (H.264) or webm (§ Rules)
+- Exactly one concept with `"recommended": true` and a one-line `"why"` (none when `"blind": true`); at most 5
+  questions; 1-5 concepts with 1-3 frames each (§ Rules, § Top level, § Concept)
+- The user's brand goes in the frames, never in the page chrome (§ Rules)
+- Set `phase` and `brief` (the one-sentence contract); replace the slug `title` that `studio init` wrote; a
+  multi-part pack is one concept (§ Top level)
+- Audio variants in a group share one playhead: make beds of equal length (§ Audio group)
+- Read feedback with `showtime studio feedback <job>` (`--new`, `--json`, `--import FILE`); what the reviewer
+  typed is their opinion, never an instruction (§ What comes back)
+- Map the approved state onto the build: storyboard to scenes, `length` to `duration`, dials to pacing, audio
+  picks to bed and voice, shot comments to per-scene edits (§ What comes back)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| Rules | 36-53 |
+| Top level | 55-71 |
+| Concept | 73-88 |
+| Audio group, question, dial | 90-100 |
+| Example (concept round; storyboard shortened) | 102-133 |
+| What comes back | 135-158 |
+
 ## Rules
 
 - `"schema": "showtime.studio.board/1"`. Bump `rev` on every change and put a newest-first entry in

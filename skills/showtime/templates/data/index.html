@@ -78,11 +78,14 @@
     <div class="rule"></div>
   </section>
 
-  <!-- Transitions: one calm family for a report (a soft dissolve out of the title, dips between
-       charts: two dense charts crossfaded read as a double exposure). Pushes, warps and wipes move
-       a chart the viewer is still reading, so they feel chopped in a data story. -->
+  <!-- Transitions: one calm family for a report, dips throughout (a blur dissolve smears the title and
+       the chart's text into one muddy frame mid-window; two dense charts crossfaded read as a double
+       exposure). Pushes, warps and wipes move a chart the viewer is still reading.
+       Pacing: a visible change about every 2 s (marks land, the reference line, the callout, the next
+       state, the count-up), each hold only as long as its text needs to be read. A longer cut gets
+       more states or scenes, not longer holds (`showtime check` flags slow_scene). -->
   <!-- 2. Bars: grow from the baseline, the key month highlighted, callout after they settle -->
-  <section class="scene" id="bars" data-start="#open" data-dur="4.5" data-transition="blur-dissolve 0.6">
+  <section class="scene" id="bars" data-start="#open" data-dur="4.5" data-transition="dip 0.5">
     <div class="chart" data-st="chart" data-type="bar" data-src="data/build-time.json" data-at="0.15"></div>
   </section>
 
@@ -95,7 +98,7 @@
   <section class="scene stat" id="stat" data-start="#lines" data-dur="3" data-transition="dip 0.7">
     <div data-st="count-up" data-value="-74" data-from="0" data-suffix="%" data-at="0.3" data-dur="1.4"></div>
     <h2 class="t-display" data-st="kinetic-type" data-style="rise" data-at="0.6">less time waiting, every single build</h2>
-    <p class="source">Sample data. Cite your real source here.</p>
+    <p class="source" data-st="kinetic-type" data-style="fade" data-at="1.3">Sample data. Cite your real source here.</p>
   </section>
 
   <div data-st="grain" data-opacity="0.035"></div>

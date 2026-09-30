@@ -1,18 +1,62 @@
 # Review: the critic pass and acting on feedback
 
-Read this when a video is headed for publishing (the user says it will be posted, shown, or sent), when the
-user asks for a critique, or when the user (or a critic) sends notes on a draft, storyboard or animatic.
+Read this when a video is finished (quality mode, the default, reviews every finished video), when it is
+headed for publishing, when the user asks for a critique, or when the user (or a critic) sends notes on a
+draft, storyboard or animatic.
 The checklists live in `qa.md`; this file is the review protocol (self-review, critic, notes).
+
+## Essentials
+
+- Quality mode (the default): every finished video gets a critic round by a fresh sub-agent before delivery;
+  `showtime qa <job>` says "review pending" with the command until the round has a verdict. The first round is
+  pairwise (`--against <previous final>`) when the job has an earlier final (§1)
+- Lean mode (only when the user asked for a draft): self-review (`qa`, `look`, the must-show list, the eight
+  questions); the critic only when publish-bound, studio, or asked (§1)
+- Type detail pass: every text frame at full size (`frames/text-*.png`), never only on contact sheets (§1)
+- Build the pack with `showtime review-pack <job>` (`--platform`, `--lufs -16` for another target); pack every
+  deliverable you publish (`--project <dir>` for a file outside the job) (§2)
+- Give the critic only the path of `CRITIC.md`, ask for `FINDINGS.md` there (save a chat answer there yourself);
+  name a vision-capable model; never tell it what to ignore or how severe things are (§2, §3)
+- Round 2 on is pairwise (`showtime review-pack <job> --against best`): two fresh critics at once, one per
+  `order-N/CRITIC.md` (§2, §3)
+- No sub-agent tool: answer `CRITIC.md` yourself into `FINDINGS.md`, starting `SELF-REVIEW (no critic
+  available)`, and tell the user it was a self-review (§3)
+- Confirm each finding with `showtime snap <project> --at t` before changing anything; blockers first, then
+  should-fix; keep a finding you disagree with and say why, never drop it silently (§4)
+- Then re-render, `showtime check` after timing fixes, `showtime qa <job>`, a pairwise round, and
+  `showtime review-verdict <job>`: an improvement only when preferred in both orders (§4)
+- Three rounds at most; then ship the best version with its open findings listed (§4)
+- User notes: echo them back numbered with timestamps; ask only about an ambiguous one (2-3 readings, a
+  default); apply blockers, then cheap tweaks, then structural changes (§5)
+- Prove fixes with `showtime snap <new> --at t --compare <old>`; push back when a note collides with a locked
+  decision; log every round in `work/feedback.md` and `showtime job note --stage feedback --verified "..."` (§5)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| 1. Pick the tier | 43-87 |
+| 2. Build the pack | 89-130 |
+| 3. Dispatch the critic | 132-162 |
+| 4. Act on the findings | 164-185 |
+| 5. Notes from the user | 187-209 |
 
 ## 1. Pick the tier
 
-- **Quick work** (drafts, internal, "just make it"): self-review. Run `showtime qa <job>` (the latest
-  final), open the contact sheet it writes and look at it, check the brief's must-show list, and ask
-  yourself the questions below. No sub-agent.
-- **Publish-bound or studio work**: one critic pass by a fresh sub-agent on the final candidate (optionally
-  also on the first look). Before the final render, the `showtime:researcher` checks every claim and
-  asset license (`crew/researcher.md`). The critic sees files, never the conversation. This is the only critic
-  protocol; `qa.md` defers to it.
+- **Quality mode (the default), every finished video**: first the self-review below (`showtime qa <job>` on
+  the latest final, `showtime look <job>`, the must-show list, the questions), then one critic round by a
+  fresh sub-agent before delivery (optionally also one on the first look in studio). `showtime qa`,
+  `status`, `deliver exports` and `job note --stage deliver` print `WARN review pending ... -> <command>`
+  until the round has a verdict: FINDINGS.md with its VERDICT line, or a pairwise round decided by
+  `showtime review-verdict`. When the job already has an earlier final (a fix after a look), the command it
+  names is pairwise, `showtime review-pack <job> --against <that final>`, so the round also says whether the
+  fix helped. A "not ready" verdict keeps the review pending until a later round (section 4). When the video
+  states facts, numbers or claims, the `showtime:researcher` checks every claim and asset license before
+  the final render (`crew/researcher.md`).
+- **Lean mode** (the user asked for a quick draft, a rough cut, something cheap, or no review;
+  `modes.md` section 6): the self-review only. The critic runs when the work is publish-bound or studio, or
+  the user asks.
+
+The critic sees files, never the conversation. This is the only critic protocol; `qa.md` defers to it.
 
 Self-review questions (also what a critic weighs):
 1. Hook: at 1.5 s, does a stranger know what this is about and want to keep watching?
@@ -75,9 +119,21 @@ scenes: `<section>`/`.scene` clips win when a page has them, otherwise a clip in
 or an open-ended layer is left out; mark any other overlay with `data-overlay`. A film with DOM overlays
 over its canvas is split by its `CUE.acts`.
 
+**Pairwise pack (round 2 on).** `showtime review-pack <job> --against best` (or `--against round-N`, or an
+older video file) pairs the latest render with the best version so far, blind: the two are `X` and `Y` at
+random, with the same evidence for both at the same times (`X/` and `Y/`: sheet, frames at matched times, a
+card past the shorter one's end, cut strips, text crops, loudness plot, `qa.txt`, `transcript.txt` of the
+narration from its captions or voice timeline, else local speech recognition when only the other has one),
+`compare-XY.jpg` / `compare-YX.jpg` side by side, and two briefs: `order-1/CRITIC.md` (X first) and
+`order-2/CRITIC.md` (Y first). Nothing in the round names the files; the key is in
+`<review>/.pairwise-keys/`, never handed to a critic. The context is only what the video was asked to be
+(brief, storyboard, script, brand, credits), not the fix log.
+
 ## 3. Dispatch the critic
 
 - Give the sub-agent only the path of `CRITIC.md` and ask it to write `FINDINGS.md` in the same folder.
+  A pairwise round needs **two fresh critics**, dispatched at once, one per order, each given only its
+  `order-N/CRITIC.md`; one critic judging both orders is not two judgments.
   With the plugin installed, dispatch the `showtime:critic` agent (brief: `crew/critic.md`); otherwise
   a general sub-agent told to read that brief. `crew.md` pattern D says when a studio job spends
   round 1 on the first look.
@@ -85,6 +141,7 @@ over its canvas is split by its `CUE.acts`.
   in its format, into `FINDINGS.md`, starting with `SELF-REVIEW (no critic available)`. Look at every
   sheet, including `cuts.jpg`. Tell the user the review was a self-review and ask for a second pair of
   eyes before calling the video shipped: self-reviews rate real should-fix problems as polish.
+  A self-answered pairwise round is not blind (you know which is new): `review-verdict` marks it; say so.
 - Name a vision-capable model explicitly; the critic must look at the images.
 - Do not tell it what to ignore or how severe things are. Coaching a reviewer toward "minor at most" is how
   real flaws ship.
@@ -98,7 +155,9 @@ Severity, as CRITIC.md states it:
   off-brand colours, captions more than ~150 ms out of sync.
 - **Polish**: easing, 1-2 frame timing, colour nuance.
 
-Every finding cites a timestamp and a frame path from the pack. Findings without a location are dropped.
+Every finding cites a timestamp and a frame path from the pack (in a pairwise round also its video, `[X]` or
+`[Y]`). Findings without a location are dropped. **No scores**: a 1-10 rating from a model reviewer is noise;
+the verdict, the preference and the findings carry the judgment.
 The answer also lists what works, what the critic declined to judge, a verdict (ship / ship after fixes /
 not ready) and the best poster frame.
 
@@ -112,11 +171,16 @@ not ready) and the best poster frame.
 3. If you disagree with a finding, keep it and say why in your summary to the user; never drop it silently.
 4. Fix, re-render (the next `final-N.mp4`; the job points at it), re-run `showtime check` after timing
    fixes (a shorter scene can break a label elsewhere), run `showtime qa <job>` again, and build round 2
-   (`showtime review-pack <job>` again; both follow the latest final). Round 2 judges only the fixes and
-   anything they broke. Text-only notes (a README line, share text) need no re-render and no new pack.
-5. **Two rounds at most.** If blockers remain after round 2, stop and show the user the open findings with
-   frames; they decide. `review-pack` refuses a third critic round unless `--force-round` is given.
-6. **Polish after a "ship" verdict** needs no new pack: fix, then prove each fix with a before/after pair
+   as a pairwise round: `showtime review-pack <job> --against best` (it follows the latest final). Text-only
+   notes (a README line, share text) need no re-render and no new pack.
+5. **Decide with `showtime review-verdict <job>`** once both orders' `FINDINGS.md` exist. The rule, in code:
+   the new render is an improvement only when **preferred in both orders**; a tie or a split (the preference
+   followed the position) is not, and the older one stays the best (`<review>/best.json`; `VERDICT.md` lists
+   the best version's open findings). A losing render can leave the job with `showtime job discard`.
+6. **Three rounds at most.** After round 3, ship the best version with its open findings listed; open
+   blockers go to the user with frames, and they decide. `review-pack` refuses a fourth round unless
+   `--force-round` is given.
+7. **Polish after a "ship" verdict** needs no new pack: fix, then prove each fix with a before/after pair
    (`showtime snap <new.mp4> --at t1,t2 --compare <old.mp4>`), run `showtime qa`, and log it in
    `work/feedback.md`. An unused render is dropped from the job with `showtime job discard <job> <file>` (its poster, credits and `.work/` move with it to `work/discarded/`; caption files stay, name one to discard it too).
 

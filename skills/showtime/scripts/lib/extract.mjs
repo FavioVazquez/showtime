@@ -307,6 +307,41 @@ export function extractPage(opts) {
     svgs.push({ svg: out, rendered: [Math.round(r.width), Math.round(r.height)], inHomeLink, logo: inHomeLink || /logo/i.test((s.getAttribute('class') || '') + (s.closest('[class*=logo i]') ? ' logo' : '')) });
   }
 
+  // ---- wordmark: the name as the site sets it (a short h1 or a text logo), split into runs by colour,
+  // so a launch film can set it the same way ("quill" in ink, "sort" in the accent)
+  let wordmark = null;
+  const wmCands = [...document.querySelectorAll('header [class*=logo i], a[href="/"], h1')].filter((el) => vis(el) && !el.querySelector('img,svg'));
+  for (const el of wmCands) {
+    const t = clean(el.innerText);
+    if (!t || t.length > 28 || t.split(' ').length > 3) continue;
+    const runs = [];
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const s = n.nodeValue.replace(/\s+/g, ' ');
+      if (!s.trim()) continue;
+      const cs = getComputedStyle(n.parentElement);
+      const color = toHex(cs.color);
+      const last = runs[runs.length - 1];
+      if (last && last.color === color && last.weight === cs.fontWeight) last.text += s;
+      else runs.push({ text: s, color, weight: cs.fontWeight });
+    }
+    if (!runs.length) continue;
+    const cs = getComputedStyle(el);
+    wordmark = { text: t, runs: runs.map((r) => ({ ...r, text: r.text.trim() })).filter((r) => r.text), tag: el.tagName.toLowerCase(),
+      font: { family: cs.fontFamily, weight: cs.fontWeight, size: cs.fontSize, letterSpacing: cs.letterSpacing } };
+    break;
+  }
+  // ---- code blocks: how the product shows a command (its terminal look)
+  let code = null;
+  for (const el of document.querySelectorAll('pre, [class*=terminal i], [class*=codeblock i], [class*=code-block i]')) {
+    if (!vis(el)) continue;
+    const cs = getComputedStyle(el);
+    const bg = toHex(cs.backgroundColor);
+    if (!bg) continue;
+    code = { bg, fg: toHex(cs.color), radius: cs.borderRadius, family: cs.fontFamily, sample: clean(el.innerText).slice(0, 200) };
+    break;
+  }
+
   // ---- sections (for element screenshots)
   const sections = [];
   const secCands = document.querySelectorAll('header,main>section,main>div,section,footer,[class*=hero i],[id*=pricing i],[class*=pricing i],[class*=testimonial i],[class*=feature i]');
@@ -340,7 +375,7 @@ export function extractPage(opts) {
       shadows: [...shadows.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([v, c]) => ({ value: v, count: c })) },
     colors: { roles, palette },
     fonts: { loaded: fontsLoaded.map(({ key, ...f }) => f).slice(0, 40), roles: fontRoles, faces: fontFaces },
-    images, backgrounds, videos, svgs,
+    images, backgrounds, videos, svgs, wordmark, code,
     sections: sections.map(({ el, ...s }) => s), layout,
     text: clean(document.body.innerText).slice(0, 20000),
   };

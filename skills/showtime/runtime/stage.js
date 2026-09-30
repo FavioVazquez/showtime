@@ -369,21 +369,33 @@
     if (f < ef) return true;
     return cfg.duration > 0 && c.end >= cfg.duration - 1e-6; // a clip that reaches the end owns the last frame
   }
+  function setVar(el, name, v) {
+    if (el.style.getPropertyValue(name) !== v) el.style.setProperty(name, v);
+  }
   function applyClips(t) {
     if (clipsDirty) parseClips();
     var f = frameOf(t);
     for (var i = 0; i < clipList.length; i++) {
       var c = clipList[i], el = c.el;
       var on = clipActive(c, f);
+      var len = isFinite(c.end) ? c.end - c.start : (cfg.duration > 0 ? cfg.duration - c.start : 0);
       if (on) {
         if (!el.hasAttribute('data-active')) el.setAttribute('data-active', '');
         var local = Math.max(0, t - c.start);
-        var len = isFinite(c.end) ? c.end - c.start : (cfg.duration > 0 ? cfg.duration - c.start : 0);
         el.style.setProperty('--t', local.toFixed(4));
         el.style.setProperty('--p', (len > 0 ? clamp(local / len, 0, 1) : 1).toFixed(4));
-      } else if (el.hasAttribute('data-active')) {
-        el.removeAttribute('data-active');
+        continue;
       }
+      if (el.hasAttribute('data-active')) el.removeAttribute('data-active');
+      if (!isFinite(c.start)) continue;
+      // An inactive clip can still be on screen (a transition keeps the outgoing scene, and an
+      // early-aligned window the incoming one), so its --t/--p are a function of t alone, never of
+      // the previous seek: before its start it rests at 0, after its end it holds its last frame
+      // (the value an in-order render leaves there).
+      var before = f < edgeFrame(c.start), held = 0;
+      if (!before) held = Math.max(0, (edgeFrame(c.end) - 1) / cfg.fps - c.start);
+      setVar(el, '--t', held.toFixed(4));
+      setVar(el, '--p', (before ? 0 : len > 0 ? clamp(held / len, 0, 1) : 1).toFixed(4));
     }
     var root = document.documentElement;
     if (root) {
@@ -800,6 +812,22 @@
     inOutExpo: function (p) { return p <= 0 ? 0 : p >= 1 ? 1 : p < 0.5 ? Math.pow(2, 20 * p - 10) / 2 : (2 - Math.pow(2, -20 * p + 10)) / 2; },
     outBack: function (p) { var c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2); },
     outElastic: function (p) { var c4 = (2 * Math.PI) / 3; return p <= 0 ? 0 : p >= 1 ? 1 : Math.pow(2, -10 * p) * Math.sin((p * 10 - 0.75) * c4) + 1; },
+    // the rest of the standard set, same names as Film's F.E (pages written from memory use them)
+    inSine: function (p) { return 1 - Math.cos(p * Math.PI / 2); },
+    outSine: function (p) { return Math.sin(p * Math.PI / 2); },
+    inOutSine: function (p) { return -(Math.cos(Math.PI * p) - 1) / 2; },
+    inCubic: function (p) { return p * p * p; },
+    inQuart: function (p) { return p * p * p * p; },
+    outQuart: function (p) { return 1 - Math.pow(1 - p, 4); },
+    inOutQuart: function (p) { return p < 0.5 ? 8 * p * p * p * p : 1 - Math.pow(-2 * p + 2, 4) / 2; },
+    inExpo: function (p) { return p <= 0 ? 0 : Math.pow(2, 10 * p - 10); },
+    inCirc: function (p) { return 1 - Math.sqrt(1 - p * p); },
+    outCirc: function (p) { return Math.sqrt(1 - Math.pow(p - 1, 2)); },
+    inBack: function (p) { var c1 = 1.70158; return (c1 + 1) * p * p * p - c1 * p * p; },
+    inOutBack: function (p) {
+      var c2 = 1.70158 * 1.525;
+      return p < 0.5 ? (Math.pow(2 * p, 2) * ((c2 + 1) * 2 * p - c2)) / 2 : (Math.pow(2 * p - 2, 2) * ((c2 + 1) * (p * 2 - 2) + c2) + 2) / 2;
+    },
   };
 
   // Library helpers. None of them returns the library object: several animation

@@ -36,7 +36,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "harness"))
 import auto_metrics  # noqa: E402
 import common  # noqa: E402
 import judge  # noqa: E402
-from pairwise import CRITERIA, build_side, html_recording, is_html  # noqa: E402
+from pairwise import CRITERIA, build_side, html_recording, is_html, stills_from  # noqa: E402
 
 PROMPT = """You are a senior video editor judging {n} finished deliverables made for the same request.
 You do not know who or what made them; judge only what is in front of you.
@@ -57,6 +57,37 @@ accuracy (no wrong or invented facts; correct maths or data), polish (no glitche
 cut-off text, placeholder content). Then rank all {n} from the one you would ship first to the one you
 would ship last (no ties). Ignore file size and render speed. Do not favour any position. Answer only
 with the JSON."""
+
+
+REFERENCE_PROMPT = """The request came with a reference video for style. Stills of it are in {folder}/frames/ (the same
+kind of contact sheet and stills, in time order). It is not one of the deliverables and is not ranked. Judge
+brief_fit partly on how well each deliverable carries over the reference's look, layout, type, motion and
+rhythm while being about the requested subject; copying the reference's words or subject is off brief."""
+
+
+def reference_video(task: Dict) -> Path:
+    """The task's style reference (spec "judge_reference": {"fetch": id} or {"from": path}), or None."""
+    ref = task.get("judge_reference") or {}
+    if ref.get("fetch"):
+        return common.BENCH / "fixtures" / "media" / (ref["fetch"] + ".mp4")
+    if ref.get("from"):
+        return common.BENCH / ref["from"]
+    return None
+
+
+def add_reference(pk: Path, task: Dict) -> str:
+    """Stills of the task's reference video in <packet>/<label>/frames (same procedure as an HTML recording's
+    stills). Returns the folder name, or "" when the task has no reference."""
+    video = reference_video(task)
+    if video is None:
+        return ""
+    if not video.exists():
+        raise SystemExit("%s: reference %s missing. FIX: python benchmarks/fixtures/fetch_fixtures.py" % (task["id"], video))
+    label = (task.get("judge_reference") or {}).get("label") or "reference"
+    (pk / label / "frames").mkdir(parents=True)
+    index = stills_from(video, pk / label / "frames")
+    (pk / label / "frames" / "INDEX.txt").write_text("".join("%s %s\n" % x for x in index), encoding="utf-8")
+    return label
 
 
 def schema(n: int) -> Dict:
@@ -89,6 +120,7 @@ def main() -> int:
     ap.add_argument("--judges", type=int, default=1, help="judgments per task (default 1)")
     ap.add_argument("--seed", type=int, default=5)
     ap.add_argument("-j", "--jobs", type=int, default=3, help="judgments in parallel (default 3)")
+    ap.add_argument("--skip-cells", default="", help="comma list of cell folders to leave out of the ranking")
     ap.add_argument("--attempts", type=int, default=3,
                     help="a judgment that cannot prove it looked at every frame is asked again, up to N sessions (default 3)")
     a = ap.parse_args()
@@ -103,9 +135,10 @@ def main() -> int:
                     done.add((j["task"], j["judge"]))
     rng = random.Random(a.seed)
     by_task: Dict[str, Dict[str, Dict]] = {}
+    skip = {x for x in a.skip_cells.split(",") if x}
     for rd in auto_metrics.run_dirs(a.run, a.task, None):
         auto = common.read_json(rd / "score" / "auto.json") or {}
-        if auto.get("produced"):
+        if auto.get("produced") and rd.name not in skip:
             by_task.setdefault(rd.parent.name, {})[rd.name] = auto
     jobs = []
     for task_id, arms in sorted(by_task.items()):
@@ -131,13 +164,16 @@ def main() -> int:
             for i, arm in enumerate(order):
                 build_side(pk / ("video-%d" % (i + 1)), arms[arm],
                            html_recording(a.run, task_id, arm) if is_html(arms[arm]) else None)
+            add_reference(pk, task)
             return pk
 
         folders = ["video-%d" % (i + 1) for i in range(n)]
 
         def prompt(pk: Path) -> str:
+            ref = (task.get("judge_reference") or {}).get("label") or "reference"
+            extra = ("\n\n" + REFERENCE_PROMPT.format(folder=ref)) if reference_video(task) is not None else ""
             return (PROMPT.format(n=n, request=task["prompt"], folders=", ".join(f + "/" for f in folders))
-                    + "\n\n" + judge.frames_prompt(pk))
+                    + extra + "\n\n" + judge.frames_prompt(pk))
 
         # A ranking made without looking at the pictures does not count (seen in r1/r2: the judge guessed file
         # names, found none and ranked from numbers and transcripts). Every image must have been opened (from

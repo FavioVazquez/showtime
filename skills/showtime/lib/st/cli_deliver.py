@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 from typing import Any, List, Optional, Tuple
@@ -281,8 +282,14 @@ def cmd_exports(args: argparse.Namespace) -> int:
             from .job import ledger
             ledger.note(job, stage="deliver", event="exports of %s: %s" % (
                 video.name, ", ".join(r["target"] for r in rep["exports"])))
+            from .job import receipt
+            receipt.refresh(job)
         except Exception:  # noqa: BLE001
             pass
+    from .cli_job import _review_of
+    review = _review_of(job, video)
+    if review is not None:
+        rep["review"] = review
     if args.json:
         print_json(rep)
     else:
@@ -303,6 +310,10 @@ def cmd_exports(args: argparse.Namespace) -> int:
             for n in r.get("notes") or []:
                 print("          note: %s" % n)
         _exports_card(rep)
+    if review and review.get("pending"):
+        from .job import review_state
+        # stderr: the export itself is fine; the job's quality-mode critic round is still open
+        sys.stderr.write(review_state.pending_line(review) + "  (exported before the critic round)\n")
     return 0
 
 

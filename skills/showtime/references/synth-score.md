@@ -12,6 +12,46 @@ track. Randomness is seeded, so a score renders identically every time.
 
 ---
 
+## Essentials
+
+- `ST.score = Synth.score(function (m) {...}, {bpm, seed, ...})`; every instrument takes film time in seconds,
+  so the score reads the same cue table as the picture (`CUE.*`) (§1)
+- Build everything up front: nothing may depend on clocks, callbacks or timers (§1, §7)
+- Iterate with `showtime score <project>` (seconds; LUFS, peaks, per-section levels, `--json`); render video only
+  when the sound works (§1)
+- `m.riser(t)` ends at `t` and `m.whoosh(t)` peaks at `t`: put `t` on the cut; `m.impact`/`m.subDrop` on the
+  reveal (§2, §4)
+- Pick the bpm whose bar divides the section lengths (80 bpm = 3 s, 96 = 2.5 s, 120 = 2 s); key and mode from the
+  story; a 3-5 note motif on the title, answered on the tonic on the end card (§4)
+- Energy lowest under dense reading; add a layer at each section. Visual cuts may lead the beat by 1-2 frames;
+  audio before picture reads as wrong (§4)
+- About one designed sound per event that matters (one per 2-3 s in a launch film), whooshes on long moves only,
+  one sound family; ≤3 flashes per second, no strobing to the beat (§4)
+- End on a button (a final hit on the logo), then `m.end(duration, {fade: 1-1.5})`; never fade mid-phrase (§4)
+- Raw score −18 to −14 LUFS, peaks under −1 dBFS; `showtime render` masters the total to −14 LUFS / −1 dBTP.
+  Sparse scores: `master: {gain: 6}` or more, not louder instruments (§6)
+- Under narration aim for a 12-18 dB gap (raw score ~−26 to −32 LUFS against a −14 voice); `m.duckUnder(lines,
+  {depth: 8})`; render warns outside 8-22 dB (§6)
+- Read the numbers: section RMS follows the story, no section near −55 dB unless meant silent, first sound at
+  about 0 s (§6)
+- Times must be finite (`NaN` throws); `Synth.rng(seed)`, not `Math.random`; one pad per chord; automations on one
+  bus in time order; accents (`X`) on downbeats only (§7)
+- Replacing the master bus: pass `{latency: 0}` (§5). A hand-written `ST.score` streams only when it honours
+  `run.from` and sets `ST.score.seekable = true` (§5b)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| 1. Shape of a score | 55-80 |
+| 2. Instruments (all times are film seconds) | 82-105 |
+| 3. Theory helpers | 107-134 |
+| 4. Composing for a film: the method | 136-170 |
+| 5. Sync accuracy | 172-178 |
+| 5b. Seeking: a score rendered from any time | 180-202 |
+| 6. Mixing levels | 204-230 |
+| 7. Pitfalls | 232-249 |
+| 8. Standalone use | 251-263 |
+
 ## 1. Shape of a score
 
 ```js

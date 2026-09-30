@@ -19,6 +19,37 @@ showtime render planner-howto/episode-01   # MP4, like any project
 showtime series export planner-howto -o planner-site/   # every episode as one HTML file + index.html
 ```
 
+## Essentials
+
+- Edit only the series root's `kit.js`; the `kit.js` inside an episode is a synced copy, never edit it. Run
+  `showtime series sync <series>` after every kit edit; `showtime series check` exits 1 on a stale copy
+  (§ Layout)
+- Each episode is an ordinary project: `preview`, `check`, `snap`, `render`, `retime` and `export` work on it
+  unchanged (§ Layout)
+- An episode is one timeline table in `episode.js` (`KIT.episode(spec)`): every time drives both the picture
+  and the sound (§ An episode: one timeline table)
+- Target named rects (`card:<id>`, `col:i`, `add:i`, ...), never copied coordinates, so every episode follows
+  a layout change in the kit (§ The kit, § Craft for a series)
+- Same beats in every episode: a 3-4 s intro, one action per 4-10 s step with 0.5 s of stillness after each
+  click, a recap of the keys, a next-episode line; 30-120 s per episode (§ Craft for a series)
+- Only show what the product does; ask when a behaviour is unknown and mark anything illustrative
+  (§ Craft for a series)
+- Keep the signature motif and click/key sounds in the kit; episodes add only their own moments; bed
+  at `db: -13` or lower (§ Craft for a series)
+- Captions: one idea per caption, under two lines (§ An episode: one timeline table)
+- Checks: `showtime series check`, then per episode `showtime check` and `showtime snap <episode> --sheet`:
+  band never over a callout, captions never over the pointer's target, camera inside the window (§ Checks)
+- Share: `showtime series export <series> -o <dir>` (every episode as HTML plus an index) (§ Checks)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| Layout | 53-65 |
+| The kit (kit.js, global KIT) | 67-79 |
+| An episode: one timeline table | 81-129 |
+| Craft for a series | 131-145 |
+| Checks | 147-152 |
+
 ## Layout
 
 | Path | What it is |

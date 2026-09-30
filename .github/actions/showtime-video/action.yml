@@ -1,0 +1,193 @@
+name: showtime video
+description: >-
+  Make a video with showtime in CI: from your release notes or a pull request (no API key), from a
+  showtime project committed in the repository, or with a coding-agent command you configure. Checks,
+  renders, runs qa, exports a single-file HTML video and uploads the files.
+author: Favio Vazquez
+branding:
+  icon: film
+  color: purple
+
+# All the logic is in run.py next to this file (stdlib Python): run.py --dry-run prints every command it
+# would run. Guide: docs/github-action.md in the showtime repository.
+
+inputs:
+  mode:
+    description: "release (release notes or a PR to a video, no keys), project (render a committed showtime project) or agent (run your own agent command)"
+    default: release
+  notes:
+    description: "release mode: the notes as Markdown text (first choice when set)"
+    default: ""
+  notes-file:
+    description: "release mode: a Markdown file in the repository with the notes"
+    default: ""
+  changelog:
+    description: "release mode: a CHANGELOG file in the repository; the section of the 'version' input is used (with 'version' set and no other notes, CHANGELOG.md is used when it exists)"
+    default: ""
+  version:
+    description: "the version shown; for a CHANGELOG the section to use (default: the release tag, or #<number> for a pull request)"
+    default: ""
+  name:
+    description: "product name shown on the hook (default: the repository name)"
+    default: ""
+  install:
+    description: "install or upgrade command for the end card, e.g. 'pip install -U acme' (default: none is shown)"
+    default: ""
+  url:
+    description: "URL on the end card (default: the release or pull request page, else the repository)"
+    default: ""
+  max-items:
+    description: "release mode: lines of the notes shown in all (default 7; the rest are counted on screen)"
+    default: ""
+  project:
+    description: "project mode: path of a showtime project folder (with showtime.json) in the repository"
+    default: ""
+  agent-command:
+    description: "agent mode: the shell command that runs your coding agent (runs with SHOWTIME_PROMPT, SHOWTIME_BIN, SHOWTIME_JOB and SHOWTIME_OUT set; your API key goes in env: of your workflow step, this action never reads one)"
+    default: ""
+  prompt:
+    description: "agent mode: what the agent should make (passed as SHOWTIME_PROMPT)"
+    default: ""
+  vertical:
+    description: "also render a 9:16 version (true or false)"
+    default: "false"
+  platform:
+    description: "destination for the qa checks: reels, tiktok, shorts, youtube, web, broadcast (default: generic checks)"
+    default: ""
+  upload:
+    description: "artifact (upload-artifact), release (gh release upload --clobber; needs contents: write) or none"
+    default: artifact
+  artifact-name:
+    description: "name of the uploaded artifact"
+    default: showtime-video
+  release-tag:
+    description: "upload: release, the tag to attach the files to (default: the tag of the release event)"
+    default: ""
+  github-token:
+    description: "upload: release, the token for gh release upload (used for nothing else)"
+    default: ${{ github.token }}
+  cache:
+    description: "cache the installed showtime runtime between runs (true or false)"
+    default: "true"
+  tier:
+    description: "showtime setup tier: minimal (enough for this action), core or full"
+    default: minimal
+  browser-deps:
+    description: "Linux: install the browser's system libraries with sudo when the browser does not start (true or false)"
+    default: "true"
+  showtime-path:
+    description: "a different showtime checkout to run (default: the checkout this action came from)"
+    default: ""
+
+outputs:
+  video:
+    description: "path of the final MP4"
+    value: ${{ steps.run.outputs.video }}
+  html:
+    description: "path of the single-file HTML video"
+    value: ${{ steps.run.outputs.html }}
+  poster:
+    description: "path of the poster frame (JPEG)"
+    value: ${{ steps.run.outputs.poster }}
+  vertical:
+    description: "path of the 9:16 MP4 when 'vertical' is true"
+    value: ${{ steps.run.outputs.vertical }}
+  qa:
+    description: "the qa verdict of the final video: PASS, WARN or FAIL"
+    value: ${{ steps.run.outputs.qa }}
+  job:
+    description: "the job folder (final video, exports, qa report and frames)"
+    value: ${{ steps.run.outputs.job }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v7
+      with:
+        python-version: "3.12"
+    - uses: astral-sh/setup-uv@v10.2.0   # immutable releases: no floating major tag
+      with:
+        enable-cache: false
+    - uses: actions/setup-node@v7
+      with:
+        node-version: "22"
+
+    # the cache key (OS, arch, Python, tier, and a hash of the setup files, computed here because
+    # hashFiles only sees the workspace) and the showtime home
+    - name: Cache key
+      id: prepare
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        INPUT_TIER: ${{ inputs.tier }}
+        INPUT_SHOWTIME_PATH: ${{ inputs.showtime-path }}
+      run: python "$ACTION_PATH/run.py" prepare
+
+    - name: Restore the showtime runtime
+      id: cache
+      if: inputs.cache == 'true'
+      uses: actions/cache/restore@v6
+      with:
+        path: ${{ steps.prepare.outputs.path }}
+        key: ${{ steps.prepare.outputs.key }}
+
+    - name: Set up showtime
+      id: setup
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        CACHE_HIT: ${{ steps.cache.outputs.cache-hit }}
+        INPUT_TIER: ${{ inputs.tier }}
+        INPUT_BROWSER_DEPS: ${{ inputs.browser-deps }}
+        INPUT_SHOWTIME_PATH: ${{ inputs.showtime-path }}
+      run: python "$ACTION_PATH/run.py" setup
+
+    # saved right after setup, so a render that fails still leaves the next run a warm home
+    - name: Save the showtime runtime
+      if: inputs.cache == 'true' && steps.cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v6
+      with:
+        path: ${{ steps.prepare.outputs.path }}
+        key: ${{ steps.prepare.outputs.key }}
+
+    - name: Make the video
+      id: run
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        INPUT_MODE: ${{ inputs.mode }}
+        INPUT_NOTES: ${{ inputs.notes }}
+        INPUT_NOTES_FILE: ${{ inputs.notes-file }}
+        INPUT_CHANGELOG: ${{ inputs.changelog }}
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_NAME: ${{ inputs.name }}
+        INPUT_INSTALL: ${{ inputs.install }}
+        INPUT_URL: ${{ inputs.url }}
+        INPUT_MAX_ITEMS: ${{ inputs.max-items }}
+        INPUT_PROJECT: ${{ inputs.project }}
+        INPUT_AGENT_COMMAND: ${{ inputs.agent-command }}
+        INPUT_PROMPT: ${{ inputs.prompt }}
+        INPUT_VERTICAL: ${{ inputs.vertical }}
+        INPUT_PLATFORM: ${{ inputs.platform }}
+        INPUT_SHOWTIME_PATH: ${{ inputs.showtime-path }}
+      run: python "$ACTION_PATH/run.py" run
+
+    - name: Upload the video files
+      if: always() && inputs.upload == 'artifact' && steps.run.outputs.files != ''
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ steps.run.outputs.files }}
+        retention-days: 14
+        if-no-files-found: warn
+
+    - name: Attach the video files to the release
+      if: success() && inputs.upload == 'release' && steps.run.outputs.files != ''
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        INPUT_UPLOAD_FILES: ${{ steps.run.outputs.files }}
+        INPUT_RELEASE_TAG: ${{ inputs.release-tag }}
+        INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
+        INPUT_SHOWTIME_PATH: ${{ inputs.showtime-path }}
+      run: python "$ACTION_PATH/run.py" upload

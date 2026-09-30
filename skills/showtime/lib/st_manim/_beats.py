@@ -21,7 +21,9 @@ holds down, so unsnapped scenes drift up to a frame per call. The kit keeps its 
 the clock, so cue landings are exact and a scene ends exactly on its last line's slot.
 
 Scene k starts at the slot start of its first beat (the first scene at 0), and ends at the slot end
-of its last beat, so the scenes of a project concatenate onto the voice's clock.
+of its last beat, so the scenes of a project concatenate onto the voice's clock. When the first
+line's voice starts a moment after 0, beat() on an empty scene holds that lead-in on whatever the
+scene add()s next (not on an empty, black frame 0): `self.beat("hook"); self.add(hook)` opens on it.
 """
 from __future__ import annotations
 
@@ -67,6 +69,7 @@ class _Beats:
         self.st_colors: Dict[str, List[str]] = {}
         self.st_lines: Dict[Tuple[int, int], Tuple[str, ...]] = {}
         self.st_warned_no_cues = False
+        self.st_pending: Optional[int] = None  # a beat's lead-in, held on the first picture (see beat())
         self.T = theme()
 
     # ------------------------------------------------------------ clock
@@ -94,6 +97,7 @@ class _Beats:
         if len(args) == 1 and isinstance(args[0], Wait) and not kwargs:
             w = args[0]
             return self.wait(w.run_time, stop_condition=w.stop_condition)
+        self._flush_pending()
         anims = [prepare_animation(a) for a in args]
         rt = kwargs.pop("run_time", None)
         if rt is None:
@@ -172,6 +176,7 @@ class _Beats:
         return min(1.0, changed / area) if area > 0 else None
 
     def wait(self, duration: float = 1.0, stop_condition: Any = None, frozen_frame: Optional[bool] = None) -> None:
+        self._flush_pending()
         n = self._n(duration, minimum=0)
         if n == 0:
             return
@@ -189,8 +194,16 @@ class _Beats:
         """A frame-snapped wait (same as self.wait)."""
         self.wait(seconds)
 
+    def _flush_pending(self) -> None:
+        """Play the lead-in a beat() deferred (on whatever the scene add()ed since)."""
+        if self.st_pending is not None:
+            frame, self.st_pending = self.st_pending, None
+            if frame > self.st_frame:
+                self.wait((frame - self.st_frame) / self.st_fps)
+
     def _pad_to(self, frame: int, why: str, grace: int = 0) -> None:
         """Wait until `frame`; if it has passed by more than `grace` + 1 frames, log a late cue."""
+        self._flush_pending()
         gap = frame - self.st_frame
         if gap > 0:
             self.wait(gap / self.st_fps)
@@ -273,7 +286,14 @@ class _Beats:
         if self.st_origin is None:   # the scene starts at its first beat's slot (the first line: at 0)
             first = self._lines()[0]["id"] == line_id
             self.st_origin = 0 if first else int(round(ln["slot_start"] * self.st_fps))
-        self._pad_to(int(round(ln["slot_start"] * self.st_fps)) - self._origin(), "beat %s" % line_id)
+        target = int(round(ln["slot_start"] * self.st_fps)) - self._origin()
+        if not list(getattr(self, "mobjects", [])) and target > self.st_frame:
+            # nothing on screen yet (the opening of a film: the voice starts a moment after 0): hold the
+            # lead-in on the first picture the scene add()s instead of on an empty, black frame, so
+            # `self.beat("hook"); self.add(hook); self.play(...)` shows the hook at t=0
+            self.st_pending = target
+        else:
+            self._pad_to(target, "beat %s" % line_id)
         self.st_line = ln
         self._snapshot(safe=True)
 
@@ -285,6 +305,7 @@ class _Beats:
 
     def fit(self, *anims: Any, until: Any = None, lead: float = 0.0, min_run_time: float = 0.3, **kwargs: Any) -> None:
         """Play `anims` with a run_time that ends `lead` seconds before the cue `until`."""
+        self._flush_pending()
         f = self._cue_frame(until, lead) if until is not None else None
         if f is None:
             self.play(*anims, **kwargs)
@@ -425,6 +446,7 @@ class _Beats:
                           baseline_off=round(off, 3), x_height_ratio=round(ratio, 3))
 
     def tear_down(self) -> None:
+        self._flush_pending()
         if self.st_line is not None and self._lines() and "slot_end" in self.st_line:
             last_line = self.st_line["id"] == self._lines()[-1]["id"]   # running past the voice's end is fine
             end = int(round(self.st_line["slot_end"] * self.st_fps)) - self._origin()

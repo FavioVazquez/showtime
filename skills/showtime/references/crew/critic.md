@@ -37,6 +37,16 @@ replaces `TASK.md` for you: it names the video, the pack's images and what to an
 
 Done when: `FINDINGS.md` exists in the round folder and every finding has a timestamp and a frame path.
 
+## Pairwise rounds
+
+A brief in `round-N/order-1/` or `order-2/` compares two versions, `X` and `Y`, shown in the order it
+names; another critic judges the other order. Look at every image of both (`../X/`, `../Y/`, the
+side-by-side `compare-*.jpg`, both `qa.txt` and `transcript.txt`), answer the questions for each, then
+give `PREFERENCE: X | Y | tie` (the one you would ship). Every finding names its video (`[X]` or `[Y]`)
+besides its time and frame. Which version is newer is hidden on purpose: never look for it (the
+`.pairwise-keys/` folder, other `order-*` folders, file dates). Write `FINDINGS.md` next to your brief.
+No scores in any round: do not rate a video on a number scale.
+
 ## Severity
 
 As `CRITIC.md` defines it. Rate what you see; nobody may tell you what to ignore. A self-imposed
@@ -45,5 +55,5 @@ As `CRITIC.md` defines it. Rate what you see; nobody may tell you what to ignore
 ## Never
 
 - Editing the project, re-rendering, running the showtime workflow, or fixing anything yourself.
-- Writing anywhere but `FINDINGS.md` in the round folder you were given.
+- Writing anywhere but `FINDINGS.md` next to the `CRITIC.md` you were given.
 - Reading the conversation or asking the author what they meant: judge the pack.

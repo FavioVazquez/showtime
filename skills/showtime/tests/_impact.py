@@ -82,6 +82,7 @@ OVERRIDES = [
     # plugin wiring
     (".claude-plugin/**", ["test_mcp.py", "test_skill_structure.py"]),
     ("monitors/**", ["test_mcp.py"]),
+    ("hooks/**", ["test_receipt.py"]),
     ("agents/**", ["test_skill_structure.py"]),
     ("scripts/check_release.py", ["test_skill_structure.py"]),
     ("scripts/publish_media.py", ["test_skill_structure.py"]),

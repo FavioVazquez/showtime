@@ -65,7 +65,7 @@ def _read(p: Path) -> str:
 # ------------------------------------------------------------------ roles
 
 _ROLE_HINTS: List[Tuple[str, "re.Pattern[str]"]] = [
-    ("bg", re.compile(r"(^|[-_])(bg|background|base|canvas|page)($|[-_])")),
+    ("bg", re.compile(r"(^|[-_])(bg|background|base|canvas|page|paper|backdrop|ground)($|[-_])")),
     ("surface", re.compile(r"(surface|card|panel|popover|elevated|raised)")),
     ("ink", re.compile(r"(^|[-_])(fg|foreground|text|ink|body|content)($|[-_])")),
     ("muted", re.compile(r"(muted|subtle|secondary-text|gray|grey|neutral|dim)")),
@@ -99,8 +99,9 @@ def assign_roles(colors: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     uniq = {c["hex"]: c for c in colors}
     hexes = list(uniq)
     if hexes:
+        named = {c["hex"] for c in taken.values()}   # a colour named for another role is never the ground
         if "bg" not in taken:
-            cand = [h for h in hexes if saturation(h) < 0.25]
+            cand = [h for h in hexes if saturation(h) < 0.25 and h not in named]
             if cand:
                 bg = max(cand, key=lambda h: (abs(luminance(h) - 0.5), -hexes.index(h)))
                 taken["bg"] = dict(uniq[bg], role="bg")

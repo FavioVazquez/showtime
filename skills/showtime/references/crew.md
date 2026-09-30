@@ -9,11 +9,47 @@ You stay the only one who talks to the user, writes the ledger (`showtime job no
 folder (`board.json`, `brief.md`, `decisions.md`), the main project's `index.html` and
 `showtime.json`, and who renders, runs qa and delivers.
 
+## Essentials
+
+- You stay the only one who talks to the user, writes the ledger and the studio folder, edits the main
+  `index.html`/`showtime.json`, renders, runs qa and delivers; members write only their own folders (§2)
+- Quick jobs run inline; dispatch as the table says (quality mode, the default: critic on every final;
+  factual claims or publish-bound: researcher before the final; 6+ scenes: motion designers), never for what
+  one or two commands do (§1)
+- Dispatch: make `<job>/crew/<task-id>/`, write `TASK.md` from the skeleton, then a two-line prompt (read
+  `rules.md` and `<role>.md`, then the `TASK.md` path), no chat history; `subagent_type` `showtime:<role>` (§3)
+- No such agent type: a general-purpose sub-agent, same two lines; no sub-agents: do it yourself, say so (§3)
+- Send independent members in one message and tell the user in one line who works and for how long; wait for
+  notifications, never poll in a sleep loop; follow-ups go to the same member with `SendMessage` (§3)
+- Validate before fan-out: freeze cues, write theme CSS, fetch `assets-needed.txt`, check the skeleton (§3)
+- Verify every result with your own command (`showtime check`, `showtime snap <project> --at ...`,
+  `showtime audio meter`) before building on it; never ship a degraded result silently (§5)
+- `DONE_WITH_NOTES`: decide, `showtime job note --assumed "..."`; `NEEDS_INPUT`: answer or take its default;
+  `BLOCKED`: fix the cause and resume; conflicts: the locked storyboard and durations win (§5)
+- Merge fragments in storyboard order (`data-start="#<previous scene id>"`, keep `data-transition`, link its
+  CSS/JS, copy `assets/`), then `showtime check <project>` and `showtime look <project>` (§5)
+- New voice: `showtime retime <project> --from-voice <project>/voice/timeline.json`, send the new times (§4)
+- CPU slots: a third of the cores (1 to 3); motion designers at most slots + 1, single `snap --at` frames;
+  the final render (`--workers` 3 at most) only after every builder returns (§6)
+- Footage: confirm every dropped take or sentence in `cuts.md` with the user before the final (§4)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| 1. When to use it | 47-61 |
+| 2. The roster | 63-82 |
+| 3. How to dispatch | 84-119 |
+| 4. Patterns | 121-165 |
+| 5. Merging results | 167-186 |
+| 6. CPU budget | 188-202 |
+| 7. Cost | 204-216 |
+
 ## 1. When to use it
 
 | Job | Crew | Typical dispatches |
 |---|---|---|
-| Quick (default) | none: do it inline | 0 |
+| Quick, quality review (default) | critic on the final (two for a pairwise round); researcher before the final when it states facts | 1-3 |
+| Quick, lean review (the user asked for a draft) | none: do it inline | 0 |
 | Quick, 6+ scenes | motion designers, capped by CPU (section 6) | 2-4 |
 | Quick, publish-bound | researcher (claims and licenses) before the final, critic on the final | 2 |
 | Studio | pitch trio, then script, sound, voice, storyboard, researcher, motion per scene, critic twice | 10-16 |
@@ -35,12 +71,15 @@ line may say that studio uses the crew and takes longer.
 | `motion-designer` | one scene or scene group, built as a fragment, several in parallel | `crew/motion-<sid>/` | session |
 | `sound-designer` | studio beds; the bed, effects and mix during the build | `project/audio/` | session |
 | `voice-director` | casting, pronunciation, the VO render, localized reads | `project/voice/` | sonnet |
-| `editor` | footage cut by transcript, captions, reframes | `<job>/edit/` | session |
+| `editor` | footage cut by transcript, captions, reframes | `<job>/edit/` | sonnet |
 | `researcher` | fact check of every claim and license audit of every asset, before the final | its task folder | session |
 | `critic` | the `review-pack` round (`references/review.md`) | `FINDINGS.md` only | session |
 
 "Session" means the agent inherits your model; the Agent tool's `model` parameter overrides any row
-(use the session model for a voice director translating a script).
+(use the session model for a voice director translating a script). Mechanical roles run on Sonnet in
+Claude Code; creative roles and the critic stay on yours. Other hosts run every member on the session
+model unless you set a model in the installed agent file. A look reviewer (`looking.md`) is not a crew
+member: a general sub-agent, a cheaper vision-capable tier is fine.
 
 ## 3. How to dispatch
 
@@ -110,12 +149,13 @@ final. When the voice lands and changes durations, retime the scenes from it
 the motion designers and the sound designer.
 
 **D. Critic.** Publish-bound studio: round 1 on the first look (a `--preview` render), where fixes are
-cheap; round 2 on the final candidate. Quick publish-bound: one round, on the final. Dispatch the
-critic with only the `CRITIC.md` path (`references/review.md`).
+cheap; round 2 on the final candidate, paired against the best so far (`review-pack --against best`, two
+critics, one per order, then `review-verdict`). Quick (quality review, or lean and publish-bound): one round, on the final. Dispatch
+each critic with only its `CRITIC.md` path (`references/review.md`).
 
 **E. Fix loop.** A finding or user note about one scene goes back to that scene's motion designer;
 audio notes to the sound designer; claim notes to the scriptwriter and researcher. Re-merge only what
-changed and re-render the affected range (`--from/--to`).
+changed and re-render the affected range (`--from/--to --job <job>`: spliced into a new full final).
 
 **F. Footage.** The editor alone (it owns `edit/`), then the sound designer for music under the cut,
 the researcher for on-screen claims and lower thirds, the critic when publish-bound. You confirm every
@@ -142,8 +182,8 @@ you retime and render each language, one after another.
 placeholder scene), set its `data-start` to `#<previous scene id>` (the first scene keeps `0`; the
 templates already chain scenes this way, `references/stage-api.md` has the time grammar), keep its
 `data-transition`, link its `s-<sid>.css` and `s-<sid>.js`, and copy its `assets/` into the project.
-Then `showtime check <project>` and `showtime snap <project> --every 1`, and read the sheet with an eye
-on the seams between scenes.
+Then `showtime check <project>` and `showtime look <project>` (`looking.md`), judged with an eye on the
+seams between scenes.
 
 ## 6. CPU budget
 

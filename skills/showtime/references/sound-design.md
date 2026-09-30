@@ -4,6 +4,39 @@ Read this when you place sound effects, balance music against a voice, or check 
 ready. It gives numbers to aim for and how to verify them with `showtime audio meter` and
 `mix.report.json`, instead of guessing.
 
+## Essentials
+
+- One designed sound per visual event that matters. Explainer, data story, report, math: 1-3 in the whole
+  video; polished product: a cue every 2-3 s; whooshes only for far moves or scene changes (§1)
+- Text pops on 20-40 % of them; staggered lists accent the first and last item; one sound family per video; no
+  game-UI sounds (`pop`, `ding`, `success`, `coin` ...) in serious work (§1)
+- Room tone (about -32 LUFS) under talking-head cuts; 0.25-0.5 s of near-silence before a reveal (§1)
+- Reference levels: voice -16 LUFS, music alone -20, music under voice about -32 short-term (duck 10-14 dB,
+  default 12), ambience -32, UI -24 momentary with peaks at most -8 dBFS, impacts -14 (§2)
+- Mark soft UI clicks under a voice `"texture": true`; typewriter key clicks come from a
+  `{"typewriter": {...}}` mix track, not hand-placed times (§2)
+- Align the hit, not the file start: `align: "hit"` with `at: T`; other files take `"hit": seconds` or
+  `"align": "peak"`; sound never trails the picture by more than 2 frames (66 ms) (§3)
+- A riser's `hit` lands on the reveal downbeat with the impact; a success chime plays when the result is fully
+  visible (§3)
+- `voice_to_music_db` in `mix.report.json` must be 10-20 dB (below 8 masks words, above 25 raise the bed's
+  `gain_db`); a moderate 6-8 dB duck plus `carve: 0.3–0.5` sounds fuller (§4)
+- Master to -14 LUFS / -1 dBTP; -16 for podcast or audio-first (`--target podcast`); broadcast only when asked;
+  `limiting_db` above 6 means lower the hot track (§5)
+- Verify with `showtime audio meter final.mp4 --ffmpeg`: -14 ± 0.5 LUFS, true peak at most -1 dBTP, no
+  clipped runs; the report has no warnings and its section `lufs` follows the story (§6)
+- Tell the user a human must listen on laptop speakers and headphones before publishing (§6)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| 1. How many sounds | 40-64 |
+| 2. Levels (what level: auto does, and why) | 66-89 |
+| 3. Alignment | 91-110 |
+| 4. Ducking and carving | 112-131 |
+| 5. Mastering targets | 133-147 |
+| 6. Measure instead of guessing | 149-168 |
+
 ## 1. How many sounds
 
 - **One designed sound per visual event that matters.** Not every element that moves gets a sound.

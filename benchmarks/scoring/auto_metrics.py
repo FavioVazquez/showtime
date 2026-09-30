@@ -332,7 +332,8 @@ def run_dirs(run: str, task: Optional[str], arm: Optional[str]) -> List[Path]:
     out = []
     for m in sorted(root.glob("*/*/meta.json")):
         t, a = m.parent.parent.name, m.parent.name
-        if (task and not t.startswith(task)) or (arm and a != arm):
+        # a task id or its prefix ("t1" is t1-launch, never t10-like-reference)
+        if (task and not (t == task or t.split("-")[0] == task.split("-")[0] and task in t)) or (arm and a != arm):
             continue
         out.append(m.parent)
     return out
@@ -360,7 +361,7 @@ def main() -> int:
     for rd in run_dirs(a.run, a.task, a.arm):
         r = score_run(rd, not a.no_asr)
         qa = r.get("qa") or {}
-        print("%-18s %-9s produced=%-5s spec=%.2f qa=%s %s" % (r["task"], r["arm"], r["produced"], r["spec_score"],
+        print("%-18s %-13s produced=%-5s spec=%.2f qa=%s %s" % (r["task"], rd.name, r["produced"], r["spec_score"],
                                                               qa.get("verdict"), qa.get("summary")))
     return 0
 

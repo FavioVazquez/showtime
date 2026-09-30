@@ -4,6 +4,28 @@ Read this when `showtime doctor --quick` reports failures, when a command says s
 or when the user is new to showtime ("how do I set this up?", "what do I need?"). The goal is one
 short exchange: what is there, what is missing, one decision, then the install, then back to the video.
 
+## Essentials
+
+- Look first: `showtime doctor --json --quick` (read `checks[]`) and `showtime setup --estimate`; one table by
+  area, then one question: install the default now (recommended), with the printed numbers (§1, §2)
+- Install with `showtime setup` (idempotent, resumes), or `--background` and
+  `showtime status <id> --wait 240`; done when `showtime doctor` shows 0 fail (§3)
+- Missing uv or Node.js 20+: show the printed command and let the user run it (or run it after a yes); in a
+  sandbox the user runs `showtime setup` in their own terminal, or use
+  `SHOWTIME_HOME=.showtime showtime setup` (§3)
+- Exit code 3: relay the `showtime setup --with <name>` line and size, ask, install, continue;
+  `SHOWTIME_AUTO_INSTALL=1` only if the user says so (§4)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| 1. Look before you talk | 29-40 |
+| 2. Tell the user in one table, then ask one thing | 42-59 |
+| 3. Install | 61-84 |
+| 4. What works now, what arrives later | 86-107 |
+| 5. Where things live | 109-113 |
+| 6. If setup fails | 115-120 |
+
 ## 1. Look before you talk
 
 ```

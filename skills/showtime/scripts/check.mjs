@@ -7,16 +7,19 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { startServer } from './server.mjs';
-import { parseCli, runMain, resolveProject, info, c, fmtTime, fmtDuration, parseTimes, parseTime, UserError, cpuCount, workName } from './lib/cli.mjs';
+import { parseCli, runMain, resolveProject, info, c, fmtTime, fmtDuration, parseTimes, parseTime, UserError, cpuCount, workName, briefOutput, runPyCli, hasPyModule } from './lib/cli.mjs';
 import { openBrowser, openStage, openLab, parseSize } from './lib/stagehost.mjs';
 import { textSnapshot, hideText, fontInfo } from './lib/audit.mjs';
+import { phoneConfig, createPhone, readNeed, readingRate, ptOf, phoneLine } from './lib/phone.mjs';
+import { brandFindings } from './lib/brandcheck.mjs';
+import { uncovered, loadedFaces, glyphFix } from './lib/glyphs.mjs';
 
 const PROBES = ['black', 'frozen', 'nondeterministic', 'error'];
 
 // Timing thresholds shared with `showtime qa` and `showtime retime` (runtime/thresholds.json), so a
 // still hold that qa warns about after the render is already a warning here.
 const TH = (() => {
-  const d = { still_hold_s: 2.5, launch_hold_s: 5.0, final_hold_max_s: 4.0, frozen_fail_s: 6.0, empty_timeline_s: 1.5 };
+  const d = { still_hold_s: 2.5, launch_hold_s: 3.5, final_hold_max_s: 4.0, frozen_fail_s: 6.0, empty_timeline_s: 1.5 };
   try { Object.assign(d, JSON.parse(fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'runtime', 'thresholds.json'), 'utf8'))); } catch { /* defaults */ }
   return d;
 })();
@@ -40,12 +43,16 @@ function tightEdge(r, W, H) {
 // rule on both sides (small typing or a thin playhead is a still hold for qa, so it is one here too)
 const FREEZE_MEAN = 256 * Math.pow(10, (Number(TH.freeze_noise_db) || -50) / 20);
 const TINY = Number(TH.tiny_text_frac) || 0.022;
+// The phone check (scripts/lib/phone.mjs, references/qa.md): reading speed per language, smallest type in points at
+// phone width per aspect, and the zones; one summary in report.phone, one line in qa.
+const PH = phoneConfig(TH);
 // SVG labels (chart values, axes, map names) side by side closer than this many em are crowded
 const LABEL_GAP = Number.isFinite(Number(TH.label_gap_em)) ? Number(TH.label_gap_em) : 0.15;
 const MOVING_NOTE = ' (mid-animation: the chart is still growing or morphing; its settled frame is judged on its own)';
 
 const SPEC = {
   name: 'check',
+  brief: true,
   usage: 'showtime check <project> [--samples 9] [--at 1,2.5] [--strict] [--determinism] [--find-first PROBE] [--json]',
   summary: 'Check a project before rendering and report problems with timestamps and fixes.',
   description: [
@@ -55,8 +62,9 @@ const SPEC = {
     'compared one by one: touching, or closer than 0.15em side by side or stacked, they are labels_crowded); WCAG contrast of text against the real',
     'pixels behind it (4.5:1 for every size: an ERROR below that for text >= 1% of the frame height);',
     'tiny_text (readable text under 2.2% of the frame height; UI mockups marked data-st-decor, or drawn in F.decor on canvas, are exempt);',
-    'design notes for flat, unlit backgrounds and sparse, mostly empty frames; vertical safe zones; whether text stays on screen long enough to read; stretches',
+    'design notes for flat, unlit backgrounds and sparse, mostly empty frames; vertical safe zones; whether text stays on screen long enough to read (0.3 s + the longer of characters/17 and words/3, per language); stretches',
     'with no motion; blank frames; and whether the fonts in use are embedded files (not system fonts).',
+    'The phone check is the last line of the output (phone check: PASS|FAIL): type size in points at a 390 pt wide phone, reading time and platform UI zones; report.json "phone" has the numbers and `showtime qa` quotes them.',
     'Dead air is an ERROR when the picture is frozen for 1.5 s or more while no clip ([data-start]) is',
     'showing, or, in a canvas film, while only the backdrop is drawn: a gap between scenes or scenes that',
     `end before showtime.json "duration" (fix: \`showtime retime <project> -d <seconds>\`). A still hold of`,
@@ -66,6 +74,11 @@ const SPEC = {
     'Layout problems seen only in the middle of a scene transition are notes; the settled frame after',
     'each transition is sampled and judged instead. Repeated small-text notes are grouped into one.',
     'Canvas films (Film) are audited from Film.frameInfo(): text position, size, overlap, contrast, fonts.',
+    'look_repeat: the look (theme, palette, type pair, transitions, camera, music, structure) repeats one of your last',
+    'five videos (`showtime history`, local only); a warning with two alternatives per repeat; a note when the',
+    'repeat follows the job\'s style reference (`showtime reference --job`), which is intended.',
+    'beat_words: three or more 1-2 word texts shown one after another (a word per beat) are read as one line at',
+    'the words/s rate instead of each being held to the one-text minimum (a note, not short_text).',
     'Writes report.json (including every on-screen text with its times, used by `showtime qa` must_show)',
     'and a contact sheet to <project>/work/check/. Exit code 1 when errors are found (with --strict, also',
     'for warnings).',
@@ -94,6 +107,7 @@ const SPEC = {
     page: { help: 'page inside the project (default index.html); its report goes to work/check-<page>/' },
     size: { help: 'check at this size for this run: WxH (1080x1920) or an aspect (9:16, 1:1); report in work/check-<WxH>/', metavar: 'SIZE' },
     gpu: { help: 'auto (default) or off' },
+    'no-history': { type: 'boolean', help: 'skip the look-history comparison (repeats of your last five videos)' },
     json: { type: 'boolean', help: 'print the full JSON report on stdout' },
     quiet: { type: 'boolean', short: 'q', help: 'only print the summary line' },
   },
@@ -139,13 +153,15 @@ async function main() {
   const findings = [];
   const add = (sev, code, message, extra = {}) => findings.push({ severity: sev, code, message, ...extra });
   const quiet = !!a.quiet;
-  const step = (m) => { if (!quiet && !a.json) info(c.dim(`  ${m}`)); };
-  if (!quiet && !a.json) info(`${c.bold('showtime check')} ${proj.dir}`);
+  const talk = !quiet && !a.json && !briefOutput();   // progress steps: terminals and --verbose only
+  const step = (m) => { if (talk) info(c.dim(`  ${m}`)); };
+  if (talk) info(`${c.bold('showtime check')} ${proj.dir}`);
 
   const server = await startServer({ root: proj.dir, port: 0 });
   const b = await openBrowser({ gpu: a.gpu || 'auto' });
   const cleanup = async () => { await b.browser.close().catch(() => {}); await server.close().catch(() => {}); };
   let sess, lab, sess2;
+  let phone = null, floorPx = TINY * 1080, ranTimeline = false;   // the phone check's collector; smallest readable size in frame px
   const report = { project: proj.dir, page: proj.page, ok: false, findings, timings: {}, samples: [] };
   const texts = new Map(); // normalized text -> {text, first, last, source, caption}
   const seenText = (txt, tt, source, caption) => {
@@ -173,8 +189,16 @@ async function main() {
     report.info = inf;
     report.timings.ready = Date.now() - t;
     step(`loaded in ${fmtDuration(report.timings.ready)}: ${inf.width}x${inf.height} @ ${inf.fps} fps, ${inf.duration.toFixed(2)}s (${inf.durationSource}), ${inf.clips} clip(s)`);
+    // brand first: a launch film in the product's look, or the job says why not
+    for (const f of await brandFindings({ projectDir: proj.dir, config: proj.config, page: sess.page }).catch(() => [])) add(f.severity, f.code, f.message, f.fix ? { fix: f.fix } : {});
     lab = await openLab(b.browser, server.url);
     const D = inf.duration, fps = inf.fps, W = inf.width, H = inf.height;
+    // language of the on-screen text (sets the reading speed): showtime.json "lang", else <html lang>, else en
+    const pageLang = await sess.page.evaluate(() => document.documentElement.getAttribute('lang') || '').catch(() => '');
+    phone = createPhone({ W, H, lang: (proj.config && proj.config.lang) || pageLang || 'en', cfg: PH });
+    // the older floor (2.2% of the frame height) or the phone minimum, whichever is larger
+    floorPx = Math.max(TINY * H, phone.min.px);
+    const tinyMsg = (what, px, st) => `${what} is ${Math.round(px)}px on screen (${ptOf(px, W, PH).toFixed(1)} pt on a ${PH.phone_width_pt} pt wide phone) at ${fmtTime(st)}: readable text needs >= ${Math.ceil(floorPx)}px (${phone.min.pt} pt at phone width for ${phone.min.aspect}, and at least ${(TINY * 100).toFixed(1)}% of the frame height)`;
     const lastT = Math.max(0, (Math.round(D * fps) - 1) / fps);
     if (probe) return await findFirst({ probe, a, sess, lab, D, fps, W, H, lastT, outDir, proj, quiet: quiet || a.json });
     const random0 = (await sess.diag()).random || 0;
@@ -216,6 +240,7 @@ async function main() {
     const layoutSeen = new Set();
     const fontChecked = new Set();
     const platformFonts = new Map(); // family -> {custom, glyphs, sample}
+    let pageFamilies = null;          // @font-face families the page has loaded (lowercase), read once
     let seekMs = 0, shotMs = 0;
     const seekErrors = new Map();
     const trySeek = async (x) => {
@@ -343,7 +368,7 @@ async function main() {
           const bx = { x: 64 * W / 1080, y: 220 * H / 1920, r: (1080 - 164) * W / 1080, b: (1920 - 480) * H / 1920 };
           if ((r.x < bx.x - 2 || r.y < bx.y - 2 || r.x + r.w > bx.r + 2 || r.y + r.h > bx.b + 2) && !layoutSeen.has(key('safe'))) {
             layoutSeen.add(key('safe'));
-            add(dsev('warning'), 'safe_zone', `canvas text "${snip(tx.text)}" is outside the vertical safe zone at ${fmtTime(st)} (${edgesOutside(r, bx)}; app UI covers it)${dnote}`, { t: st, rect: rnd(r), source: 'canvas',
+            add(dsev('warning'), 'safe_zone', `canvas text "${snip(tx.text)}" is outside the vertical safe zone at ${fmtTime(st)} (${edgesOutside(r, bx)}; app UI covers it)${dnote}`, { t: st, rect: rnd(r), source: 'canvas', text: snip(tx.text, 24),
               fix: `keep text inside x ${Math.round(bx.x)}-${Math.round(bx.r)}, y ${Math.round(bx.y)}-${Math.round(bx.b)}` });
           }
         } else if (inside > 0.99) {
@@ -353,14 +378,20 @@ async function main() {
             // readable text fully in frame but hugging an edge (often pushed there by a camera move)
             layoutSeen.add(key('edge'));
             add('warning', 'edge_margin', `canvas text "${snip(tx.text)}" sits ${tight.px}px from the ${tight.edge} edge at ${fmtTime(st)} (under 3% of the frame${zoomed ? '; the camera is zoomed in' : ''})`,
-              { t: st, rect: rnd(r), source: 'canvas', fix: `keep text at least ${tight.need}px (5%) from the ${tight.edge} edge (move the label or the camera target)` });
+              { t: st, rect: rnd(r), source: 'canvas', text: snip(tx.text, 24), fix: `keep text at least ${tight.need}px (5%) from the ${tight.edge} edge (move the label or the camera target)` });
           } else if ((r.x < mx - 2 || r.y < my - 2 || r.x + r.w > W - mx + 2 || r.y + r.h > H - my + 2) && !layoutSeen.has(key('title'))) {
             layoutSeen.add(key('title'));
             add('info', 'title_safe', `canvas text "${snip(tx.text)}" is within 5% of the frame edge at ${fmtTime(st)}`, { t: st, source: 'canvas' });
           }
         }
         const minPx = Math.min(W, H) * 0.022;
-        if (size > 0 && size < minPx && !layoutSeen.has(key('small'))) {
+        if (!decor && size > 0 && inside >= 0.98 && phone && a['no-timeline']) phone.observe(`canvas:${String(tx.text).replace(/\s+/g, ' ').trim()}`, tx.text, size, st);
+        if (!decor && size > 0 && size < floorPx && inside >= 0.98 && !layoutSeen.has(key('tiny'))) {
+          layoutSeen.add(key('tiny'));
+          layoutSeen.add(`canvas:tinytext:${String(tx.text).replace(/\s+/g, ' ').trim()}`);
+          add('warning', 'tiny_text', tinyMsg(`canvas text "${snip(tx.text)}"`, size, st), { t: st, source: 'canvas', px: Math.round(size), text: snip(tx.text, 24),
+            fix: `make it >= ${Math.ceil(floorPx)}px (F.text size), cut it, or mark UI-mockup detail {decor: true}` });
+        } else if (size > 0 && size < minPx && !layoutSeen.has(key('small'))) {
           layoutSeen.add(key('small'));
           add('info', 'small_text', `canvas text "${snip(tx.text)}" is ${Math.round(size)}px${decor ? ' (decor)' : ''} (hard to read on phones below ~${Math.round(Math.min(W, H) * 0.033)}px)`, { t: st, source: 'canvas', px: Math.round(size), text: snip(tx.text, 24) });
         }
@@ -481,12 +512,13 @@ async function main() {
         // on-screen size: CSS size times any transform scale (a scaled mockup, a camera push)
         const eff = blk.fontSize * (blk.scale || 1);
         const minPx = Math.min(W, H) * 0.022;
-        if (eff > 0 && !blk.decor && !blk.caption && eff < TINY * H && blk.onCanvas >= 0.5 && !layoutSeen.has(key('tiny'))) {
+        if (eff > 0 && !blk.decor && blk.onCanvas >= 0.5 && !tx && phone && a['no-timeline']) phone.observe(`dom:${blk.bid}`, blk.text, eff, st, blk.caption);
+        if (eff > 0 && !blk.decor && eff < floorPx && blk.onCanvas >= 0.5 && !layoutSeen.has(key('tiny'))) {
           // readable copy below the floor: a warning (mid-transition frames and UI mockups are only notes)
           layoutSeen.add(key('tiny'));
-          addL('warning', 'tiny_text', `"${snip(blk.text)}" is ${Math.round(eff)}px on screen at ${fmtTime(st)}: readable text needs >= ${Math.ceil(TINY * H)}px (${(TINY * 100).toFixed(1)}% of the frame height) to survive a phone screen`,
+          addL('warning', 'tiny_text', tinyMsg(`"${snip(blk.text)}"`, eff, st),
             { t: st, selector: blk.sel, px: Math.round(eff), text: snip(blk.text, 24),
-              fix: `make it >= ${Math.ceil(TINY * H)}px (${(TINY * 100).toFixed(1)}cqh), cut it, or mark UI-mockup detail with data-st-decor` });
+              fix: `make it >= ${Math.ceil(floorPx)}px (${(floorPx / H * 100).toFixed(1)}cqh), cut it, or mark UI-mockup detail with data-st-decor` });
         } else if (eff > 0 && eff < minPx && !layoutSeen.has(key('small'))) {
           layoutSeen.add(key('small'));
           add('info', 'small_text', `"${snip(blk.text)}" is ${Math.round(eff)}px${blk.decor ? ' (decor)' : ''} (hard to read on phones below ~${Math.round(Math.min(W, H) * 0.033)}px)`, { t: st, selector: blk.sel, px: Math.round(eff), text: snip(blk.text, 24) });
@@ -591,7 +623,14 @@ async function main() {
             const { nodeId } = await sess.cdp.send('DOM.querySelector', { nodeId: root.nodeId, selector: `[data-st-lid="${l.lid}"]` });
             if (!nodeId) continue;
             const { fonts } = await sess.cdp.send('CSS.getPlatformFontsForNode', { nodeId });
-            const hasCustom = (fonts || []).some((f) => f.isCustomFont);
+            // a node whose every glyph is missing from the page font (a lone "₂" in a <sub>) paints only with a
+            // system font: when the page declares the family it asks for, that is a glyph fallback, not an
+            // unloaded font, and the message names the characters instead of suggesting another font
+            const asked = String(l.family || '').split(',')[0].trim().replace(/^["']|["']$/g, '').toLowerCase();
+            if (asked && !(pageFamilies && pageFamilies.has(asked))) {      // faces load on first use: look again
+              pageFamilies = new Set((await sess.page.evaluate(fontInfo)).filter((f) => f.status === 'loaded').map((f) => f.family.toLowerCase()));
+            }
+            const hasCustom = (fonts || []).some((f) => f.isCustomFont) || (!!asked && pageFamilies.has(asked));
             const txt = blockSeen.get(l.bid) ? blockSeen.get(l.bid).text : '';
             for (const f of fonts || []) {
               const k = f.familyName;
@@ -618,8 +657,16 @@ async function main() {
       if (!cur || v.ratio / v.need < cur.ratio / cur.need) perBlock.set(k, { ...v, n: (cur ? cur.n : 0) + 1 });
       else cur.n++;
     }
+    const refPal = referencePalette(proj.dir);
     for (const [, v] of perBlock) {
       if (v.ratio >= v.need) continue;
+      // the job's style reference uses this very pair (reference-style.css, `showtime new --job`): large text
+      // at WCAG's large-text 3:1 is the look the user asked for, so a note, not an error
+      if (refPal.length && v.ratio >= 3 && v.size >= 0.04 * H && !v.tx && !v.entering && nearAny(v.fg, refPal) && nearAny(v.bg, refPal)) {
+        add('info', 'low_contrast', `contrast ${v.ratio.toFixed(2)}:1 for "${snip(v.text)}" at ${fmtTime(v.t)}: ${v.fg} on ${v.bg}, the style reference's own pair (large text, >= 3:1)`,
+          { t: v.t, selector: v.sel, ratio: +v.ratio.toFixed(2), reference: true });
+        continue;
+      }
       // seen only mid-transition: a note (the settled frame after the transition is sampled on its own)
       // an error for any readable text (>= 1% of the frame height, small labels included); mid-transition
       // frames, outlined text (the stroke carries the contrast) and UI-mockup detail (data-st-decor) are notes;
@@ -664,12 +711,24 @@ async function main() {
     }
     report.fonts = { declared: [...new Set(faces.map((f) => f.family))],
       used: Object.fromEntries([...platformFonts].map(([k, v]) => [k, { ...v, chars: v.chars ? [...v.chars].join('') : undefined }])) };
+    let ranged = null;
     for (const [fam, v] of platformFonts) {
       if (v.custom) continue;
       if (v.fallback && !v.primary) {
-        const chars = v.chars && v.chars.size ? [...v.chars].slice(0, 12).map((ch) => `${ch} (U+${ch.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')})`).join(', ') : null;
-        add('warning', 'font_not_embedded', `the page font is loaded, but ${v.glyphs} glyph(s) in text such as "${snip(v.sample, 30)}" fall back to the system font "${fam}"${chars ? `: likely ${chars}` : ''}`,
-          { fix: `the loaded font has no ${chars ? 'such characters' : 'glyph for some characters'}: draw them as inline SVG icons, use a font file that has them (a symbol font via @font-face), or replace them with plain text` });
+        // narrow the guess to the characters no loaded face of the element's font stack covers, and
+        // give the exact fix for those (markup, an icon, or an @font-face with that unicode-range)
+        let miss = v.chars ? [...v.chars] : [];
+        let sure = false;
+        if (miss.length) {
+          ranged = ranged || await sess.page.evaluate(() => { const o = []; document.fonts.forEach((f) => o.push({ family: f.family, unicodeRange: f.unicodeRange, status: f.status })); return o; });
+          const narrow = uncovered(miss, v.declared, ranged);
+          sure = narrow.length > 0 && loadedFaces(v.declared, ranged).length > 0;
+          if (narrow.length) miss = narrow;
+        }
+        const g = miss.length ? glyphFix(miss.slice(0, 12), v.declared, v.sample) : null;
+        add('warning', 'font_not_embedded', `the page font is loaded, but ${v.glyphs} glyph(s) in text such as "${snip(v.sample, 30)}" fall back to the system font "${fam}"${g ? (sure ? `: the page's fonts have no ${g.chars}` : `: likely ${g.chars}`) : ''}`,
+          { fix: g ? g.fix : 'the loaded font has no glyph for some characters: draw them as inline SVG icons, use a font file that has them (a symbol font via @font-face), or replace them with plain text',
+            chars: miss.join('') || undefined });
         continue;
       }
       add('warning', 'font_not_embedded', `text such as "${snip(v.sample, 30)}" is drawn with the system font "${fam}", which differs between Mac, Windows and Linux`,
@@ -780,6 +839,14 @@ async function main() {
       const okGrid = [];
       const activeClips = []; // per sample: clips ([data-start]) showing
       const textShown = [];   // per sample: any readable text (DOM or canvas)
+      // the phone check's size part over the whole timeline: per readable text, its on-screen size at every step
+      const sizeRuns = new Map(); // key -> { text, source, caption, sel, obs: [[t, px]] }
+      const sizeSeen = (key, text, px, gt, extra) => {
+        if (!(px > 0)) return;
+        const r = sizeRuns.get(key) || { text, obs: [], ...extra };
+        r.obs.push([gt, px]);
+        sizeRuns.set(key, r);
+      };
       for (const gt of grid) {
         if (!(await trySeek(gt))) continue;
         okGrid.push(gt);
@@ -793,6 +860,7 @@ async function main() {
           if (!on) continue;
           anyText = true;
           seenText(blk.text, gt, 'dom', blk.caption);
+          if (!blk.decor && !inTx(gt)) sizeSeen(`dom:${blk.bid}`, blk.text, blk.fontSize * (blk.scale || 1), gt, { source: 'dom', caption: blk.caption, sel: blk.sel, bid: blk.bid });
           const runs = vis.get(blk.bid) || [];
           const last = runs[runs.length - 1];
           if (last && gt - last[1] <= stepS * 1.5) last[1] = gt; else runs.push([gt, gt]);
@@ -815,6 +883,7 @@ async function main() {
             if (!k || now.has(k)) continue;
             now.add(k);
             anyText = true;
+            if (!tx.decor) sizeSeen(`canvas:${k}`, k, (tx.size || 0) * ky, gt, { source: 'canvas', caption: onPlate(tx) });
             if (onPlate(tx)) { seenText(k, gt, 'canvas', true); continue; }
             seenText(k, gt, 'canvas', false);
             const runs = cvis.get(k) || [];
@@ -825,20 +894,50 @@ async function main() {
         }
         textShown.push(anyText);
       }
-      // readability
+      // size: judged on the median size over the text's life (an entrance that starts small is not a small text)
+      for (const [key, r] of sizeRuns) {
+        const px = r.obs.map((o) => o[1]).sort((x, y) => x - y);
+        const med = px[Math.floor((px.length - 1) / 2)];
+        const at = r.obs.find((o) => o[1] <= med + 1e-6)[0];
+        phone.observe(key, r.text, med, at, r.caption);
+        const seenKey = r.source === 'dom' ? `tiny:${r.bid}` : `canvas:tinytext:${r.text}`;
+        if (med < floorPx && !layoutSeen.has(seenKey)) {
+          layoutSeen.add(seenKey);
+          add('warning', 'tiny_text', tinyMsg(r.source === 'dom' ? `"${snip(r.text)}"` : `canvas text "${snip(r.text)}"`, med, at),
+            { t: at, ...(r.sel ? { selector: r.sel } : {}), ...(r.source === 'canvas' ? { source: 'canvas' } : {}), px: Math.round(med), text: snip(r.text, 24),
+              fix: `make it >= ${Math.ceil(floorPx)}px, cut it, or mark UI-mockup detail as decor` });
+        }
+      }
+      ranTimeline = true;
+      // readability: every text held long enough to read (the phone check's reading part)
+      const rate = readingRate(phone.lang, PH);
+      const rateNote = ` at ${rate.cps} characters/s${rate.wps ? ` or ${rate.wps} words/s` : ''} (${phone.lang})`;
+      const beatRun = beatRunBlocks(vis, blocksById, stepS, rate);
+      const beatNoted = new Set();
       for (const [bid, runs] of vis) {
         const blk = blocksById.get(bid);
         if (!blk || blk.caption || blk.len < 2) continue;
         // numbers alone (axis ticks, counters, years) are glanced at, not read: as for canvas text; a
-        // camera zoom that carries tick labels out of the frame is not a readability problem
-        if (/^[\d\s.,:%$€£+\-−×x/]+$/i.test(blk.text)) continue;
+        // camera zoom that carries tick labels out of the frame is not a readability problem. A number
+        // with a short unit ("+0.4 °C", "12 min", "3 GB": an axis tick that shows only while the axis
+        // rescales) is still a number
+        if (/^[\d\s.,:%$€£+\-−×x/]+$/i.test(blk.text) || /^[+\-−]?[\d.,\s]*\d\s*(°\s?[CF]?|ms|s|min|h|hrs?|[kKMGT]?B|ppm|pp|pts?|px|k[mg]|mi|lbs?|m)$/.test(blk.text)) continue;
         const best = Math.max(...runs.map(([s, e]) => e - s + stepS));
-        const need = Math.max(1.0, 0.3 + blk.len / 17); // subtitle reading speed: 17 characters/s
+        const need = readNeed(blk.text, phone.lang, PH, blk.len); // reading speed per language (runtime/thresholds.json "reading")
         const reachesEnd = runs.some(([, e]) => e >= lastT - 1e-6);
+        const chain = beatRun.get(bid);
+        if (best + stepS * 0.5 < need && !reachesEnd && chain) {
+          // a word per beat in one place: read as one line at the words/s rate, not as separate texts
+          if (!beatNoted.has(chain.id)) {
+            beatNoted.add(chain.id);
+            add('info', 'beat_words', `${chain.count} short texts shown one after another from ${fmtTime(chain.start)} to ${fmtTime(chain.end)} (a word per beat): read as one line at ${chain.wps.toFixed(1)} words/s, within ${rate.wps} words/s`, { t: chain.start });
+          }
+          continue;
+        }
         if (best + stepS * 0.5 < need && !reachesEnd) {
           const r0 = runs.find(([s, e]) => e - s + stepS === best) || runs[0];
-          add('warning', 'short_text', `"${snip(blk.text)}" is readable for only ~${best.toFixed(1)}s (from ${fmtTime(r0[0])}); ${blk.len} characters need ~${need.toFixed(1)}s`,
-            { t: r0[0], selector: blk.sel, fix: 'hold it longer, shorten it, or mark it data-caption if it is read along with the voice' });
+          add('warning', 'short_text', `"${snip(blk.text)}" is readable for only ~${best.toFixed(1)}s (from ${fmtTime(r0[0])}); ${blk.len} characters need ~${need.toFixed(1)}s${rateNote}`,
+            { t: r0[0], selector: blk.sel, held: +best.toFixed(2), need: +need.toFixed(2), fix: 'hold it longer, shorten it, or mark it data-caption if it is read along with the voice' });
         }
       }
       // canvas readability: skip counters (digits change every frame) and typewriter prefixes
@@ -851,12 +950,12 @@ async function main() {
         if (/\d/.test(k) && shapes.get(shape(k)) >= 3) continue; // a counting number ("5.8 min", "5.9 min", ...)
         if (ckeys.some((o) => o !== k && o.startsWith(k))) continue;
         const best = Math.max(...runs.map(([s, e]) => e - s + stepS));
-        const need = Math.max(1.0, 0.3 + k.length / 17);
+        const need = readNeed(k, phone.lang, PH);
         const reachesEnd = runs.some(([, e]) => e >= lastT - 1e-6);
         if (best + stepS * 0.5 < need && !reachesEnd) {
           const r0 = runs.find(([s, e]) => e - s + stepS === best) || runs[0];
-          add('warning', 'short_text', `canvas text "${snip(k)}" is readable for only ~${best.toFixed(1)}s (from ${fmtTime(r0[0])}); ${k.length} characters need ~${need.toFixed(1)}s`,
-            { t: r0[0], source: 'canvas', fix: 'hold it longer or shorten it' });
+          add('warning', 'short_text', `canvas text "${snip(k)}" is readable for only ~${best.toFixed(1)}s (from ${fmtTime(r0[0])}); ${k.length} characters need ~${need.toFixed(1)}s${rateNote}`,
+            { t: r0[0], source: 'canvas', held: +best.toFixed(2), need: +need.toFixed(2), fix: 'hold it longer or shorten it' });
         }
       }
       // motion / blank frames
@@ -970,6 +1069,67 @@ async function main() {
           bs = -1;
         }
       }
+      // pacing: a scene whose last change (a component's or a CSS animation's end) and its reading are
+      // done long before it ends. A slow push or drift keeps such a hold from counting as frozen, but
+      // viewers still feel it as slow ("readable, but not dynamic"): hold as long as reading needs, then
+      // add a beat (a chart state, a callout, a highlight, a count-up) or shorten the scene
+      const pacing = [];
+      if (!overlayPage && !isFilm) {
+        try {
+          const scenes = await sess.page.evaluate(() => {
+            const all = [...document.querySelectorAll('[data-start]')];
+            const cl = window.ST.clips();
+            const out = [];
+            all.forEach((el, i) => {
+              if (el.parentElement && el.parentElement.closest('[data-start]')) return;
+              const c = cl[i];
+              if (!c || c.end == null) return;
+              let last = c.start, open = false;
+              if (el.querySelector('video, canvas')) open = true;   // footage and canvases change on their own
+              for (const x of [el, ...el.querySelectorAll('[data-st]')]) {
+                const k = x.__stComponent;
+                if (!k || x.hasAttribute('data-st-decor') || x.closest('[data-st-decor]')) continue;
+                const d = Number(k.duration);
+                if (!Number.isFinite(d) || d >= c.end - c.start + 30) { open = true; continue; }
+                last = Math.max(last, k.base + d, ...Object.values(k.sync || {}).filter(Number.isFinite));
+              }
+              for (const an of document.getAnimations ? document.getAnimations() : []) {
+                const tg = an.effect && an.effect.target;
+                if (!tg || !el.contains(tg) || tg.closest('[data-st-decor], [data-st-free]')) continue;
+                const tm = an.effect.getComputedTiming ? an.effect.getComputedTiming() : null;
+                if (!tm || !Number.isFinite(tm.endTime)) continue;   // an endless loop is not a beat
+                last = Math.max(last, c.start + tm.endTime / 1000);
+              }
+              out.push({ id: el.id || null, start: c.start, end: c.end, last, open });
+            });
+            return out;
+          });
+          const lastScene = scenes.reduce((m, sc) => (sc.end > m ? sc.end : m), 0);
+          for (const sc of scenes) {
+            if (sc.open || sc.end - sc.start < 3) continue;
+            // reading: every sentence in the scene held its reading time from when it appeared
+            let readEnd = sc.start;
+            for (const [bid, runs] of vis) {
+              const blk = blocksById.get(bid);
+              if (!blk || blk.caption || blk.decor || blk.len < 2 || /^[\d\s.,:%$€£+\-−×x/°]+$/i.test(blk.text)) continue;
+              const r0 = runs.find(([s0, e0]) => e0 >= sc.start && s0 < sc.end);
+              if (!r0) continue;
+              readEnd = Math.max(readEnd, Math.max(r0[0], sc.start) + readNeed(blk.text, phone.lang, PH, blk.len));
+            }
+            const busy = Math.max(sc.last, readEnd);
+            const tail = sc.end - busy;
+            const isLast = sc.end >= Math.min(D, lastScene) - 1e-3;
+            const limit = isLast ? TH.final_hold_max_s : TH.still_hold_s;
+            if (tail < limit + 0.25) continue;
+            // a still stretch already reported as a hold covers it
+            if (still.some(([s0, e0]) => Math.min(e0, sc.end) - Math.max(s0, busy) >= 0.5 * tail)) continue;
+            pacing.push({ scene: sc.id, from: +busy.toFixed(2), to: +sc.end.toFixed(2), tail: +tail.toFixed(2) });
+            add('warning', 'slow_scene', `${sc.id ? '#' + sc.id : 'a scene'}: nothing new happens from ${fmtTime(busy)} to ${fmtTime(sc.end)} (${tail.toFixed(1)}s after its last change and the time its text needs to be read)${isLast ? '; an end card holds up to ' + TH.final_hold_max_s + 's' : ''}`,
+              { t: busy, to: sc.end, scene: sc.id, fix: `add a beat about every 2 s (a chart state, a callout or reference line arriving, a highlight, a count-up, the next line of text) or shorten the scene by ~${(tail - (isLast ? 3 : 1.5)).toFixed(1)}s (data-dur; \`showtime retime\` for the whole video)` });
+          }
+        } catch { /* a probe only */ }
+      }
+      report.pacing = pacing;
       report.timeline = { step: stepS, samples: grid.length, still, textBlocks: vis.size + cvis.size };
       report.timings.timeline = Date.now() - t;
       step(`timeline: ${grid.length} samples every ${stepS.toFixed(2)}s in ${fmtDuration(report.timings.timeline)}`);
@@ -1025,6 +1185,56 @@ async function main() {
           : 'the call came from inside a library (no page line to name, e.g. an animation player loading its data); when the determinism probe passes, frames are not affected. Otherwise drive changes from ST.onSeek(t)' });
     }
     if (dg.transitions) add('warning', 'css_transitions', `${dg.transitions} CSS transition(s) fired; the renderer jumps them to their end state`, { fix: 'use @keyframes or a timeline so the motion can be seeked' });
+    // chart labels switched off while the chart moves ([data-st-moving] .st-chart-val { opacity: 0 }):
+    // every value blinks out when an item is added and back when it settles. The chart keeps labels on
+    // their marks through a morph (added items fade theirs in, count: false shows real values only)
+    try {
+      const hid = await sess.page.evaluate(() => {
+        const out = [];
+        const walk = (rules) => { for (const r of rules || []) {
+          if (r.cssRules && !r.selectorText) { walk(r.cssRules); continue; }
+          const sel = r.selectorText || '';
+          if (!/data-st-moving/.test(sel) || !/st-chart-(val|endlabel|callout)|\btext\b/.test(sel)) continue;
+          const st = r.style;
+          if (st && (st.opacity === '0' || st.visibility === 'hidden' || st.display === 'none')) out.push(sel);
+        } };
+        for (const sh of document.styleSheets) { try { walk(sh.cssRules); } catch { /* cross-origin sheet */ } }
+        return out;
+      });
+      for (const sel of [...new Set(hid)].slice(0, 3)) add('warning', 'chart_labels_hidden', `"${sel}" hides chart labels while the chart moves: every number blinks off when an item is added or the data changes, and back on when it settles`,
+        { fix: 'delete the rule: chart labels ride their marks through a morph (an added item fades its label in; count: false shows only real values; null or a missing label means "not in this state")' });
+    } catch { /* a probe only */ }
+    // grouped items that all enter on the same frame (3+ siblings whose CSS entrance starts together):
+    // nothing leads the eye, and it reads as one pasted block. A 2-4 frame stagger lets one lead
+    try {
+      const fpsE = Number(inf.fps) || 30;
+      const same = await sess.page.evaluate((fps) => {
+        const all = [...document.querySelectorAll('[data-start]')];
+        const cl = window.ST.clips();
+        const startOf = (el) => { const c = el.closest('[data-start]'); const i = all.indexOf(c); return i >= 0 && cl[i] ? Number(cl[i].start) || 0 : 0; };
+        const sel = (e) => e.tagName.toLowerCase() + (e.id ? '#' + e.id : '') + (e.classList.length ? '.' + [...e.classList].slice(0, 2).join('.') : '');
+        const groups = new Map();
+        for (const an of document.getAnimations ? document.getAnimations() : []) {
+          if (typeof CSSAnimation === 'undefined' || !(an instanceof CSSAnimation)) continue;
+          const tg = an.effect && an.effect.target;
+          if (!tg || !tg.parentElement || tg.closest('[data-st-decor], [data-st-free]')) continue;
+          const kf = an.effect.getKeyframes ? an.effect.getKeyframes() : [];
+          if (!kf.length || kf[0].opacity === undefined || !(parseFloat(kf[0].opacity) < 0.05)) continue;   // an entrance from invisible
+          if (!(tg.textContent || '').trim() && !tg.querySelector('img, svg, video, canvas')) continue;
+          const f = Math.round((startOf(tg) + (Number(an.effect.getTiming().delay) || 0) / 1000) * fps);
+          const par = tg.parentElement;
+          if (!groups.has(par)) groups.set(par, new Map());
+          const byF = groups.get(par);
+          if (!byF.has(f)) byF.set(f, new Set());
+          byF.get(f).add(tg);
+        }
+        const out = [];
+        for (const [par, byF] of groups) for (const [f, set] of byF) if (set.size >= 3) out.push({ parent: sel(par), n: set.size, frame: f, items: [...set].slice(0, 3).map(sel) });
+        return out.sort((a, b) => a.frame - b.frame).slice(0, 4);
+      }, fpsE);
+      for (const g of same) add('warning', 'same_frame_entrance', `${g.n} items in ${g.parent} (${g.items.join(', ')}${g.n > 3 ? ', ...' : ''}) enter on the same frame (frame ${g.frame}, ${fmtTime(g.frame / fpsE)}): nothing leads, they land as one pasted block`,
+        { t: g.frame / fpsE, fix: `stagger them 2-4 frames apart in reading order (animation-delay: calc(var(--i) * ${(3 / fpsE).toFixed(2)}s) with --i 0, 1, 2 ...): the first lands at frame ${g.frame}, the next at frame ${g.frame + 3}` });
+    } catch { /* a probe only */ }
     for (const cl of dg.clips || []) add('error', 'clip_timing', `${cl.clip}: ${cl.attr}="${cl.value}" ${cl.reason}`, { fix: 'use seconds (2.5), "+1" (relative to the parent clip) or "#id" / "#id+0.5" (after another clip ends)' });
     for (const [k, v] of Object.entries(dg.videos || {})) add('error', 'video', `video ${k.replace(server.url, '')}: ${v}`, { fix: 'Chromium builds without H.264 need VP9: showtime footage trim in.mp4 --webm --no-audio -o clip.webm' });
     for (const e of (dg.errors || []).filter((x) => !/ at t=/.test(x.message) && !log.errors.some((l) => x.message.includes(l.message))).slice(0, 5)) add('error', 'runtime_error', e.message);
@@ -1071,11 +1281,26 @@ async function main() {
       report.sheet = path.join(outDir, 'sheet.jpg');
       fs.writeFileSync(report.sheet, sheet);
     }
+    await lookHistory();
     return finish();
   } finally {
     if (lab) await lab.close();
     if (sess) await sess.close();
     await cleanup();
+  }
+
+  /** look_repeat: the variety guard (st.variety.history via `showtime history check`), never fatal. */
+  async function lookHistory() {
+    if (a['no-history'] || !hasPyModule('cli_variety.py')) return;
+    const r = await runPyCli(['history', 'check', proj.dir, '--json'], { timeout: 60000 });
+    if (r.code !== 0) return;
+    try {
+      const h = JSON.parse(r.stdout);
+      report.look = { level: h.level, compared: h.compared, repeats: (h.repeats || []).map((x) => ({ aspect: x.aspect, value: x.value, jobs: x.jobs, alternatives: x.alternatives })) };
+      if (h.level === 'warning' || h.level === 'info') {
+        add(h.level, 'look_repeat', h.message, { fix: `${h.fix}${h.fix ? '; ' : ''}details: showtime history check ${proj.dir}` });
+      }
+    } catch { /* no verdict */ }
   }
 
   function finish() {
@@ -1085,7 +1310,7 @@ async function main() {
       const px = tinies.map((f) => f.px).filter(Number.isFinite);
       const eg = [...new Set(tinies.map((f) => f.text).filter(Boolean))].slice(0, 4).map((x) => `"${x}"`).join(', ');
       for (const f of tinies) findings.splice(findings.indexOf(f), 1);
-      add('warning', 'tiny_text', `${tinies.length} readable texts are ${Math.min(...px)}-${Math.max(...px)}px on screen (e.g. ${eg}); readable text needs >= ${Math.ceil(TINY * (report.info?.height || 1080))}px (${(TINY * 100).toFixed(1)}% of the frame height)`,
+      add('warning', 'tiny_text', `${tinies.length} readable texts are ${Math.min(...px)}-${Math.max(...px)}px on screen (e.g. ${eg}); readable text needs >= ${Math.ceil(floorPx)}px (${phone ? phone.min.pt + ' pt at phone width, ' : ''}at least ${(TINY * 100).toFixed(1)}% of the frame height)`,
         { t: Math.min(...tinies.map((f) => f.t ?? 0)), count: tinies.length, items: tinies.map((f) => ({ t: f.t, text: f.text, px: f.px, selector: f.selector })),
           fix: 'enlarge them, cut them, or mark UI-mockup detail with data-st-decor' });
     }
@@ -1098,6 +1323,7 @@ async function main() {
       add('info', 'small_text', `${smalls.length} small labels, ${Math.min(...px)}-${Math.max(...px)}px (e.g. ${eg}); text under ~${Math.round(Math.min(report.info?.width || 1920, report.info?.height || 1080) * 0.033)}px is hard to read on phones`,
         { t: Math.min(...smalls.map((f) => f.t ?? 0)), count: smalls.length, items: smalls.map((f) => ({ t: f.t, text: f.text, px: f.px, selector: f.selector })) });
     }
+    if (phone) report.phone = phone.summarize(findings, { timelineRan: ranTimeline });
     report.texts = [...texts.values()].sort((x, y) => x.first - y.first).slice(0, 500)
       .map((x) => ({ ...x, first: +x.first.toFixed(3), last: +x.last.toFixed(3) }));
     if (report.film && typeof report.film === 'object') report.film.texts = report.texts.filter((x) => x.source === 'canvas').length;
@@ -1115,27 +1341,69 @@ async function main() {
     } else {
       const tag = { error: c.red('FAIL'), warning: c.yellow('WARN'), info: c.dim('info') };
       const passes = [];
+      const passNames = [];
+      const pass = (name, text) => { passNames.push(name); passes.push(text); };
       if (report.info) {
-        if (!findings.some((f) => /page_error|console_error|network|missing_file|ready_failed/.test(f.code))) passes.push(`page loads cleanly (ready in ${fmtDuration(report.timings.ready)}, no errors, no network)`);
-        if (report.determinism && !findings.some((f) => /nondeterministic|unstable_frame/.test(f.code))) passes.push(`deterministic (${report.determinism.times.length} frames match after 150 ms and when reached in another order${report.determinism.hashes ? ', and after a second page load' : ''})`);
-        if (!findings.some((f) => f.code === 'unseeded_random')) passes.push('no Math.random() during playback');
-        if (report.fonts && !findings.some((f) => /^font_/.test(f.code))) passes.push(`fonts embedded: ${[...Object.keys(report.fonts.used), ...((report.film && report.film.fonts) || [])].filter((v, i, arr) => arr.indexOf(v) === i).join(', ') || '(no text)'}`);
-        if (report.contrast && !findings.some((f) => f.code === 'low_contrast')) passes.push(`contrast OK for ${report.contrast.length} text element(s)`);
-        if (!findings.some((f) => /text_|safe_zone|labels_crowded/.test(f.code))) passes.push('text layout: nothing off-canvas, clipped or overlapping');
-        if (report.timeline && !findings.some((f) => /short_text|dead_air|blank/.test(f.code))) passes.push(`timeline: text holds long enough, no still holds of ${a['dead-air'] || TH.still_hold_s}s or more, no blank frames`);
+        if (!findings.some((f) => /page_error|console_error|network|missing_file|ready_failed/.test(f.code))) pass('page', `page loads cleanly (ready in ${fmtDuration(report.timings.ready)}, no errors, no network)`);
+        if (report.determinism && !findings.some((f) => /nondeterministic|unstable_frame/.test(f.code))) pass('determinism', `deterministic (${report.determinism.times.length} frames match after 150 ms and when reached in another order${report.determinism.hashes ? ', and after a second page load' : ''})`);
+        if (!findings.some((f) => f.code === 'unseeded_random')) pass('no Math.random', 'no Math.random() during playback');
+        if (report.fonts && !findings.some((f) => /^font_/.test(f.code))) pass('fonts', `fonts embedded: ${[...Object.keys(report.fonts.used), ...((report.film && report.film.fonts) || [])].filter((v, i, arr) => arr.indexOf(v) === i).join(', ') || '(no text)'}`);
+        if (report.contrast && !findings.some((f) => f.code === 'low_contrast')) pass('contrast', `contrast OK for ${report.contrast.length} text element(s)`);
+        if (!findings.some((f) => /text_|safe_zone|labels_crowded/.test(f.code))) pass('text layout', 'text layout: nothing off-canvas, clipped or overlapping');
+        if (report.timeline && !findings.some((f) => /short_text|dead_air|blank/.test(f.code))) pass('timeline', `timeline: text holds long enough, no still holds of ${a['dead-air'] || TH.still_hold_s}s or more, no blank frames`);
       }
-      if (!quiet) {
-        if (report.info) console.log(`${c.bold(proj.title)}  ${report.info.width}x${report.info.height} @ ${report.info.fps} fps, ${report.info.duration.toFixed(2)}s`);
-        for (const p of passes) console.log(`  ${c.green('PASS')}  ${p}`);
-        for (const f of findings) {
-          if (f.severity === 'info' && findings.length > 25) continue;
-          console.log(`  ${tag[f.severity]}  ${f.message}`);
-          if (f.fix && f.severity !== 'info') console.log(`        ${c.dim('fix:')} ${f.fix}`);
+      // the full report always goes to report.txt; stdout gets it in a terminal (or with --verbose), else a
+      // short summary: actionable findings with their fixes, paths, the verdict (lean mode)
+      const full = [];
+      if (report.info) full.push(`${c.bold(proj.title)}  ${report.info.width}x${report.info.height} @ ${report.info.fps} fps, ${report.info.duration.toFixed(2)}s`);
+      for (const p of passes) full.push(`  ${c.green('PASS')}  ${p}`);
+      const findingLines = (f) => [`  ${tag[f.severity]}  ${f.message}`, ...(f.fix && f.severity !== 'info' ? [`        ${c.dim('fix:')} ${f.fix}`] : [])];
+      const fileLines = [...full];
+      for (const f of findings) {
+        fileLines.push(...findingLines(f));
+        if (f.severity === 'info' && findings.length > 25) continue;
+        full.push(...findingLines(f));
+      }
+      const tail = [];
+      if (report.sheet) tail.push(`  sheet   ${report.sheet}`);
+      tail.push(`  report  ${file}`);
+      if (report.estimate) tail.push(`  estimate: a full render takes about ${fmtDuration(report.estimate.seconds * 1000)} here (${report.estimate.frames} frames, ~${report.estimate.msPerFrame} ms/frame, ${report.estimate.workers} workers${report.estimate.note ? `; ${report.estimate.note}` : ''})`);
+      const textFile = path.join(outDir, 'report.txt');
+      try { fs.writeFileSync(textFile, [...fileLines, ...tail, ''].join('\n').replace(/\x1b\[[0-9;]*m/g, '')); } catch { /* the summary still prints */ }
+      if (quiet) { /* summary line only */ } else if (!briefOutput()) {
+        for (const l of [...full, ...tail]) console.log(l);
+      } else {
+        const out = [];
+        if (report.info) out.push(`${c.bold(proj.title)}  ${report.info.width}x${report.info.height} @ ${report.info.fps} fps, ${report.info.duration.toFixed(2)}s`);
+        if (passes.length) out.push(`  ${c.green('PASS')}  ${passNames.join(', ')}`);
+        // findings to act on, grouped by code: a repeated problem is one line with its times and one fix
+        const act = findings.filter((f) => f.severity !== 'info');
+        const groups = new Map();
+        for (const f of act) { const k = `${f.severity}:${f.code}`; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(f); }
+        const MAX_GROUPS = 8;
+        let shown = 0;
+        for (const g of [...groups.values()].slice(0, MAX_GROUPS)) {
+          if (g.length <= 2) {
+            g.forEach((f, i) => out.push(...findingLines(f).slice(0, i && f.fix === g[0].fix ? 1 : undefined)));
+            shown += g.length;
+            continue;
+          }
+          const times = g.map((f) => (Number.isFinite(f.t) ? fmtTime(f.t) : null)).filter(Boolean);
+          out.push(`  ${tag[g[0].severity]}  ${g[0].code} x${g.length} (${times.slice(0, 6).join(', ')}${times.length > 6 ? ', ...' : ''}), e.g. ${g[0].message}`);
+          if (g[0].fix) out.push(`        ${c.dim('fix:')} ${g[0].fix}`);
+          shown += g.length;
         }
-        if (report.sheet) console.log(`  sheet   ${report.sheet}`);
-        console.log(`  report  ${file}`);
-        if (report.estimate) console.log(`  estimate: a full render takes about ${fmtDuration(report.estimate.seconds * 1000)} here (${report.estimate.frames} frames, ~${report.estimate.msPerFrame} ms/frame, ${report.estimate.workers} workers${report.estimate.note ? `; ${report.estimate.note}` : ''})`);
+        const more = act.length - shown;
+        const infos = findings.length - act.length;
+        if (more || infos) out.push(`  ${c.dim(`${more ? `${more} more warning(s) and ` : ''}${infos} note(s) in report.txt`)}`);
+        // the next look is one small composite (references/looking.md); the full sheet is for reviewers
+        const rel = path.relative(process.cwd(), proj.dir) || '.';
+        out.push(`  look    showtime look ${/\s/.test(rel) ? JSON.stringify(rel) : rel}   (one small image of the key frames; sheet.jpg is for reviewers)`);
+        out.push(`  report  ${textFile} (full), report.json`);
+        if (report.estimate) out.push(`  estimate: full render ~${fmtDuration(report.estimate.seconds * 1000)}`);
+        for (const l of out) console.log(l);
       }
+      if (report.phone && !quiet) console.log(`  ${report.phone.ok ? c.green('PASS') : c.yellow('WARN')}  ${phoneLine(report.phone)}`);
       const verdict = errors ? c.red('FAIL') : warnings ? c.yellow('PASS with warnings') : c.green('PASS');
       console.log(`result: ${verdict} (${errors} error(s), ${warnings} warning(s), ${report.summary.infos} note(s)) in ${fmtDuration(report.timings.total)}`);
     }
@@ -1361,3 +1629,58 @@ async function findFirst({ probe, a, sess, lab, D, fps, W, H, lastT, outDir, pro
 }
 
 runMain(main);
+
+/**
+ * Beat runs: three or more short texts (1-2 words each) shown once, one right after another, each for at least
+ * 0.35 s, whose words arrive no faster than the reading rate (words/s). A word per beat is read as one line
+ * in one place, so each word is not held to the one-text minimum. -> Map(block id -> {id, count, start, end, wps}).
+ */
+function beatRunBlocks(vis, blocksById, stepS, rate) {
+  const out = new Map();
+  if (!rate || !rate.wps) return out;
+  const items = [];
+  for (const [bid, runs] of vis) {
+    const blk = blocksById.get(bid);
+    if (!blk || blk.caption || runs.length !== 1) continue;
+    const words = String(blk.text || '').split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
+    const [s, e] = runs[0];
+    const held = e - s + stepS;
+    if (words < 1 || words > 2 || held < 0.35 || held > 1.2) continue;
+    items.push({ bid, s, e: e + stepS, words });
+  }
+  items.sort((a, b) => a.s - b.s);
+  let chain = [];
+  const flush = () => {
+    if (chain.length >= 3) {
+      const start = chain[0].s, end = chain[chain.length - 1].e;
+      const wps = chain.reduce((n, x) => n + x.words, 0) / Math.max(1e-6, end - start);
+      if (wps <= rate.wps + 1e-6) {
+        const info = { id: chain[0].bid, count: chain.length, start, end, wps };
+        for (const x of chain) out.set(x.bid, info);
+      }
+    }
+    chain = [];
+  };
+  for (const it of items) {
+    const prev = chain[chain.length - 1];
+    if (prev && Math.abs(it.s - prev.e) > stepS * 1.5 + 0.02) flush();
+    chain.push(it);
+  }
+  flush();
+  return out;
+}
+
+/** The style reference's palette linked into the project (reference-style.css: --ref-ground/ink/accent). */
+function referencePalette(dir) {
+  try {
+    const css = fs.readFileSync(path.join(dir, 'reference-style.css'), 'utf8');
+    return [...css.matchAll(/--ref-(?:ground|ink|accent):\s*(#[0-9a-fA-F]{6})/g)].map((m) => hexToRgb(m[1].toLowerCase()));
+  } catch { return []; }
+}
+
+/** A measured colour (#rrggbb) within 24 per channel of one of the colours. */
+function nearAny(hex, cols) {
+  if (!/^#[0-9a-fA-F]{6}$/.test(String(hex || ''))) return false;
+  const c = hexToRgb(String(hex).toLowerCase());
+  return cols.some((r) => Math.max(Math.abs(r[0] - c[0]), Math.abs(r[1] - c[1]), Math.abs(r[2] - c[2])) <= 24);
+}

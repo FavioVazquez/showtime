@@ -1,0 +1,42 @@
+{
+  "schema": "showtime.bench.round/1",
+  "run": "r4",
+  "title": "Round 4: showtime 0.3.0 against plain Opus and showtime 0.2.0",
+  "plan": "benchmarks/rounds/r4.md",
+  "focal": "showtime",
+  "previous": "showtime-020",
+  "baseline": "baseline",
+  "reuse": {
+    "home": "~/vbench-r3",
+    "run": "r3-latest",
+    "_note": "the round-3 cells of record (the ones the owner voted on). BENCH_REUSE_HOME overrides the home."
+  },
+  "cells": {
+    "showtime": {"arm": "showtime", "note": "showtime 0.3.0, this checkout's snapshot"},
+    "showtime-rep2": {"arm": "showtime", "board": false, "note": "a second 0.3.0 run to see the spread; judged, not on the boards"},
+    "showtime-020": {"arm": "showtime", "reuse_cell": "showtime", "note": "showtime 0.2.0, round 3 (latest)"},
+    "baseline": {"arm": "baseline", "note": "plain Claude Code, no video skill"},
+    "skill-b": {"arm": "skill-b", "note": "the launch task's competitor arm (round 1 output, also in round 3)"}
+  },
+  "tasks": {
+    "t1": {"new": ["showtime", "showtime-rep2"], "reuse": ["showtime-020", "baseline", "skill-b"]},
+    "t2": {"new": ["showtime", "showtime-rep2"], "reuse": ["showtime-020", "baseline"]},
+    "t3": {"new": ["showtime"], "reuse": ["showtime-020", "baseline"]},
+    "t4": {"new": ["showtime"], "reuse": ["showtime-020", "baseline"]},
+    "t6": {"new": ["showtime"], "reuse": ["showtime-020", "baseline"]},
+    "t8": {"new": ["showtime", "showtime-rep2"], "reuse": ["showtime-020", "baseline"]},
+    "t9": {"new": ["showtime", "baseline"]},
+    "t10": {"new": ["showtime", "baseline"]}
+  },
+  "run_settings": {"jobs": 3, "budget_usd": 15, "seed": 4},
+  "judging": {"factcheck": true, "rank_judges": 3, "rank_jobs": 3, "boards": true},
+  "gates": {
+    "cost_vs": "baseline",
+    "images_main_median_max": 12,
+    "full_renders_median_max": 1,
+    "quality_tasks": ["t1", "t2", "t3", "t4", "t6", "t8"],
+    "quality_min_tasks": 5,
+    "qa_fail_max": 0,
+    "launch_task": "t1"
+  }
+}

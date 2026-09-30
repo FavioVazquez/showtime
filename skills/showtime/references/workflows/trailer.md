@@ -4,6 +4,28 @@ Read this when the user wants anticipation rather than explanation: a teaser bef
 for a product, event, game, course or film, a "coming soon" ("a 15 s teaser for next week's launch",
 "a cinematic trailer for our conference"). A trailer withholds; the name lands last.
 
+## Essentials
+
+- Defaults: 6-30 s, 16:9 (9:16 for social), `cinematic` tone, `epic-trailer` or `cinematic-build` score
+  (`dark-tension` for mystery), title and date on the final hit; no voice unless asked; ask at most the reveal
+  (name, date) (§ Defaults)
+- Withhold: map mood, fragments, title and date onto intro, build, drop, outro; the section map goes in
+  SHOWTIME.md (§ Steps)
+- Music first: `showtime audio music pick --for trailer --dur 30` and cut to its downbeats, or
+  `showtime audio compose --style epic-trailer ...`; the title lands exactly on `end_hit` (§ Steps)
+- `showtime render <job>/project --job <job>`, `showtime qa <job>`: frame 0 is a picture, no black stretches
+  over 0.25 s, one or two dips at most (§ Steps, § Pitfalls)
+- Never invent dates, prices or quotes: only what the user said (§ Pitfalls)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| Inputs | 29-33 |
+| Defaults | 35-42 |
+| Steps | 44-71 |
+| Pitfalls | 73-83 |
+| Read next | 85-88 |
+
 ## Inputs
 
 - What is being teased and when it arrives (a date only if the user gives one).
@@ -41,7 +63,7 @@ most: the reveal (name and date) when the request does not give it.
    ends and impacts, `end_hit` for the title. Effects: `showtime audio sfx braam --key Cm -o ...`,
    `riser --dur 4`, `impact`, `boom`, `reverse-hit`, placed with `"align": "hit"` in `audio/mix.json`.
    Scene starts = the downbeats you chose; the title reveal = `end_hit`.
-5. **First look.** `showtime check <job>/project`, `showtime snap <job>/project --every 1`; for the
+5. **First look.** `showtime check <job>/project`, `showtime look <job>/project`; for the
    feel, `showtime preview <job>/project` (the user can scrub with sound). Look at the fragments: each
    must be striking alone as a still.
 6. **Final, verify, deliver.** Poster on the title frame or the most striking fragment (not black);

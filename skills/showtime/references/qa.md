@@ -12,7 +12,49 @@ warnings), `showtime snap <project> --at t1,t2,...` and `--sheet --every 1s` (st
 `showtime render <project> --preview` (fast draft), `showtime audio meter <file>` (loudness and peaks).
 For stream inspection, use the bundled ffprobe (`showtime paths` shows where it is). Never call a bare system `ffmpeg`/`ffprobe`.
 
-Batch visual checks: look at one contact sheet per phase, not dozens of single frames.
+Batch visual checks: one `showtime look` per phase, not dozens of single frames (`looking.md`).
+
+## Essentials
+
+- Never call a video ready without a `showtime qa` verdict from the current turn, quoted with its numbers, and
+  a look at the file (`showtime look <job>`). Ship on evidence, not on "it rendered" (§ Tools)
+- Pre-render list, final render, post-render list on the MP4, critic pass; never retime audio or cut duration
+  to hide a sync problem (§1, §2, §3)
+- The "This video tells ___ that ___" sentence exists and every scene traces to it; hook readable by 0.3 s, first
+  change by 2 s, frame 0 neither black nor a logo sting (§1)
+- Every claim, number, quote and logo is from the source; label illustrative data; no secrets, internal hostnames
+  or real customer or personal data anywhere, share copy included (§1)
+- `showtime check <project>`: 0 errors, ends with `phone check: PASS`; contrast ≥4.5:1 (≥3:1 large display) on
+  real pixels, mid-transition frames included; no `labels_crowded` (§1)
+- Snap `cut − 0.1 s` and `cut + 0.2 s` at every cut; no unplanned 1 s dead zone; ≤3 flashes in any 1 s and
+  ≤2 flash frames per video; the final frame is a designed hold (§1)
+- No `Date.now`, unseeded `Math.random`, CSS transitions or timers; `--at 3.2,3.2` gives identical images (§1)
+- File: H.264 High, `yuv420p`, BT.709 tags, faststart, AAC 48 kHz stereo, duration = `showtime.json` ±1 frame (§2)
+- Audio: −14 LUFS ±1 (or the requested target), true peak ≤ −1.0 dBTP, LRA ≤8 LU (≤11 music-first), music
+  18–25 dB under the voice; `loudness` WARNs past 1 LU off target, FAILs past 3 LU (§2, § Tools)
+- Frame 0 is the thumbnail: a hook complete at t=0 (`"poster": 0`) or a baked poster (`--poster-bake auto`);
+  EDL and external videos: `showtime deliver poster <video> --at <t> --bake`. Ship `share.txt` (1–3 sentences,
+  no claim not in the video), burned captions for social plus a sidecar, and credits for any CC-BY asset (§2)
+- `showtime qa [video|job] [--platform name] [--captions file] [--expect file]`: always name the platform;
+  exit 1 on FAIL (`--strict`: also WARN); after a WARN run the "Next command" it prints (§ Tools)
+- Size caps (`github`, `chat`, `web`): keep the master, qa the capped export with `--platform github` (§ Tools)
+- Captions: ≤2 lines, ≤42 characters a line (32 vertical, 4:5 included), ≤20 characters/s for 3+ word cues, no
+  cue under 0.4 s; judge a variant on its own sidecar with `--captions FILE` (§ Tools)
+- Phone check floors: 5 pt (16:9), 10 pt (1:1), 11 pt (4:5), 15 pt (9:16); reading time `0.3 s + max(characters
+  / cps, words / wps)`, ≥1 s. qa quotes the last `showtime check`, so run check first or it says PARTIAL (§ Tools)
+- `frozen` WARNs from 2.5 s without visible change (launch films 3.5 s), FAILs from 6 s. Launch films also WARN
+  past 5 hard cuts or 6 scenes in 60 s, a 5.5 s still, and a voiceless mix moving under 3 dB (§ Tools)
+- Quality mode (the default), publish-bound or studio work: `showtime review-pack <job>` (qa's "review pending"
+  line names it), then `review.md` with the pack's `CRITIC.md`; lean: publish-bound only (§3)
+- Only a `final*.mp4` is the latest final; promote a variant: `job note <job> --output final=<file>` (§ Tools)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| 1. Pre-render (on the project) | 59-100 |
+| 2. Post-render (on the MP4) | 102-140 |
+| 3. The critic pass | 142-149 |
+| Tools | 151-325 |
 
 ## 1. Pre-render (on the project)
 
@@ -27,6 +69,8 @@ Batch visual checks: look at one contact sheet per phase, not dozens of single f
 - [ ] `showtime check` reports 0 errors. Warnings are read and either fixed or explained.
 - [ ] Every text hold meets pacing.md §1 (settled time, not entrance time).
 - [ ] Sizes are at or above the floor in typography.md §3. Text sits inside the safe box for every target aspect.
+- [ ] `showtime check` ends with `phone check: PASS` (type size in points at phone width, every text held long enough to read,
+      nothing under platform UI; the numbers and their sources are under "Phone check" below).
 - [ ] Contrast is ≥4.5:1 (≥3:1 for large display) on real pixels, including frames **mid-transition**.
 - [ ] No overflow, clipping, collisions or orphaned single-word lines. Nothing sits in the caption band when captions exist.
 - [ ] No `labels_crowded` (warning): SVG labels in one graphic (chart values and axes, map names) that touch or sit
@@ -97,15 +141,18 @@ Batch visual checks: look at one contact sheet per phase, not dozens of single f
 
 ## 3. The critic pass
 
-Publish-bound or studio work: `showtime review-pack <job>`, then follow `review.md`. The critic's
-brief is the `CRITIC.md` the pack writes (severity scale, citation rule, answer format, two rounds at
-most); do not write a brief of your own. Quick work gets the self-review in `review.md` section 1.
+Every finished video in quality mode (the default; qa prints "review pending" with the command until a round
+has a verdict), and publish-bound or studio work in lean mode: `showtime review-pack <job>`, then follow
+`review.md`. The critic's
+brief is the `CRITIC.md` the pack writes (severity scale, citation rule, answer format, three rounds
+at most, pairwise from round 2); do not write a brief of your own. Lean work that is not publish-bound gets
+the self-review in `review.md` section 1.
 
 ## Tools
 
 The checklists above are judged by eye; these commands produce the evidence. **Do not call a video ready
-without a `showtime qa` verdict from the current turn**, quoted with its numbers, and without having looked
-at the contact sheet it wrote.
+without a `showtime qa` verdict from the current turn**, quoted with its numbers, and without a look at
+the file (`showtime look <job>`, `looking.md`).
 
 **`showtime qa [video|job] [--project dir] [--expect file] [--platform name] [--captions file] [--json]`**
 checks the delivered file itself. Given a job (folder or name), or nothing inside a job, it checks the
@@ -160,12 +207,15 @@ export itself (`showtime qa <export> --platform github`); without one it FAILs w
 | `first_frame_flat` | WARN | frame 0 is one flat colour |
 | `poster_flash` | WARN | frame 0 differs sharply from frames 1-2 (a baked poster over an opening that builds from empty): a one-frame flash on autoplay and every loop |
 | `black_segment` | WARN ≥ 0.25 s, FAIL ≥ 1 s | black inside the video (`ends_black`: WARN for a black ending ≥ 1 s) |
-| `frozen` | WARN ≥ 2.5 s (launch films, showtime.json `"kind": "launch"`: ≥ 5 s, `launch_hold_s`), FAIL ≥ 6 s or half the video | no visible change (a few typed characters or a thin moving line still count as a hold); the thresholds, `freeze_noise_db` included, live in `runtime/thresholds.json`, shared with `showtime check`, so check finds the same holds before the render. A padded or blurred export is judged inside its picture (`<export>.export.json`), not on its bars. See "Dark themes and slow pushes" below |
+| `frozen` | WARN ≥ 2.5 s (launch films, showtime.json `"kind": "launch"`: ≥ 3.5 s, `launch_hold_s`), FAIL ≥ 6 s or half the video | no visible change (a few typed characters or a thin moving line still count as a hold); the thresholds, `freeze_noise_db` included, live in `runtime/thresholds.json`, shared with `showtime check`, so check finds the same holds before the render. A padded or blurred export is judged inside its picture (`<export>.export.json`), not on its bars. See "Dark themes and slow pushes" below |
+| `dead_stop` | WARN | a fast move (6+ frames of real change) whose last frames still move at half its peak or more, then nothing for 4+ frames: it lands with no settle. The message names the frame; fix: ease the last 6-10 frames out (`power3.out`, `premium`) or land earlier and hold (st.qa.motion, on the rhythm's frame differences) |
 | `held_shot` | INFO | a long hold that is live camera footage with sound (a speaker holding still), not a frozen picture; see the Visual checklist above |
 | `final_hold` | INFO ≤ 4 s, WARN above | the ending is a still hold (fine for an end card) |
 | `captions_past_end`, `captions_timing` | FAIL | sidecar cues outside the video or reversed |
 | `caption_flash` | WARN | cues on screen for under 0.4 s (fast speech split into one-word blinks); the summary prints the shortest cue |
 | `captions_overlap`, `caption_lines`, `caption_line_long`, `caption_fast`, `caption_bounds` | WARN | two cues at once, > 2 lines, > 42 characters (32 vertical, 4:5 included), > 20 characters/s (cues of 3+ words), outside the safe box. `showtime captions` and `voice script` write within these same limits |
+| `phone_size`, `phone_reading`, `phone_zone` | WARN | the phone check's findings, copied from the project's last `showtime check` with their timestamps (and frames): text under the minimum in points at phone width / on screen for less than it takes to read / under platform UI, a player control strip or at the frame edge. A phone-check failure is a WARN, never a FAIL |
+| `phone_unverified` | INFO | qa could not verify type size, reading time or UI zones: no `showtime check` report with a phone block for this project, or it ran at another size. Captions are still judged (below) |
 | `captions_missing` | FAIL/WARN | `expect.captions` but no sidecar and no caption text in the check report |
 | `captions_empty` | WARN | a caption file has no cues or cannot be read |
 | `missing_credits` | FAIL | a mix report or `.license.json` sidecar requires attribution and no credits file (`credits.txt` in any case, `<stem>.credits.txt`, or the job's credits) ships with the video |
@@ -177,6 +227,9 @@ export itself (`showtime qa <export> --platform github`); without one it FAILs w
 | `must_show` | FAIL | a must-show text is missing from the on-screen text list of the last `showtime check` |
 | `must_show_unverified` | WARN | found only in the project source (run `showtime check`, then `qa` again) |
 | `expect_invalid` | WARN | an unknown key in the `expect` block, or an unknown platform name (checked without a platform target) |
+| `reference_copy` | FAIL | the render copies a style reference of its job: 25 % of sampled frames match reference frames, or 10 % with the same cut rhythm (`reference.md` section 3) |
+| `reference_close` | WARN | 5 % or more of the sampled frames look like reference frames |
+| `reference_credit` | WARN | "Style reference: ..." is missing from credits.txt or share.txt (`showtime reference credit <job>`) |
 | `edit_choppy` | WARN (launch films) | more than 5 hard cuts in a film of up to 60 s |
 | `too_many_scenes` | WARN (launch films) | more than 6 scenes or layouts in up to 60 s |
 | `dead_hold` | WARN (launch films) | nothing moves for more than 5.5 s |
@@ -203,6 +256,32 @@ and whether the music moves there (an onset or a +1.5 dB rise). It is judged (th
 launch, promo, release and trailer films: showtime.json `"kind": "launch"` (the launch template sets it),
 `expect.style`, or a job goal that says launch, promo, trailer, teaser or release video. The numbers
 come from the premium grammar in `workflows/launch-video.md`.
+
+**Phone check** (the audience complaint: text moves too fast to read and is too small on a phone). One named
+check, printed as one line by both tools:
+
+```
+phone check: PASS (smallest text 8.1 pt (minimum 5 pt for 16:9); every text held to its reading time at 17 characters/s or 3 words/s (en); nothing under platform UI; captions: 12 cues, longest line 34 characters, fastest 15 characters/s)
+phone check: FAIL - type 4.1 pt "Terms apply" at 0:12.4; reading "Sign up today" 0.8s of 2.1s at 0:05.0; under platform UI "Link in bio" at 0:09.0
+phone check: PARTIAL (captions: 12 cues, longest line 34 characters; type size, reading time and UI zones need `showtime check <project>` ...)
+```
+
+`showtime check` measures it before the render and writes the per-frame findings plus a `phone` block in
+`report.json` (aspect, minimum, smallest texts, items with timestamps). `showtime qa` cannot read pixels back
+into text, so it quotes that block (`work/check/report.json`) and says PARTIAL when there is none, when it ran at
+another size, or when it is older than the project sources; captions are always judged on the sidecar files.
+Parts:
+
+| Part | Rule (finding codes) | Limit | Where the number comes from |
+|---|---|---|---|
+| Reading time | `short_text` | every text (not numbers alone, not `data-caption` text read along with the voice) is on screen for `0.3 s + max(characters / cps, words / wps)`, at least 1 s; per language in `runtime/thresholds.json` `reading`: default 17 characters/s and 3 words/s, `ja` 4 chars/s, `zh` 9, `ko` 12 (no words/s for languages written without spaces). The language is showtime.json `lang`, else `<html lang>`, else `en` | Checked against the published sources on 2026-09-29, no number changed. Netflix timed-text style guides, reading speed for adult programs: English 20 characters/s (17 for children's programs; [en-US](https://partnerhelp.netflixstudios.com/hc/en-us/articles/217350977-English-USA-Timed-Text-Style-Guide)), Japanese 4 ([ja](https://partnerhelp.netflixstudios.com/hc/en-us/articles/215767517-Japanese-Timed-Text-Style-Guide); 7 for SDH, no separate children's figure), Simplified Chinese 9 (7 for children's; [zh](https://partnerhelp.netflixstudios.com/hc/en-us/articles/215986007-Chinese-Simplified-Timed-Text-Style-Guide)), Korean 12 (9 for children's; [ko](https://partnerhelp.netflixstudios.com/hc/en-us/articles/216001127-Korean-Timed-Text-Style-Guide)). So `ja` 4, `zh` 9 and `ko` 12 are exactly the adult limits. The default 17 characters/s is the English children's limit, i.e. deliberately under the adult 20 (on-screen text is read while the picture also moves). 3 words/s = 180 words/min, the top of the BBC's 160-180 wpm recommendation (0.33-0.375 s per word, at least about 0.3 s per word on screen), quoted from the [BBC Subtitle Guidelines](https://www.bbc.co.uk/accessibility/forproducts/guides/subtitles/) as reproduced on [clevercast.com](https://www.clevercast.com/bbc-subtitling-guidelines/) (the BBC page itself could not be fetched when this was checked); it is about 76 % of the 238 wpm adults read silently (English non-fiction; 260 fiction, 183 aloud): [Brysbaert 2019, Journal of Memory and Language 109, 104047](https://doi.org/10.1016/j.jml.2019.104047) (open PDF: [gwern.net](https://gwern.net/doc/psychology/linguistics/2019-brysbaert.pdf)). Tune the file, not the code |
+| Type size | `tiny_text` | on-screen size in points at phone width: `px x 390 / frame width` (an iPhone 14/15-class screen, the video filling its width in a feed). Minimum by aspect (`phone_min_pt`): 16:9 5 pt, 1:1 10 pt, 4:5 11 pt, 9:16 15 pt; `tiny_text_frac` (2.2 % of the frame height) stays as a second floor, so 1920x1080 needs 25 px, 1080x1920 42 px, 1080x1080 28 px, 1080x1350 31 px. Decor (`data-st-decor`, `{decor: true}`) is exempt. Judged on the median size over the text's life, so an entrance that starts small is not a small text; text under the minimum is one warning per text, grouped when there are many | calibrated on the shipped examples: their smallest 16:9 labels are 5.1-6.5 pt (26-33 px at 1080p), their vertical ones 15.6-15.9 pt, the square one 11.2 pt, so the minimums are the smallest sizes that let the examples pass. That is a floor, not a target: aim for typography.md's floors (36 px at 1080p = 7.3 pt, 48 px at 1080x1920 = 17.3 pt), and `small_text` notes still mark text under ~3.3 % |
+| UI zones | `safe_zone`, `edge_margin`, `control_strip` | frames taller than wide (9:16, 4:5): text inside x 64-916, y 220-1440 at 1080x1920 (platforms.md §3, scaled); landscape and square: not within 3 % of an edge, and no small text in the bottom 8 % (player controls) | platforms.md §3, typography.md §6 |
+| Captions | `caption_line_long`, `caption_fast`, `caption_flash`, `caption_lines`, `caption_bounds` (qa, on the sidecar) | at most 2 lines, 42 characters per line (32 vertical), 20 characters/s for cues of 3+ words, no cue under 0.4 s, inside the safe box (`st/captions_rules.py`, shared with the writers) | subtitle practice as above; the summary line quotes the cue count, the longest line and the fastest cue |
+
+`--no-timeline` skips reading time (the line says so); type size and zones come from the sample frames then.
+Burned-in captions that are drawn as page text (`data-caption`) get the type-size and zone checks like any text,
+but not the reading-time rule (they follow the voice).
 
 **Dark themes and slow pushes.** Black and frozen stretches are measured on absolute pixel change, so two
 honest designs can trip them:

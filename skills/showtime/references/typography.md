@@ -5,6 +5,40 @@ Read this when you choose fonts, sizes, spacing or text placement for a video.
 Video type is read once, at a distance, on a phone, while it moves. Go bigger, use fewer words,
 push the weight contrast harder and hold longer than you would on a web page.
 
+## Essentials
+
+- Fonts are local files loaded with `@font-face` (`showtime assets font <family>` for others); never
+  `Helvetica`, `Arial`, `SF Pro`, `Segoe UI`, `Menlo` or `system-ui`; declare every weight and style (§1)
+- Wait for fonts before frame 0 (`ST.waitFor(document.fonts.ready)` or `ST.ready()`); non-Latin text needs a
+  family that covers the script (a Noto family) (§1)
+- At most 2 families and 2-3 weights; extreme weight contrast (300 vs 800, 400 vs 900); give the display role
+  to a face with character, not Inter (§2)
+- Instrument Serif figures misread ("11" as "ll"): set numbers in the body sans with `tabular-nums` (§2)
+- Floor (smallest readable size): 36 px at 1920x1080, 48 at 1080x1920, 40 at 1:1, 42 at 4:5; decorative
+  metadata down to 60 % of it; body and labels x1.3 for landscape video watched in a feed (§3)
+- The hero fills 60-80 % of the frame width; trust `showtime check`'s measured boxes, not the estimate (§3)
+- At most 42 characters per line landscape, 18-20 vertical; captions 2 lines; 6 words per card (§3)
+- Display tracking -2 % to -4 %; `tabular-nums` for counting numbers; sentence case; no italic emphasis (§4)
+- Kinetic: by word or line (per-letter only for 1-2 word titles); entrances 0.4-0.6 s moving 16-40 px, scale
+  from 0.96-0.98, never from 0; never shake or pulse readable text (§5)
+- Animate only `transform`, `opacity`, `clip-path` and `filter`; no CSS centering transform on an element whose
+  transform you animate (§5)
+- Safe areas: 16:9 text inside the 90 % box (96 px sides, 54 px top and bottom), the bottom 16.7 % kept for
+  captions; 9:16 box x 64-916, y 220-1440; square and 4:5 6 % margins (§6)
+- Contrast at least 4.5:1 against the real composited pixels (3:1 for display text 48 px or more at 1080p);
+  over footage one treatment per video (scrim, stroke plus shadow, or plate); move the text first (§7)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| 1. Fonts: always files, never system names | 42-52 |
+| 2. Pairings | 54-81 |
+| 3. Sizes by format (px, at the render size) | 83-105 |
+| 4. Spacing and settings | 107-117 |
+| 5. Kinetic type rules | 119-132 |
+| 6. Safe areas | 134-144 |
+| 7. Contrast | 146-158 |
+
 ## 1. Fonts: always files, never system names
 
 - Every font is a local file loaded with `@font-face` from the fonts folder that setup installs
@@ -60,6 +94,10 @@ Rules:
 - **Floor** = the smallest size for anything the viewer must read. Decorative metadata (coordinates,
   ghost words, tick labels) may go down to 60% of the floor.
 - If a landscape video will be watched in a feed (X, LinkedIn, embedded in a post), multiply body and label sizes by 1.3.
+- **On a phone the video is about 390 pt wide**, so points = px × 390 / frame width: the floor row is 7.3 pt for 1920×1080, 17.3 pt
+  for 1080×1920, 14.4 pt for 1080×1080 and 15.2 pt for 1080×1350. `showtime check` fails the *phone check* below 5 pt (16:9), 10 pt
+  (1:1), 11 pt (4:5) and 15 pt (9:16), the smallest sizes the shipped examples pass; treat the floor column as the size to aim for
+  (qa.md, "Phone check").
 - The hero should fill 60–80% of the frame width. The display element should be 3–6× the size of its nearest neighbor.
 - Fit to width: `max_px = usable_width / (chars × ratio)`, where ratio ≈ 0.55 (regular sans), 0.62
   (bold caps sans), 0.42–0.45 (condensed caps like Anton/Bebas), 0.60 (mono), 0.50 (serif). Then

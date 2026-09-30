@@ -5,6 +5,39 @@ pauses, tighten a talking head, pull clips from an interview or podcast, pick th
 captions, reframe to vertical, clean the audio, fix the colour. Everything is driven by a word-level
 transcript; you read text and images, never the raw video. The full reference is `editing.md`.
 
+## Essentials
+
+- Defaults: keep the source aspect, fps and framing (no punch-ins); Reels/TikTok/Shorts get `--aspect 9:16
+  --captions bold-pop`; fillers out, pauses over 0.5 s cut to 0.3 s; -14 LUFS / -1 dBTP unless asked
+  (§ Defaults)
+- Ask only for length/platform and what must stay or go, and only when the request leaves it open (§ Defaults)
+- `showtime job init <name>-edit --goal "..."` (`--platform reels|tiktok|shorts|youtube` when named) (§ Steps)
+- Inventory: `showtime footage probe <file>`, `showtime footage scenes <file> --every 5 --job <job>`; never
+  write anything beside the user's footage (§ Steps)
+- `showtime transcribe <files> --edit-dir <job>/edit` (`--speakers 2`, `--prompt "names, jargon"`,
+  `--language`); tell the user the time first for long files; read `guards.warnings` (§ Steps)
+- `showtime pack <job>/edit`, read `takes_packed.md` end to end; plan in 3-6 lines in SHOWTIME.md; wait for
+  the user only when the plan drops content (takes, sentences, order) (§ Steps)
+- `showtime edit cut <job>/edit/transcripts/*.json -o <job>/edit/edl.json` with the plan's options, then
+  `showtime edit check <job>`; copy times from `takes_packed.md`, never from memory (§ Steps, § Pitfalls)
+- Draft `showtime edit render <job> --preview`, then `showtime edit view <job>`: read every PNG and the report
+  (`frames_ok` true, no warnings); at most three passes, then ask (§ Steps)
+- Final `showtime edit render <job> -o <job>/final.mp4`; poster `showtime deliver poster <job> --at <t> --bake`
+  (optional for Reels, TikTok, Shorts) (§ Steps)
+- Verify: `showtime qa <job>`, `showtime look <job>`; for published work transcribe the output and confirm no
+  fillers or clipped words; say what you could not check (§ Steps)
+- Caption and overlay times come from `edit check` output times, not range sums (§ Pitfalls)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| Inputs | 41-47 |
+| Defaults | 49-55 |
+| Steps | 57-108 |
+| Recipes | 110-121 |
+| Pitfalls | 123-130 |
+| Read next | 132-135 |
+
 ## Inputs
 
 - One or more media files or a folder of takes. No path given: list the media files in the working
@@ -68,8 +101,8 @@ target length/platform, and anything that must stay or go, and only when the req
    deliverable: qa and exports follow it. Reels, TikTok and Shorts let the user pick a cover in the
    app, so the bake is optional there.
 10. **Verify.** `showtime qa <job>` (the latest final; it prints which, uses the job's platform and
-    checks the job's captions `final.srt`). Look at the sheet. For anything published, transcribe the output
-    (`showtime transcribe <the checked file> --edit-dir <job>/work/qa-transcript`) and confirm no
+    checks the job's captions `final.srt`), then `showtime look <job>` (`looking.md`). For anything
+    published, transcribe the output (`showtime transcribe <the checked file> --edit-dir <job>/work/qa-transcript`) and confirm no
     fillers or clipped words remain. Say what you could not check (you did not listen).
 11. **Deliver.** Exports (`showtime deliver exports <job> --targets ...`: the latest final), share copy,
     the delivery card.

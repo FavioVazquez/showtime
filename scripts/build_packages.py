@@ -3,6 +3,7 @@
 
     python scripts/build_packages.py npm  --out DIR [--pack]   # the npm package (registry: MCP Registry)
     python scripts/build_packages.py mcpb --out DIR            # the MCPB bundle (Smithery, desktop clients)
+    python scripts/build_packages.py openai --out DIR           # the OpenAI plugin directory upload (skills only)
     python scripts/build_packages.py all  --out DIR [--pack]
 
 Both carry the skill folder (skills/showtime, without its tests): the MCP server is part of the skill,
@@ -16,6 +17,12 @@ mcpb  DIR/mcpb/           staged bundle (manifest.json, icon.png, server/ = the 
       DIR/showtime-<version>.mcpb   the zip archive; its SHA-256 is printed
       DIR/server.json     server.json with the bundle added as a second package (release-asset URL +
                           fileSha256), for publishing to the MCP Registry once the bundle is uploaded
+
+openai DIR/openai/showtime/  staged plugin: plugin.json (Agent Plugins, with its `extensions.com.openai`
+                             listing), skills/showtime without tests and without mcp/ (the directory takes skills
+                             only, no local MCP server), the icon and logo it names, LICENSE, PRIVACY.md, README.md
+       DIR/showtime-<version>-openai-plugin.zip   one top-level folder; upload it at platform.openai.com/plugins
+                             (Create plugin > Skills only). No hooks, commands or agents: the directory refuses them.
 
 The bundle's tool list is read from the server itself (initialize + tools/list), so it always matches.
 Files come from `git ls-files` (so nothing ignored or untracked ships); outside a git checkout, from a
@@ -309,12 +316,75 @@ def build_mcpb(out: Path) -> Dict[str, str]:
             "files": str(n + 3), "tools": str(len(tools)), "server_json": str(out / "server.json")}
 
 
+# ------------------------------------------------------------------------------------ OpenAI plugin
+
+OPENAI_README = """# showtime
+
+A local video studio. Describe a video in one sentence; the model directs and your machine renders it: launch films,
+explainers, data stories, repo and paper explainers, release videos and social shorts, with local voice-over, music,
+captions and footage editing. Every finished video is checked (text cut off or too small on a phone, reading time,
+black or frozen frames, loudness) and reviewed before you see it. Nothing is uploaded; no cloud AI services or keys.
+
+First run: the skill runs `showtime setup` once, which installs its open tools and models into `~/.showtime`
+(it says what it downloads and how big it is).
+
+Source, docs and examples: https://github.com/FavioVazquez/showtime (MIT)
+"""
+
+
+def build_openai(out: Path) -> Dict[str, str]:
+    """The OpenAI plugin directory package: skills only (no hooks, no local MCP server, no commands or agents)."""
+    ver = version()
+    manifest = json.loads((REPO / "plugin.json").read_text(encoding="utf-8"))
+    ui = ((manifest.get("extensions") or {}).get("com.openai") or {}).get("interface") or {}
+    for key, limit in (("displayName", 30), ("shortDescription", 30), ("longDescription", 4000), ("developerName", 80)):
+        if not ui.get(key) or len(ui[key]) > limit:
+            die("plugin.json extensions.com.openai.interface.%s is missing or longer than %d characters" % (key, limit))
+    if len(ui.get("defaultPrompt") or []) > 3 or any(len(x) > 128 for x in ui.get("defaultPrompt") or []):
+        die("plugin.json defaultPrompt: at most 3 prompts of 128 characters")
+    if manifest.get("version") != ver:
+        die("plugin.json version %s is not %s" % (manifest.get("version"), ver), "python scripts/check_release.py")
+    for banned in ("hooks", "apps"):
+        if banned in manifest["extensions"]["com.openai"]:
+            die("plugin.json extensions.com.openai.%s: the directory refuses %s for now" % (banned, banned))
+    root = fresh_dir(out / "openai") / "showtime"
+    n = copy_skill(root / "skills" / "showtime")
+    shutil.rmtree(str(root / "skills" / "showtime" / "mcp"), ignore_errors=True)   # no local MCP server
+    for key in ("composerIcon", "logo", "composerIconDark", "logoDark"):
+        rel = ui.get(key)
+        if rel:
+            src = (REPO / rel).resolve()
+            if not src.is_file():
+                die("plugin.json %s: %s not found" % (key, rel))
+            dst = root / rel
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(str(src), str(dst))
+    for name in ("LICENSE", "PRIVACY.md"):
+        shutil.copy2(str(REPO / name), str(root / name))
+    (root / "README.md").write_text(OPENAI_README, encoding="utf-8")
+    (root / "plugin.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    skill_md = (root / "skills" / "showtime" / "SKILL.md").read_text(encoding="utf-8")
+    if not skill_md.startswith("---\n") or "\nname:" not in skill_md.split("\n---", 1)[0] \
+            or "\ndescription:" not in skill_md.split("\n---", 1)[0]:
+        die("skills/showtime/SKILL.md has no YAML header with name and description")
+    for bad in ("hooks", "mcp.json", ".mcp.json", ".claude-plugin", "agents", "commands"):
+        if (root / bad).exists():
+            die("the OpenAI package must not contain %s" % bad)
+    if any(p.suffix == ".mcpb" for p in root.rglob("*")):
+        die("the OpenAI package must not contain a .mcpb file")
+    zpath = out / ("showtime-%s-openai-plugin.zip" % ver)
+    write_zip(out / "openai", zpath)
+    files = sum(1 for p in root.rglob("*") if p.is_file())
+    return {"stage": str(root), "zip": str(zpath), "sha256": sha256(zpath), "bytes": str(zpath.stat().st_size),
+            "files": str(files)}
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0],
                                  formatter_class=argparse.RawDescriptionHelpFormatter,
                                  epilog="examples:\n  python scripts/build_packages.py all --out ../showtime-dist --pack\n"
                                         "  python scripts/build_packages.py mcpb --out ../showtime-dist --json")
-    ap.add_argument("what", choices=["npm", "mcpb", "all"])
+    ap.add_argument("what", choices=["npm", "mcpb", "openai", "all"])
     ap.add_argument("--out", required=True, type=Path, help="output folder, outside the repository")
     ap.add_argument("--pack", action="store_true", help="npm: also run `npm pack` (the exact tarball, no upload)")
     ap.add_argument("--json", action="store_true", help="print the results as JSON")
@@ -325,6 +395,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         res["npm"] = build_npm(out, a.pack)
     if a.what in ("mcpb", "all"):
         res["mcpb"] = build_mcpb(out)
+    if a.what in ("openai", "all"):
+        res["openai"] = build_openai(out)
     if a.json:
         print(json.dumps(res, indent=2))
     else:

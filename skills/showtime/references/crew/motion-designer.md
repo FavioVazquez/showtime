@@ -42,8 +42,9 @@ Copy the finished files into `<job>/crew/motion-<sid>/fragment/`: `section.html`
 
 1. `showtime check <proj>`: 0 errors, and read every warning (`short_text` and long still holds are
    real defects).
-2. `showtime snap <proj> --at <3 to 6 times>`: the entrance, the key moment, each cue, the exit. Single
-   frames only, no `--every` sheets (the machine is shared). Look at every image.
+2. `showtime look <proj> --at <3 to 6 times>`: the entrance, the key moment, each cue, the exit, on one
+   small image (no `--every` sheets: the machine is shared). Look at it once and note what you saw;
+   `showtime snap <proj> --at <t>` only to confirm a detail at full size.
 3. Fix and repeat, three loops at most. Still wrong after three: return `DONE_WITH_NOTES` with what is
    left and the frame that shows it.
 

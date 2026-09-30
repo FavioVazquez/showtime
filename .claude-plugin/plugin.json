@@ -1,6 +1,6 @@
 {
   "name": "showtime",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A local video studio for your coding agent. Describe a video. Your agent directs. Your machine renders. Motion graphics rendered frame-exactly, voice-over, music and sound design, footage editing from transcripts, captions and platform-ready exports. Everything runs on your machine.",
   "author": {
     "name": "Favio Vazquez"
@@ -34,7 +34,8 @@
         "SHOWTIME_OPT_OPEN_BROWSER": "${user_config.open_browser}",
         "SHOWTIME_OPT_MAX_WORKERS": "${user_config.max_workers}",
         "SHOWTIME_OPT_HOME": "${user_config.home}",
-        "SHOWTIME_OPT_SOUND": "${user_config.sound}"
+        "SHOWTIME_OPT_SOUND": "${user_config.sound}",
+        "SHOWTIME_OPT_MODE": "${user_config.mode}"
       }
     }
   },
@@ -70,6 +71,12 @@
       "title": "Sound when a long job finishes",
       "description": "When on, a short showtime sound plays after a render, export or other command that ran over 20 seconds finishes, in a terminal you run showtime from yourself (never in Claude's tool calls, pipes, CI or with NO_COLOR). Same as SHOWTIME_SOUND=1.",
       "default": false
+    },
+    "mode": {
+      "type": "string",
+      "title": "Review mode (quality or lean)",
+      "description": "quality (used when this is empty): every finished video gets the full review, with looks, qa and a critic round before delivery. lean: a cheaper draft pass with one look per stage and no critic round unless the video is publish-bound or you ask. Leave empty to use `showtime config mode` (quality unless set there). SHOWTIME_MODE overrides it.",
+      "default": ""
     },
     "home": {
       "type": "string",

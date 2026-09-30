@@ -251,7 +251,8 @@ class QATests(unittest.TestCase):
         for name in ("CRITIC.md", "sheet.jpg", "manifest.json", "qa/qa.json", "loudness.png"):
             self.assertTrue((pack / name).is_file(), name)
         brief = (pack / "CRITIC.md").read_text(encoding="utf-8")
-        for word in ("Blocker", "Should-fix", "Polish", "VERDICT", "DECLINED TO JUDGE", "timestamp", "at most 2"):
+        for word in ("Blocker", "Should-fix", "Polish", "VERDICT", "DECLINED TO JUDGE", "timestamp", "at most 3",
+                     "No scores"):
             self.assertIn(word, brief)
         self.assertTrue(all(Path(k["path"]).is_file() for k in m["key_frames"]))
         self.assertIn("type detail pass", brief)
@@ -268,10 +269,13 @@ class QATests(unittest.TestCase):
         # an interrupted round 2 (no FINDINGS.md) is rebuilt, never counted
         (r2 / "INCOMPLETE").write_text("x", encoding="utf-8")
         self.assertEqual(Path(json.loads(showtime("review-pack", job, "--json").stdout)["dir"]).name, "round-2")
-        (r2 / "FINDINGS.md").write_text("VERDICT: ship\n", encoding="utf-8")
+        (r2 / "FINDINGS.md").write_text("VERDICT: ship after fixes\n", encoding="utf-8")
+        r3 = Path(json.loads(showtime("review-pack", job, "--json").stdout)["dir"])
+        self.assertEqual(r3.name, "round-3")
+        (r3 / "FINDINGS.md").write_text("VERDICT: ship\n", encoding="utf-8")
         cp = showtime("review-pack", job, check=False)
         self.assertEqual(cp.returncode, 1)
-        self.assertIn("stops at 2", cp.stderr)
+        self.assertIn("stops at 3", cp.stderr)
         self.assertIn("--compare", cp.stderr)
 
     def test_06b_text_crops(self):

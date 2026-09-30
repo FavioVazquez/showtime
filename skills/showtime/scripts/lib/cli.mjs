@@ -26,6 +26,18 @@ export function fail(message, hint, code = 1) {
   process.exit(code);
 }
 
+/**
+ * Brief output (lean mode): a few lines per command (paths + verdict), details in a file. On by default
+ * when nobody watches a terminal (agents, pipes, the MCP server); a terminal keeps the full report.
+ * --verbose or SHOWTIME_OUTPUT=full forces the full report; SHOWTIME_OUTPUT=brief forces brief.
+ */
+export function briefOutput() {
+  const mode = String(process.env.SHOWTIME_OUTPUT || '').toLowerCase();
+  if (process.env.SHOWTIME_VERBOSE === '1' || mode === 'full' || mode === 'verbose') return false;
+  if (mode === 'brief') return true;
+  return process.env.SHOWTIME_MCP === '1' || !process.stdout.isTTY;
+}
+
 export function warn(message) { process.stderr.write(`${c.yellow(`${CMD}: warning:`)} ${message}\n`); }
 export function info(message) { process.stderr.write(`${message}\n`); }
 
@@ -103,7 +115,7 @@ export function hintFor(msg) {
  */
 export function parseCli(spec, argv = process.argv.slice(2)) {
   CMD = `showtime ${spec.name}`;
-  const options = { help: { type: 'boolean', short: 'h' }, debug: { type: 'boolean' } };
+  const options = { help: { type: 'boolean', short: 'h' }, debug: { type: 'boolean' }, verbose: { type: 'boolean' } };
   for (const [k, v] of Object.entries(spec.options || {})) {
     options[k] = { type: v.type || 'string' };
     if (v.short) options[k].short = v.short;
@@ -129,6 +141,7 @@ export function parseCli(spec, argv = process.argv.slice(2)) {
   }
   const v = parsed.values;
   if (v.debug) { DEBUG = true; process.env.SHOWTIME_DEBUG = '1'; }
+  if (v.verbose) process.env.SHOWTIME_VERBOSE = '1';
   if (v.help) { printHelp(spec); process.exit(0); }
   for (const [k, o] of Object.entries(spec.options || {})) {
     if (v[k] === undefined && o.default !== undefined) v[k] = o.default;
@@ -148,6 +161,7 @@ export function printHelp(spec) {
     rows.push([flag, o.help || '']);
   }
   rows.push(['-h, --help', 'show this help'], ['    --debug', 'show stack traces on errors']);
+  if (spec.brief && !(spec.options || {}).verbose) rows.push(['    --verbose', 'full report on stdout (default when a terminal is attached; agents get a short summary)']);
   const w = Math.min(34, Math.max(...rows.map((r) => r[0].length)) + 2);
   out.push('options:');
   for (const [f, h] of rows) out.push(`  ${f.padEnd(w)}${h}`);
@@ -383,11 +397,13 @@ export class Progress {
         process.stderr.write(`\r\x1b[2K${line}`);
         this.lastPrint = now;
       }
-    } else if (pct >= this.lastPct + 10 || this.done >= this.total) {
-      this.lastPct = pct - (pct % 10);
+    } else if (pct >= this.lastPct + this.step() || this.done >= this.total) {
+      this.lastPct = pct - (pct % this.step());
       process.stderr.write(line + '\n');
     }
   }
+  /** Without a terminal, a line every 10% (every 25% in brief output: agents read every line). */
+  step() { return briefOutput() ? 25 : 10; }
   clear() { if (this.tty && !this.quiet) process.stderr.write('\r\x1b[2K'); }
   end() { if (this.tty && !this.quiet) process.stderr.write('\n'); }
 }

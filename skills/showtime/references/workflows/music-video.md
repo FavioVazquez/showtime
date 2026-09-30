@@ -6,6 +6,28 @@ user's track, a lyric or visualizer video, a beat-synced montage of clips or pho
 drives every cut. If the user has no track, compose one first (`audio compose`), which ships an exact
 beat grid.
 
+## Essentials
+
+- The track is the spine: never download commercial music; with no track, compose one (`audio compose`) (§ Inputs)
+- Beat map: `showtime audio beats <track> -o <job>/beats.json`; `beat_cut` allows cuts on the grid, `phrase_flow`
+  means cut on phrases; low `bpm_confidence`: sync only the 1-3 biggest moments (§ Steps, § Pitfalls)
+- Excerpt: `showtime audio fit <track> --dur <seconds> -o <job>/track.wav`; never fade mid-phrase (§ Steps)
+- Cuts on downbeats in calm parts, every bar in builds, beats only at drops; picture 1-2 frames before the beat;
+  one treatment per section; ≤3 flashes per second (§ Defaults, § Pitfalls)
+- EDL ranges a whole number of beats with `"mute": true`; project scenes start on downbeats; beat-reactive motion
+  reads beat times as data, never live audio analysis (§ Steps)
+- Final mastered to -14 LUFS; untouched track: `--no-loudnorm` (EDL `"loudness": false`), and say so (§ Pitfalls)
+- `showtime qa <job>`, snap the drop (`--at <drop - 0.033>,<drop>`), report the track's license (§ Steps)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| Inputs | 31-36 |
+| Defaults | 38-44 |
+| Steps | 46-75 |
+| Pitfalls | 77-85 |
+| Read next | 87-90 |
+
 ## Inputs
 
 - The track (WAV, MP3, M4A) and its license: the user's own music, a licensed track, or a composed one.

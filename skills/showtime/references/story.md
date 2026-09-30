@@ -3,6 +3,41 @@
 Read this before writing a plan. The story is where most of a video's quality gets decided, and it
 costs nothing to redo. Motion, sound and render just carry it out.
 
+## Essentials
+
+- Before any scene, write "This video tells ___ (audience) that ___ (claim)." The claim is something someone
+  could dispute or be surprised by, not a topic; cut every scene that does not trace back to it (§1)
+- Mine the source in order: what it is (in its own words), the verb, visible proof, the oddest true fact,
+  identity; plan at least one scene of real UI or output when the source has one (§2)
+- Never open `.env`, keys, `secrets/` or credential files; keep internal hostnames, customer names and private
+  data out of plan, video and share copy; use obvious fictional stand-ins and say so (§2)
+- Build the visual device from the product's own world; a prop that fits another product's video unchanged
+  fails the transplant test (§2)
+- Hook: frame 1 already informative and moving (a launch hook is complete at frame 0); no black lead-in, fade
+  from black, logo sting or "Introducing…"; readable by 0.3 s, first cut or big change by 2.0 s (§3, §4)
+- Given a video to match, run `showtime reference <video> --job <job> --for <seconds>` first (§4)
+- 1–6 words per card; on-screen text never repeats the narration; no banned filler ("unlock", "seamless" ...);
+  narration as discrete cues, 1–2 sentences of 6–20 words per scene (§5)
+- Sourced claims only: no invented numbers, benchmarks, users, quotes, logos or versions; a number on screen
+  matches its source exactly; label sample data that could pass as real (§6)
+- Specifics (file names, flags, output lines, paths, versions) need a source or a run saved to
+  `<job>/work/evidence/<name>.txt` and logged with `job note --verified`; never fill a gap with a guess (§6)
+- Every held frame must be true on its own; a failed capture is reported, never faked; no redrawn logos (§6)
+- Open direction: 3–5 concepts from different paths, one unexpected; show all before recommending one (§7)
+- Before building, run the distinctness check: two or more "no" answers mean revise the plan (§8)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| 1. The one-sentence contract | 41-47 |
+| 2. Finding the angle in the real product | 49-73 |
+| 3. Hooks (the first 2 seconds) | 75-97 |
+| 4. Structures | 99-132 |
+| 5. Writing the lines | 134-147 |
+| 6. Honesty rules (hard) | 149-171 |
+| 7. Pitch round (when direction is open) | 173-190 |
+| 8. Distinctness check (before building) | 192-205 |
+
 ## 1. The one-sentence contract
 
 Before any scene exists, write: **"This video tells ___ (audience) that ___ (claim)."**
@@ -62,6 +97,9 @@ Hook catalog (pick based on what the source actually offers):
 | Contrast | "Everyone does X. This does Y." | A real point of difference |
 
 ## 4. Structures
+
+Given a video to match ("like this"), run `showtime reference <video> --job <job> --for <seconds>` first and
+build the storyboard from the brief in its `reference.md` (`references/reference.md`).
 
 Times are for the default length. Scale proportionally, but keep the hook at ≤3 s.
 
@@ -163,3 +201,5 @@ Answer honestly. Two or more "no" answers means revise the plan.
 - Did you avoid the category's default look (purple-blue gradient, floating glass cards, generic
   particles, stock bokeh, everything centered with equal weight)?
 - Could you cut 20% and lose nothing? If yes, cut it.
+- Does it look different from your last five videos (`showtime history`; `showtime check` warns with
+  `look_repeat`)? With a reference clip, did you take its grammar and none of its content (`reference.md`)?

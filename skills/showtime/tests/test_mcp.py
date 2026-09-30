@@ -51,7 +51,7 @@ NODE = shutil.which("node")
 HOME = showtime_home()
 EXPECTED_TOOLS = {"doctor", "status", "new_project", "render", "check", "snap", "qa", "voice_say", "voice_script",
                   "transcribe", "audio_compose", "audio_sfx", "audio_mix", "audio_search", "export_html",
-                  "studio_open", "studio_feedback", "deliver_exports"}
+                  "studio_open", "studio_feedback", "deliver_exports", "receipt", "guide"}
 SETTINGS_VARS = ("SHOWTIME_VOICE", "SHOWTIME_LANG", "SHOWTIME_OPEN_BROWSER", "SHOWTIME_MAX_WORKERS", "SHOWTIME_THREADS",
                  "SHOWTIME_SOUND")
 

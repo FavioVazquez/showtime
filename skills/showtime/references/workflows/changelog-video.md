@@ -4,6 +4,29 @@ Read this when the video is about a change: a pull request, a release, a version
 a "what's new this week" ("turn PR 482 into a 30 s video", "a release video for v2.3"). The story
 comes from the change itself; the code is shown as real hunks, never whole files.
 
+## Essentials
+
+- Defaults: 20-40 s, 16:9, at most 6 scenes, no push or cut per item. For users: the `launch` grammar
+  (`launch-video.md`, `showtime audio cuts`); for contributors: `dom` template, `technical` tone, 2-4 real
+  hunks of 4-12 lines (§ Defaults)
+- Read the change (`git log --oneline <from>..<to>`, `git diff --stat`); per change, what a user can now do,
+  with its commit or PR as the source (§ Steps)
+- `showtime new launch <job>/project` or `showtime new dom <job>/project --title "<Product> <version>"`; end
+  on the version and where to get it. Code via `showtime code <before-file> --to <after-file>` (§ Steps)
+- Only what shipped; numbers only from the PR, CI or release notes; no internal names; credit the authors
+  (§ Pitfalls)
+- `showtime check`, `showtime snap`, `showtime render <job>/project --job <job>`, `showtime qa <job>` (§ Steps)
+
+<!-- section lines: kept current by scripts/check_release.py -->
+| Section | Lines |
+|---|---|
+| Inputs | 30-34 |
+| Defaults | 36-45 |
+| Steps | 47-72 |
+| Unattended (CI, no agent) | 74-80 |
+| Pitfalls | 82-90 |
+| Read next | 92-95 |
+
 ## Inputs
 
 - The change: a PR (its description, commits and diff), a tag range (`git log v2.2..v2.3`), a
@@ -47,6 +70,14 @@ as an assumption; ask only when the request leaves it open and the two cuts woul
 6. **Sound, first look, final, verify, deliver** as in the pipeline: `showtime check`, `showtime snap`,
    `showtime render <job>/project --job <job>`, `showtime qa <job>`, share copy that
    links the release, the delivery card.
+
+## Unattended (CI, no agent)
+
+`showtime release-video <notes.md> -o <project> --name <product> --version <v>` writes a plain,
+honest project from the notes alone (their headings and lines verbatim, reading-time holds, a
+composed bed); `--changelog-version <v>` reads one section of a CHANGELOG, `--kind pr` a PR
+description. The GitHub Action (`docs/github-action.md`) runs it on every release. It has no angle
+and no demo: when an agent is available, this workflow makes the better film.
 
 ## Pitfalls
 

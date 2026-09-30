@@ -1,0 +1,215 @@
+{
+ "schema": 1,
+ "about": "Mirror of the model files the default install and first-use features download. When a primary host is blocked (a sandbox's egress proxy answering 403, no route to Hugging Face or GitHub LFS), the shared fetcher (setup/setup.py fetch) tries SHOWTIME_MODEL_MIRROR (a base URL or a local folder) and then each base in `mirrors`, in order. Every copy is sha256-verified. scripts/stage_model_mirror.py builds the release assets from this file.",
+ "tag": "models-v1",
+ "mirrors": [
+  "https://github.com/FavioVazquez/showtime/releases/download/models-v1/"
+ ],
+ "not_mirrored": {
+  "piper voices": "GitHub release archives (reachable wherever the mirror is) that bundle GPL-3.0 espeak-ng data",
+  "whisper-large-v3-turbo, supertonic-3 and the other setup extras": "opt-in; large-v3-turbo alone is 1.6 GB",
+  "unpinned Whisper sizes (small, base, medium ...)": "fetched with huggingface_hub; the pinned small.en is mirrored",
+  "wav2vec2 fp32 aligner (SHOWTIME_ALIGNER=fp32)": "opt-in, 378 MB; the default q8 aligner is mirrored",
+  "ffmpeg, Chromium, musicgen": "programs and opt-in weights, not model files"
+ },
+ "files": [
+  {
+   "item": "kokoro-timestamped",
+   "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX-timestamped/resolve/dd4401a9add81ac692d20e240d22ec9dda82cc29/onnx/model_fp16.onnx",
+   "file": "kokoro-timestamped--model_fp16.onnx",
+   "size": 163232776,
+   "sha256": "220724d5c5e0cc01be30f38faa6cf0c895a7cde6e7773e91db2973c8c7e5123c",
+   "license": "Apache-2.0",
+   "license_url": "https://www.apache.org/licenses/LICENSE-2.0",
+   "source": "https://huggingface.co/hexgrad/Kokoro-82M",
+   "attribution": "Kokoro-82M by hexgrad (Apache-2.0); timestamped fp16 ONNX export by onnx-community"
+  },
+  {
+   "item": "kokoro-voices",
+   "url": "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin",
+   "file": "kokoro-voices--voices-v1.0.bin",
+   "size": 28214398,
+   "sha256": "bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d",
+   "license": "Apache-2.0",
+   "license_url": "https://www.apache.org/licenses/LICENSE-2.0",
+   "source": "https://huggingface.co/hexgrad/Kokoro-82M",
+   "attribution": "Kokoro-82M v1.0 voice style vectors by hexgrad (Apache-2.0), packed as voices-v1.0.bin by the kokoro-onnx project"
+  },
+  {
+   "item": "whisper-small.en",
+   "url": "https://huggingface.co/Systran/faster-whisper-small.en/resolve/d1d751a5f8271d482d14ca55d9e2deeebbae577f/model.bin",
+   "file": "whisper-small.en--model.bin",
+   "size": 483545366,
+   "sha256": "62b2a45b05ee59acb4a5341b33ee35e041395d378d418a18acfe4c9e768ee37a",
+   "license": "MIT",
+   "license_url": "https://opensource.org/license/mit",
+   "source": "https://huggingface.co/Systran/faster-whisper-small.en",
+   "attribution": "Whisper small.en by OpenAI (MIT); CTranslate2 conversion by SYSTRAN (MIT)"
+  },
+  {
+   "item": "whisper-small.en",
+   "url": "https://huggingface.co/Systran/faster-whisper-small.en/resolve/d1d751a5f8271d482d14ca55d9e2deeebbae577f/config.json",
+   "file": "whisper-small.en--config.json",
+   "size": 2657,
+   "sha256": "666a9605530ac1f61fa8177f3702b4dacec9966749e42610839fcc32661d5fae",
+   "license": "MIT",
+   "license_url": "https://opensource.org/license/mit",
+   "source": "https://huggingface.co/Systran/faster-whisper-small.en",
+   "attribution": "Whisper small.en by OpenAI (MIT); CTranslate2 conversion by SYSTRAN (MIT)"
+  },
+  {
+   "item": "whisper-small.en",
+   "url": "https://huggingface.co/Systran/faster-whisper-small.en/resolve/d1d751a5f8271d482d14ca55d9e2deeebbae577f/tokenizer.json",
+   "file": "whisper-small.en--tokenizer.json",
+   "size": 2128466,
+   "sha256": "929c5252409436dce1b38a75d1abbcb5e132d170d8e324e4e04ed915fa2d22df",
+   "license": "MIT",
+   "license_url": "https://opensource.org/license/mit",
+   "source": "https://huggingface.co/Systran/faster-whisper-small.en",
+   "attribution": "Whisper small.en by OpenAI (MIT); CTranslate2 conversion by SYSTRAN (MIT)"
+  },
+  {
+   "item": "whisper-small.en",
+   "url": "https://huggingface.co/Systran/faster-whisper-small.en/resolve/d1d751a5f8271d482d14ca55d9e2deeebbae577f/vocabulary.txt",
+   "file": "whisper-small.en--vocabulary.txt",
+   "size": 422309,
+   "sha256": "ff77588746d3a2595d32ab5b69ffd7b95ce2441ac57533cb66fc3eb575a115cf",
+   "license": "MIT",
+   "license_url": "https://opensource.org/license/mit",
+   "source": "https://huggingface.co/Systran/faster-whisper-small.en",
+   "attribution": "Whisper small.en by OpenAI (MIT); CTranslate2 conversion by SYSTRAN (MIT)"
+  },
+  {
+   "item": "silero-vad-v5",
+   "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad_v5.onnx",
+   "file": "silero-vad-v5--silero_vad_v5.onnx",
+   "size": 2313101,
+   "sha256": "6b99cbfd39246b6706f98ec13c7c50c6b299181f2474fa05cbc8046acc274396",
+   "license": "MIT",
+   "license_url": "https://opensource.org/license/mit",
+   "source": "https://github.com/snakers4/silero-vad",
+   "attribution": "Silero VAD v5 by Silero Team (MIT), ONNX file as published by sherpa-onnx"
+  },
+  {
+   "item": "yunet",
+   "url": "https://github.com/opencv/opencv_zoo/raw/f12e12798e8314f7c074a6656816c048dcc95b7a/models/face_detection_yunet/face_detection_yunet_2023mar.onnx",
+   "file": "yunet--face_detection_yunet_2023mar.onnx",
+   "size": 232589,
+   "sha256": "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4",
+   "license": "MIT",
+   "license_url": "https://opensource.org/license/mit",
+   "source": "https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet",
+   "attribution": "YuNet face detector (2023mar) by Shiqi Yu and contributors, OpenCV Zoo (MIT)"
+  },
+  {
+   "item": "yunet",
+   "url": "https://raw.githubusercontent.com/opencv/opencv_zoo/f12e12798e8314f7c074a6656816c048dcc95b7a/models/face_detection_yunet/LICENSE",
+   "file": "yunet--LICENSE",
+   "size": 1085,
+   "sha256": "c83b8120c50ccbd4c4f96edf53141bdd566ebb8f8e9227e415326aa1b1aba958",
+   "license": "MIT",
+   "license_url": "https://opensource.org/license/mit",
+   "source": "https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet",
+   "attribution": "YuNet face detector (2023mar) by Shiqi Yu and contributors, OpenCV Zoo (MIT)"
+  },
+  {
+   "item": "arnndn",
+   "url": "https://raw.githubusercontent.com/richardpl/arnndn-models/c670d8220c9db2667f0879541f9dd80bc5abfbdc/sh.rnnn",
+   "file": "arnndn--sh.rnnn",
+   "size": 297646,
+   "sha256": "70bb6685eb0c2a1d18e2918dca3fbfbd39317010b1802eb1b6ea73a92f3fdec0",
+   "license": "LicenseRef-PublicDomain",
+   "license_url": "https://github.com/GregorR/rnnoise-models",
+   "source": "https://github.com/richardpl/arnndn-models",
+   "attribution": "RNNoise model trained by Gregor Richards (public domain)"
+  },
+  {
+   "item": "arnndn",
+   "url": "https://raw.githubusercontent.com/richardpl/arnndn-models/c670d8220c9db2667f0879541f9dd80bc5abfbdc/cb.rnnn",
+   "file": "arnndn--cb.rnnn",
+   "size": 299741,
+   "sha256": "f1357c4e5be9dee8467bead486dfced2d75b640c26ad0b594fa7f102322371d9",
+   "license": "LicenseRef-PublicDomain",
+   "license_url": "https://github.com/GregorR/rnnoise-models",
+   "source": "https://github.com/richardpl/arnndn-models",
+   "attribution": "RNNoise model trained by Gregor Richards (public domain)"
+  },
+  {
+   "item": "arnndn",
+   "url": "https://raw.githubusercontent.com/richardpl/arnndn-models/c670d8220c9db2667f0879541f9dd80bc5abfbdc/std.rnnn",
+   "file": "arnndn--std.rnnn",
+   "size": 302903,
+   "sha256": "6b8943dc4a9b6b24425873992a44f29c0577503276456af46a8854774faeb294",
+   "license": "BSD-3-Clause",
+   "license_url": "https://github.com/xiph/rnnoise/blob/main/COPYING",
+   "source": "https://github.com/richardpl/arnndn-models",
+   "attribution": "RNNoise standard model by Jean-Marc Valin / Xiph.Org Foundation (BSD-3-Clause)"
+  },
+  {
+   "item": "sf-fluidr3mono",
+   "url": "https://raw.githubusercontent.com/musescore/MuseScore/1a4bd0feb9378cd145418dbcb40246980ca1013d/share/sound/FluidR3Mono_GM.sf3",
+   "file": "sf-fluidr3mono--FluidR3Mono_GM.sf3",
+   "size": 23712790,
+   "sha256": "2aacd036d7058d40a371846ef2f5dc5f130d648ab3837fe2626591ba49a71254",
+   "license": "MIT",
+   "license_url": "https://opensource.org/license/mit",
+   "source": "https://github.com/musescore/MuseScore/tree/master/share/sound",
+   "attribution": "FluidR3Mono GM SoundFont by Frank Wen and the MuseScore team (MIT)"
+  },
+  {
+   "item": "sf-fluidr3mono",
+   "url": "https://raw.githubusercontent.com/musescore/MuseScore/1a4bd0feb9378cd145418dbcb40246980ca1013d/share/sound/FluidR3Mono_License.md",
+   "file": "sf-fluidr3mono--FluidR3Mono_License.md",
+   "size": 3355,
+   "sha256": "cf1889febeafd2b0a20c2c82359245524fc7dba29ded336cc3b51e0bcfdc8b84",
+   "license": "MIT",
+   "license_url": "https://opensource.org/license/mit",
+   "source": "https://github.com/musescore/MuseScore/tree/master/share/sound",
+   "attribution": "FluidR3Mono GM SoundFont by Frank Wen and the MuseScore team (MIT)"
+  },
+  {
+   "item": "parakeet-tdt-0.6b-v3-int8",
+   "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2",
+   "file": "parakeet-tdt-0.6b-v3-int8--sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2",
+   "size": 487170055,
+   "sha256": "5793d0fd397c5778d2cf2126994d58e9d56b1be7c04d13c7a15bb1b4eafb16bf",
+   "license": "CC-BY-4.0 AND Apache-2.0",
+   "license_url": "https://creativecommons.org/licenses/by/4.0/",
+   "source": "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3",
+   "attribution": "Parakeet-TDT-0.6B-v3 by NVIDIA (CC-BY-4.0); int8 ONNX export by sherpa-onnx (Apache-2.0)"
+  },
+  {
+   "item": "uvr-mdx-net-voc-ft",
+   "url": "https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/UVR-MDX-NET-Voc_FT.onnx",
+   "file": "uvr-mdx-net-voc-ft--UVR-MDX-NET-Voc_FT.onnx",
+   "size": 66762490,
+   "sha256": "534b2070fcc7df514b13ef660dc8cbb328679c2374d04354a5c42bb14ecce111",
+   "license": "MIT",
+   "license_url": "https://opensource.org/license/mit",
+   "source": "https://github.com/TRvlvr/model_repo",
+   "attribution": "Vocal separation model UVR-MDX-NET-Voc_FT by the Ultimate Vocal Remover (UVR) project (MIT)"
+  },
+  {
+   "item": "wav2vec2-base-960h",
+   "url": "https://huggingface.co/onnx-community/wav2vec2-base-960h-ONNX/resolve/729c1a6730fb549c20a1c73a3d3f96f11020225e/onnx/model_quantized.onnx",
+   "file": "wav2vec2-base-960h--model_quantized.onnx",
+   "size": 95212816,
+   "sha256": "1d9a366c27b2966625cd5035ac3db8847c53bba617169912bb251b42975a3a22",
+   "license": "Apache-2.0",
+   "license_url": "https://www.apache.org/licenses/LICENSE-2.0",
+   "source": "https://huggingface.co/facebook/wav2vec2-base-960h",
+   "attribution": "wav2vec2-base-960h by Facebook AI (Apache-2.0); uint8 ONNX export by onnx-community"
+  },
+  {
+   "item": "wav2vec2-base-960h",
+   "url": "https://huggingface.co/onnx-community/wav2vec2-base-960h-ONNX/resolve/729c1a6730fb549c20a1c73a3d3f96f11020225e/vocab.json",
+   "file": "wav2vec2-base-960h--vocab.json",
+   "size": 358,
+   "sha256": "4178db26b3c7570f6a47f14ac6a1c7b32950b8c2800fb097287e53776934f1c5",
+   "license": "Apache-2.0",
+   "license_url": "https://www.apache.org/licenses/LICENSE-2.0",
+   "source": "https://huggingface.co/facebook/wav2vec2-base-960h",
+   "attribution": "wav2vec2-base-960h by Facebook AI (Apache-2.0); uint8 ONNX export by onnx-community"
+  }
+ ]
+}

@@ -83,6 +83,19 @@ alone with the entry printed for you to paste. Run it again after updating showt
 Everything is included: the skill, the ten crew agents, the MCP server and the plugin settings
 (`/config`).
 
+## Claude app
+
+In the Claude desktop app: **Customize → Plugins → Add marketplace**, enter `FavioVazquez/showtime`,
+then install showtime from it. Commands run in the app's sandbox, behind a proxy that can answer 403
+for Hugging Face and GitHub LFS. `showtime setup` works there anyway: when a model's
+own host is blocked, the file comes from showtime's model mirror (release assets under the `models-v1`
+tag of this repository) and is checked against the same sha256. The mirror holds the default install's
+and first-use models (Kokoro, YuNet, Whisper small.en, Parakeet v3, the word aligner, Silero VAD, the
+denoise models, the default SoundFont); opt-in extras such as `--with asr-turbo` and Piper voices are
+not mirrored. `SHOWTIME_MODEL_MIRROR` points at another mirror: a base URL, or a folder holding the
+files under their mirror names (`skills/showtime/lib/st/mirror.json` lists them); `off` turns the
+mirror off.
+
 ## OpenAI Codex
 
 ```bash

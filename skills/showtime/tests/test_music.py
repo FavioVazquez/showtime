@@ -41,6 +41,7 @@ import sys
 import tempfile
 import threading
 import time
+from unittest import mock
 import unittest
 import zipfile
 from pathlib import Path
@@ -310,6 +311,190 @@ class CatalogTests(unittest.TestCase):
             self.assertEqual(music.pick("launch")["id"], best)
 
 
+class RotationTests(unittest.TestCase):
+    """Music variety: recent jobs' tracks and composers rank lower, lists mix composers, the history
+    warns on a repeated track or composer, `"seed": "auto"` moves a composed bed's key."""
+
+    def setUp(self):
+        music._CAT.clear()
+        self.hist = Path(tempfile.mkdtemp(prefix="st-music-hist-"))
+        self.old = {k: os.environ.get(k) for k in ("SHOWTIME_HISTORY_DIR", "SHOWTIME_HISTORY", "SHOWTIME_MUSIC_ROTATION",
+                                                   "SHOWTIME_MUSIC_CATALOG")}
+        os.environ["SHOWTIME_HISTORY_DIR"] = str(self.hist)
+        for k in ("SHOWTIME_HISTORY", "SHOWTIME_MUSIC_ROTATION", "SHOWTIME_MUSIC_CATALOG"):
+            os.environ.pop(k, None)
+        from st.variety import history
+        self.h = history
+
+    def tearDown(self):
+        for k, v in self.old.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        music._CAT.clear()
+        shutil.rmtree(self.hist, ignore_errors=True)
+
+    def finish(self, name, t, query=None):
+        """What `qa` records for a finished job whose mix used track t."""
+        row = {"ref": "catalog:" + t["id"], "shelf": t["shelf"], "artist": music.artist_of(t)}
+        if query:
+            row["query"] = music.query_key(query)
+        self.h.record({"job": name, "job_path": "/jobs/" + name, "project": "/projects/" + name, "music": [row]})
+
+    def run_jobs(self, use, n=8):
+        got = []
+        for i in range(n):
+            name = "%s-%d" % (use, i)
+            t = music.resolve({"use": use}, dur=45, key="/projects/" + name)
+            got.append(t)
+            self.finish(name, t, {"use": use})
+        return got
+
+    def test_01_rotation_across_similar_jobs(self):
+        for use in ("launch", "explainer", "social"):
+            for f in self.hist.glob("*"):
+                f.unlink()
+            got = self.run_jobs(use)
+            ids = [t["id"] for t in got]
+            self.assertGreaterEqual(len(set(ids)), 6, (use, ids))
+            top = max(ids.count(i) for i in ids)
+            self.assertLessEqual(top, 2, (use, ids))
+            per = {}
+            for t in got:
+                per[music.artist_of(t)] = per.get(music.artist_of(t), 0) + 1
+            self.assertLessEqual(max(per.values()), 4, (use, per))       # no composer above 50 %
+        # a track heard in the last jobs says so in the ranking
+        res = music.search(use="social", limit=0)
+        heard = [r for r in res if r["track"]["id"] in ids]
+        self.assertTrue(heard and all("heard recently" in r["why"] for r in heard))
+
+    def test_02_first_pick_is_the_best_and_ids_win(self):
+        plain = music.pick("launch", dur=45, rotate=False)
+        self.assertEqual(music.pick("launch", dur=45)["id"], plain["id"])      # nothing recorded yet
+        self.finish("a", plain)
+        self.assertNotEqual(music.pick("launch", dur=45)["id"], plain["id"])
+        self.assertEqual(music.resolve(plain["id"])["id"], plain["id"])         # an explicit id always wins
+        self.assertEqual(music.resolve({"id": plain["id"]})["id"], plain["id"])
+
+    def test_03_reproducible_and_pinned(self):
+        self.run_jobs("launch", 3)
+        a = music.resolve({"use": "launch"}, dur=45, key="/projects/next")
+        self.assertEqual(music.resolve({"use": "launch"}, dur=45, key="/projects/next")["id"], a["id"])
+        self.finish("next", a, {"use": "launch"})
+        self.run_jobs("launch", 2)          # more jobs later: the recorded job keeps its track
+        self.assertEqual(music.resolve({"use": "launch"}, dur=45, key="/projects/next")["id"], a["id"])
+
+    def test_04_off_switches(self):
+        plain = [r["track"]["id"] for r in music.search(use="launch", dur=45, rotate=False)]
+        self.run_jobs("launch", 3)
+        self.assertNotEqual([r["track"]["id"] for r in music.search(use="launch", dur=45)], plain)
+        os.environ["SHOWTIME_MUSIC_ROTATION"] = "off"
+        self.assertIsNone(music.rotation())
+        self.assertEqual([r["track"]["id"] for r in music.search(use="launch", dur=45)], plain)
+        os.environ.pop("SHOWTIME_MUSIC_ROTATION")
+        os.environ["SHOWTIME_HISTORY"] = "off"            # `showtime history off`: nothing recorded, nothing demoted
+        self.assertEqual(music.rotation()["recent"], [])
+        self.assertEqual([r["track"]["id"] for r in music.search(use="launch", dur=45)], plain)
+        self.assertIsNone(self.h.record({"job": "x", "music": []}))
+
+    def test_05_old_history_files_load(self):
+        """Entries recorded before rows carried an artist (or a query) still rotate and warn."""
+        self.h.file().parent.mkdir(parents=True, exist_ok=True)
+        self.h.file().write_text(json.dumps({"schema": 1, "about": "showtime look history", "looks": [
+            "junk", {"job": "old", "project": "/projects/old", "theme": "bold",
+                     "music": [{"ref": "catalog:buckley-with-these-hands", "shelf": "inspiring"},
+                               {"ref": "compose:underscore", "style": "underscore"}, {"ref": "score:synth"}]}]}),
+            encoding="utf-8")
+        rec = music.recent_music()
+        self.assertEqual(rec[0]["tracks"], ["buckley-with-these-hands"])
+        self.assertEqual(rec[0]["artists"], ["Scott Buckley"])
+        self.assertEqual(rec[0]["composed"], ["underscore"])
+        self.assertNotEqual(music.pick("launch", dur=45)["id"], "buckley-with-these-hands")
+
+    def test_06_lists_mix_composers(self):
+        for use in ("launch", "explainer", "social", "trailer", "data", "promo"):
+            res = music.search(use=use, dur=45, limit=10)
+            top = [music.artist_of(r["track"]) for r in res[:5]]
+            self.assertLessEqual(max(top.count(a) for a in top), 2, (use, top))
+        rows = [{"track": {"id": "t%d" % i, "artist": a}, "score": s} for i, (a, s) in enumerate(
+            [("A", 5.0), ("A", 4.9), ("A", 4.8), ("B", 4.5), ("A", 4.4), ("C", 1.0)])]
+        self.assertEqual([r["track"]["id"] for r in music.diversify(rows)], ["t0", "t1", "t3", "t2", "t4", "t5"])
+        # a clearly better track keeps its place
+        rows[3]["score"] = 3.0
+        self.assertEqual([r["track"]["id"] for r in music.diversify(rows)][:3], ["t0", "t1", "t2"])
+
+    def test_07_history_warns_on_track_and_composer(self):
+        t = music.get("buckley-with-these-hands")
+        self.finish("one", t)
+        same = {"job": "two", "project": "/projects/two", "kind": "launch",
+                "music": [{"ref": "catalog:" + t["id"], "shelf": t["shelf"], "artist": "Scott Buckley"}]}
+        res = self.h.check(same)
+        rep = next(r for r in res["repeats"] if r["aspect"] == "music")
+        self.assertIn("the same track", rep["detail"])
+        self.assertEqual(res["level"], "warning")
+        self.assertEqual(len(rep["alternatives"]), 2)
+        self.assertFalse([a for a in rep["alternatives"] if "Scott Buckley" in a or t["id"] in a], rep["alternatives"])
+        other = music.get("buckley-aphelion")
+        near = dict(same, music=[{"ref": "catalog:" + other["id"], "shelf": other["shelf"], "artist": "Scott Buckley"}])
+        rep = next(r for r in self.h.check(near)["repeats"] if r["aspect"] == "music")
+        self.assertIn("the same composer (Scott Buckley)", rep["detail"])
+        self.assertIn("the same composer", self.h.message(self.h.check(near)))
+
+    def test_08_composed_bed_key_follows_the_seed(self):
+        from st.audio import compose
+        self.assertEqual(compose.auto_key("underscore", 0), compose.STYLES["underscore"]["key"])
+        keys = {compose.auto_key("underscore", s) for s in range(7)}
+        self.assertGreaterEqual(len(keys), 5)
+        self.assertTrue(all(k.endswith("m") for k in keys))             # the mode is kept
+        self.assertTrue(all(not k.endswith("m") for k in (compose.auto_key("upbeat-tech", s) for s in range(7))))
+
+    def film_project(self, name):
+        p = self.hist / name
+        shutil.copytree(SKILL / "templates" / "film", p, ignore=shutil.ignore_patterns("README.md"))
+        return p
+
+    def test_09_film_scores_vary(self):
+        """The film template's score is written per project: 8 similar jobs in a row get different scores."""
+        from st.audio import filmscore
+        from st.variety import look
+        prompts = ["Make a 12-second launch teaser for Tidepool, with music", "a birthday video with music",
+                   "a meditation app intro with music", "a sci-fi trailer with music", "a cooking channel intro with music",
+                   "a hackathon recap with music", "a quarterly update with music", "a launch teaser for Orbit, with music"]
+        self.assertEqual([filmscore.mood_of(p) for p in prompts[1:4]], ["playful", "calm", "tension"])
+        sigs = []
+        for i, brief in enumerate(prompts):
+            p = self.film_project("film-%d" % i)
+            sig = filmscore.apply(p, brief=brief)
+            self.assertEqual(filmscore.read_signature(p), sig)
+            self.assertIn("bpm: %g," % sig["bpm"], (p / "cues.js").read_text(encoding="utf-8"))
+            self.assertIn("beatsPerBar: %d" % sig["meter"], (p / "score.js").read_text(encoding="utf-8"))
+            self.assertEqual(3.0 * sig["bpm"] / 60 % sig["meter"], 0, sig)        # the 3 s cue gaps stay on bar lines
+            lk = look.project_look(p)
+            self.assertEqual(lk["music"][0]["signature"], sig)
+            self.h.record(dict(lk, job="film-%d" % i))
+            sigs.append(sig)
+        self.assertGreaterEqual(len({filmscore.signature_id(s) for s in sigs}), 6)
+        for a, b in zip(sigs, sigs[1:]):
+            self.assertNotEqual((a["key"], a["bpm"]), (b["key"], b["bpm"]))
+        # a hand-written score is kept; --force replaces it
+        p = self.film_project("mine")
+        (p / "score.js").write_text("var FILM_SCORE = null; // mine\n", encoding="utf-8")
+        self.assertIsNone(filmscore.apply(p))
+        self.assertTrue(filmscore.apply(p, force=True, mood="calm"))
+
+    def test_10_history_warns_on_a_repeated_score(self):
+        from st.variety import look
+        a, b = self.film_project("same-a"), self.film_project("same-b")     # the template's score, copied unchanged
+        self.h.record(dict(look.project_look(a), job="same-a"))
+        res = self.h.check(dict(look.project_look(b), job="same-b"))
+        rep = next(r for r in res["repeats"] if r["aspect"] == "music")
+        self.assertIn("the same score", rep["detail"])
+        self.assertEqual(len(rep["alternatives"]), 2, rep["alternatives"])
+        self.assertIn("showtime audio film-score", rep["alternatives"][0])
+        self.assertTrue(rep["alternatives"][1].startswith("catalog:"), rep["alternatives"])
+
+
 class FetchTests(unittest.TestCase):
     def setUp(self):
         self.srv_dir = Path(tempfile.mkdtemp(prefix="st-music-srv-"))
@@ -486,8 +671,9 @@ class FetchTests(unittest.TestCase):
 
 
     def test_14_setup_prefetches_for_offline(self):
-        """`setup --with music-catalog` (part of the full tier) fetches every track; with --seed and no network it
-        copies them from a folder of earlier downloads."""
+        """`setup --with music-catalog` (part of the full tier) fetches every track whose creator allows bulk
+        downloads (Scott Buckley does not: his come on first use); with --seed and no network it copies them from a
+        folder of earlier downloads."""
         with serve(self.srv_dir) as url, Env(fixture_catalog(url, self.blob)) as env:
             def setup(home, *extra, offline=False):
                 home.mkdir(parents=True)
@@ -506,12 +692,13 @@ class FetchTests(unittest.TestCase):
                 rows = {r["component"]: r for r in json.loads(cp.stdout)["results"]}
                 return rows["music-catalog"]
             r = setup(env.dir / "h1")
-            self.assertEqual((r["status"], r["detail"]), ("ok", "2 downloaded, 0 already present"), r)
-            self.assertEqual(len(list((env.dir / "h1" / "music").rglob("*.wav"))), 2)
+            self.assertEqual((r["status"], r["detail"]), ("ok", "1 downloaded, 0 already present, 1 left for first use "
+                                                            "(their creator asks for no bulk downloads)"), r)
+            self.assertEqual(len(list((env.dir / "h1" / "music").rglob("*.wav"))), 1)
             seed = env.dir / "h1" / "music"
-            r = setup(env.dir / "h2", "--seed", str(seed / "buckley"), "--seed", str(seed / "incompetech"), offline=True)
+            r = setup(env.dir / "h2", "--seed", str(seed / "incompetech"), offline=True)
             self.assertEqual(r["status"], "ok", r)
-            self.assertEqual(len(list((env.dir / "h2" / "music").rglob("*.wav"))), 2)
+            self.assertEqual(len(list((env.dir / "h2" / "music").rglob("*.wav"))), 1)
 
 
 class CreditsTests(unittest.TestCase):
@@ -684,6 +871,25 @@ class OpenverseTests(unittest.TestCase):
         self.assertEqual([r["source"] for r in res], ["jamendo"])
         q = urllib.parse.parse_qs(urllib.parse.urlparse(calls[-1]).query)
         self.assertEqual((q["source"], q["category"]), (["jamendo"], ["music"]))
+
+
+class BulkPolicyTests(unittest.TestCase):
+    def test_45_bulk_skips_no_bulk_sources(self):
+        # a creator who asks for no bulk downloads is never pre-fetched in bulk; a named track still is
+        from st.audio import music
+        ts = [t for t in music.tracks(include_vetoed=False) if t["source"] == "buckley"][:2] + \
+             [t for t in music.tracks(include_vetoed=False) if t["source"] == "incompetech"][:1]
+        got = []
+        with mock.patch.object(music, "is_cached", lambda t: False), \
+                mock.patch.object(music, "fetch", lambda t, **kw: got.append(t["id"])):
+            rep = music.fetch_many(ts, bulk=True)
+            self.assertEqual(got, [ts[2]["id"]])
+            self.assertEqual(rep["skipped"], [ts[0]["id"], ts[1]["id"]])
+            got.clear()
+            rep = music.fetch_many(ts[:1])
+            self.assertEqual(got, [ts[0]["id"]])
+        self.assertFalse(music.bulk_allowed(ts[0]))
+        self.assertTrue(music.bulk_allowed(ts[2]))
 
 
 class CliTests(unittest.TestCase):

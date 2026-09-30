@@ -21,8 +21,9 @@ Spec (all times in seconds on the output timeline):
 
 Track fields
   kind       music | voice | sfx | ambience   (drives default level and ducking groups)
-  source     one of: file, lib (library id), catalog (produced-music id, or {"use": "launch", "pick": 0};
-             fetched on first use and credited, see music.py), synth (sfx spec), compose (compose spec)
+  source     one of: file, lib (library id), catalog (produced-music id, or {"use": "launch", "pick": 0}
+             rotated against recent jobs; fetched on first use and credited, see music.py), synth (sfx
+             spec), compose (compose spec; "seed": "auto" varies the seed and, unless given, the key per project)
   level      "auto" (default): normalise to the kind's reference (voice -16 LUFS,
              music -20, ambience -32, sfx by category) before gain_db; "raw": as is
   gain_db    dB relative to the reference (or to the file with level=raw)
@@ -440,7 +441,9 @@ def load_source(tr: dict, idx: int, bases: List[Path], mix_dur: float) -> Source
         return Source(wav.load(p), meta)
     if src == "catalog":
         from . import music
-        t = music.resolve(tr["catalog"], dur=float(tr.get("dur") or 0) or None)
+        proj = next((b for b in bases if (b / "showtime.json").is_file()), None)
+        t = music.resolve(tr["catalog"], dur=float(tr.get("dur") or 0) or None,
+                          key=str(proj.resolve()) if proj is not None else None)   # a query rotates per project
         p = music.fetch(t, purpose="the mix (track %d)" % idx)
         meta.update(path=str(p), catalog_id=t["id"], title=t["title"], artist=t["artist"], license=t["license"],
                     attribution=t.get("attribution"), attribution_required=music.needs_attribution(t),
@@ -485,8 +488,15 @@ def load_source(tr: dict, idx: int, bases: List[Path], mix_dur: float) -> Source
         if len(kept) < len(parsed):
             warn("track %d: sections after %.1fs dropped (the mix is %.1fs long)" % (idx, dur - 1.0, dur))
         sections = ",".join("%s:%s" % (round(t, 4), n) for n, t in kept) if kept else None
-    cspec = {"style": spec["style"], "duration": round(dur, 4), "bpm": spec.get("bpm"), "key": spec.get("key"),
-             "sections": sections, "seed": int(spec.get("seed", 0)), "backend": spec.get("backend", "auto"),
+    seed, key_ = spec.get("seed", 0), spec.get("key")
+    if str(seed).strip().lower() == "auto":
+        # one bed per project: the seed (motif, humanising) and, unless "key" is given, the key follow the
+        # project, so two videos on the same style do not share a bed
+        proj = next((b for b in bases if (b / "showtime.json").is_file()), bases[0] if bases else Path.cwd())
+        seed = int(hashlib.sha1(("%s|%s" % (proj.resolve(), spec["style"])).encode("utf-8")).hexdigest()[:6], 16)
+        key_ = key_ or compose.auto_key(spec["style"], seed)
+    cspec = {"style": spec["style"], "duration": round(dur, 4), "bpm": spec.get("bpm"), "key": key_,
+             "sections": sections, "seed": int(seed), "backend": spec.get("backend", "auto"),
              "soundfont": spec.get("soundfont")}
     key = "compose-" + _hash(dict(cspec, _v=2))     # v2: beats.json records the backend and SoundFont used
     cp = _cache_dir() / key / "music.wav"

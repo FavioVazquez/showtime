@@ -515,7 +515,7 @@ def build(target: Optional[PathLike] = None, *, out: Optional[PathLike] = None, 
 
 def loudness_png(qa_dir: Path, q: Dict[str, Any], out: Path, dur: float, title: str) -> Optional[str]:
     """The loudness graph from a qa run's loudness.json (None when qa measured no audio)."""
-    lj = read_json(qa_dir / "loudness.json", None)
+    lj = read_json(qa_dir / "loudness.json", {})           # a silent video has no loudness.json
     loud = q.get("loudness") or {}
     if not (isinstance(lj, dict) and lj.get("short_term")):
         return None
@@ -590,6 +590,15 @@ QUESTIONS = """Answer these eight questions for yourself first; they are what th
    job does it do (show the product, prove a claim, set up the next beat)? A shot that is only there because
    it looks good, or that only makes sense to the author, is a finding."""
 
+ABSOLUTE = """**would you post this under your own name?** Picture it on the target platform, watched once
+at full size by someone who does not know the maker. The bar is "a stranger would not call it cheap, broken or
+wrong", not "flawless": a video with should-fix and polish findings is usually still a yes (list them above).
+Answer no only when a blocker stands, or when the video as a whole reads as cheap or unfinished at a glance:
+captions in stepped boxes (one box per line, each a different width), a player's controls or a cursor left in
+the footage, a small or soft recording inside big empty borders, a hook that shows nothing for seconds. One
+flawed shot in an otherwise finished video is a should-fix, not a no. Judge this video alone, never "better
+than before". In quality mode a "no" holds delivery like a blocker, so name what a stranger notices first."""
+
 SEVERITY = """Severity:
 - **Blocker**: an invented or wrong claim, a misspelled product or person name; black, frozen or garbage
   frames; wrong aspect or duration for the platform; clipped or missing voice; text cut off or outside the safe
@@ -623,7 +632,8 @@ def critic_brief(m: Dict[str, Any], q: Dict[str, Any], pack: Path) -> str:
     prev = ""
     if m.get("previous_findings"):
         prev = ("\n## This is round %d\nRead the previous findings first and judge only whether they were fixed, plus anything "
-                "the fixes broke. Do not reopen settled taste questions.\n%s\n" % (
+                "the fixes broke, and answer each under PREVIOUS (`fixed: ...` or `not fixed: ...`, naming what it was "
+                "about, e.g. the captions). Do not reopen settled taste questions.\n%s\n" % (
                     m["round"], "\n".join("- `%s`" % p for p in m["previous_findings"])))
     return """# Critic brief (round {round} of at most {maxr})
 
@@ -666,9 +676,12 @@ Rule: **every finding cites a timestamp and a frame path** from this folder (or 
 without a location is dropped. Quote numbers (sizes, seconds, colours) in fixes. No scores: do not rate the
 video on a number scale; the verdict and the findings carry the judgment.
 
+Then the absolute verdict, {absolute}
+
 ## Answer in exactly this format (write it to FINDINGS.md in this folder)
 ```
 VERDICT: ship | ship after fixes | not ready  -- one line of reasoning
+WOULD I POST THIS: yes | no  -- one reason, judged on this video alone
 WHAT WORKS (max 3, so it is kept):
 - ...
 BLOCKERS:
@@ -680,6 +693,8 @@ POLISH:
 DECLINED TO JUDGE (what you could not or chose not to assess, e.g. audio quality, brand fit without a brand kit):
 - ...
 BEST POSTER FRAME: t=..s because ...
+PREVIOUS (round 2+ only: one line per earlier blocker or should-fix):
+- fixed: <the finding>   |   not fixed: <the finding> -> what is still wrong
 ```
 
 Limits: at most {maxr} critic rounds per video. A later round checks only the fixes. If blockers remain
@@ -689,4 +704,4 @@ after the last one, stop: the maker shows your findings to the user instead of l
            qa=_rel(q["report"], pack), sheet=_rel(m["sheet"], pack), scenes=_rel(m["scenes_sheet"], pack),
            loud=_rel(m["loudness_graph"], pack), thumb=_rel(m["thumbnail_preview"], pack), keys=key_list, ctx=ctx_list,
            qa_list=qa_list, prev=prev, cuts=_rel(m.get("cut_strips"), pack), others=others, text_list=text_list,
-           judging=QUESTIONS + "\n\n" + SEVERITY + "\n")
+           judging=QUESTIONS + "\n\n" + SEVERITY + "\n", absolute=ABSOLUTE)

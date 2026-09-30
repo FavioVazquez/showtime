@@ -4,7 +4,7 @@ A short explainer drawn on one canvas with the `Film` toolkit, scored with `Synt
 
 - `cues.js`: the ONE table of cut and hit times. Picture and music both read it, so a cut and its sound can never drift apart.
 - `scenes.js`: the picture. `scenes(T, g, F)` draws the whole frame for time T.
-- `score.js`: the music and sound design, rendered offline to WAV by `showtime render`.
+- `score.js`: the music and sound design, rendered offline to WAV by `showtime render`. `showtime new film` rewrites it for each project (key, tempo and meter, chords, motif, instruments, drums from the brief's mood, away from recent jobs' scores); `showtime audio film-score <dir> [--mood M]` writes another. For a mood piece "with music", a produced catalog track in a mix (`"audio"`) is usually the better bed (`references/music.md`).
 - `index.html`: loads fonts, the runtime and the three files above.
 
 Edit the words in `scenes.js`, then move cue times in `cues.js` if a section needs more room (scores read section lengths from the cue gaps).

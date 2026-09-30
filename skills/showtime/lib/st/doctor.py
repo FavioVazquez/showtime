@@ -275,8 +275,15 @@ class Doctor:
             return
         reachable, detail = sandbox.probe_network()
         installed = bool(self.state.get("installed"))
+        m_ok, m_detail = (False, "") if reachable else sandbox.probe_mirror()
         if reachable:
             self.add("network", PASS, detail)
+        elif m_ok:
+            self.add("network", WARN, "%s: %s; the model mirror answers (%s), so model downloads come from there"
+                     % (sandbox.PROBE_URL, detail, m_detail),
+                     "nothing to do for the models; other first-use downloads (extra voices, media search) may "
+                     "need the hosts allowed in the sandbox's network settings. %s=<URL or folder> picks "
+                     "another mirror" % sandbox.MIRROR_ENV, host=host)
         else:
             what = ("setup needs it" if not installed else
                     "only features that fetch on first use need it (extra voices, media search, lazy models)")

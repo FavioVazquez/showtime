@@ -26,6 +26,9 @@ The checklists live in `qa.md`; this file is the review protocol (self-review, c
 - Then re-render, `showtime check` after timing fixes, `showtime qa <job>`, a pairwise round, and
   `showtime review-verdict <job>`: an improvement only when preferred in both orders (§4)
 - Three rounds at most; then ship the best version with its open findings listed (§4)
+- The critic's absolute line, `WOULD I POST THIS: yes | no`, is judged alone; in quality mode a "no" holds
+  delivery even when the pairwise preferred the render, and a caption should-fix needs a later `fixed` or your
+  `won't fix: <reason>` in `review/round-N/RESPONSE.md` (§4)
 - User notes: echo them back numbered with timestamps; ask only about an ambiguous one (2-3 readings, a
   default); apply blockers, then cheap tweaks, then structural changes (§5)
 - Prove fixes with `showtime snap <new> --at t --compare <old>`; push back when a note collides with a locked
@@ -34,11 +37,11 @@ The checklists live in `qa.md`; this file is the review protocol (self-review, c
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| 1. Pick the tier | 43-87 |
-| 2. Build the pack | 89-130 |
-| 3. Dispatch the critic | 132-162 |
-| 4. Act on the findings | 164-185 |
-| 5. Notes from the user | 187-209 |
+| 1. Pick the tier | 46-90 |
+| 2. Build the pack | 92-133 |
+| 3. Dispatch the critic | 135-166 |
+| 4. Act on the findings | 168-196 |
+| 5. Notes from the user | 198-220 |
 
 ## 1. Pick the tier
 
@@ -159,7 +162,8 @@ Every finding cites a timestamp and a frame path from the pack (in a pairwise ro
 `[Y]`). Findings without a location are dropped. **No scores**: a 1-10 rating from a model reviewer is noise;
 the verdict, the preference and the findings carry the judgment.
 The answer also lists what works, what the critic declined to judge, a verdict (ship / ship after fixes /
-not ready) and the best poster frame.
+not ready), the absolute verdict (`WOULD I POST THIS: yes | no -- one reason`; pairwise: one per video) and
+the best poster frame.
 
 ## 4. Act on the findings
 
@@ -177,10 +181,17 @@ not ready) and the best poster frame.
    the new render is an improvement only when **preferred in both orders**; a tie or a split (the preference
    followed the position) is not, and the older one stays the best (`<review>/best.json`; `VERDICT.md` lists
    the best version's open findings). A losing render can leave the job with `showtime job discard`.
-6. **Three rounds at most.** After round 3, ship the best version with its open findings listed; open
+6. **The quality floor.** A pairwise round only asks "better than the last version?"; a better render can
+   still look cheap. So every critic also answers `WOULD I POST THIS` on the video alone, and in quality
+   mode a "no" (either pairwise critic's, for the winning render) keeps the review pending like "not ready"
+   (`showtime qa <job>` names it). A should-fix or blocker that names captions or subtitles stays open, and
+   pending, until a later round's critic writes a line naming the captions with `fixed`, or you write
+   `won't fix: <reason>` about the captions in `review/round-N/RESPONSE.md` (plain word matching; lean
+   mode only warns). `showtime qa` also warns on the four cheap looks it can see (`qa.md`, quality floor).
+7. **Three rounds at most.** After round 3, ship the best version with its open findings listed; open
    blockers go to the user with frames, and they decide. `review-pack` refuses a fourth round unless
    `--force-round` is given.
-7. **Polish after a "ship" verdict** needs no new pack: fix, then prove each fix with a before/after pair
+8. **Polish after a "ship" verdict** needs no new pack: fix, then prove each fix with a before/after pair
    (`showtime snap <new.mp4> --at t1,t2 --compare <old.mp4>`), run `showtime qa`, and log it in
    `work/feedback.md`. An unused render is dropped from the job with `showtime job discard <job> <file>` (its poster, credits and `.work/` move with it to `work/discarded/`; caption files stay, name one to discard it too).
 

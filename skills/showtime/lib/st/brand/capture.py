@@ -468,7 +468,7 @@ def record_in_job(job: Path, entry: Dict[str, Any]) -> None:
 def job_brand(job: Optional[Path]) -> Optional[Dict[str, Any]]:
     if job is None:
         return None
-    d = read_json(job / "job.json", None)
+    d = read_json(job / "job.json", {})
     b = d.get("brand") if isinstance(d, dict) else None
     return b if isinstance(b, dict) else None
 

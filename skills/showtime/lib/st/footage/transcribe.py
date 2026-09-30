@@ -209,8 +209,12 @@ def _ensure_whisper(name: str) -> Path:
             shutil.rmtree(d)
         os.replace(str(tmp), str(d))
     except Exception as e:  # noqa: BLE001
-        raise ShowtimeError("could not download whisper model %s: %s" % (name, e),
-                            hint=("run %s" % hint_setup) if hint_setup else "check your network connection")
+        # unpinned sizes come straight from Hugging Face (no model mirror): name the mirrored default
+        blocked = re.search(r"\b(403|407)\b|Tunnel connection failed|ProxyError", str(e))
+        hint = ("Hugging Face is blocked here and this size has no mirror: use --model small.en (pinned, it falls "
+                "back to the showtime model mirror) or allow huggingface.co in the sandbox's network settings"
+                if blocked else ("run %s" % hint_setup) if hint_setup else "check your network connection")
+        raise ShowtimeError("could not download whisper model %s: %s" % (name, e), hint=hint)
     return d
 
 

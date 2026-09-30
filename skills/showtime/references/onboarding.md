@@ -24,10 +24,10 @@ short exchange: what is there, what is missing, one decision, then the install, 
 |---|---|
 | 1. Look before you talk | 32-43 |
 | 2. Tell the user in one table, then ask one thing | 45-62 |
-| 3. Install | 64-87 |
-| 4. What works now, what arrives later | 89-110 |
-| 5. Where things live | 112-116 |
-| 6. If setup fails | 118-123 |
+| 3. Install | 64-90 |
+| 4. What works now, what arrives later | 92-113 |
+| 5. Where things live | 115-119 |
+| 6. If setup fails | 121-126 |
 
 ## 1. Look before you talk
 
@@ -83,6 +83,9 @@ showtime doctor                # full check, including a real browser launch and
   not stuck; later runs take seconds.
 - Behind a proxy or offline: `showtime setup --seed DIR` reuses files downloaded elsewhere
   (matched by size and sha256).
+- A proxy that blocks Hugging Face or GitHub LFS (the Claude app's sandbox answers 403): setup and first-use
+  fetches take those model files from showtime's model mirror on GitHub by themselves, sha256-verified;
+  `SHOWTIME_MODEL_MIRROR=<URL or folder>` points at another copy.
 
 Done when `showtime doctor` shows 0 fail. Warnings each come with a `fix:` line; most are optional.
 

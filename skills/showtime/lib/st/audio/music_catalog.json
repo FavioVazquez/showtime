@@ -1,9 +1,9 @@
 {
  "schema": "showtime.music.catalog/1",
  "about": "Produced music for showtime videos, curated for video use and fetched on first use from each creator's own host (never re-hosted). Every entry pins the file (bytes + sha256) and the exact credit its license asks for; `audio mix` writes it into credits.txt and share.txt. Field reference and the quality gate: lib/st/audio/music.py. Every track was downloaded and measured (format, bandwidth, noise, clipping, loudness, silences, stereo, rhythm, ending) and passed the gate below; moods come from the creators' descriptions, energy/shelf/tempo were checked against the measurements. `audio music veto` still hides a track you dislike.",
- "updated": "2026-09-29",
+ "updated": "2026-09-30",
  "quality_gate": {
-  "checked": "2026-09-29",
+  "checked": "2026-09-30",
   "method": "each pinned file decoded in full; ffprobe, EBU R128 (ffmpeg ebur128), numpy/scipy spectra, LPC-residual click detection and onset analysis",
   "fail_if": {
    "sample_rate_hz_below": 44100,
@@ -60,7 +60,8 @@
      "scottbuckley.com.au"
     ],
     "delay_s": 3.0,
-    "rule": "one track per user request from the track page's own MP3 link; never bulk (his hosting has limited bandwidth, so there is no zip and we do not mirror)"
+    "rule": "one track per user request from the track page's own MP3 link; never bulk (his hosting has limited bandwidth, so there is no zip and we do not mirror)",
+    "bulk": false
    }
   },
   "incompetech": {
@@ -137,6 +138,34 @@
     ],
     "delay_s": 1.5,
     "rule": "archive.org/download/<item>/<file> links of items whose metadata licenseurl is CC0"
+   }
+  },
+  "opengameart": {
+   "name": "OpenGameArt.org (music posted by its composers)",
+   "homepage": "https://opengameart.org/art-search-advanced?field_art_type_tid%5B%5D=12",
+   "license": "CC-BY-4.0 / CC-BY-3.0 / CC0-1.0 (per asset page)",
+   "attribution_format": null,
+   "placements": [
+    "description",
+    "credits_file"
+   ],
+   "content_id": "none-known",
+   "content_id_note": "No Content ID registration is known for these tracks; if a video is claimed, dispute it with the license and the credit (the asset's OpenGameArt page states both).",
+   "restrictions": [
+    "the license is the one on the asset's own page, posted by the composer; only CC0, CC-BY 3.0 and CC-BY 4.0 assets are catalogued (no SA, NC or GPL-only)",
+    "a CC BY track's credit is the composer's own Copyright/Attribution Notice, else OpenGameArt's default (\"title\" by author licensed ...: page URL); it goes where viewers can find it",
+    "only the downloadable file is catalogued; OpenGameArt previews may be under other terms"
+   ],
+   "evidence": [
+    "https://opengameart.org/content/faq",
+    "https://opengameart.org/robots.txt"
+   ],
+   "fetch": {
+    "hosts": [
+     "opengameart.org"
+    ],
+    "delay_s": 10.5,
+    "rule": "the asset page's own file link (sites/default/files/...), one file per user request, at least 10 s apart as its robots.txt asks (Crawl-delay: 10); never bulk"
    }
   }
  },
@@ -6524,6 +6553,150 @@
    "highlight_s": 225.0
   },
   {
+   "credit_optional": "\"Another August\" by The Cynic Project / cynicmusic.com / pixelsphere.org (CC0)",
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "cynic-another-august",
+   "title": "Another August",
+   "artist": "The Cynic Project",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/another-august",
+   "file_url": "https://opengameart.org/sites/default/files/013_Another_August_0.mp3",
+   "format": "mp3",
+   "bytes": 8269313,
+   "sha256": "6de6e4f770cda4d34db433e4df982deccb6877a8fcc5e32b48eeb57f770dec3b",
+   "license": "CC0-1.0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "attribution": null,
+   "placements": [
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 206.6,
+   "shelf": "ambient",
+   "moods": [
+    "serene",
+    "ethereal",
+    "calm"
+   ],
+   "energy": 0.25,
+   "tempo": "slow",
+   "uses": [
+    "background",
+    "explainer",
+    "data"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "synth pads",
+    "keys"
+   ],
+   "ending": "soft",
+   "notes": "Serene ambient piece from the game Pixelsphere; wide dynamics, fades out.",
+   "quiet_intro_s": 1.0,
+   "lead_silence_s": 0.0,
+   "highlight_s": 41.0
+  },
+  {
+   "credit_optional": "\"Enchanted Tiki 86\" by The Cynic Project / cynicmusic.com / pixelsphere.org (CC0)",
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "cynic-enchanted-tiki-86",
+   "title": "Enchanted Tiki 86",
+   "artist": "The Cynic Project",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/enchanted-tiki-86",
+   "file_url": "https://opengameart.org/sites/default/files/enchanted%20tiki%2086_0.mp3",
+   "format": "mp3",
+   "bytes": 3714527,
+   "sha256": "3d6a51a5f20e885d93f2c8e8ef7ea189fca701063ab7f72aa37d114701c32dcf",
+   "license": "CC0-1.0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "attribution": null,
+   "placements": [
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 117.4,
+   "shelf": "tension",
+   "moods": [
+    "dark",
+    "moody",
+    "hypnotic"
+   ],
+   "energy": 0.45,
+   "tempo": "medium",
+   "uses": [
+    "problem",
+    "tech",
+    "story"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "synth",
+    "percussion",
+    "bass"
+   ],
+   "ending": "clean",
+   "notes": "Dark, hypnotic theme from the game Pixelsphere.",
+   "quiet_intro_s": 0.0,
+   "lead_silence_s": 0.3,
+   "highlight_s": 0.0
+  },
+  {
+   "credit_optional": null,
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "foxsynergy-bouncing-baal",
+   "title": "Bouncing Baal",
+   "artist": "FoxSynergy",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/bouncing-baal",
+   "file_url": "https://opengameart.org/sites/default/files/08%20-%20Bouncing%20Baal%20v0_95.mp3",
+   "format": "mp3",
+   "bytes": 4845545,
+   "sha256": "e0d6e4e482d8de2f7eed0e146261e61a4cad5993b66ca3e874df10c1b242e5bc",
+   "license": "CC-BY-3.0",
+   "license_url": "https://creativecommons.org/licenses/by/3.0/",
+   "attribution": "\"Bouncing Baal\" by FoxSynergy - licensed CC-BY 3.0: https://opengameart.org/content/bouncing-baal",
+   "placements": [
+    "description",
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 181.8,
+   "shelf": "playful",
+   "moods": [
+    "bouncy",
+    "cheeky",
+    "retro"
+   ],
+   "energy": 0.7,
+   "tempo": "fast",
+   "uses": [
+    "social",
+    "promo",
+    "tutorial"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "synth",
+    "drums",
+    "bass"
+   ],
+   "ending": "clean",
+   "notes": "Playful track in the spirit of a classic home computer (not chiptune).",
+   "quiet_intro_s": 0.0,
+   "lead_silence_s": 0.0,
+   "highlight_s": 90.0
+  },
+  {
    "credit_optional": null,
    "loops": null,
    "status": "active",
@@ -10679,6 +10852,101 @@
    "highlight_s": 33.0
   },
   {
+   "credit_optional": "\"Sad walk with sad melodica\" by Komiku (CC0), from the album \"It's Time For Adventure! Vol 2\"",
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "komiku-sad-walk-with-sad-melodica",
+   "title": "Sad walk with sad melodica",
+   "artist": "Komiku",
+   "source": "archive",
+   "landing_url": "https://archive.org/details/Komiku-ItsTimeForAdventureVol2",
+   "file_url": "https://archive.org/download/Komiku-ItsTimeForAdventureVol2/Komiku_-_14_-_Sad_walk_with_sad_melodica.mp3",
+   "format": "mp3",
+   "bytes": 7810558,
+   "sha256": "961aa3137cc2fa081f894679e2e9b568d5b526f4d5d1015eac146c7846f6bd78",
+   "license": "CC0-1.0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "attribution": null,
+   "placements": [
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 191.3,
+   "shelf": "documentary",
+   "moods": [
+    "wistful",
+    "melancholic",
+    "gentle"
+   ],
+   "energy": 0.3,
+   "tempo": "medium",
+   "uses": [
+    "story",
+    "documentary",
+    "emotional"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "melodica",
+    "percussion"
+   ],
+   "ending": "soft",
+   "notes": "Wistful walking tune led by a melodica.",
+   "quiet_intro_s": 0.0,
+   "lead_silence_s": 0.0,
+   "highlight_s": 118.0
+  },
+  {
+   "credit_optional": "\"Something to save\" by Komiku (CC0), from the album \"It's Time For Adventure! Vol 2\"",
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "komiku-something-to-save",
+   "title": "Something to save",
+   "artist": "Komiku",
+   "source": "archive",
+   "landing_url": "https://archive.org/details/Komiku-ItsTimeForAdventureVol2",
+   "file_url": "https://archive.org/download/Komiku-ItsTimeForAdventureVol2/Komiku_-_10_-_Something_to_save.mp3",
+   "format": "mp3",
+   "bytes": 8591097,
+   "sha256": "f7f818dbd910b5f89b48f872727ae8769ffb84fd4b81a982e858adbb61ac121a",
+   "license": "CC0-1.0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "attribution": null,
+   "placements": [
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 210.8,
+   "shelf": "inspiring",
+   "moods": [
+    "hopeful",
+    "determined",
+    "warm"
+   ],
+   "energy": 0.45,
+   "tempo": "medium",
+   "uses": [
+    "story",
+    "mission",
+    "recap"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "synth",
+    "piano",
+    "percussion"
+   ],
+   "ending": "soft",
+   "notes": "Hopeful adventure theme from 'It's Time For Adventure! Vol 2'.",
+   "quiet_intro_s": 0.0,
+   "lead_silence_s": 0.0,
+   "highlight_s": 160.0
+  },
+  {
    "credit_optional": "\"Tale on the Late (Main Theme)\" by Komiku (CC0), from the album \"Tale On The Late\"",
    "loops": null,
    "status": "active",
@@ -10725,6 +10993,54 @@
    "quiet_intro_s": 0.0,
    "lead_silence_s": 0.0,
    "highlight_s": 19.0
+  },
+  {
+   "credit_optional": "\"Tension\" by Komiku (CC0), from the album \"It's Time For Adventure! Vol 2\"",
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "komiku-tension",
+   "title": "Tension",
+   "artist": "Komiku",
+   "source": "archive",
+   "landing_url": "https://archive.org/details/Komiku-ItsTimeForAdventureVol2",
+   "file_url": "https://archive.org/download/Komiku-ItsTimeForAdventureVol2/Komiku_-_12_-_Tension.mp3",
+   "format": "mp3",
+   "bytes": 8199260,
+   "sha256": "d7038511ba8e8e15f599e13d3348e103223ecdb4b823f96d3c7b0690b753c159",
+   "license": "CC0-1.0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "attribution": null,
+   "placements": [
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 201.0,
+   "shelf": "tension",
+   "moods": [
+    "tense",
+    "suspenseful",
+    "adventurous"
+   ],
+   "energy": 0.55,
+   "tempo": "medium",
+   "uses": [
+    "problem",
+    "trailer",
+    "story"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "synth",
+    "strings",
+    "percussion"
+   ],
+   "ending": "clean",
+   "notes": "Suspense cue from 'It's Time For Adventure! Vol 2'.",
+   "quiet_intro_s": 0.0,
+   "lead_silence_s": 0.0,
+   "highlight_s": 115.0
   },
   {
    "credit_optional": "\"The main reason we are here\" by Komiku (CC0), from the album \"A Tale Is Never Forgotten\"",
@@ -11452,6 +11768,882 @@
    "highlight_s": 174.0
   },
   {
+   "credit_optional": null,
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "machine-reflection",
+   "title": "Reflection",
+   "artist": "Machine",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/reflection-1",
+   "file_url": "https://opengameart.org/sites/default/files/Reflection_2.mp3",
+   "format": "mp3",
+   "bytes": 2467884,
+   "sha256": "c0e986739cf4bb0d12c5259efa405b283c67e78a65ab38984ead2451078db6e5",
+   "license": "CC-BY-3.0",
+   "license_url": "https://creativecommons.org/licenses/by/3.0/",
+   "attribution": "\"Reflection\" by Machine - licensed CC-BY 3.0: https://opengameart.org/content/reflection-1",
+   "placements": [
+    "description",
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 119.0,
+   "shelf": "inspiring",
+   "moods": [
+    "reflective",
+    "hopeful",
+    "gentle"
+   ],
+   "energy": 0.3,
+   "tempo": "slow",
+   "uses": [
+    "story",
+    "emotional",
+    "outro"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "keys",
+    "strings"
+   ],
+   "ending": "clean",
+   "notes": "\"A reflective and hopeful number\"; short.",
+   "quiet_intro_s": 0.0,
+   "lead_silence_s": 0.0,
+   "highlight_s": 83.0
+  },
+  {
+   "credit_optional": null,
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "ofdn-nectar",
+   "title": "Nectar",
+   "artist": "Of Far Different Nature",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/escape-album-14-tracks-deep-massive",
+   "file_url": "https://opengameart.org/sites/default/files/Of%20Far%20Different%20Nature%20-%20Escape%20-%2003%20-%20Nectar%20%28CC-BY%29_0.mp3",
+   "format": "mp3",
+   "bytes": 8048806,
+   "sha256": "81ba50dad2e57ed5a0bacbe18e64d1e232a8a490b1d2cd4d0d498a65468c55d8",
+   "license": "CC-BY-4.0",
+   "license_url": "https://creativecommons.org/licenses/by/4.0/",
+   "attribution": "\"Nectar\" by Of Far Different Nature (fardifferent.carrd.co) - licensed CC-BY 4.0: https://opengameart.org/content/escape-album-14-tracks-deep-massive",
+   "placements": [
+    "description",
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 201.1,
+   "shelf": "corporate-tech",
+   "moods": [
+    "deep",
+    "driving",
+    "modern"
+   ],
+   "energy": 0.65,
+   "tempo": "fast",
+   "uses": [
+    "tech",
+    "product-demo",
+    "promo"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "synth",
+    "drums",
+    "bass"
+   ],
+   "ending": "soft",
+   "notes": "Deep electronic groove from the album 'Escape'.",
+   "quiet_intro_s": 0.0,
+   "lead_silence_s": 0.0,
+   "highlight_s": 141.0
+  },
+  {
+   "credit_optional": null,
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "ofdn-pure",
+   "title": "Pure",
+   "artist": "Of Far Different Nature",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/escape-album-14-tracks-deep-massive",
+   "file_url": "https://opengameart.org/sites/default/files/Of%20Far%20Different%20Nature%20-%20Escape%20-%2004%20-%20Pure%20%28CC-BY%29.mp3",
+   "format": "mp3",
+   "bytes": 7240430,
+   "sha256": "5ff05f7633bff9384a430402636b8e7d21e6e3850bf0ca209c91cbb964058bf1",
+   "license": "CC-BY-4.0",
+   "license_url": "https://creativecommons.org/licenses/by/4.0/",
+   "attribution": "\"Pure\" by Of Far Different Nature (fardifferent.carrd.co) - licensed CC-BY 4.0: https://opengameart.org/content/escape-album-14-tracks-deep-massive",
+   "placements": [
+    "description",
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 181.0,
+   "shelf": "corporate-tech",
+   "moods": [
+    "clean",
+    "flowing",
+    "modern"
+   ],
+   "energy": 0.6,
+   "tempo": "fast",
+   "uses": [
+    "tech",
+    "product-demo",
+    "explainer"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "synth",
+    "drums",
+    "bass"
+   ],
+   "ending": "soft",
+   "notes": "Steady electronic track from the album 'Escape'; even level throughout.",
+   "quiet_intro_s": 0.0,
+   "lead_silence_s": 0.0,
+   "highlight_s": 3.0
+  },
+  {
+   "credit_optional": null,
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "ofdn-rush",
+   "title": "Rush",
+   "artist": "Of Far Different Nature",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/escape-album-14-tracks-deep-massive",
+   "file_url": "https://opengameart.org/sites/default/files/Of%20Far%20Different%20Nature%20-%20Escape%20-%2001%20-%20Rush%20%28CC-BY%29_0.mp3",
+   "format": "mp3",
+   "bytes": 6216055,
+   "sha256": "668cb2c546e2fe89c2997e389ae59c9c35cd0fb0552f3b8e6f1937e97c14e750",
+   "license": "CC-BY-4.0",
+   "license_url": "https://creativecommons.org/licenses/by/4.0/",
+   "attribution": "\"Rush\" by Of Far Different Nature (fardifferent.carrd.co) - licensed CC-BY 4.0: https://opengameart.org/content/escape-album-14-tracks-deep-massive",
+   "placements": [
+    "description",
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 155.3,
+   "shelf": "upbeat",
+   "moods": [
+    "energetic",
+    "massive",
+    "driving"
+   ],
+   "energy": 0.85,
+   "tempo": "fast",
+   "uses": [
+    "promo",
+    "social",
+    "launch"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "synth",
+    "drums",
+    "bass"
+   ],
+   "ending": "clean",
+   "notes": "Deep, massive electro / drum and bass from the album 'Escape'.",
+   "quiet_intro_s": 0.0,
+   "lead_silence_s": 0.0,
+   "highlight_s": 15.0
+  },
+  {
+   "credit_optional": "\"Funky Hip Hop Lofi Jam\" by omfgdude (CC0, via OpenGameArt)",
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "omfgdude-funky-hip-hop-lofi-jam",
+   "title": "Funky Hip Hop Lofi Jam",
+   "artist": "omfgdude",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/funky-hip-hop-lofi-jam",
+   "file_url": "https://opengameart.org/sites/default/files/CVP701Jam_0.ogg",
+   "format": "ogg",
+   "bytes": 10077689,
+   "sha256": "7c213d1c6fe01bc6b67d6c1124c6cd88afae7149ee8ec966c7f55f517eb22af9",
+   "license": "CC0-1.0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "attribution": null,
+   "placements": [
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 189.3,
+   "shelf": "lofi",
+   "moods": [
+    "funky",
+    "laid-back",
+    "groovy"
+   ],
+   "energy": 0.45,
+   "tempo": "medium",
+   "uses": [
+    "background",
+    "tutorial",
+    "social"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "keys",
+    "drums",
+    "bass"
+   ],
+   "ending": "clean",
+   "notes": "One-take keyboard jam; relaxed and even, clean ending.",
+   "quiet_intro_s": 4.0,
+   "lead_silence_s": 1.4,
+   "highlight_s": 102.0
+  },
+  {
+   "credit_optional": null,
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "pablo-curious-critters",
+   "title": "Curious Critters (Extended Version)",
+   "artist": "Matthew Pablo",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/curious-critters",
+   "file_url": "https://opengameart.org/sites/default/files/Curious%20Critters%20%28Extended%20Version%29%201_0.mp3",
+   "format": "mp3",
+   "bytes": 8680072,
+   "sha256": "f9b62b22db0a4ede471433ab592ddbb4cc2739a0816566424ad7f6821b7ac07a",
+   "license": "CC-BY-3.0",
+   "license_url": "https://creativecommons.org/licenses/by/3.0/",
+   "attribution": "\"Curious Critters (Extended Version)\" by Matthew Pablo (www.matthewpablo.com) - licensed CC-BY 3.0: https://opengameart.org/content/curious-critters",
+   "placements": [
+    "description",
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 214.6,
+   "shelf": "playful",
+   "moods": [
+    "cute",
+    "playful",
+    "curious"
+   ],
+   "energy": 0.55,
+   "tempo": "medium",
+   "uses": [
+    "social",
+    "tutorial",
+    "explainer"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "orchestra",
+    "percussion"
+   ],
+   "ending": "clean",
+   "notes": "Cute, playful cue; the extended version, with transitions between its sections.",
+   "quiet_intro_s": 0.0,
+   "lead_silence_s": 0.0,
+   "highlight_s": 50.0
+  },
+  {
+   "credit_optional": null,
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "pablo-irelands-coast",
+   "title": "Ireland's Coast",
+   "artist": "Matthew Pablo",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/irelands-coast-game-edition",
+   "file_url": "https://opengameart.org/sites/default/files/Ireland%27s%20Coast_0.mp3",
+   "format": "mp3",
+   "bytes": 8503776,
+   "sha256": "1fdc952281ad60e12aec334285564403ff406aa83fb6411252a42eb6e07e62aa",
+   "license": "CC-BY-3.0",
+   "license_url": "https://creativecommons.org/licenses/by/3.0/",
+   "attribution": "\"Ireland's Coast\" by Matthew Pablo (www.matthewpablo.com) - licensed CC-BY 3.0: https://opengameart.org/content/irelands-coast-game-edition",
+   "placements": [
+    "description",
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 205.8,
+   "shelf": "upbeat",
+   "moods": [
+    "lively",
+    "celtic",
+    "joyful"
+   ],
+   "energy": 0.7,
+   "tempo": "medium",
+   "uses": [
+    "travel",
+    "promo",
+    "social"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "orchestra",
+    "strings",
+    "percussion"
+   ],
+   "ending": "clean",
+   "notes": "Big orchestral track with strong Irish flavours (game edition).",
+   "quiet_intro_s": 0.0,
+   "lead_silence_s": 0.0,
+   "highlight_s": 11.0
+  },
+  {
+   "credit_optional": null,
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "pablo-leap-into-eternity",
+   "title": "Leap Into Eternity (Live Orchestra)",
+   "artist": "Matthew Pablo",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/leap-into-eternity-live-orchestra",
+   "file_url": "https://opengameart.org/sites/default/files/Leap%20into%20Eternity%20%28Live%20Orchestra%29.mp3",
+   "format": "mp3",
+   "bytes": 4442808,
+   "sha256": "e246ab852191b31f8a46e7fa742bc1d1087f8929a3a1a441c6de16d695447480",
+   "license": "CC-BY-3.0",
+   "license_url": "https://creativecommons.org/licenses/by/3.0/",
+   "attribution": "\"Leap Into Eternity (Live Orchestra)\" by Matthew Pablo (www.matthewpablo.com) - licensed CC-BY 3.0: https://opengameart.org/content/leap-into-eternity-live-orchestra",
+   "placements": [
+    "description",
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 110.8,
+   "shelf": "documentary",
+   "moods": [
+    "somber",
+    "tranquil",
+    "reflective"
+   ],
+   "energy": 0.3,
+   "tempo": "slow",
+   "uses": [
+    "documentary",
+    "memorial",
+    "story"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "orchestra",
+    "strings"
+   ],
+   "ending": "clean",
+   "notes": "Film cue recorded with a live orchestra in a studio; somber and still.",
+   "quiet_intro_s": 3.0,
+   "lead_silence_s": 0.3,
+   "highlight_s": 73.0
+  },
+  {
+   "credit_optional": null,
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "pablo-painted-dreams",
+   "title": "Painted Dreams",
+   "artist": "Matthew Pablo",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/painted-dreams-mock-up",
+   "file_url": "https://opengameart.org/sites/default/files/Painted%20Dreams%20Mock-Up.mp3",
+   "format": "mp3",
+   "bytes": 5930164,
+   "sha256": "1d5f3ebaaaec9cebf5de98eb9dbe33975f63f40d521fc72ada2209298603572f",
+   "license": "CC-BY-3.0",
+   "license_url": "https://creativecommons.org/licenses/by/3.0/",
+   "attribution": "\"Painted Dreams\" by Matthew Pablo (www.matthewpablo.com) - licensed CC-BY 3.0: https://opengameart.org/content/painted-dreams-mock-up",
+   "placements": [
+    "description",
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 145.3,
+   "shelf": "cinematic",
+   "moods": [
+    "dreamy",
+    "sweeping",
+    "emotional"
+   ],
+   "energy": 0.55,
+   "tempo": "medium",
+   "uses": [
+    "story",
+    "trailer",
+    "emotional"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "orchestra",
+    "strings",
+    "brass"
+   ],
+   "ending": "soft",
+   "notes": "Big orchestral film cue (sample-library mock-up) with overlapping themes; wide dynamics.",
+   "quiet_intro_s": 2.0,
+   "lead_silence_s": 0.3,
+   "highlight_s": 78.0
+  },
+  {
+   "credit_optional": null,
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "pablo-shake-and-bake",
+   "title": "Shake and Bake",
+   "artist": "Matthew Pablo",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/shake-and-bake",
+   "file_url": "https://opengameart.org/sites/default/files/Shake%20and%20Bake_0.mp3",
+   "format": "mp3",
+   "bytes": 4662220,
+   "sha256": "2499c4ddd0295b772be6b60cb39ea7bade6e6bb7584b7de29243a6a9adca647a",
+   "license": "CC-BY-3.0",
+   "license_url": "https://creativecommons.org/licenses/by/3.0/",
+   "attribution": "\"Shake and Bake\" by Matthew Pablo (www.matthewpablo.com) - licensed CC-BY 3.0: https://opengameart.org/content/shake-and-bake",
+   "placements": [
+    "description",
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 116.3,
+   "shelf": "playful",
+   "moods": [
+    "groovy",
+    "quirky",
+    "fun"
+   ],
+   "energy": 0.65,
+   "tempo": "medium",
+   "uses": [
+    "social",
+    "tutorial",
+    "promo"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "percussion",
+    "bass",
+    "keys"
+   ],
+   "ending": "clean",
+   "notes": "Very rhythmic casual-game groove; starts at full energy.",
+   "quiet_intro_s": 0.0,
+   "lead_silence_s": 0.0,
+   "highlight_s": 2.0
+  },
+  {
+   "credit_optional": null,
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "pablo-southern-pastures",
+   "title": "Southern Pastures (Miniature Suite for Orchestra)",
+   "artist": "Matthew Pablo",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/southern-pastures-miniature-suite-for-orchestra",
+   "file_url": "https://opengameart.org/sites/default/files/Southern%20Pastures%20%28Miniature%20Suite%20f_0.mp3",
+   "format": "mp3",
+   "bytes": 11098827,
+   "sha256": "3cc378b224e3bffd1af74c7d10642e7655821afa5f17c973f99882a09d665e78",
+   "license": "CC-BY-3.0",
+   "license_url": "https://creativecommons.org/licenses/by/3.0/",
+   "attribution": "\"Southern Pastures (Miniature Suite for Orchestra)\" by Matthew Pablo (www.matthewpablo.com) - licensed CC-BY 3.0: https://opengameart.org/content/southern-pastures-miniature-suite-for-orchestra",
+   "placements": [
+    "description",
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 277.2,
+   "shelf": "orchestral",
+   "moods": [
+    "pastoral",
+    "nostalgic",
+    "dramatic"
+   ],
+   "energy": 0.45,
+   "tempo": "medium",
+   "uses": [
+    "documentary",
+    "history",
+    "story"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "orchestra",
+    "strings",
+    "brass"
+   ],
+   "ending": "clean",
+   "notes": "Four-section miniature suite; the sections change scene, so cut on a section boundary.",
+   "quiet_intro_s": 1.0,
+   "lead_silence_s": 0.4,
+   "highlight_s": 91.0
+  },
+  {
+   "credit_optional": null,
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "pablo-space-sprinkles",
+   "title": "Space Sprinkles",
+   "artist": "Matthew Pablo",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/space-sprinkles",
+   "file_url": "https://opengameart.org/sites/default/files/Space%20Sprinkles_0.mp3",
+   "format": "mp3",
+   "bytes": 6510511,
+   "sha256": "4283eb20471fd30fed0e56cefcb5003e6964dff40d7097d82af6ab8e8736a8fa",
+   "license": "CC-BY-3.0",
+   "license_url": "https://creativecommons.org/licenses/by/3.0/",
+   "attribution": "\"Space Sprinkles\" by Matthew Pablo (www.matthewpablo.com) - licensed CC-BY 3.0: https://opengameart.org/content/space-sprinkles",
+   "placements": [
+    "description",
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 162.5,
+   "shelf": "playful",
+   "moods": [
+    "lively",
+    "sparkly",
+    "sci-fi"
+   ],
+   "energy": 0.75,
+   "tempo": "fast",
+   "uses": [
+    "social",
+    "promo",
+    "tech"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "synth",
+    "drums",
+    "bass"
+   ],
+   "ending": "clean",
+   "notes": "Lively sci-fi game track; bright and busy.",
+   "quiet_intro_s": 1.0,
+   "lead_silence_s": 0.1,
+   "highlight_s": 112.0
+  },
+  {
+   "credit_optional": null,
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "pablo-spiritwatcher",
+   "title": "Spiritwatcher",
+   "artist": "Matthew Pablo",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/spiritwatcher",
+   "file_url": "https://opengameart.org/sites/default/files/Spiritwatcher.mp3",
+   "format": "mp3",
+   "bytes": 5656153,
+   "sha256": "5e7ec8b7ac9243456b4721cd3e7232255a3d2c83e308426e50e3b40defd4227c",
+   "license": "CC-BY-3.0",
+   "license_url": "https://creativecommons.org/licenses/by/3.0/",
+   "attribution": "\"Spiritwatcher\" by Matthew Pablo (www.matthewpablo.com) - licensed CC-BY 3.0: https://opengameart.org/content/spiritwatcher",
+   "placements": [
+    "description",
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 135.2,
+   "shelf": "tension",
+   "moods": [
+    "dark",
+    "somber",
+    "lush"
+   ],
+   "energy": 0.25,
+   "tempo": "slow",
+   "uses": [
+    "problem",
+    "documentary",
+    "background"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "synth pads",
+    "strings"
+   ],
+   "ending": "soft",
+   "notes": "Slow, dark and lush; open texture that leaves room for a voice.",
+   "quiet_intro_s": 0.0,
+   "lead_silence_s": 0.4,
+   "highlight_s": 45.0
+  },
+  {
+   "credit_optional": null,
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "pablo-thrust-sequence",
+   "title": "Thrust Sequence",
+   "artist": "Matthew Pablo",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/thrust-sequence",
+   "file_url": "https://opengameart.org/sites/default/files/Thrust%20Sequence_0.mp3",
+   "format": "mp3",
+   "bytes": 5530335,
+   "sha256": "402bc79218db2b81e38f0b54d56a9270d6010289b471916a34154a837eaa390e",
+   "license": "CC-BY-3.0",
+   "license_url": "https://creativecommons.org/licenses/by/3.0/",
+   "attribution": "\"Thrust Sequence\" by Matthew Pablo (www.matthewpablo.com) - licensed CC-BY 3.0: https://opengameart.org/content/thrust-sequence",
+   "placements": [
+    "description",
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 138.0,
+   "shelf": "corporate-tech",
+   "moods": [
+    "energetic",
+    "electro",
+    "driving"
+   ],
+   "energy": 0.8,
+   "tempo": "fast",
+   "uses": [
+    "promo",
+    "tech",
+    "launch"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "synth",
+    "drums",
+    "bass"
+   ],
+   "ending": "clean",
+   "notes": "Electro track with a dramatic middle section; high energy from the first bar.",
+   "quiet_intro_s": 0.0,
+   "lead_silence_s": 0.0,
+   "highlight_s": 6.0
+  },
+  {
+   "credit_optional": null,
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "pablo-woodland-fantasy",
+   "title": "Woodland Fantasy",
+   "artist": "Matthew Pablo",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/woodland-fantasy",
+   "file_url": "https://opengameart.org/sites/default/files/Woodland%20Fantasy_0.mp3",
+   "format": "mp3",
+   "bytes": 6012254,
+   "sha256": "87f9a9d04fdd0b924db98b90e86c2906330f4931cb8734f7b431706e2869aacd",
+   "license": "CC-BY-3.0",
+   "license_url": "https://creativecommons.org/licenses/by/3.0/",
+   "attribution": "\"Woodland Fantasy\" by Matthew Pablo (www.matthewpablo.com) - licensed CC-BY 3.0: https://opengameart.org/content/woodland-fantasy",
+   "placements": [
+    "description",
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 150.0,
+   "shelf": "playful",
+   "moods": [
+    "peaceful",
+    "medieval",
+    "whimsical"
+   ],
+   "energy": 0.35,
+   "tempo": "slow",
+   "uses": [
+    "story",
+    "travel",
+    "background"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "violin",
+    "strings"
+   ],
+   "ending": "soft",
+   "notes": "Peaceful medieval-fantasy ballad with a real violin; town or tavern feel.",
+   "quiet_intro_s": 0.0,
+   "lead_silence_s": 0.1,
+   "highlight_s": 69.0
+  },
+  {
+   "credit_optional": null,
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "pablo-you-were-my-brother",
+   "title": "You Were My Brother (Live Orchestra)",
+   "artist": "Matthew Pablo",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/you-were-my-brother-live-orchestra",
+   "file_url": "https://opengameart.org/sites/default/files/Tropic%20Strike%20-%201M2%20-%20_You%20Were%20My%20Brother__0.mp3",
+   "format": "mp3",
+   "bytes": 4296522,
+   "sha256": "b9799c78571a13b05c8b860b3d7fc3723f4e1adf6c01cb9033011e53813c50ee",
+   "license": "CC-BY-3.0",
+   "license_url": "https://creativecommons.org/licenses/by/3.0/",
+   "attribution": "\"You Were My Brother (Live Orchestra)\" by Matthew Pablo (www.matthewpablo.com) - licensed CC-BY 3.0: https://opengameart.org/content/you-were-my-brother-live-orchestra",
+   "placements": [
+    "description",
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 107.2,
+   "shelf": "cinematic",
+   "moods": [
+    "emotional",
+    "grieving",
+    "tender"
+   ],
+   "energy": 0.35,
+   "tempo": "slow",
+   "uses": [
+    "emotional",
+    "memorial",
+    "story"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "orchestra",
+    "strings"
+   ],
+   "ending": "clean",
+   "notes": "Live-orchestra film cue for an emotional scene; short and complete.",
+   "quiet_intro_s": 1.0,
+   "lead_silence_s": 0.2,
+   "highlight_s": 39.0
+  },
+  {
+   "credit_optional": null,
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "panchout-sweet-70s",
+   "title": "Sweet 70s",
+   "artist": "Clement Panchout",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/funky-sweet-70s",
+   "file_url": "https://opengameart.org/sites/default/files/ClementPanchout_Sweet70s.wav",
+   "format": "wav",
+   "bytes": 20322930,
+   "sha256": "c019992363f26c267f3f012034cfcee9c6c861282293958bbeaff47a59b7ea8f",
+   "license": "CC-BY-4.0",
+   "license_url": "https://creativecommons.org/licenses/by/4.0/",
+   "attribution": "\"Sweet 70s\" by Clement Panchout (http://www.clementpanchout.com/) - licensed CC-BY 4.0: https://opengameart.org/content/funky-sweet-70s",
+   "placements": [
+    "description",
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 115.2,
+   "shelf": "upbeat",
+   "moods": [
+    "funky",
+    "juicy",
+    "retro"
+   ],
+   "energy": 0.8,
+   "tempo": "fast",
+   "uses": [
+    "social",
+    "promo",
+    "intro"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "bass",
+    "drums",
+    "electric guitar",
+    "keys"
+   ],
+   "ending": "cut",
+   "notes": "Funky, upbeat 70s groove; a loop-style track that stops at full level (fade it out).",
+   "quiet_intro_s": 0.0,
+   "lead_silence_s": 0.0,
+   "highlight_s": 0.0
+  },
+  {
+   "credit_optional": null,
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "panchout-time-flies",
+   "title": "Time Flies",
+   "artist": "Clement Panchout",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/emotional-time-flies",
+   "file_url": "https://opengameart.org/sites/default/files/time_flies_clement_panchout_2016.wav",
+   "format": "wav",
+   "bytes": 17781266,
+   "sha256": "e37ab2611e038defcd4a770afe9ee47a32847cfa58b50dcbe69580a713d19f29",
+   "license": "CC-BY-4.0",
+   "license_url": "https://creativecommons.org/licenses/by/4.0/",
+   "attribution": "\"Time Flies\" by Clement Panchout (http://www.clementpanchout.com/) - licensed CC-BY 4.0: https://opengameart.org/content/emotional-time-flies",
+   "placements": [
+    "description",
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 100.8,
+   "shelf": "cinematic",
+   "moods": [
+    "aerial",
+    "emotional",
+    "floating"
+   ],
+   "energy": 0.3,
+   "tempo": "slow",
+   "uses": [
+    "story",
+    "emotional",
+    "recap"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "piano",
+    "strings",
+    "synth pads"
+   ],
+   "ending": "cut",
+   "notes": "Aerial, emotional tune about time passing; ends at full level (fade it out).",
+   "quiet_intro_s": 0.0,
+   "lead_silence_s": 0.0,
+   "highlight_s": 36.0
+  },
+  {
    "credit_optional": "Tomaso Albinoni: Oboe Concerto in D minor, Op. 9 No. 2 - II. Adagio, performed by Paul Arden-Taylor (oboe), for Musopen (CC0, via Wikimedia Commons)",
    "loops": null,
    "status": "active",
@@ -11595,6 +12787,150 @@
    "quiet_intro_s": 1.0,
    "lead_silence_s": 1.7,
    "highlight_s": 188.0
+  },
+  {
+   "credit_optional": "Johann Sebastian Bach: Goldberg Variations, BWV 988 - Variation 13, performed by Kimiko Ishizaka (CC0, via Wikimedia Commons)",
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "pd-bach-goldberg-var13-ishizaka",
+   "title": "Goldberg Variations, BWV 988 - Variation 13",
+   "artist": "Kimiko Ishizaka",
+   "source": "wikimedia",
+   "landing_url": "https://commons.wikimedia.org/wiki/File:Goldberg_Variations_14_Variatio_13_a_2_Clav.ogg",
+   "file_url": "https://upload.wikimedia.org/wikipedia/commons/1/14/Goldberg_Variations_14_Variatio_13_a_2_Clav.ogg",
+   "format": "ogg",
+   "bytes": 7406030,
+   "sha256": "ad8f58ee444146b9630023e7f07920bdb43f8b6510929f362678a27bb12e49de",
+   "license": "CC0-1.0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "attribution": null,
+   "placements": [
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "unknown",
+   "duration": 254.5,
+   "shelf": "piano",
+   "moods": [
+    "graceful",
+    "intimate",
+    "lyrical"
+   ],
+   "energy": 0.2,
+   "tempo": "slow",
+   "uses": [
+    "background",
+    "explainer",
+    "story"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "piano"
+   ],
+   "ending": "clean",
+   "notes": "From the Open Goldberg Variations; a lyrical, ornamented slow variation.",
+   "composer": "Johann Sebastian Bach",
+   "released": "2012",
+   "quiet_intro_s": 0.0,
+   "lead_silence_s": 0.2,
+   "highlight_s": 141.0
+  },
+  {
+   "credit_optional": "Johann Sebastian Bach: Goldberg Variations, BWV 988 - Variation 16 (Ouverture), performed by Kimiko Ishizaka (CC0, via Wikimedia Commons)",
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "pd-bach-goldberg-var16-ishizaka",
+   "title": "Goldberg Variations, BWV 988 - Variation 16 (Ouverture)",
+   "artist": "Kimiko Ishizaka",
+   "source": "wikimedia",
+   "landing_url": "https://commons.wikimedia.org/wiki/File:Kimiko_Ishizaka_-_J.S._Bach-_-Open-_Goldberg_Variations,_BWV_988_(Piano)_-_17_Variatio_16_a_1_Clav._Ouverture.mp3",
+   "file_url": "https://upload.wikimedia.org/wikipedia/commons/6/62/Kimiko_Ishizaka_-_J.S._Bach-_-Open-_Goldberg_Variations%2C_BWV_988_%28Piano%29_-_17_Variatio_16_a_1_Clav._Ouverture.mp3",
+   "format": "mp3",
+   "bytes": 7621082,
+   "sha256": "97e55fa51f355bc802d73a073ba6043e8581339e30eadb20bb5d6b6cc3128808",
+   "license": "CC0-1.0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "attribution": null,
+   "placements": [
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "unknown",
+   "duration": 188.7,
+   "shelf": "piano",
+   "moods": [
+    "stately",
+    "bright",
+    "ceremonial"
+   ],
+   "energy": 0.45,
+   "tempo": "medium",
+   "uses": [
+    "intro",
+    "story",
+    "explainer"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "piano"
+   ],
+   "ending": "clean",
+   "notes": "From the Open Goldberg Variations; the French overture that opens the second half.",
+   "composer": "Johann Sebastian Bach",
+   "released": "2012",
+   "quiet_intro_s": 1.0,
+   "lead_silence_s": 0.9,
+   "highlight_s": 123.0
+  },
+  {
+   "credit_optional": "Johann Sebastian Bach: Goldberg Variations, BWV 988 - Variation 21 (Canone alla Settima), performed by Kimiko Ishizaka (CC0, via Wikimedia Commons)",
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "pd-bach-goldberg-var21-ishizaka",
+   "title": "Goldberg Variations, BWV 988 - Variation 21 (Canone alla Settima)",
+   "artist": "Kimiko Ishizaka",
+   "source": "wikimedia",
+   "landing_url": "https://commons.wikimedia.org/wiki/File:Goldberg_Variations_22_Variatio_21_Canone_alla_Settima.ogg",
+   "file_url": "https://upload.wikimedia.org/wikipedia/commons/0/04/Goldberg_Variations_22_Variatio_21_Canone_alla_Settima.ogg",
+   "format": "ogg",
+   "bytes": 6851891,
+   "sha256": "7e6d4e520a22dd05a7b01e1751027801f2b231fe2156de64553f06b93e222026",
+   "license": "CC0-1.0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "attribution": null,
+   "placements": [
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "unknown",
+   "duration": 234.6,
+   "shelf": "piano",
+   "moods": [
+    "contemplative",
+    "grave",
+    "intimate"
+   ],
+   "energy": 0.2,
+   "tempo": "slow",
+   "uses": [
+    "background",
+    "data",
+    "story"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "piano"
+   ],
+   "ending": "clean",
+   "notes": "From the Open Goldberg Variations; a grave minor-key canon.",
+   "composer": "Johann Sebastian Bach",
+   "released": "2012",
+   "quiet_intro_s": 0.0,
+   "lead_silence_s": 0.4,
+   "highlight_s": 102.0
   },
   {
    "credit_optional": "Ludwig van Beethoven: Piano Sonata No. 14 \"Moonlight\", Op. 27 No. 2 - I. Adagio sostenuto, performed by Paul Pitman (for Musopen) (public domain, via Wikimedia Commons)",
@@ -12435,6 +13771,1031 @@
    "quiet_intro_s": 1.0,
    "lead_silence_s": 1.0,
    "highlight_s": 89.0
+  },
+  {
+   "credit_optional": "\"Bartender\" by TAD (CC0, via OpenGameArt)",
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "tad-bartender",
+   "title": "Bartender",
+   "artist": "TAD",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/lofi-compilation",
+   "file_url": "https://opengameart.org/sites/default/files/Bartender_0.mp3",
+   "format": "mp3",
+   "bytes": 5924279,
+   "sha256": "5cbbbe5058ed31d5a9288529ac7b4c3e16a440aad5a4b603bb8bc90df54708d4",
+   "license": "CC0-1.0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "attribution": null,
+   "placements": [
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 246.7,
+   "shelf": "lofi",
+   "moods": [
+    "chill",
+    "cozy",
+    "mellow"
+   ],
+   "energy": 0.35,
+   "tempo": "slow",
+   "uses": [
+    "background",
+    "tutorial",
+    "explainer"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "keys",
+    "drums",
+    "bass"
+   ],
+   "ending": "soft",
+   "notes": "Lo-fi compilation track; relaxed beat with a soft ending.",
+   "quiet_intro_s": 0.0,
+   "lead_silence_s": 0.0,
+   "highlight_s": 154.0
+  },
+  {
+   "credit_optional": "\"Cat Caffe\" by TAD (CC0, via OpenGameArt)",
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "tad-cat-caffe",
+   "title": "Cat Caffe",
+   "artist": "TAD",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/lofi-compilation",
+   "file_url": "https://opengameart.org/sites/default/files/Cat%20caffe_0.mp3",
+   "format": "mp3",
+   "bytes": 2748984,
+   "sha256": "896b036154c439e0790fa821bf4a5a1d208d17954c8db1b10c72a6d053c7d3d9",
+   "license": "CC0-1.0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "attribution": null,
+   "placements": [
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 133.0,
+   "shelf": "lofi",
+   "moods": [
+    "chill",
+    "cute",
+    "cozy"
+   ],
+   "energy": 0.35,
+   "tempo": "slow",
+   "uses": [
+    "background",
+    "tutorial",
+    "social"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "keys",
+    "drums",
+    "bass"
+   ],
+   "ending": "clean",
+   "notes": "Lo-fi compilation track; short and gentle.",
+   "quiet_intro_s": 2.0,
+   "lead_silence_s": 2.6,
+   "highlight_s": 68.0
+  },
+  {
+   "credit_optional": "\"Cue\" by TAD (CC0, via OpenGameArt)",
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "tad-cue",
+   "title": "Cue",
+   "artist": "TAD",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/lofi-compilation",
+   "file_url": "https://opengameart.org/sites/default/files/Cue_0.mp3",
+   "format": "mp3",
+   "bytes": 3020681,
+   "sha256": "c97929e1a7b209d0ce24445d33396e3272b4675f50c3d72dbaa315c0152372a4",
+   "license": "CC0-1.0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "attribution": null,
+   "placements": [
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 146.6,
+   "shelf": "lofi",
+   "moods": [
+    "chill",
+    "mellow",
+    "late-night"
+   ],
+   "energy": 0.35,
+   "tempo": "slow",
+   "uses": [
+    "background",
+    "tutorial",
+    "product-demo"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "keys",
+    "drums",
+    "bass"
+   ],
+   "ending": "cut",
+   "notes": "Lo-fi compilation track; loops cleanly and stops at level (fade it out).",
+   "quiet_intro_s": 0.0,
+   "lead_silence_s": 0.0,
+   "highlight_s": 47.0
+  },
+  {
+   "credit_optional": null,
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "tcarisland-atmospheric-space-f-minor",
+   "title": "Atmospheric Space F Minor",
+   "artist": "tcarisland",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/atmospheric-space-f-minor",
+   "file_url": "https://opengameart.org/sites/default/files/SpaceFMin_0.mp3",
+   "format": "mp3",
+   "bytes": 4799959,
+   "sha256": "bc4205621b781ae2c837ed493507cf6058add1ac9120a8e9fd3c47d69e2eb0de",
+   "license": "CC-BY-4.0",
+   "license_url": "https://creativecommons.org/licenses/by/4.0/",
+   "attribution": "\"Atmospheric Space F Minor\" by tcarisland - licensed CC-BY 4.0: https://opengameart.org/content/atmospheric-space-f-minor",
+   "placements": [
+    "description",
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 200.0,
+   "shelf": "ambient",
+   "moods": [
+    "spacey",
+    "atmospheric",
+    "drifting"
+   ],
+   "energy": 0.25,
+   "tempo": "slow",
+   "uses": [
+    "background",
+    "science",
+    "data"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "synth pads",
+    "synth"
+   ],
+   "ending": "soft",
+   "notes": "Ambient space piece in F minor, slightly atonal.",
+   "quiet_intro_s": 2.0,
+   "lead_silence_s": 0.6,
+   "highlight_s": 90.0
+  },
+  {
+   "credit_optional": null,
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "tcarisland-city-at-night",
+   "title": "City at Night",
+   "artist": "tcarisland",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/city-at-night",
+   "file_url": "https://opengameart.org/sites/default/files/city_at_night_0.mp3",
+   "format": "mp3",
+   "bytes": 3687709,
+   "sha256": "f46f5470ce769af4649e3d2ac82b75cc467a67360fe3168131619ab5fd887ba9",
+   "license": "CC-BY-4.0",
+   "license_url": "https://creativecommons.org/licenses/by/4.0/",
+   "attribution": "\"City at Night\" by tcarisland - licensed CC-BY 4.0: https://opengameart.org/content/city-at-night",
+   "placements": [
+    "description",
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 153.7,
+   "shelf": "upbeat",
+   "moods": [
+    "jazzy",
+    "nightlife",
+    "cool"
+   ],
+   "energy": 0.55,
+   "tempo": "medium",
+   "uses": [
+    "promo",
+    "social",
+    "travel"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "drums",
+    "brass",
+    "bass"
+   ],
+   "ending": "cut",
+   "notes": "Jazzy night-club music (100 bpm, D Dorian); stops at level (fade it out).",
+   "quiet_intro_s": 0.0,
+   "lead_silence_s": 0.0,
+   "highlight_s": 79.0
+  },
+  {
+   "credit_optional": "\"Midnight Cruiser\" by Zane Little (CC0) - ko-fi.com/zanelittle",
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "zanelittle-midnight-cruiser",
+   "title": "Midnight Cruiser",
+   "artist": "Zane Little",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/midnight-cruiser",
+   "file_url": "https://opengameart.org/sites/default/files/midnight_cruiser_0.mp3",
+   "format": "mp3",
+   "bytes": 5778728,
+   "sha256": "be0285ba239d85c47c6a0de6466123e3fe8dbc4ad4d9419ccd224ab8ea2b54fc",
+   "license": "CC0-1.0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "attribution": null,
+   "placements": [
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 144.4,
+   "shelf": "upbeat",
+   "moods": [
+    "jazzy",
+    "funky",
+    "cruising"
+   ],
+   "energy": 0.65,
+   "tempo": "fast",
+   "uses": [
+    "promo",
+    "social",
+    "travel"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "electric piano",
+    "bass",
+    "drums",
+    "synth"
+   ],
+   "ending": "cut",
+   "notes": "Jazz-funk fusion inspired by early-2000s racing-game soundtracks; stops at level (fade it out).",
+   "quiet_intro_s": 0.0,
+   "lead_silence_s": 0.0,
+   "highlight_s": 13.0
+  },
+  {
+   "credit_optional": "\"Rhythm Factory\" by Zane Little (CC0) - ko-fi.com/zanelittle",
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "zanelittle-rhythm-factory",
+   "title": "Rhythm Factory",
+   "artist": "Zane Little",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/rhythm-factory",
+   "file_url": "https://opengameart.org/sites/default/files/rhythm_factory_0.mp3",
+   "format": "mp3",
+   "bytes": 8951846,
+   "sha256": "5126faf85adffc64f22a4cd176b84ed47b6014c03328ba8380fdb24efca11f90",
+   "license": "CC0-1.0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "attribution": null,
+   "placements": [
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 223.8,
+   "shelf": "playful",
+   "moods": [
+    "quirky",
+    "energetic",
+    "weird"
+   ],
+   "energy": 0.75,
+   "tempo": "medium",
+   "uses": [
+    "social",
+    "promo",
+    "tech"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "synth",
+    "drums",
+    "bass",
+    "samples"
+   ],
+   "ending": "clean",
+   "notes": "Twisting, quirky track full of odd sounds.",
+   "quiet_intro_s": 0.0,
+   "lead_silence_s": 0.0,
+   "highlight_s": 105.0
+  },
+  {
+   "credit_optional": "\"Wednesday Night (Funk Fusion)\" by Zane Little (CC0) - ko-fi.com/zanelittle",
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "zanelittle-wednesday-night-funk-fusion",
+   "title": "Wednesday Night (Funk Fusion)",
+   "artist": "Zane Little",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/wednesday-night-funk-fusion",
+   "file_url": "https://opengameart.org/sites/default/files/wednesday_night_0.mp3",
+   "format": "mp3",
+   "bytes": 7065807,
+   "sha256": "6187f62385f94db5feda3360da6309d90664c5410dda1351f837f978df2c5861",
+   "license": "CC0-1.0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "attribution": null,
+   "placements": [
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 176.6,
+   "shelf": "upbeat",
+   "moods": [
+    "smooth",
+    "funky",
+    "pleasant"
+   ],
+   "energy": 0.55,
+   "tempo": "medium",
+   "uses": [
+    "promo",
+    "product-demo",
+    "social"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "electric piano",
+    "bass",
+    "drums"
+   ],
+   "ending": "clean",
+   "notes": "Clean, composed funk fusion; solid chords and melodies, simple mix.",
+   "quiet_intro_s": 0.0,
+   "lead_silence_s": 0.0,
+   "highlight_s": 35.0
+  },
+  {
+   "credit_optional": null,
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "zhelanov-caves-of-sorrow",
+   "title": "Caves of Sorrow",
+   "artist": "Alexandr Zhelanov",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/caves-of-sorrow",
+   "file_url": "https://opengameart.org/sites/default/files/Caves%20of%20sorrow.ogg",
+   "format": "ogg",
+   "bytes": 4581288,
+   "sha256": "7e6f75093ed8008531c5461d5ca0e5d84e6308042cee92acc3161a2784d92651",
+   "license": "CC-BY-3.0",
+   "license_url": "https://creativecommons.org/licenses/by/3.0/",
+   "attribution": "\"Caves of Sorrow\" by Alexandr Zhelanov, https://soundcloud.com/alexandr-zhelanov - licensed CC-BY 3.0: https://opengameart.org/content/caves-of-sorrow",
+   "placements": [
+    "description",
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 282.8,
+   "shelf": "tension",
+   "moods": [
+    "dark",
+    "mysterious",
+    "somber"
+   ],
+   "energy": 0.35,
+   "tempo": "slow",
+   "uses": [
+    "problem",
+    "documentary",
+    "story"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "synth pads",
+    "strings",
+    "percussion"
+   ],
+   "ending": "clean",
+   "notes": "Brooding, steady underscore for the problem or the risk.",
+   "quiet_intro_s": 0.0,
+   "lead_silence_s": 0.0,
+   "highlight_s": 202.0
+  },
+  {
+   "credit_optional": null,
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "zhelanov-dark-hall",
+   "title": "Dark Hall",
+   "artist": "Alexandr Zhelanov",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/north-wind-more-music-inside",
+   "file_url": "https://opengameart.org/sites/default/files/2.Dark%20Hall_0.mp3",
+   "format": "mp3",
+   "bytes": 3780864,
+   "sha256": "a00baa77e215c24efe79b3690ad83164adb1381c00e50a2575aab9057031c6fa",
+   "license": "CC-BY-3.0",
+   "license_url": "https://creativecommons.org/licenses/by/3.0/",
+   "attribution": "\"Dark Hall\" by Alexandr Zhelanov, https://soundcloud.com/alexandr-zhelanov - licensed CC-BY 3.0: https://opengameart.org/content/north-wind-more-music-inside",
+   "placements": [
+    "description",
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 236.0,
+   "shelf": "tension",
+   "moods": [
+    "dark",
+    "ominous",
+    "cold"
+   ],
+   "energy": 0.35,
+   "tempo": "slow",
+   "uses": [
+    "problem",
+    "security",
+    "story"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "synth pads",
+    "drone"
+   ],
+   "ending": "soft",
+   "notes": "Dark-ambient archive piece; sparse and cold, ducks well under a voice.",
+   "quiet_intro_s": 0.0,
+   "lead_silence_s": 0.0,
+   "highlight_s": 65.0
+  },
+  {
+   "credit_optional": null,
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "zhelanov-decision",
+   "title": "Decision",
+   "artist": "Alexandr Zhelanov",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/decision",
+   "file_url": "https://opengameart.org/sites/default/files/Decision.mp3",
+   "format": "mp3",
+   "bytes": 3747492,
+   "sha256": "99797742568b76ecdbf4fb3f5dd197875052a3990d646e8b2b3d0ffe29d42f84",
+   "license": "CC-BY-3.0",
+   "license_url": "https://creativecommons.org/licenses/by/3.0/",
+   "attribution": "\"Decision\" by Alexandr Zhelanov, https://soundcloud.com/alexandr-zhelanov - licensed CC-BY 3.0: https://opengameart.org/content/decision",
+   "placements": [
+    "description",
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 234.2,
+   "shelf": "cinematic",
+   "moods": [
+    "dramatic",
+    "determined",
+    "epic",
+    "hollywood"
+   ],
+   "energy": 0.65,
+   "tempo": "medium",
+   "uses": [
+    "trailer",
+    "launch",
+    "story"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "orchestra",
+    "strings",
+    "percussion"
+   ],
+   "ending": "soft",
+   "notes": "Written in the style of a Hollywood score; a resolute build for the turn in a story or a reveal.",
+   "quiet_intro_s": 0.0,
+   "lead_silence_s": 0.1,
+   "highlight_s": 50.0
+  },
+  {
+   "credit_optional": null,
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "zhelanov-dont-look-back",
+   "title": "Don't Look Back",
+   "artist": "Alexandr Zhelanov",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/north-wind-more-music-inside",
+   "file_url": "https://opengameart.org/sites/default/files/9.Don%27t%20look%20back_0.mp3",
+   "format": "mp3",
+   "bytes": 2745798,
+   "sha256": "4acaf9c274393dd15ae595a920f6246066b392e4d8eca371b949d5ee5476144d",
+   "license": "CC-BY-3.0",
+   "license_url": "https://creativecommons.org/licenses/by/3.0/",
+   "attribution": "\"Don't Look Back\" by Alexandr Zhelanov, https://soundcloud.com/alexandr-zhelanov - licensed CC-BY 3.0: https://opengameart.org/content/north-wind-more-music-inside",
+   "placements": [
+    "description",
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 171.6,
+   "shelf": "tension",
+   "moods": [
+    "tense",
+    "urgent",
+    "dark"
+   ],
+   "energy": 0.5,
+   "tempo": "medium",
+   "uses": [
+    "problem",
+    "trailer",
+    "security"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "synth",
+    "percussion",
+    "strings"
+   ],
+   "ending": "clean",
+   "notes": "The most urgent of the dark-ambient archive pieces; a pulse under a countdown or a threat.",
+   "quiet_intro_s": 0.0,
+   "lead_silence_s": 0.3,
+   "highlight_s": 78.0
+  },
+  {
+   "credit_optional": null,
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "zhelanov-fly",
+   "title": "Fly",
+   "artist": "Alexandr Zhelanov",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/techno-space",
+   "file_url": "https://opengameart.org/sites/default/files/Fly_1.mp3",
+   "format": "mp3",
+   "bytes": 8068600,
+   "sha256": "4ea7d35907540ef648ddf036bde10001a982773e4abf34dd57c09370d182d3b7",
+   "license": "CC-BY-3.0",
+   "license_url": "https://creativecommons.org/licenses/by/3.0/",
+   "attribution": "\"Fly\" by Alexandr Zhelanov, https://soundcloud.com/alexandr-zhelanov - licensed CC-BY 3.0: https://opengameart.org/content/techno-space",
+   "placements": [
+    "description",
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 252.1,
+   "shelf": "corporate-tech",
+   "moods": [
+    "uplifting",
+    "driving",
+    "airy"
+   ],
+   "energy": 0.65,
+   "tempo": "medium",
+   "uses": [
+    "tech",
+    "launch",
+    "promo"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "synth",
+    "drums",
+    "bass"
+   ],
+   "ending": "clean",
+   "notes": "Electronic track from his 'Techno Space' set; steady energy throughout.",
+   "quiet_intro_s": 0.0,
+   "lead_silence_s": 0.1,
+   "highlight_s": 190.0
+  },
+  {
+   "credit_optional": null,
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "zhelanov-heart-of-machine",
+   "title": "Heart of Machine",
+   "artist": "Alexandr Zhelanov",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/heart-of-machine",
+   "file_url": "https://opengameart.org/sites/default/files/Heart%20of%20Machine.mp3",
+   "format": "mp3",
+   "bytes": 6980996,
+   "sha256": "8522e3069a01bca6320bb157fca36df3ccd137147098e8dae3194770d5a12cea",
+   "license": "CC-BY-3.0",
+   "license_url": "https://creativecommons.org/licenses/by/3.0/",
+   "attribution": "\"Heart of Machine\" by Alexandr Zhelanov, https://soundcloud.com/alexandr-zhelanov - licensed CC-BY 3.0: https://opengameart.org/content/heart-of-machine",
+   "placements": [
+    "description",
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 232.7,
+   "shelf": "corporate-tech",
+   "moods": [
+    "driving",
+    "mechanical",
+    "epic",
+    "determined"
+   ],
+   "energy": 0.7,
+   "tempo": "medium",
+   "uses": [
+    "tech",
+    "launch",
+    "trailer"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "synth",
+    "orchestra",
+    "drums"
+   ],
+   "ending": "clean",
+   "notes": "Hybrid orchestral-electronic piece written for a music competition; strong under a product or engine reveal.",
+   "quiet_intro_s": 0.0,
+   "lead_silence_s": 0.0,
+   "highlight_s": 105.0
+  },
+  {
+   "credit_optional": null,
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "zhelanov-heroes-theme",
+   "title": "Heroes Theme",
+   "artist": "Alexandr Zhelanov",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/heroes-theme",
+   "file_url": "https://opengameart.org/sites/default/files/Heroes%20Theme_0.mp3",
+   "format": "mp3",
+   "bytes": 1882558,
+   "sha256": "50c8bdf616e65e8f713248b635cd2ea44e8266ef33bae486ddd7685cd53ba0a1",
+   "license": "CC-BY-3.0",
+   "license_url": "https://creativecommons.org/licenses/by/3.0/",
+   "attribution": "\"Heroes Theme\" by Alexandr Zhelanov, https://soundcloud.com/alexandr-zhelanov - licensed CC-BY 3.0: https://opengameart.org/content/heroes-theme",
+   "placements": [
+    "description",
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 117.7,
+   "shelf": "orchestral",
+   "moods": [
+    "heroic",
+    "triumphant",
+    "bold"
+   ],
+   "energy": 0.75,
+   "tempo": "medium",
+   "uses": [
+    "trailer",
+    "launch",
+    "keynote"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "orchestra",
+    "brass",
+    "drums"
+   ],
+   "ending": "clean",
+   "notes": "Short orchestral cue with a heroic motif; good for an opener or a title card.",
+   "quiet_intro_s": 0.0,
+   "lead_silence_s": 0.0,
+   "highlight_s": 68.0
+  },
+  {
+   "credit_optional": null,
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "zhelanov-industria",
+   "title": "Industria",
+   "artist": "Alexandr Zhelanov",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/techno-space",
+   "file_url": "https://opengameart.org/sites/default/files/Industria_1.mp3",
+   "format": "mp3",
+   "bytes": 7536956,
+   "sha256": "00470563767209265afeaa00c12b49d896ba9871ecb9c05467e3584b1972338a",
+   "license": "CC-BY-3.0",
+   "license_url": "https://creativecommons.org/licenses/by/3.0/",
+   "attribution": "\"Industria\" by Alexandr Zhelanov, https://soundcloud.com/alexandr-zhelanov - licensed CC-BY 3.0: https://opengameart.org/content/techno-space",
+   "placements": [
+    "description",
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 235.5,
+   "shelf": "corporate-tech",
+   "moods": [
+    "industrial",
+    "driving",
+    "mechanical"
+   ],
+   "energy": 0.7,
+   "tempo": "medium",
+   "uses": [
+    "tech",
+    "product-demo",
+    "promo"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "synth",
+    "drums",
+    "bass"
+   ],
+   "ending": "clean",
+   "notes": "Industrial electronic groove from his 'Techno Space' set.",
+   "quiet_intro_s": 0.0,
+   "lead_silence_s": 0.0,
+   "highlight_s": 66.0
+  },
+  {
+   "credit_optional": null,
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "zhelanov-journey-to-the-east-rocks",
+   "title": "Journey to the East Rocks",
+   "artist": "Alexandr Zhelanov",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/journey-to-the-east-rocks",
+   "file_url": "https://opengameart.org/sites/default/files/Journey%20to%20the%20East%20Rocks.ogg",
+   "format": "ogg",
+   "bytes": 4646822,
+   "sha256": "576868805a2758002a311c851d43d3bfc7f3a894adc2858a5c1f17e8c54496ce",
+   "license": "CC-BY-3.0",
+   "license_url": "https://creativecommons.org/licenses/by/3.0/",
+   "attribution": "\"Journey to the East Rocks\" by Alexandr Zhelanov, https://soundcloud.com/alexandr-zhelanov - licensed CC-BY 3.0: https://opengameart.org/content/journey-to-the-east-rocks",
+   "placements": [
+    "description",
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 287.1,
+   "shelf": "cinematic",
+   "moods": [
+    "adventurous",
+    "exotic",
+    "sweeping"
+   ],
+   "energy": 0.55,
+   "tempo": "medium",
+   "uses": [
+    "story",
+    "travel",
+    "documentary"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "orchestra",
+    "strings",
+    "percussion"
+   ],
+   "ending": "clean",
+   "notes": "Adventure cue with an eastern colour; long, even build.",
+   "quiet_intro_s": 0.0,
+   "lead_silence_s": 0.0,
+   "highlight_s": 237.0
+  },
+  {
+   "credit_optional": null,
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "zhelanov-mystery-forest",
+   "title": "Mystery Forest",
+   "artist": "Alexandr Zhelanov",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/mystery-forest",
+   "file_url": "https://opengameart.org/sites/default/files/Mystery%20Forest.mp3",
+   "format": "mp3",
+   "bytes": 9287424,
+   "sha256": "cbd67ca371d77a5039b8bd35689aa1513f4c371392ee2b5db2189e28318f6a93",
+   "license": "CC-BY-3.0",
+   "license_url": "https://creativecommons.org/licenses/by/3.0/",
+   "attribution": "\"Mystery Forest\" by Alexandr Zhelanov, https://soundcloud.com/alexandr-zhelanov - licensed CC-BY 3.0: https://opengameart.org/content/mystery-forest",
+   "placements": [
+    "description",
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 232.4,
+   "shelf": "documentary",
+   "moods": [
+    "mysterious",
+    "magical",
+    "curious"
+   ],
+   "energy": 0.35,
+   "tempo": "medium",
+   "uses": [
+    "documentary",
+    "nature",
+    "story"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "orchestra",
+    "synth pads",
+    "percussion"
+   ],
+   "ending": "soft",
+   "notes": "\"A mysterious city in the forest\"; slow reveal with a fade-out ending.",
+   "quiet_intro_s": 2.0,
+   "lead_silence_s": 0.6,
+   "highlight_s": 134.0
+  },
+  {
+   "credit_optional": null,
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "zhelanov-path-to-lake-land",
+   "title": "Path to Lake Land",
+   "artist": "Alexandr Zhelanov",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/path-to-lake-land",
+   "file_url": "https://opengameart.org/sites/default/files/Path%20to%20Lake%20Land.ogg",
+   "format": "ogg",
+   "bytes": 4139721,
+   "sha256": "e6e0bab96463b2fad4386e87d2e84cd3a7237f0297af5c65e9e6328a794accb3",
+   "license": "CC-BY-3.0",
+   "license_url": "https://creativecommons.org/licenses/by/3.0/",
+   "attribution": "\"Path to Lake Land\" by Alexandr Zhelanov, https://soundcloud.com/alexandr-zhelanov - licensed CC-BY 3.0: https://opengameart.org/content/path-to-lake-land",
+   "placements": [
+    "description",
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 254.8,
+   "shelf": "inspiring",
+   "moods": [
+    "hopeful",
+    "pastoral",
+    "adventurous"
+   ],
+   "energy": 0.5,
+   "tempo": "medium",
+   "uses": [
+    "story",
+    "travel",
+    "recap"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "orchestra",
+    "strings",
+    "flute"
+   ],
+   "ending": "clean",
+   "notes": "Open, hopeful travelling theme with a long, even build.",
+   "quiet_intro_s": 0.0,
+   "lead_silence_s": 0.1,
+   "highlight_s": 183.0
+  },
+  {
+   "credit_optional": null,
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "zhelanov-please-answer-me-my-friend",
+   "title": "Please, Answer Me My Friend",
+   "artist": "Alexandr Zhelanov",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/please-answer-me-my-friend",
+   "file_url": "https://opengameart.org/sites/default/files/Please%2C%20answer%20me%20my%20friend.mp3",
+   "format": "mp3",
+   "bytes": 2484069,
+   "sha256": "b3e47f97db538f2ac1186bad5cf3628bcb292a4a4f36a1d86a2594fbcfdf185b",
+   "license": "CC-BY-3.0",
+   "license_url": "https://creativecommons.org/licenses/by/3.0/",
+   "attribution": "\"Please, Answer Me My Friend\" by Alexandr Zhelanov, https://soundcloud.com/alexandr-zhelanov - licensed CC-BY 3.0: https://opengameart.org/content/please-answer-me-my-friend",
+   "placements": [
+    "description",
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 155.6,
+   "shelf": "inspiring",
+   "moods": [
+    "tender",
+    "hopeful",
+    "spacey"
+   ],
+   "energy": 0.45,
+   "tempo": "medium",
+   "uses": [
+    "story",
+    "science",
+    "emotional"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "synth",
+    "piano",
+    "strings"
+   ],
+   "ending": "clean",
+   "notes": "A \"sweet space theme\"; warm and short enough for a single segment.",
+   "quiet_intro_s": 0.0,
+   "lead_silence_s": 0.2,
+   "highlight_s": 102.0
+  },
+  {
+   "credit_optional": null,
+   "loops": null,
+   "status": "active",
+   "verified": "2026-09-30",
+   "id": "zhelanov-unknown-place",
+   "title": "Unknown Place",
+   "artist": "Alexandr Zhelanov",
+   "source": "opengameart",
+   "landing_url": "https://opengameart.org/content/north-wind-more-music-inside",
+   "file_url": "https://opengameart.org/sites/default/files/1.Unknown%20place_0.mp3",
+   "format": "mp3",
+   "bytes": 2858851,
+   "sha256": "f6ad42f4dee091735245afb862e30b6cc45c13a89470032a630ea65f6bb98526",
+   "license": "CC-BY-3.0",
+   "license_url": "https://creativecommons.org/licenses/by/3.0/",
+   "attribution": "\"Unknown Place\" by Alexandr Zhelanov, https://soundcloud.com/alexandr-zhelanov - licensed CC-BY 3.0: https://opengameart.org/content/north-wind-more-music-inside",
+   "placements": [
+    "description",
+    "credits_file",
+    "end_card"
+   ],
+   "content_id": "none-known",
+   "duration": 178.4,
+   "shelf": "tension",
+   "moods": [
+    "dark",
+    "uneasy",
+    "ambient"
+   ],
+   "energy": 0.35,
+   "tempo": "slow",
+   "uses": [
+    "problem",
+    "security",
+    "tech"
+   ],
+   "vocals": "none",
+   "instruments": [
+    "synth pads",
+    "drone",
+    "percussion"
+   ],
+   "ending": "clean",
+   "notes": "From his dark-ambient archive (North Wind); low, restless bed.",
+   "quiet_intro_s": 0.0,
+   "lead_silence_s": 0.0,
+   "highlight_s": 75.0
   }
  ]
 }

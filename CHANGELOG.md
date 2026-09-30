@@ -5,6 +5,109 @@ All notable changes to showtime. Each entry says what changed and why, so this f
 `skills/showtime/lib/st/__init__.py` and `python3 scripts/check_release.py` keeps the plugin manifests, the registry files and
 `setup/package.json` in sync with it.
 
+## 0.3.2 (2026-09-30)
+
+- **The music catalog widens beyond its two main composers: 48 new tracks (249 to 297), 11 of them new artists.**
+  Alexandr Zhelanov (13), Matthew Pablo (11), Of Far Different Nature, Zane Little, TAD, The Cynic Project,
+  Clement Panchout, tcarisland, Machine, FoxSynergy and omfgdude from their own OpenGameArt pages (a new
+  `opengameart` source: CC BY 3.0/4.0 or CC0 as each page states, fetched one file at a time, 10 s apart as the
+  site's robots.txt asks), plus three more Komiku tracks (Internet Archive) and three more of Kimiko Ishizaka's Open
+  Goldberg Variations (Wikimedia Commons). Every file was downloaded once, measured and passed the quality gate;
+  tracks that clipped, were mono or had a dead gap were left out. Sascha Ende's library was not added: ende.app
+  needs an account to download and limits bots.
+- **Music rotates between videos.** The catalog ranking was the same for every similar brief, so most videos got the
+  same few tracks, mostly by the same two composers. Each finished job's music (track, composer, shelf; a composed
+  bed's style and seed) is now kept in the local look history, and `audio music pick`/`search` and
+  `{"catalog": {"use": ...}}` rank tracks heard in the last 8 jobs lower, composers of the last 3 a little lower, and
+  choose among near-equal tracks with a seed that changes with every finished job (a recorded job keeps its track).
+  Lists never give one composer more than 2 of 5 places in a row when another scores close. `showtime history check`
+  warns when a track or composer repeats a recent job and names two alternatives by other composers. An explicit id
+  always wins; `showtime history off` or `SHOWTIME_MUSIC_ROTATION=off` turns rotation off.
+- **Every film project gets its own score.** Videos made from the film template all played the template's
+  worked-example score (D major, 80 bpm, one motif). `showtime new film` now writes score.js from a signature picked
+  from curated tables for the brief's mood (calm, upbeat, tension, playful, cinematic): key and mode, a tempo and
+  meter that keep the cues on bar lines, a progression, a motif, the instruments and the drums, away from the scores
+  of recent jobs. The look history records it, `showtime history check` warns on a repeated score (or an unchanged
+  score.js), and `showtime audio film-score <dir> [--mood M]` writes another. The music guide now says a produced
+  track is the usual bed for a mood piece "with music".
+- **Composed beds vary per project.** A compose track with `"seed": "auto"` takes its seed from the project and,
+  unless a key is given, moves the style's key by up to a fourth; the dom, data and short templates use it, so two
+  videos started from one template no longer share a bed. `audio music check` now also refuses tracks without a
+  `verified` date or that fail the gate's length or lead-in silence limits, so new tracks can be added as data only.
+- **No bulk downloads from creators who ask for none.** `showtime setup --full` (and `audio music fetch --all`,
+  `--for`, `--shelf`) pre-fetched every catalog track, including all of Scott Buckley's from his own site, whose
+  terms ask for one track per request and never bulk. A source can now say `"bulk": false`; a bulk pre-fetch skips
+  its tracks (unless a `--seed` folder has them) and says they download on first use. Tracks named by id still
+  download. `--full` is about 1.5 GB smaller.
+- **`review-pack` works on a silent video.** Packing a video without an audio track stopped at "file not found:
+  loudness.json"; the pack now skips the loudness plot. Two other places that meant "no file, no settings"
+  (a project without showtime.json, a job without job.json) no longer stop on the missing file either.
+- **A model mirror for sandboxes.** In the Claude app, `showtime setup` ran but the sandbox's proxy answered 403 for
+  Hugging Face and GitHub LFS, so the Kokoro voice model and the YuNet face detector never arrived and voice-over
+  and reframing failed. The shared downloader (setup, first-use fetches, the word aligner) now tries the primary
+  host, then the mirror bases listed in `lib/st/mirror.json` (release assets under the `models-v1` tag of this
+  repository) when the primary refuses (403/407, a proxy's block page, a failed tunnel, no route); after one refusal
+  a host's later files go straight to the mirror. Every copy is sha256-verified, and a mismatch is never kept.
+  `SHOWTIME_MODEL_MIRROR` adds a mirror (a base URL, or a local folder checked before any network; `off` disables
+  them), and when every source fails the error names the blocked hosts and the file to provide. The mirror covers
+  the default install and first-use models (18 files, 1.35 GB); opt-in extras and Piper voices are not mirrored.
+  `scripts/stage_model_mirror.py` downloads and verifies the files, writes LICENSES.txt and prints the
+  `gh release` commands. `showtime doctor` reports a blocked Hugging Face with a reachable mirror as a warning,
+  not a failure. docs/agents.md has a Claude app section.
+- **The receipt reads Devin's usage.** Under Devin (or `showtime receipt --transcript <sessions.db> --host devin`)
+  the receipt opens the Devin CLI's session database read-only and selects only each request's model id, time and
+  token metrics, from the sessions that worked in the job's folder; a message stored in several nodes counts once.
+  It names the agent, the models (a Fusion session lists the lead and the sidekick with their share of the tokens)
+  and the request count. Devin reports tokens, not dollars, so the cost is an estimate at its listed per-token
+  prices (dated) and is labelled "est., at listed prices".
+- **Pairwise rounds count both orders.** A pairwise round keeps one FINDINGS.md per order (order-1/, order-2/);
+  the receipt counted neither. It now counts the round as answered when both orders are, and lists the number of
+  FINDINGS files and pairwise rounds.
+- **The receipt flags a lead self-review.** Findings saved in a session where no sub-agent ran (the lead model
+  reviewing its own or its sidekick's build) now read "not an independent critic".
+- **qa judges a footage edit by its own length.** In a footage job whose `cards/` sub-project is the job's project,
+  qa compared the 30 s edit with the cards' 5.5 s and failed it. An edit render is now checked against its edit
+  render report, a sub-project's render.json that names another video is ignored, and the sub-project's settings
+  no longer apply to the edit.
+- **qa compares the poster still with its video frame.** New `poster_mismatch` WARN: the render's poster differs
+  from the video frame at its time by more than 4 mean luma levels, or its PNG carries colour chunks (gAMA, cHRM,
+  cICP, iCCP) that make browsers draw it darker than the video.
+- **Stills match the video's brightness.** PNG stills from `showtime snap` and `look` (and posters from
+  `showtime deliver poster`) no longer carry cICP/cHRM/gAMA/iCCP/sRGB colour chunks. Chrome colour-managed them
+  and drew a still from a BT.709 video about 13 levels darker than the same frame in `<video>`.
+- **`showtime check`: decorative text is not short_text.** Text inside `data-st-decor` (and its descendants), or
+  drawn as `F.decor`, no longer triggers `short_text` or counts toward the one-word-per-beat note.
+- **Chart: a positive `yMin` sets the axis floor.** Ticks start there and bars grow from it; it was clamped to 0.
+- **`export html` packs every image of a per-frame sequence.** The export's probe seeks every 0.5 s, so a page that
+  swaps a numbered image per frame (`f_0030.png`, `f_0031.png`, ...) shipped only the few it landed on. Around the
+  times a numbered image sequence was requested, the probe now visits every frame.
+- **The quality floor.** A 30 s clip made from a screen recording passed `showtime qa` and won a blind pairwise
+  round against the previous pass, yet looked cheap at full size: two-line captions in stepped boxes, a web
+  player's controls in the footage, a small recording inside big empty borders. The critic had marked the
+  captions should-fix, and the video shipped anyway because the pairwise only asks "better than the last version?".
+  - **An absolute verdict.** Every critic answer (CRITIC.md, the pairwise briefs, the crew brief) now carries
+    `WOULD I POST THIS: yes | no -- one reason`, judged on the video alone (pairwise: one line per video). In
+    quality mode a "no" (for a pairwise round: either critic's "no" for the winning render) keeps the review
+    pending like "not ready", even when the pairwise preferred the render; a missing line keeps the round
+    pending too. `review-verdict` records it (`would_post` in verdict.json, VERDICT.md, its printout), and the
+    review state (`status`, `qa`, the receipt) carries it per round. The bar is "a stranger would not call it
+    cheap, broken or wrong", not "flawless": worded first as a plain "would you post it", the critic said no to
+    all 8 videos the author had rated, 4 of them approved; with the bar spelled out it agreed with the author on
+    5 of those 8 and on 5 of 6 held-out videos it was never tuned on. The misses were mostly audio,
+    which a critic reading images cannot hear.
+  - **A caption should-fix cannot ship silently.** A should-fix or blocker that names captions or subtitles
+    stays open until a later round's critic writes a line naming the captions with `fixed`, or the maker writes
+    `won't fix: <reason>` about them in `review/round-N/RESPONSE.md` (plain word matching). Quality mode: the
+    review stays pending; lean mode: `showtime qa` prints a WARN. Later-round critics answer each earlier
+    finding under `PREVIOUS` (`fixed:` / `not fixed:`).
+  - **Four new qa warnings** (`st/qa/floor.py`, up to 20 sampled frames at delivery size, WARN only):
+    `player_chrome` (a progress bar with control glyphs at both ends on a dark control overlay, in the same place on 2+ frames),
+    `soft_footage` (edge sharpness under 0.75 on most detailed parts of half the frames: re-record at 2x device
+    scale), `caption_boxes` (stacked caption boxes of different widths), `empty_borders` (a solid picture filling
+    under 70 % of the frame inside flat borders for over 30 % of the video). The footage-only ones skip projects
+    whose page plays no `<video>`. On the clip above, qa now warns on three of the four; the owner-approved
+    re-cut and every shipped example stay clean.
+
 ## 0.3.1 (2026-09-30)
 
 - **The plugin's end-of-turn hook no longer fails before setup.** Installing the plugin and working a few turns before

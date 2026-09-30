@@ -11,19 +11,36 @@ A round has a verdict when
 It is still pending when no round was answered yet, a built pack waits for its critic, a pairwise round
 waits for its second critic or for review-verdict, or the last answered round said "not ready" and fewer
 than three rounds were used (fix, re-render, then a pairwise round against the best version).
+
+The quality floor (quality mode; lean only warns):
+  * the absolute verdict. Every FINDINGS.md carries `WOULD I POST THIS: yes | no -- one reason` (pairwise:
+    one per video, `WOULD I POST X: ...`), judged on the video alone, never against another version. A
+    "no" (for a pairwise round: either critic's "no" for the winning version) holds delivery like "not
+    ready", even when the pairwise preferred the new version; a missing line keeps the round pending.
+  * caption should-fixes cannot ship silently. A SHOULD-FIX (or BLOCKER) line that names captions or
+    subtitles stays open until a later text says what happened to it: a line that also names captions
+    and says `fixed` or `won't fix: <reason>`, in a later round's FINDINGS.md or in the maker's
+    review/round-N/RESPONSE.md (N = the round that raised it, or any later one). Plain word matching,
+    nothing smarter: name the captions in the answer.
 """
 from __future__ import annotations
 
 import json
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from .. import review_mode
 
 MAX_ROUNDS = 3             # the critic protocol's cap (st.qa.review.MAX_ROUNDS)
 KEYS = ".pairwise-keys"    # st.qa.pairwise.KEYS
 _VERDICT = re.compile(r"^\W*VERDICT\W*:?\s*(.*)$", re.I)
+# the absolute verdict: "WOULD I POST THIS: no -- the captions look cheap" (pairwise: "WOULD I POST X: yes -- ...")
+_POST = re.compile(r"^\W*WOULD\s+I\s+POST(?:\s+THIS)?\s*(?:\[?\s*([XY])\s*\]?)?\s*[:=]?\s*(.*)$", re.I)
+_CAPTION = re.compile(r"\b(captions?|subtitles?|subs)\b", re.I)
+_FIXED = re.compile(r"(?<!not )(?<!n't )\bfixed\b|\bwon'?t\s+fix\s*:\s*\S|\bwill\s+not\s+fix\s*:\s*\S", re.I)
+_SECTION = re.compile(r"^\W*(BLOCKERS?|SHOULD[- ]FIX|POLISH|WHAT WORKS|DECLINED TO JUDGE|BEST POSTER FRAME|VERDICT|"
+                      r"PREFERENCE|WOULD I POST|PREVIOUS)\b", re.I)
 
 
 def _read(p: Path) -> Any:
@@ -51,6 +68,77 @@ def parse_verdict(text: str) -> Optional[str]:
             return "ship"
         return None
     return None
+
+
+def parse_would_post(text: str) -> Dict[str, Tuple[str, str]]:
+    """The absolute verdict lines: {"": ("yes"|"no", reason)} for a single round, {"X": ..., "Y": ...} for a
+    pairwise order. A template line left as is ("yes | no") is not an answer."""
+    out: Dict[str, Tuple[str, str]] = {}
+    for raw in text.splitlines():
+        m = _POST.match(raw.strip().strip("`*"))
+        if not m:
+            continue
+        rest = m.group(2).strip().strip("*").strip()
+        head = re.split(r"\s--\s|\s-\s|\s—\s", rest, maxsplit=1)
+        v = head[0].strip().lower()
+        if "|" in v or not re.match(r"(yes|no)\b", v):
+            continue
+        answer = "yes" if v.startswith("yes") else "no"
+        reason = head[1].strip() if len(head) > 1 else re.sub(r"^(yes|no)\W*", "", head[0].strip(), flags=re.I)
+        out[(m.group(1) or "").upper()] = (answer, reason)
+    return out
+
+
+def caption_should_fixes(text: str) -> List[str]:
+    """SHOULD-FIX and BLOCKER bullets of one FINDINGS.md that name captions or subtitles."""
+    out: List[str] = []
+    sev = ""
+    for raw in text.splitlines():
+        line = raw.strip().strip("`")
+        h = _SECTION.match(line)
+        if h:
+            sev = h.group(1).upper()
+            continue
+        b = re.match(r"(?:[-*]|\d+[.)])\s*(.*)", line)
+        if b and sev.startswith(("SHOULD", "BLOCKER")) and _CAPTION.search(b.group(1)):
+            body = b.group(1).strip()
+            if body.strip(".() ").lower() not in ("none", "n/a", "..."):
+                out.append(body)
+    return out
+
+
+def resolves_captions(text: str) -> bool:
+    """A line that names captions/subtitles and says `fixed` or `won't fix: <reason>`."""
+    return any(_CAPTION.search(ln) and _FIXED.search(ln) for ln in text.splitlines())
+
+
+def _read_text(f: Path) -> str:
+    try:
+        return f.read_text(encoding="utf-8", errors="replace")[:40000] if f.is_file() else ""
+    except OSError:
+        return ""
+
+
+def _findings_texts(d: Path) -> List[str]:
+    return [t for t in (_read_text(d / "FINDINGS.md"), _read_text(d / "order-1" / "FINDINGS.md"),
+                        _read_text(d / "order-2" / "FINDINGS.md")) if t]
+
+
+def open_caption_fixes(job: Path, rs: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
+    """Caption should-fixes that no later text resolved: [{round, text}] (see the module docstring)."""
+    rs = rounds(job) if rs is None else rs
+    out: List[Dict[str, Any]] = []
+    for i, r in enumerate(rs):
+        d = Path(r["dir"])
+        raised = [c for t in _findings_texts(d) for c in caption_should_fixes(t)]
+        if not raised:
+            continue
+        later = [_read_text(d / "RESPONSE.md")]
+        for r2 in rs[i + 1:]:
+            later += _findings_texts(Path(r2["dir"])) + [_read_text(Path(r2["dir"]) / "RESPONSE.md")]
+        if not any(resolves_captions(t) for t in later if t):
+            out += [{"round": r["round"], "text": c} for c in raised]
+    return out
 
 
 def _answered(f: Path) -> bool:
@@ -81,6 +169,9 @@ def rounds(job: Path) -> List[Dict[str, Any]]:
             row["video"] = str((key.get("new") or {}).get("video") or "")
             row["against"] = str((key.get("old") or {}).get("video") or "")
             row["best"] = str(v.get("best") or "") if isinstance(v, dict) else ""
+            wp = v.get("would_post") if isinstance(v, dict) else None
+            row["would_post"] = wp.get("answer") if isinstance(wp, dict) else None
+            row["would_post_reason"] = wp.get("reason") if isinstance(wp, dict) else None
         else:
             row["kind"] = "single"
             f = d / "FINDINGS.md"
@@ -94,6 +185,9 @@ def rounds(job: Path) -> List[Dict[str, Any]]:
             row["verdict"] = parse_verdict(text) if text else None
             row["decided"] = row["verdict"] is not None
             row["self_review"] = text.lstrip().upper().startswith("SELF-REVIEW")
+            wp = parse_would_post(text).get("") if text else None
+            row["would_post"] = wp[0] if wp else None
+            row["would_post_reason"] = wp[1] if wp else None
             man = _read(d / "manifest.json")
             row["video"] = str(man.get("video") or "") if isinstance(man, dict) else ""
         out.append(row)
@@ -146,7 +240,7 @@ def state(job: Path, data: Optional[Dict[str, Any]] = None, video: Optional[Path
     res: Dict[str, Any] = {"mode": mode, "mode_source": source, "required": mode == "quality", "pending": False,
                            "status": "", "message": "", "next": None, "rounds": []}
     rs = rounds(job)
-    res["rounds"] = [{k: r.get(k) for k in ("round", "kind", "answered", "verdict", "self_review", "decided")
+    res["rounds"] = [{k: r.get(k) for k in ("round", "kind", "answered", "verdict", "self_review", "decided", "would_post")
                       if r.get(k) is not None} for r in rs]
     answered = [r for r in rs if r["answered"]]
     res["rounds_answered"] = len(answered)
@@ -154,9 +248,14 @@ def state(job: Path, data: Optional[Dict[str, Any]] = None, video: Optional[Path
         video, kind = ledger.latest_video(job, data)
         if kind != "final":
             video = None
+    caps = open_caption_fixes(job, rs)
+    if caps:
+        res["caption_fixes_open"] = caps
     if mode == "lean":
         res["status"] = "lean"
         res["message"] = "lean mode: no critic round required (review-pack + critic when publish-bound or asked)"
+        if caps:
+            res["warn"] = _caption_message(caps)
         return res
     if video is None:
         res["status"] = "no final"
@@ -190,19 +289,22 @@ def state(job: Path, data: Optional[Dict[str, Any]] = None, video: Optional[Path
         if prev:
             res["against"] = str(prev)
         return res
-    if len(answered) >= MAX_ROUNDS:
+    lr = answered[-1]
+    cap = len(answered) >= MAX_ROUNDS
+    if cap:
         res["status"] = "cap"
         res["message"] = ("review done: %d critic rounds used (the cap); ship the best version with its open findings "
                           "listed" % len(answered))
-        return res
-    lr = answered[-1]
-    if lr["kind"] == "single" and not lr.get("verdict"):
+        if lr.get("would_post") == "no":
+            res["message"] += "; the last critic would not post it (%s): tell the user" % (
+                lr.get("would_post_reason") or "no reason given")
+    if not cap and lr["kind"] == "single" and not lr.get("verdict"):
         res.update(status="waiting", pending=True)
         res["message"] = "review pending: round-%d's FINDINGS.md has no readable VERDICT line" % lr["round"]
         res["next"] = ("have the critic finish %s with one line: VERDICT: ship | ship after fixes | not ready -- why"
                        % (Path(lr["dir"]) / "FINDINGS.md"))
         return res
-    if lr["kind"] == "single" and lr.get("verdict") == "not ready":
+    if not cap and lr["kind"] == "single" and lr.get("verdict") == "not ready":
         res.update(status="not ready", pending=True)
         newer = not _same_render(lr.get("video", ""), video)
         res["message"] = "review pending: round-%d said not ready%s" % (
@@ -210,6 +312,37 @@ def state(job: Path, data: Optional[Dict[str, Any]] = None, video: Optional[Path
         res["next"] = ("showtime review-pack %s --against best   (pairs %s with the reviewed version)" % (jn, video.name)
                        if newer else "fix the blockers in %s, re-render, then showtime review-pack %s --against best"
                        % (Path(lr["dir"]) / "FINDINGS.md", jn))
+        return res
+    if not cap and lr.get("would_post") is None:
+        res.update(status="waiting", pending=True)
+        pair = lr["kind"] == "pairwise"
+        res["message"] = ("review pending: round-%d has no absolute verdict (WOULD I POST THIS: yes | no), which "
+                          "quality mode requires" % lr["round"])
+        res["next"] = ("have %s add one line: %s -- one reason, judged on the video alone%s"
+                       % ("each critic (order-1/ and order-2/FINDINGS.md)" if pair else "the critic of %s" % (
+                           Path(lr["dir"]) / "FINDINGS.md"),
+                          "WOULD I POST X: yes | no, and WOULD I POST Y: yes | no" if pair else "WOULD I POST THIS: yes | no",
+                          "; then showtime review-verdict %s" % jn if pair else ""))
+        return res
+    if not cap and lr.get("would_post") == "no":
+        res.update(status="would not post", pending=True)
+        seen = lr.get("video", "") if lr["kind"] == "single" else lr.get("best", "")
+        newer = not _same_render(seen, video)
+        res["message"] = ("review pending: round-%d's critic would not post %s under their own name (%s), whatever a "
+                          "comparison said" % (lr["round"], "the reviewed version" if newer else video.name,
+                                               lr.get("would_post_reason") or "no reason given"))
+        res["next"] = ("showtime review-pack %s --against best   (%s has not been reviewed)" % (jn, video.name) if newer
+                       else "fix what the critic named in %s, re-render, then showtime review-pack %s --against best"
+                       % (lr["dir"], jn))
+        return res
+    if caps:
+        res.update(status="caption fix open", pending=True)
+        res["message"] = "review pending: " + _caption_message(caps)
+        res["next"] = ("fix it, re-render and pair again (the critic answers `fixed: <the caption finding>`), or write "
+                       "`won't fix: <reason>` about the captions in %s"
+                       % (job / "review" / ("round-%d" % caps[-1]["round"]) / "RESPONSE.md"))
+        return res
+    if cap:
         return res
     res["status"] = "done"
     v = lr.get("verdict") or "answered"
@@ -220,8 +353,15 @@ def state(job: Path, data: Optional[Dict[str, Any]] = None, video: Optional[Path
     return res
 
 
+def _caption_message(caps: List[Dict[str, Any]]) -> str:
+    c = caps[0]
+    return ("a caption should-fix from round-%d is unresolved%s: %s (no later `fixed` or `won't fix: <reason>` naming "
+            "the captions)" % (c["round"], " (+%d more)" % (len(caps) - 1) if len(caps) > 1 else "", c["text"][:140]))
+
+
 def pending_line(st: Dict[str, Any]) -> Optional[str]:
-    """The one WARN line for qa / deliver / job note, or None when nothing is pending."""
+    """The one WARN line for qa / deliver / job note, or None when nothing is pending (lean mode: a caption
+    should-fix left open still warns)."""
     if not st.get("pending"):
-        return None
+        return ("WARN  %s" % st["warn"]) if st.get("warn") else None
     return "WARN  %s -> %s" % (st["message"], st["next"]) if st.get("next") else "WARN  %s" % st["message"]

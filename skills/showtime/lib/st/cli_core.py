@@ -301,6 +301,7 @@ def cmd_new(args: argparse.Namespace) -> int:
         if int(cfg[dim]) % 2:
             raise ShowtimeError("%s must be even for H.264 (got %s)" % (dim, cfg[dim]))
     write_json(cfg_path, cfg)
+    film_score = _vary_film_score(dst, cfg, job_dir) if cfg.get("score") else None
     retimed: Optional[Dict[str, Any]] = None
     if args.duration is not None:
         old = float(cfg.get("duration") or 0)
@@ -329,6 +330,7 @@ def cmd_new(args: argparse.Namespace) -> int:
             cfg = read_json(cfg_path, cfg)
     result = {"project": str(dst), "template": args.template, "config": cfg, "retime": retimed, "notes": notes,
               "review_mode": getattr(args, "mode", None),
+              "film_score": film_score,
               "job": str(job_rec) if job_rec else None, "brand": branded, "reference_style": ref_style,
               "template_notes": str(src / "README.md") if (src / "README.md").is_file() else None}
     if args.json:
@@ -341,6 +343,9 @@ def cmd_new(args: argparse.Namespace) -> int:
                 log("  retimed " + line)
             for n in retimed["notes"]:
                 warn(n)
+        if film_score:
+            log("score: %s %s, %g bpm, %s mood (a new one: showtime audio film-score %s --mood <mood>)" % (
+                film_score["key"], film_score["mode"], film_score["bpm"], film_score["mood"], dst))
         if job_rec:
             log("job %s: project -> %s" % (job_rec.name, dst))
         if branded and branded.get("applied"):
@@ -380,6 +385,20 @@ def _brand_new_project(dst: Path, cfg: Dict[str, Any], job: Optional[Path], skip
                             where, dst, (" " + job.name) if job else "")}
     except Exception as e:  # noqa: BLE001 - never fail `new` over the brand kit
         warn("brand kit not applied: %s" % e)
+        return None
+
+
+def _vary_film_score(project: Path, cfg: Dict[str, Any], job: Optional[Path]) -> Optional[Dict[str, Any]]:
+    """A film project's own score (st.audio.filmscore): key, tempo, chords, motif and sound picked from the
+    brief's mood and away from recent jobs' scores. Never fails `new`: the template's score stays."""
+    try:
+        from .audio import filmscore
+        from .job import ledger
+        job = job or ledger.enclosing_job(project)
+        goal = str((ledger.load(job) if job is not None and (job / "job.json").is_file() else {}).get("goal") or "")
+        return filmscore.apply(project, brief=" ".join(x for x in (goal, str(cfg.get("title") or "")) if x))
+    except Exception as e:  # noqa: BLE001
+        warn("kept the template's score (%s)" % e)
         return None
 
 

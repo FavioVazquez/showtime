@@ -8,6 +8,7 @@ import { parseCli, runMain, info, c, fmtTime, parseTimes, parseTime, jobDir, wor
 import { openBrowser, openLab, parseSize } from './lib/stagehost.mjs';
 import { enclosingJob } from './lib/studio/paths.mjs';
 import { VIDEO_EXT, openSource } from './lib/frames.mjs';
+import { stripColorChunks } from './lib/png.mjs';
 
 const SPEC = {
   name: 'snap',
@@ -140,7 +141,7 @@ async function main() {
       if (w && w > W) notes.push(`upscaled ${W} -> ${w} px wide (no new detail)`);
       if (w && w !== W) out = await lab.resize(out, w, fmt === 'png' ? 'image/png' : 'image/jpeg', 0.92);
       else if (fmt === 'jpg') out = await lab.resize(out, W, 'image/jpeg', 0.92);
-      fs.writeFileSync(file, out);
+      fs.writeFileSync(file, fmt === 'png' ? stripColorChunks(out) : out);
       stills.push({ at: x, t, frame: k, file });
       if (Math.abs(t - x) > 1e-4) notes.push(`${x} -> frame ${k} (${t.toFixed(3)} s)`);
       if (seen.has(k)) notes.push(`${x} shows the same frame as ${seen.get(k)} (frame ${k})`);

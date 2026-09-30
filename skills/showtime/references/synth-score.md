@@ -4,7 +4,9 @@ Read this when a project needs music or sound design written in code: a canvas f
 page with `ST.score`. It covers the API, how to compose a score for a specific film (key, mode, motif,
 sections, sync to picture) and how to mix it. For library music, stock SFX and voice-over mixing, read the
 audio references instead. A film can combine both: the score renders to WAV, and `showtime.json` `"audio"`
-adds a mix on top.
+adds a mix on top. For "with music" on a mood piece of 10 s or more, a produced catalog track is usually
+the better bed (music.md); `showtime new film` writes each project its own score (key, tempo, chords,
+motif, instruments, away from recent jobs), and `showtime audio film-score <dir> [--mood M]` writes another.
 
 `Synth` is a Web Audio kit. The same score plays in the preview player and renders offline (faster than
 real time) during `showtime render`. Every sound is synthesised: no samples, no downloads, no licences to
@@ -42,15 +44,15 @@ track. Randomness is seeded, so a score renders identically every time.
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| 1. Shape of a score | 55-80 |
-| 2. Instruments (all times are film seconds) | 82-105 |
-| 3. Theory helpers | 107-134 |
-| 4. Composing for a film: the method | 136-170 |
-| 5. Sync accuracy | 172-178 |
-| 5b. Seeking: a score rendered from any time | 180-202 |
-| 6. Mixing levels | 204-230 |
-| 7. Pitfalls | 232-249 |
-| 8. Standalone use | 251-263 |
+| 1. Shape of a score | 57-82 |
+| 2. Instruments (all times are film seconds) | 84-107 |
+| 3. Theory helpers | 109-136 |
+| 4. Composing for a film: the method | 138-172 |
+| 5. Sync accuracy | 174-180 |
+| 5b. Seeking: a score rendered from any time | 182-204 |
+| 6. Mixing levels | 206-232 |
+| 7. Pitfalls | 234-251 |
+| 8. Standalone use | 253-265 |
 
 ## 1. Shape of a score
 

@@ -28,15 +28,18 @@ def register(sub: argparse._SubParsersAction) -> None:
         "Tokens and cost: only from a session log you name (--transcript, $SHOWTIME_TRANSCRIPT, or the\n"
         "plugin's Stop hook for Claude Code), only the current session, and only its numbers: no prompt,\n"
         "reply or file content is read out or copied. Claude Code logs are priced at the public API list\n"
-        "price (dated in the receipt; a plan does not pay per video). Codex logs give tokens only."),
+        "price (dated in the receipt; a plan does not pay per video). Codex logs give tokens only. Under Devin\n"
+        "its CLI session database is read by itself (the sessions that worked in the job's folder; numbers\n"
+        "only), and the cost is an estimate at Devin's listed per-token prices, labelled as one."),
         epilog=("examples:\n"
                 "  showtime receipt                         # the current or newest job\n"
                 "  showtime receipt launch-teaser --transcript ~/.claude/projects/<project>/<session>.jsonl\n"
                 "  showtime receipt --whole-session --transcript rollout.jsonl --host codex\n"
                 "  showtime receipt --print                 # show it, write nothing"))
     p.add_argument("job", nargs="?", help="job folder or name (default: the current or newest job)")
-    p.add_argument("--transcript", metavar="FILE", help="the current session's log (Claude Code .jsonl or a Codex rollout)")
-    p.add_argument("--host", choices=["claude", "codex"], help="the log's format (default: detected)")
+    p.add_argument("--transcript", metavar="FILE", help="the current session's log (Claude Code .jsonl, a Codex rollout, "
+                   "or Devin's sessions.db)")
+    p.add_argument("--host", choices=["claude", "codex", "devin"], help="the log's format (default: detected)")
     p.add_argument("--whole-session", action="store_true",
                    help="count the whole session, not only the time from the job's start to its last update")
     p.add_argument("--no-share", action="store_true", help="do not touch share.txt")

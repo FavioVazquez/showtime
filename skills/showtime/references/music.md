@@ -9,6 +9,9 @@ end. The commands are in `audio.md`.
 - Launch, trailer, story: a produced track (`showtime audio music pick --for launch --dur <len>`, then
   `{"kind": "music", "catalog": "<id>", "fit": true}`); explainer, tutorial, data: a restrained underscore or
   none; exact beats, stems: `showtime audio compose` (§0)
+- "With music" on a video of 10 s or more with a mood (launch, birthday, recap, trailer, intro): a produced
+  track is the default, on the film template too (a mix.json as `"audio"`; then trim score.js to its hits or
+  set `"score": false`). `new film` writes each film its own score; `audio film-score <dir>` another (§0)
 - You cannot listen: read `audio music info <id>` (moods, energy, vocals, `ending`, highlight); a short cut of
   a slow build: `"offset": "highlight"`; a disliked track: `audio music veto <id>` (§0)
 - Never use Pixabay, Mixkit, Uppbeat, Bensound or YouTube Audio Library files, or anything NC or ND. Credits
@@ -30,12 +33,12 @@ end. The commands are in `audio.md`.
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| 0. Produced track, composed bed, or none | 40-69 |
-| 1. Decide the job of the music first | 71-107 |
-| 2. Style catalog (showtime audio styles) | 109-164 |
-| 3. Sync music to the edit | 166-200 |
-| 4. Endings | 202-223 |
-| 5. Iterate cheaply | 225-232 |
+| 0. Produced track, composed bed, or none | 43-77 |
+| 1. Decide the job of the music first | 79-115 |
+| 2. Style catalog (showtime audio styles) | 117-172 |
+| 3. Sync music to the edit | 174-208 |
+| 4. Endings | 210-231 |
+| 5. Iterate cheaply | 233-240 |
 
 ## 0. Produced track, composed bed, or none
 
@@ -48,6 +51,11 @@ end. The commands are in `audio.md`.
 - `--for` is one of launch, trailer, keynote, story, emotional, promo, social, product-demo, tech,
   explainer, tutorial, data, documentary, problem, background (`audio music presets`). Add `--mood`,
   `--energy 0.2-0.5` or words (`audio music search hopeful piano`). In a series, vary with `--n 1`, `--n 2`.
+- Picks rotate: `pick`, `search` and `{"catalog": {"use": ...}}` rank tracks heard in the last 8 finished
+  jobs lower (and, gently, composers of the last 3), and lists never let one composer take more than
+  2 of 5 places in a row. `showtime history check` warns when a track or composer repeats a recent job
+  and names two alternatives. An explicit id always wins; `showtime history off` or
+  `SHOWTIME_MUSIC_ROTATION=off` turns rotation off.
 - You cannot listen, so read `audio music info <id>`: moods, energy, vocals, `ending` (clean = ends on a
   hit and a ring-out; soft = a fade or a quiet outro; cut = still loud at the end), the length, a long
   quiet intro and the highlight. Every catalog track passed a measured quality gate (no muffled old

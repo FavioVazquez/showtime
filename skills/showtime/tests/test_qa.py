@@ -252,7 +252,7 @@ class QATests(unittest.TestCase):
             self.assertTrue((pack / name).is_file(), name)
         brief = (pack / "CRITIC.md").read_text(encoding="utf-8")
         for word in ("Blocker", "Should-fix", "Polish", "VERDICT", "DECLINED TO JUDGE", "timestamp", "at most 3",
-                     "No scores"):
+                     "No scores", "WOULD I POST THIS", "under your own name"):
             self.assertIn(word, brief)
         self.assertTrue(all(Path(k["path"]).is_file() for k in m["key_frames"]))
         self.assertIn("type detail pass", brief)
@@ -949,6 +949,69 @@ Film.start({ look: 'dark', design: [1920, 1080], scenes(T, g, F) {
         (Path(m["dir"]) / "FINDINGS.md").write_text("VERDICT: fix\n", encoding="utf-8")
         m = json.loads(showtime("review-pack", v, "--project", proj, "--json", timeout=600).stdout)
         self.assertEqual(m["cuts"], [2.5, 5.0, 7.5], m["scenes_source"])
+    def test_24_footage_job_ignores_its_cards_subproject(self):
+        """A footage job's edit render is judged by its own edit report, not by the job's cards/ sub-project
+        (a 5.5 s showtime.json duration must not fail a 3 s edit without --expect)."""
+        base = self.tmp / "footagejob"
+        base.mkdir()
+        job = Path(json.loads(showtime("job", "init", "talk", "--json", cwd=base).stdout)["job"])
+        cards = job / "cards"
+        cards.mkdir()
+        (cards / "showtime.json").write_text(json.dumps({"duration": 5.5, "fps": 30}), encoding="utf-8")
+        (cards / "index.html").write_text("<!doctype html><body></body>", encoding="utf-8")
+        data = json.loads((job / "job.json").read_text(encoding="utf-8"))
+        data["project"] = str(cards)
+        (job / "job.json").write_text(json.dumps(data), encoding="utf-8")
+        # the cards' own render.json names another output
+        (job / "render.json").write_text(json.dumps({"project": str(cards), "output": str(job / "cards.mp4"),
+                                                     "duration": 5.5}), encoding="utf-8")
+        v = synth_video(job / "final.mp4", dur=3, size="640x360")
+        (job / "final.report.json").write_text(json.dumps({"output": str(v), "edl": str(job / "edit" / "edl.json"),
+                                                           "duration": 3.0}), encoding="utf-8")
+        q = json.loads(showtime("qa", v, "--json", "--no-sheet", check=False).stdout)
+        self.assertNotIn(("duration", "FAIL"), findings_of(q, "rule"))
+        self.assertIsNone(q["project"])
+        self.assertTrue(any("edit render report" in p for p in q["passed"]), q["passed"])
+        # the edit report's length is still checked
+        (job / "final.report.json").write_text(json.dumps({"output": str(v), "edl": "edl.json", "duration": 6.0}),
+                                               encoding="utf-8")
+        q = json.loads(showtime("qa", v, "--json", "--no-sheet", check=False).stdout)
+        self.assertIn(("duration", "FAIL"), findings_of(q, "rule"))
+
+    def test_25_poster_still_matches_its_frame(self):
+        """qa compares the render's poster still with its video frame (mean luma) and flags PNG colour chunks."""
+        import struct
+        import zlib
+        from st.qa import media as M
+        d = self.tmp / "posters"
+        d.mkdir()
+        v = d / "final.mp4"
+        ffmpeg("-f", "lavfi", "-i", "color=c=0x606870:s=320x180:r=30:d=2", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(v))
+        poster = d / "poster.png"
+        ffmpeg("-ss", "1", "-i", v, "-frames:v", "1", poster)
+        (d / "render.json").write_text(json.dumps({"output": str(v), "duration": 2,
+                                                   "poster": {"file": "poster.png", "time": 1.0}}), encoding="utf-8")
+        rules = lambda: [f["rule"] for f in json.loads(  # noqa: E731
+            showtime("qa", v, "--json", "--no-sheet", check=False).stdout)["findings"]]
+        self.assertEqual(M.png_colour_chunks(poster), [])
+        self.assertNotIn("poster_mismatch", rules())
+        # a darker still (taken from another frame or another grade)
+        ffmpeg("-ss", "1", "-i", v, "-frames:v", "1", "-vf", "eq=brightness=-0.08", poster)
+        self.assertIn("poster_mismatch", rules())
+        # the same pixels with a gAMA chunk: a browser draws it darker than the video
+        ffmpeg("-ss", "1", "-i", v, "-frames:v", "1", poster)
+        raw = poster.read_bytes()
+        body = b"gAMA" + struct.pack(">I", 45455)
+        chunk = struct.pack(">I", 4) + body + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
+        poster.write_bytes(raw[:33] + chunk + raw[33:])                      # right after the IHDR chunk
+        self.assertEqual(M.png_colour_chunks(poster), ["gAMA"])
+        self.assertIn("poster_mismatch", rules())
+        # deliver poster writes PNGs without them (the same strip)
+        self.assertEqual(M.strip_png_colour_chunks(poster), 1)
+        self.assertEqual(M.png_colour_chunks(poster), [])
+        self.assertEqual(poster.read_bytes(), raw)
+        self.assertNotIn("poster_mismatch", rules())
+
 
 if __name__ == "__main__":
     argv = [a for a in sys.argv if a != "--fast"]

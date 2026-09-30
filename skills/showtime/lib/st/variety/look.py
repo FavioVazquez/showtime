@@ -19,6 +19,7 @@ Everything is best effort: a field that cannot be read is left out, never guesse
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -300,17 +301,26 @@ def _music(project: Path, cfg: Dict[str, Any], texts: Dict[str, str]) -> List[Di
         if not isinstance(tr, dict) or str(tr.get("kind") or "") != "music":
             continue
         if tr.get("catalog"):
-            row: Dict[str, Any] = {"ref": "catalog:%s" % tr["catalog"]}
+            ref = tr["catalog"]
+            row: Dict[str, Any] = {"ref": "catalog:%s" % ref}
             try:
                 from ..audio import music as mus
-                t = mus.get(str(tr["catalog"]))
-                row.update(shelf=t.get("shelf"), moods=t.get("moods") or [], title=t.get("title"))
+                if isinstance(ref, dict) and not ref.get("id"):
+                    # a query ({"use": "launch"}): the track it resolves to for this project, and the
+                    # query itself, so a re-render after qa keeps that track (music.resolve)
+                    t = mus.resolve(ref, dur=float(tr.get("dur") or 0) or None, key=str(project.resolve()))
+                    row["query"] = mus.query_key(ref)
+                else:
+                    t = mus.get(str(ref["id"] if isinstance(ref, dict) else ref))
+                row.update(ref="catalog:%s" % t["id"], shelf=t.get("shelf"), moods=t.get("moods") or [],
+                           title=t.get("title"), artist=mus.artist_of(t))
             except Exception:  # noqa: BLE001 - an unknown id is still a repeatable fact
                 pass
             out.append(row)
         elif isinstance(tr.get("compose"), dict):
             c = tr["compose"]
-            out.append({"ref": "compose:%s" % (c.get("style") or "default"), "style": c.get("style")})
+            out.append({"ref": "compose:%s" % (c.get("style") or "default"), "style": c.get("style"),
+                        **{k: c[k] for k in ("seed", "key", "bpm") if c.get(k) is not None}})
         elif tr.get("library") or tr.get("lib"):
             out.append({"ref": "library:%s" % (tr.get("library") or tr.get("lib"))})
         elif tr.get("file") or tr.get("src"):
@@ -322,7 +332,14 @@ def _music(project: Path, cfg: Dict[str, Any], texts: Dict[str, str]) -> List[Di
             if m:
                 bpm = int(m.group(1))
                 break
-        out.append({"ref": "score:synth", "bpm": bpm})
+        row = {"ref": "score:synth", "bpm": bpm}
+        from ..audio import filmscore
+        sig = filmscore.read_signature(project)       # a generated film score names its key, chords, motif ...
+        if sig:
+            row["signature"] = sig
+        if texts.get("score.js"):
+            row["sha"] = hashlib.sha1(texts["score.js"].encode("utf-8")).hexdigest()[:12]   # a score copied unchanged
+        out.append(row)
     return out
 
 

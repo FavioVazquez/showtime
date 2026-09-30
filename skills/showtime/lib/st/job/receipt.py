@@ -102,20 +102,38 @@ def _images(job: Path) -> Dict[str, int]:
 
 
 def _review(job: Path) -> Dict[str, Any]:
-    rounds = sorted((d for d in (job / "review").glob("round-*") if d.is_dir()),
-                    key=lambda d: int(re.sub(r"\D", "", d.name) or 0)) if (job / "review").is_dir() else []
+    """Review rounds and their FINDINGS files. A pairwise round (blind A/B, both orders) has one FINDINGS.md
+    per order (order-1/, order-2/): it has its findings when both orders were answered."""
+    try:
+        from . import review_state
+        rs = review_state.rounds(job)
+    except Exception:  # noqa: BLE001 - the receipt never fails over it
+        rs = []
     info: List[Dict[str, Any]] = []
-    for d in rounds:
-        f = d / "FINDINGS.md"
-        row = {"round": int(re.sub(r"\D", "", d.name) or 0), "findings": f.is_file(), "self_review": False}
-        if f.is_file():
+    for r in rs:
+        d = Path(r["dir"])
+        pair = r.get("kind") == "pairwise"
+        files = [d / ("order-%d" % k) / "FINDINGS.md" for k in (1, 2)] if pair else [d / "FINDINGS.md"]
+        saved = [f for f in files if f.is_file()]
+        selfr = False
+        for f in saved:
             try:
-                row["self_review"] = "self-review" in f.read_text(encoding="utf-8", errors="replace")[:20000].lower()
+                selfr = selfr or "self-review" in f.read_text(encoding="utf-8", errors="replace")[:20000].lower()
             except OSError:
                 pass
-        info.append(row)
+        info.append({"round": r["round"], "kind": r.get("kind") or "single", "findings": len(saved) == len(files),
+                     "findings_files": len(saved), "self_review": selfr})
     return {"packed": len(info), "with_findings": sum(1 for r in info if r["findings"]),
+            "pairwise": sum(1 for r in info if r["kind"] == "pairwise"),
+            "findings_files": sum(r["findings_files"] for r in info),
             "self_reviewed": sum(1 for r in info if r["self_review"]), "rounds": info}
+
+
+def _lead_review(rv: Dict[str, Any], us: Dict[str, Any]) -> bool:
+    """Findings saved, none marked as a self-review, yet no sub-agent ran in the session: the lead model
+    (e.g. the lead of a Devin Fusion session, reviewing its sidekick's build) wrote them, not a critic."""
+    return (us.get("status") == "reported" and us.get("subagents") == 0 and rv["findings_files"] > 0
+            and rv["self_reviewed"] < sum(1 for r in rv["rounds"] if r["findings_files"]))
 
 
 def _review_state(job: Path, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -161,6 +179,8 @@ def _agent(us: Dict[str, Any]) -> Optional[str]:
         return "Claude Code"
     if us.get("host") == "codex":
         return "Codex"
+    if us.get("host") == "devin":
+        return "Devin"
     name = re.sub(r"[^\w .+/-]", "", os.environ.get("SHOWTIME_AGENT", "")).strip()[:60]
     return ("%s (through MCP)" % name) if name else None
 
@@ -177,6 +197,15 @@ def remember_source(job: Path, transcript: str, host: Optional[str] = None, sess
         pass
 
 
+def _devin_here() -> bool:
+    """Running under Devin (its environment) with its session database on this machine."""
+    try:
+        from ..sandbox import detect_host
+        return detect_host() == "devin" and usage.devin_db() is not None
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _source(job: Path) -> Dict[str, Any]:
     d = read_json(job / SOURCE_FILE, {}) or {}
     return d if isinstance(d, dict) else {}
@@ -190,6 +219,8 @@ def build(job: Path, transcript: Optional[str] = None, host: Optional[str] = Non
     src = _source(job)
     tpath = transcript or os.environ.get("SHOWTIME_TRANSCRIPT") or src.get("transcript")
     thost = host or (src.get("host") if not transcript else None)
+    if not tpath and _devin_here():
+        tpath, thost = str(usage.devin_db()), "devin"         # Devin keeps its sessions in one database
     start = _epoch(data.get("created"))
     end, end_label = _end_of_job(job, data)
     upd = _epoch(data.get("updated"))
@@ -197,7 +228,7 @@ def build(job: Path, transcript: Optional[str] = None, host: Optional[str] = Non
     until = None if whole_session else ((max(x for x in (upd, end) if x is not None) + TAIL_SECONDS)
                                         if (upd or end) else None)
     if tpath:
-        us = usage.read_usage(tpath, since, until, thost)
+        us = usage.read_usage(tpath, since, until, thost, where=job)
         if us.get("status") == "reported":
             us["window"] = "the whole session" if whole_session else "from the job's start to its last update (and 30 min after)"
             if us.get("cost_usd") is not None:
@@ -227,6 +258,8 @@ def build(job: Path, transcript: Optional[str] = None, host: Optional[str] = Non
     wall = (end - start) if (start is not None and end is not None and end >= start) else None
 
     rstate = _review_state(job, data)
+    rv = dict(_review(job), status=rstate.get("status"), note=rstate.get("message"))
+    rv["lead_review"] = _lead_review(rv, us)
     rec: Dict[str, Any] = {
         "schema": SCHEMA, "job": job.name, "showtime": __version__, "generated": ledger.now_iso(),
         "request": req, "mode": data.get("mode"), "platform": data.get("platform"), "agent": agent,
@@ -239,7 +272,7 @@ def build(job: Path, transcript: Optional[str] = None, host: Optional[str] = Non
                           for q in data.get("questions") or [] if q.get("answer")],
             "open_questions": [mask(q["text"]) for q in data.get("questions") or [] if not q.get("answer")],
         },
-        "review": dict(_review(job), status=rstate.get("status"), note=rstate.get("message")),
+        "review": rv,
         "qa": {"runs": sum(1 for s in data.get("stages") or [] if s.get("name") == "qa") or (1 if qa else 0),
                "verdict": qa.get("verdict"), "fail": qa.get("fail"), "warn": qa.get("warn"),
                "file": Path(str(qa["video"])).name if qa.get("video") else None},
@@ -284,6 +317,8 @@ def usd_text(us: Dict[str, Any]) -> str:
         return NOT_REPORTED
     if us.get("cost_usd") is None:
         return NOT_REPORTED
+    if us.get("host") == "devin":
+        return "about $%.2f (est., at listed prices)" % us["cost_usd"]
     return "about $%.2f (API-equivalent)" % us["cost_usd"]
 
 
@@ -357,13 +392,19 @@ def to_markdown(rec: Dict[str, Any]) -> str:
     rv, qa = rec["review"], rec["qa"]
     if rv["packed"]:
         extra = []
+        if rv.get("pairwise"):
+            extra.append("%d pairwise (blind A/B, both orders)" % rv["pairwise"])
         if rv["with_findings"] != rv["packed"]:
             extra.append("%d with findings saved" % rv["with_findings"])
         else:
             extra.append("all with findings saved")
+        if rv.get("findings_files", 0) != rv["with_findings"]:
+            extra.append(_n(rv["findings_files"], "FINDINGS file"))
         if rv["self_reviewed"]:
             extra.append("%d answered by the agent itself, not a separate critic" % rv["self_reviewed"])
         a("- Review rounds: %d (%s)" % (rv["packed"], "; ".join(extra)))
+        if rv.get("lead_review"):
+            a("- Critic: not an independent critic (no sub-agent ran; the session's lead model wrote the findings)")
     else:
         a("- Review rounds: 0")
     if rv.get("note") and rv.get("status") not in ("no final",):
@@ -426,8 +467,10 @@ def to_markdown(rec: Dict[str, Any]) -> str:
             _tok(tk["input"]), _tok(tk["output"]), _tok(tk["cache_read"]), _tok(tk["write_5m"] + tk["write_1h"])))
         a("- Cost: %s" % usd_text(us))
         for m, row in us["models"].items():
-            a("  - %s: %s output, %s" % (m, _tok(row["output"]),
-                                         "$%.2f" % row["cost_usd"] if row.get("cost_usd") is not None else "cost " + NOT_REPORTED))
+            share = ", %d%% of the tokens" % round(100 * row["token_share"]) if row.get("token_share") is not None else ""
+            reqs = "%s, " % _n(row.get("messages", 0), "request") if us.get("host") == "devin" else ""
+            a("  - %s: %s%s output%s, %s" % (m, reqs, _tok(row["output"]), share,
+                                             "$%.2f" % row["cost_usd"] if row.get("cost_usd") is not None else "cost " + NOT_REPORTED))
         a("- %s" % us["cost_note"])
         a("- Window: %s." % us["window"])
     a("")

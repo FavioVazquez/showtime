@@ -836,7 +836,7 @@
    ],
    "transcode": "flac",
    "category": "fx",
-   "sha256": null
+   "sha256": "6d4519229c6e2c9e09502cd4967940052f68664140549a467615b56bdfd1d031"
   },
   {
    "id": "oga-mild-wind-background-noise",
@@ -858,7 +858,7 @@
    "evidence_url": "https://opengameart.org/content/mild-wind-background-noise",
    "transcode": "opus128",
    "loopable": true,
-   "sha256": null
+   "sha256": "9f1fd5c8b37949e6889a7f6acbd822f66e0ab4e918d72bda58d8d8c2c7e85a80"
   },
   {
    "id": "oga-the-shop",
@@ -882,7 +882,7 @@
    "include": [
     "*.mp3"
    ],
-   "sha256": null
+   "sha256": "45321a1d1764702002da3f2902e3ba9b09ff04a6193337728afe41da093479d3"
   },
   {
    "id": "oga-at-the-end-of-hope",
@@ -909,7 +909,7 @@
     "somber",
     "emotional"
    ],
-   "sha256": null
+   "sha256": "561d33dcf69e2071a0fdfdfa361d94a1b5d9cbc7ad28c2388e638fcd8d6aa240"
   },
   {
    "id": "oga-sea-and-river-wave-sounds",
@@ -933,7 +933,7 @@
    "mood": [
     "calm"
    ],
-   "sha256": null
+   "sha256": "8c24607e41edd6f018ec3582a07e5a8dbc57347276339cb68440951a0fb4cfb1"
   },
   {
    "id": "incompetech-voxel-revolution",
@@ -2397,8 +2397,8 @@
    "attribution": "\"Trouble with Tribals\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "e7361f2629be102c155c5a3594ff6f40e3d21e7763977c0584c205ec444ac449",
+   "bytes": 6804292
   },
   {
    "id": "incompetech-happy-happy-game-show",
@@ -2430,8 +2430,8 @@
    "attribution": "\"Happy Happy Game Show\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "640d808993c49165d9e7a88ff1925312220317b75ba847b74e664e9f01a87db6",
+   "bytes": 5079647
   },
   {
    "id": "incompetech-valse-gymnopedie",
@@ -2459,8 +2459,8 @@
    "attribution": "\"Valse Gymnopedie\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "64acef868e26a9f4d9559c6ddee5e8e4c0890865a186069b49d30b99e6e81684",
+   "bytes": 3837543
   },
   {
    "id": "incompetech-southern-gothic",
@@ -2491,8 +2491,8 @@
    "attribution": "\"Southern Gothic\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "533074b8fabe8d5b4ab1c1588535eacf29e3f7e4a49fe9056162a8ce85324a16",
+   "bytes": 2946231
   },
   {
    "id": "incompetech-disco-medusae",
@@ -2523,8 +2523,8 @@
    "attribution": "\"Disco Medusae\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "1b54c9d99110f5ad3e8ced322681f0f81d18c919434e55375b40dc75c8bb09f3",
+   "bytes": 7083320
   },
   {
    "id": "incompetech-mesmerizing-galaxy",
@@ -2551,8 +2551,8 @@
    "attribution": "\"Mesmerizing Galaxy\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "25470853676263801b044d22761e579a750db722aefbf1d8d48676f49f626184",
+   "bytes": 2979130
   },
   {
    "id": "incompetech-shaving-mirror",
@@ -2584,8 +2584,8 @@
    "attribution": "\"Shaving Mirror\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "06ea256acc804a69dfd1ffa00713ed2d016a40d945d26e99bdc23bba904bbf21",
+   "bytes": 6600975
   },
   {
    "id": "incompetech-on-hold-for-you",
@@ -2616,8 +2616,8 @@
    "attribution": "\"On Hold for You\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "859958e163a7c433c742d04f73c4e7a6f39b1f3be59afb23c1afbfcba4c02ea6",
+   "bytes": 4365203
   },
   {
    "id": "incompetech-del-rio-bravo",
@@ -2648,8 +2648,8 @@
    "attribution": "\"Del Rio Bravo\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "517cea42e2004b4993e6df24440dc3ed71f57ae3e5da78036f6e8a6a8a37485a",
+   "bytes": 8297535
   },
   {
    "id": "incompetech-manor",
@@ -2677,8 +2677,8 @@
    "attribution": "\"Manor\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "d4ac715e45e6fa5a9dcea2441bd56c8ea56312b5fe9d15a87cae2f0e88ae0e19",
+   "bytes": 4433764
   },
   {
    "id": "incompetech-glitter-blast",
@@ -2710,8 +2710,8 @@
    "attribution": "\"Glitter Blast\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "6d24390bfe0dba5107b04d643c2e36e13dae8048a382d465f0b575397f01b89b",
+   "bytes": 7116717
   },
   {
    "id": "incompetech-thief-in-the-night",
@@ -2741,8 +2741,8 @@
    "attribution": "\"Thief in the Night\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "95953927dd2c50159734ba675de66e7060adaab60288415ea6b31cf971178563",
+   "bytes": 5912195
   },
   {
    "id": "incompetech-burn-the-world-waltz",
@@ -2772,8 +2772,8 @@
    "attribution": "\"Burn The World Waltz\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "35e03b3e014536029d69119ae649441bce84e77fa29c87ce1f44825639e0c2aa",
+   "bytes": 4003696
   },
   {
    "id": "incompetech-sunday-dub",
@@ -2804,8 +2804,8 @@
    "attribution": "\"Sunday Dub\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "641a354657b10af84b5aa5ebb5af01b9479d04a8a1a8ddde8e06b995ff83bca7",
+   "bytes": 6705468
   },
   {
    "id": "incompetech-sergio-s-magic-dustbin",
@@ -2838,8 +2838,8 @@
    "attribution": "\"Sergio's Magic Dustbin\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "c7732bf0e41a419208359132d3f105f2e542157f7e5eeb52d26b722015c6140f",
+   "bytes": 4850751
   },
   {
    "id": "incompetech-fife-and-drum",
@@ -2866,8 +2866,8 @@
    "attribution": "\"Fife and Drum\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "c1b9cb62e99d679ad76713b47e352d7ee7942e61d62d9ca9a9a4285bd15705a1",
+   "bytes": 1888068
   },
   {
    "id": "incompetech-grand-dark-waltz-trio-vivace",
@@ -2897,8 +2897,8 @@
    "attribution": "\"Grand Dark Waltz Trio Vivace\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "b80e14e07ac3cfb5a2b55db06da5893eb2ce70dc04004760480a1c0f6d44a38f",
+   "bytes": 3449364
   },
   {
    "id": "incompetech-too-cool",
@@ -2926,8 +2926,8 @@
    "attribution": "\"Too Cool\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "f1ebb92d48941c8cca461f512cb5322617a1ce632a62ec761dcd01e457702162",
+   "bytes": 5812706
   },
   {
    "id": "incompetech-sauropod-spotting",
@@ -2958,8 +2958,8 @@
    "attribution": "\"Sauropod Spotting\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "d62bc20e3e9f97386ff7611d32f0e91936aaf2a218782cbca25e70caaf31b1b6",
+   "bytes": 4506075
   },
   {
    "id": "incompetech-adding-the-sun",
@@ -2989,8 +2989,8 @@
    "attribution": "\"Adding the Sun\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "00180cd2ffd21eb397449e9a96081502f16e4e7c82cc9a98570e6ea7256594ed",
+   "bytes": 2951782
   },
   {
    "id": "incompetech-hustle",
@@ -3021,8 +3021,8 @@
    "attribution": "\"Hustle\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "8acbe21e78162eb14e75e914554d774585e6e7e9f29cc641047bccbd7b42dfd1",
+   "bytes": 4824325
   },
   {
    "id": "incompetech-canon-in-d-for-8-bit-synths",
@@ -3050,8 +3050,8 @@
    "attribution": "\"Canon In D For 8 Bit Synths\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "5d758963eee4c5075d0d3e38955bba131270bfb0e7c42505bc71e546cf9804ce",
+   "bytes": 7788586
   },
   {
    "id": "incompetech-evening",
@@ -3081,8 +3081,8 @@
    "attribution": "\"Evening\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "45e91c3a804bab0a27f54323a34b3a404cfb172ccace169518384afdb51c311a",
+   "bytes": 3727283
   },
   {
    "id": "incompetech-electro-cabello",
@@ -3114,8 +3114,8 @@
    "attribution": "\"Electro Cabello\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "f304151035c2647de56dbf1995dcc90f3c942c656edfe7516541e7b76e4044ef",
+   "bytes": 7635233
   },
   {
    "id": "incompetech-galactic-rap",
@@ -3144,8 +3144,8 @@
    "attribution": "\"Galactic Rap\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "dbf1de02e2a109c551eb9df55c79c7c6118fb297411a02eb07abca654b571863",
+   "bytes": 4549821
   },
   {
    "id": "incompetech-zigzag",
@@ -3176,8 +3176,8 @@
    "attribution": "\"ZigZag\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "1f5d7add0da7d9f821fd2a86a202c6df978df080ee9635d7bac327d40fec06f8",
+   "bytes": 7204476
   },
   {
    "id": "incompetech-night-in-venice",
@@ -3208,8 +3208,8 @@
    "attribution": "\"Night in Venice\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "c61435f6f86853b5aefcf4479f3a1266f8887da97d8022c8f1137798076129e4",
+   "bytes": 8860758
   },
   {
    "id": "incompetech-arroz-con-pollo",
@@ -3241,8 +3241,8 @@
    "attribution": "\"Arroz Con Pollo\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "d6bccb2e92bc596bfc14eb0de5b76bcc0a573a7fc573cc2c405feb49bb293fb6",
+   "bytes": 5188298
   },
   {
    "id": "incompetech-cottages",
@@ -3270,8 +3270,8 @@
    "attribution": "\"Cottages\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "e856ed25cc7795f8f69c4542cf69c8bf8c3b8eef4790b274f6d279944f428b9b",
+   "bytes": 4433764
   },
   {
    "id": "incompetech-werq",
@@ -3300,8 +3300,8 @@
    "attribution": "\"Werq\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "e03bc2d89a1913ba68d120c806141952bea09d93cf11fcc0cac7c2d378014d13",
+   "bytes": 5195810
   },
   {
    "id": "incompetech-maccary-bay",
@@ -3332,8 +3332,8 @@
    "attribution": "\"Maccary Bay\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "a9370ec56a66baf4af23f8998b673a1e8dcfa7ca5b67f3d74b4ff6ed5e96af99",
+   "bytes": 9604816
   },
   {
    "id": "incompetech-metalmania",
@@ -3363,8 +3363,8 @@
    "attribution": "\"Metalmania\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "fe6298b6f9fed30870d21edd97d9be4f35de271789e648eee14a3e8472b6ee4a",
+   "bytes": 6096909
   },
   {
    "id": "incompetech-blue-ska",
@@ -3397,8 +3397,8 @@
    "attribution": "\"Blue Ska\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "d2635c46d6c2f1acdf23952d708a0b300628ba6dbaf374f7d7285bed2ad28568",
+   "bytes": 4682555
   },
   {
    "id": "incompetech-royal-coupling",
@@ -3430,8 +3430,8 @@
    "attribution": "\"Royal Coupling\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "893735fa4e3b0f275a642f5660d3c42402c9ba7bc4d3b2ff9df5c35a2616bbbb",
+   "bytes": 5497154
   },
   {
    "id": "incompetech-cowboy-sting",
@@ -3463,8 +3463,8 @@
    "attribution": "\"Cowboy Sting\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "a6a744ec6bc0207ff46029fca13d04719b1e66341760aef5e2e821d1b0cf8890",
+   "bytes": 2344861
   },
   {
    "id": "incompetech-grand-dark-waltz-trio-allegro",
@@ -3494,8 +3494,8 @@
    "attribution": "\"Grand Dark Waltz Trio Allegro\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "3a65761a0c53d5cd78581ec3937ce354a2b796719c3894be0595b8b9823cd518",
+   "bytes": 3893981
   },
   {
    "id": "incompetech-lord-of-the-rangs",
@@ -3525,8 +3525,8 @@
    "attribution": "\"Lord of the Rangs\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "4d778e867aaa95e6ffaafeed18230772904dc10d977f1b35d885421c227d41e6",
+   "bytes": 2959904
   },
   {
    "id": "incompetech-energizing",
@@ -3555,8 +3555,8 @@
    "attribution": "\"Energizing\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "6b6f002c9721debbdb4a870fd7a084ec920761a064ca0333ad603e6348a538a4",
+   "bytes": 3040798
   },
   {
    "id": "incompetech-whiskey-on-the-mississippi",
@@ -3587,8 +3587,8 @@
    "attribution": "\"Whiskey on the Mississippi\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "60d5bd3b67ac9519e79f9581c53ef3eb59f5fe586f55f135996c491113ca9b28",
+   "bytes": 7817475
   },
   {
    "id": "incompetech-aquarium",
@@ -3621,8 +3621,8 @@
    "attribution": "\"Aquarium\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "1f52f8d577c4ff6cc56c9acef25793c1d15c614dd2625f48772a9f4f63e8583d",
+   "bytes": 5895241
   },
   {
    "id": "incompetech-starting-out-waltz-vivace",
@@ -3652,8 +3652,8 @@
    "attribution": "\"Starting Out Waltz Vivace\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "2f438a2f8cf7e15c8737a3876a82d1fa4b4bcf0f680bfaeb4a59cd9afc494bc0",
+   "bytes": 3499005
   },
   {
    "id": "incompetech-aurea-carmina",
@@ -3685,8 +3685,8 @@
    "attribution": "\"Aurea Carmina\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "042d981e68f149fb0e5c34a44be64f6775262f1c3c2cdbda69a401903bad49f9",
+   "bytes": 8447095
   },
   {
    "id": "incompetech-equatorial-complex",
@@ -3715,8 +3715,8 @@
    "attribution": "\"Equatorial Complex\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "b31de67f7422c0a48eb9faf16f3d2379dd568f9b37f275c537d320194e327f2c",
+   "bytes": 7686186
   },
   {
    "id": "incompetech-chill-wave",
@@ -3746,8 +3746,8 @@
    "attribution": "\"Chill Wave\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "7f07fbf89860959ff527f7b74606146dd0b0de263739989a70ce712c7c361614",
+   "bytes": 7684325
   },
   {
    "id": "incompetech-study-and-relax",
@@ -3778,8 +3778,8 @@
    "attribution": "\"Study And Relax\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "9cba2a3c2d1c9d364220db1691f618a0f25b8d9cf6f2a857fe389ef614fd18a4",
+   "bytes": 9070686
   },
   {
    "id": "incompetech-wepa",
@@ -3809,8 +3809,8 @@
    "attribution": "\"Wepa\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "70884b9a2f86b7dd844e006f75461dbb7944e4483048c33949d8e224fbe0eb08",
+   "bytes": 6249879
   },
   {
    "id": "incompetech-master-disorder",
@@ -3839,8 +3839,8 @@
    "attribution": "\"Master Disorder\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "ccc871e9f89c434c68b774c0ba3638babce86c04663d3afad1590f623f3f9d0a",
+   "bytes": 7588199
   },
   {
    "id": "incompetech-bummin-on-tremelo",
@@ -3872,8 +3872,8 @@
    "attribution": "\"Bummin on Tremelo\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "bddefba384d462e0e2d9b1d4111ea7fc8cee5a5a34e920f3366d8237a061e9c5",
+   "bytes": 6147912
   },
   {
    "id": "incompetech-gonna-start-v2",
@@ -3905,8 +3905,8 @@
    "attribution": "\"Gonna Start v2\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "ea7fe28a5a9642dbc58a3a67f4ce4980fd13a60e23969f4f04683a3367e429c2",
+   "bytes": 6191150
   },
   {
    "id": "incompetech-surf-shimmy",
@@ -3937,8 +3937,8 @@
    "attribution": "\"Surf Shimmy\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "932424252801c51a6385c1339ebb57571cee76eda6431eaa338dcacb677c4d94",
+   "bytes": 3934390
   },
   {
    "id": "incompetech-upbeat-forever",
@@ -3968,8 +3968,8 @@
    "attribution": "\"Upbeat Forever\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "36e84d5fd61a6b41838996cc5e1bf31f87ffdff755c471221dc5c521ce50f130",
+   "bytes": 6232368
   },
   {
    "id": "incompetech-strength-of-the-titans",
@@ -4002,8 +4002,8 @@
    "attribution": "\"Strength of the Titans\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "7b97a9253a244cb1d279c3294269bde3cc4e5971d389df0af0ec969b03fbd52c",
+   "bytes": 2612191
   },
   {
    "id": "incompetech-fanfare-for-space",
@@ -4032,8 +4032,8 @@
    "attribution": "\"Fanfare for Space\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "a0f05d7bc8ffa08a4c1cc18003a2e69bd1a05e7d1b77a68cf1706c4e316390f6",
+   "bytes": 2459812
   },
   {
    "id": "incompetech-cold-sober",
@@ -4065,8 +4065,8 @@
    "attribution": "\"Cold Sober\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "02bcbc4972353f62d2bfc9f9e6333b281c253d05439b0e3d533546325085e549",
+   "bytes": 6436301
   },
   {
    "id": "incompetech-goblin-tinker-soldier-spy",
@@ -4099,8 +4099,8 @@
    "attribution": "\"Goblin Tinker Soldier Spy\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "5e2d25fda4309de800a8128e5d4c74fdbcd056ce646bbfa02850b6551b511e81",
+   "bytes": 2724203
   },
   {
    "id": "incompetech-digya",
@@ -4129,8 +4129,8 @@
    "attribution": "\"Digya\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "9052db0b89c752a2b25a8e8bfdcb680d31dfad98805c5d7782799a193008fee7",
+   "bytes": 6667602
   },
   {
    "id": "incompetech-nile-s-blues",
@@ -4160,8 +4160,8 @@
    "attribution": "\"Nile's Blues\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "11d494331d366514f6a6296a7826083e735e0be793fd18dff2835d1f98d4fd87",
+   "bytes": 6248640
   },
   {
    "id": "incompetech-minstrel-guild",
@@ -4192,8 +4192,8 @@
    "attribution": "\"Minstrel Guild\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "0e44ecffff5baff646b8ab3ae1a9588dd7d7230454b77c96393dce7eff4a643d",
+   "bytes": 7434578
   },
   {
    "id": "incompetech-neon-laser-horizon",
@@ -4221,8 +4221,8 @@
    "attribution": "\"Neon Laser Horizon\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "1921dce762a8589e1f50fe68f827701a129946884eccd33a36c9ac7e1c2c8005",
+   "bytes": 3573716
   },
   {
    "id": "incompetech-disco-con-tutti",
@@ -4256,8 +4256,8 @@
    "attribution": "\"Disco con Tutti\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "ac268ea49ca8a77500b2084313594df2e94e6b556ca14065be2c591ca9539fa5",
+   "bytes": 9456279
   },
   {
    "id": "incompetech-cloud-dancer",
@@ -4285,8 +4285,8 @@
    "attribution": "\"Cloud Dancer\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "d329666f15f516b8742532d9dc45309e2019cc1505d4636fdadb7bf6000a8d5c",
+   "bytes": 7040022
   },
   {
    "id": "incompetech-funky-chunk",
@@ -4319,8 +4319,8 @@
    "attribution": "\"Funky Chunk\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "e6203c8c8fddbae0d9790da391a6ea73ef765fc3eec08bd87441e63037dc3c9c",
+   "bytes": 7650907
   },
   {
    "id": "incompetech-past-sadness",
@@ -4350,8 +4350,8 @@
    "attribution": "\"Past Sadness\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "ffcb757445fd50b96a8f0dfe34a49cdd03ed6702eb2a83a930e6a6040aa3c2fd",
+   "bytes": 8539868
   },
   {
    "id": "incompetech-bossabossa",
@@ -4382,8 +4382,8 @@
    "attribution": "\"BossaBossa\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "a89ec158f9113531e7cbd98955cdd1a557e88e19713a3ef8a5084e2f9f039a12",
+   "bytes": 5355450
   },
   {
    "id": "incompetech-colorless-aura",
@@ -4410,8 +4410,8 @@
    "attribution": "\"Colorless Aura\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "c77e124a944f0974358d2676f0dab5c866fc64ec4e4f22f52d59fb91991b2711",
+   "bytes": 6324897
   },
   {
    "id": "incompetech-basic-implosion",
@@ -4441,8 +4441,8 @@
    "attribution": "\"Basic Implosion\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "72f3a5b2086e0452f5f6f3b10c97e4b267f222ed4b9fc777de340efbcfc8f523",
+   "bytes": 6067663
   },
   {
    "id": "incompetech-gonna-start",
@@ -4475,8 +4475,8 @@
    "attribution": "\"Gonna Start\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "e20b8b78865b8185d2f64d31a94480a30b49d4b46bb206cec9c149fe0e206b1d",
+   "bytes": 7632061
   },
   {
    "id": "incompetech-funin-and-sunin",
@@ -4507,8 +4507,8 @@
    "attribution": "\"Funin and Sunin\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "72d8cdf58029908acddc8d437fe0b5bc81566f2f05e723cc254a87da615febd9",
+   "bytes": 7008907
   },
   {
    "id": "incompetech-circus-of-freaks",
@@ -4541,8 +4541,8 @@
    "attribution": "\"Circus of Freaks\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "24a6cc5a46aa11aaf67ce580f888256878fccfd67654754b15ef06bb1bc7522b",
+   "bytes": 2395897
   },
   {
    "id": "incompetech-der-kleber-sting",
@@ -4572,8 +4572,8 @@
    "attribution": "\"Der Kleber Sting\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "b473ebe7f250c596ffa3668c0dcbc784aad1c99ca3a88b2f0f45c0199d1d704f",
+   "bytes": 411788
   },
   {
    "id": "incompetech-village-consort",
@@ -4604,8 +4604,8 @@
    "attribution": "\"Village Consort\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "53861c78cb4c788f83b563d47fb4fa73bf4c66a8786d61215750738d856a8fd2",
+   "bytes": 6876000
   },
   {
    "id": "incompetech-paradise-found",
@@ -4635,8 +4635,8 @@
    "attribution": "\"Paradise Found\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "7ea20dd113983ecaab67f774da1f0699114b3a6f93a386c202b977a2cb9e00a2",
+   "bytes": 3751848
   },
   {
    "id": "incompetech-slow-heat",
@@ -4665,8 +4665,8 @@
    "attribution": "\"Slow Heat\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "7ded8a342a5bb3f716d007ee7ee4cb67da31bca0a591ce14bf95371ef282fbd1",
+   "bytes": 8901415
   },
   {
    "id": "incompetech-slow-burn",
@@ -4697,8 +4697,8 @@
    "attribution": "\"Slow Burn\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "0ac6773cd11996b4e613b2c2f9c99bbb77710669df4bc9b458a62cad23059124",
+   "bytes": 9261117
   },
   {
    "id": "incompetech-hall-of-the-mountain-king",
@@ -4727,8 +4727,8 @@
    "attribution": "\"Hall of the Mountain King\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "2e73e3525158b1ec0ff2b1abe30bbe01d8871823880f2c2327fbe04b349f5e43",
+   "bytes": 6123136
   },
   {
    "id": "incompetech-ether-vox",
@@ -4760,8 +4760,8 @@
    "attribution": "\"Ether Vox\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "961a7705e25e1b5752bc1a2aed9142951f6ba23066f677e89953eaf3f0f2c487",
+   "bytes": 4123322
   },
   {
    "id": "incompetech-overcast",
@@ -4794,8 +4794,8 @@
    "attribution": "\"Overcast\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "5f028a209331ba5f760d7d3ca5b6868a3a6d1f02ca8fdd7d236facd56efdfe1a",
+   "bytes": 9125196
   },
   {
    "id": "incompetech-brain-dance",
@@ -4823,8 +4823,8 @@
    "attribution": "\"Brain Dance\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "59daa6423c9d61238dd9c31f7139606267238b6e448dc42e12e0d6d77d663b8e",
+   "bytes": 6881197
   },
   {
    "id": "incompetech-your-call",
@@ -4854,8 +4854,8 @@
    "attribution": "\"Your Call\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "0dd7f6592a0e66a234f9a2c0afc0ff5583e200bcb9aa2950e7b5bc4066a04041",
+   "bytes": 7171918
   },
   {
    "id": "incompetech-hard-boiled",
@@ -4885,8 +4885,8 @@
    "attribution": "\"Hard Boiled\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "447df744a4cf9c3b18974c7d96750523a843db3970eb6fa69147d21c64366d79",
+   "bytes": 5795162
   },
   {
    "id": "incompetech-cuban-sandwich",
@@ -4915,8 +4915,8 @@
    "attribution": "\"Cuban Sandwich\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "c519f9740f3ee653a5105378c8834578cf2b3eb5e8c6b092dcf6f6ee0c2d5dc3",
+   "bytes": 6244055
   },
   {
    "id": "incompetech-junkyard-tribe",
@@ -4945,8 +4945,8 @@
    "attribution": "\"Junkyard Tribe\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "414544fac1fe4efe5036d857bdaf844f3345d6caa8472b6c038eb27517115d54",
+   "bytes": 7494126
   },
   {
    "id": "incompetech-pyro-flow",
@@ -4976,8 +4976,8 @@
    "attribution": "\"Pyro Flow\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "83aedd1335da6bf58797f39d041806e6f0728f7c625fd0c388d3e686fbb9fb0d",
+   "bytes": 7651935
   },
   {
    "id": "incompetech-dub-eastern",
@@ -5011,8 +5011,8 @@
    "attribution": "\"Dub Eastern\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "a97f91b78cc7e27c79773e4ab889b364104babc4685a6ec5426e428f13983b26",
+   "bytes": 9329988
   },
   {
    "id": "incompetech-motherlode",
@@ -5042,8 +5042,8 @@
    "attribution": "\"Motherlode\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "d70ebf2a86d4ce137c1b6f0bd14866270da04f7b21e4c61f50fa58d5d153fead",
+   "bytes": 7599080
   },
   {
    "id": "incompetech-new-hero-in-town",
@@ -5072,8 +5072,8 @@
    "attribution": "\"New Hero in Town\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "a9741a04989484ce01c0614dda5215dfd572540eca0089d00e4b2002dba8fb52",
+   "bytes": 2399032
   },
   {
    "id": "incompetech-danse-macabre-big-hit-1",
@@ -5099,8 +5099,8 @@
    "attribution": "\"Danse Macabre - Big Hit 1\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "62cf25894c0acebaeff49d3fdd7bf83802137dfb2499a9fa4d057e3b471974e5",
+   "bytes": 291537
   },
   {
    "id": "incompetech-gregorian-chant",
@@ -5128,8 +5128,8 @@
    "attribution": "\"Gregorian Chant\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "e88cf0fc0121544767afd1b6eedb90944e4f36892f4fa6c0d10553004945abfd",
+   "bytes": 6212238
   },
   {
    "id": "incompetech-journey-to-ascend",
@@ -5158,8 +5158,8 @@
    "attribution": "\"Journey To Ascend\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "a889390acd76f310beec7ed952886012baca24478c15de63cbe2027d50217799",
+   "bytes": 4389750
   },
   {
    "id": "incompetech-dubakupado",
@@ -5186,8 +5186,8 @@
    "attribution": "\"Dubakupado\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "0b2e94c0f71421ef19954a8c4022113a28b28e26066e597ac8523bb956832451",
+   "bytes": 8519181
   },
   {
    "id": "incompetech-dirt-rhodes",
@@ -5216,8 +5216,8 @@
    "attribution": "\"Dirt Rhodes\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "e1275490a4d0ee25f635fec21b2c4a641966f08c87c070cc646dc51962d5b947",
+   "bytes": 4926896
   },
   {
    "id": "incompetech-egmont-overture-finale",
@@ -5246,8 +5246,8 @@
    "attribution": "\"Egmont Overture Finale\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "4b2683709c4b100b706d8cad6d1c51cab4598440a053a5433025e05f2fea1ca3",
+   "bytes": 4155199
   },
   {
    "id": "incompetech-angel-share",
@@ -5278,8 +5278,8 @@
    "attribution": "\"Angel Share\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "280cb6b9c2a802291dae277e506e98ec10aef206a2bca588a14a0d2886f803bc",
+   "bytes": 6419574
   },
   {
    "id": "incompetech-ether-disco",
@@ -5310,8 +5310,8 @@
    "attribution": "\"Ether Disco\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "02f84e8cdd371fc9398ee36132c7e7154742691588a605dcac5dbfe7ff3e2e6d",
+   "bytes": 5747593
   },
   {
    "id": "incompetech-bleeping-demo",
@@ -5340,8 +5340,8 @@
    "attribution": "\"Bleeping Demo\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "3447e31d900696e592d38a42384a41ec7458c77476c091958911d4e0d1263805",
+   "bytes": 4277450
   },
   {
    "id": "incompetech-retrofuture-dirty",
@@ -5374,8 +5374,8 @@
    "attribution": "\"RetroFuture Dirty\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "f4878882c0df4e160ab15385f850acb7399ede8bc0551a219736d0589f8b08be",
+   "bytes": 8235136
   },
   {
    "id": "incompetech-deuces",
@@ -5406,8 +5406,8 @@
    "attribution": "\"Deuces\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "a475a7612bc9fd9ee5af13b61bf74c10fdaae31c7d4aef8cc6e052073b3f486d",
+   "bytes": 6107790
   },
   {
    "id": "incompetech-carnivale-intrigue",
@@ -5436,8 +5436,8 @@
    "attribution": "\"Carnivale Intrigue\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "4ed1611677fc0ee66b4f16256ea01e926c430ac173442d9b78822de5a3558693",
+   "bytes": 6391187
   },
   {
    "id": "incompetech-vanes",
@@ -5466,8 +5466,8 @@
    "attribution": "\"Vanes\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "86b86e1531cb39163ac5bd6d39030a462355f43bf795e1313eeeffd0030b72cc",
+   "bytes": 4242202
   },
   {
    "id": "incompetech-life-of-riley",
@@ -5498,8 +5498,8 @@
    "attribution": "\"Life of Riley\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "1916f05cd1860949f9241e17966d334c39852b531329e4a05802720bb154c564",
+   "bytes": 7533831
   },
   {
    "id": "incompetech-dub-feral",
@@ -5532,8 +5532,8 @@
    "attribution": "\"Dub Feral\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "0b079ded2a2a9392729a8302cab6bc0d797e63690de60aa9ca6c5a8ae413e34c",
+   "bytes": 9329986
   },
   {
    "id": "incompetech-ready-aim-fire",
@@ -5564,8 +5564,8 @@
    "attribution": "\"Ready Aim Fire\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "9c733e8227961f989b743d7566a8e6c777ebd8555265d803df740775ab31b9d3",
+   "bytes": 6944566
   },
   {
    "id": "incompetech-ancient-rite",
@@ -5595,8 +5595,8 @@
    "attribution": "\"Ancient Rite\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "3a0f9d6fc09c4d0605bfd07577600245fdd6c91394dc4037b5112c94a6d93756",
+   "bytes": 4663306
   },
   {
    "id": "incompetech-danse-macabre-big-hit-2",
@@ -5622,8 +5622,8 @@
    "attribution": "\"Danse Macabre - Big Hit 2\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "189cd5202906ccc30bb04336650d62ffbc7dade3b3fe065b19003847c7b0f437",
+   "bytes": 266459
   },
   {
    "id": "incompetech-nonstop",
@@ -5653,8 +5653,8 @@
    "attribution": "\"Nonstop\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "2f2cef2f811dc267f958e483fa17211a3f7efcd93535adfd865ce3224f9b9b7c",
+   "bytes": 6124486
   },
   {
    "id": "incompetech-guzheng-city",
@@ -5683,8 +5683,8 @@
    "attribution": "\"Guzheng City\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "7d117a43cad22ff05b32340f2bd331368c48342f503eab85b1e5c403043d4be6",
+   "bytes": 3654552
   },
   {
    "id": "incompetech-tafi-maradi-no-voice",
@@ -5712,8 +5712,8 @@
    "attribution": "\"Tafi Maradi no voice\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "6897d841680eedb0101884ef8da2eb46432ca93cf7e34c8e36fd77bd860d8ba7",
+   "bytes": 6356444
   },
   {
    "id": "incompetech-dd-groove",
@@ -5744,8 +5744,8 @@
    "attribution": "\"DD Groove\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "da840d332388b68997aec9d92c81a4ffb69b0de3f4e6194a8dc65bcff1fc1c2b",
+   "bytes": 8962286
   },
   {
    "id": "incompetech-amazing-grace-2011",
@@ -5775,8 +5775,8 @@
    "attribution": "\"Amazing Grace 2011\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "97715f1947c375b1f979404b6ad464d445bace2e8dc6f3817e2651690dcbfd74",
+   "bytes": 7572292
   },
   {
    "id": "incompetech-dreamer",
@@ -5804,8 +5804,8 @@
    "attribution": "\"Dreamer\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "615e65c9ca131c11f8e12970644ed74ef822ec4f643b1d9d0085a223600bcdfb",
+   "bytes": 6532428
   },
   {
    "id": "incompetech-stringed-disco",
@@ -5836,8 +5836,8 @@
    "attribution": "\"Stringed Disco\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "d8e5946c7510e8cb3304b98d1e704e9ce91046e2e22ac5c7bb023364b42efca6",
+   "bytes": 5712311
   },
   {
    "id": "incompetech-blippy-trance",
@@ -5865,8 +5865,8 @@
    "attribution": "\"Blippy Trance\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "68ab5625f1b723d7fcfeaa47b44379fddc7bb5ffcc9d71017fabd07b5c2ca93a",
+   "bytes": 4937089
   },
   {
    "id": "incompetech-organic-grunge",
@@ -5897,8 +5897,8 @@
    "attribution": "\"Organic Grunge\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "5ba741725ee347b7d4bbbb5a06b907cbaaf7a845da49295f61cecb0c58b0fb97",
+   "bytes": 8364517
   },
   {
    "id": "incompetech-nouvelle-noel",
@@ -5931,8 +5931,8 @@
    "attribution": "\"Nouvelle Noel\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "f65bcaaffa386f4b719bc3cfc8c89e5ac19804f2fdeb94940559790c4645bff7",
+   "bytes": 6119500
   },
   {
    "id": "incompetech-beachfront-celebration",
@@ -5965,8 +5965,8 @@
    "attribution": "\"Beachfront Celebration\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "73ffcea8277780253b4e42dcbc3c5b3c50ba8ad343023372726a8678f43cc68e",
+   "bytes": 7494135
   },
   {
    "id": "incompetech-decisions",
@@ -5995,8 +5995,8 @@
    "attribution": "\"Decisions\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "2f6632cd35fc689ef2af72c7ddeec1cb86de289638e551368d92202e00a2e0c4",
+   "bytes": 3544412
   },
   {
    "id": "incompetech-guts-and-bourbon",
@@ -6026,8 +6026,8 @@
    "attribution": "\"Guts and Bourbon\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "8cd93a36fb6e1f52ce96eca845597c8b5e86bd2dbfb8759669ba64fdebb4cbfc",
+   "bytes": 6683696
   },
   {
    "id": "incompetech-slow-ska-game-loop",
@@ -6057,8 +6057,8 @@
    "attribution": "\"Slow Ska Game Loop\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "1b5e7eecf167e9f8e560dbb7461d0769d5ba6c0af39c71495401da640a4508b2",
+   "bytes": 1431644
   },
   {
    "id": "incompetech-twisted",
@@ -6088,8 +6088,8 @@
    "attribution": "\"Twisted\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "56a2305a7b0356a9e0054fc4d8636a6d86f366578618f7271880136defe7ccda",
+   "bytes": 5992433
   },
   {
    "id": "incompetech-screen-saver",
@@ -6117,8 +6117,8 @@
    "attribution": "\"Screen Saver\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "b37bded5c858af6220ed513fdd0d6bba476d71c3a2aacc9746433f51354d33f7",
+   "bytes": 7417751
   },
   {
    "id": "incompetech-greta-sting",
@@ -6147,8 +6147,8 @@
    "attribution": "\"Greta Sting\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "52347073f2b6173594ee14a4e65a79fa2618b20ed76dd7ab3bd26d0661ea0e64",
+   "bytes": 793112
   },
   {
    "id": "incompetech-chillin-hard",
@@ -6177,8 +6177,8 @@
    "attribution": "\"Chillin Hard\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "6fcec58a823693a57338884c71695384177e252696f3d0d8cf6ddb0631b0698a",
+   "bytes": 7642699
   },
   {
    "id": "incompetech-big-drumming",
@@ -6206,8 +6206,8 @@
    "attribution": "\"Big Drumming\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "7da90685cbc8acef371db7b39bbd15e6e76d161e830677f3856f44bcaa4d1888",
+   "bytes": 7117762
   },
   {
    "id": "incompetech-tafi-maradi",
@@ -6236,8 +6236,8 @@
    "attribution": "\"Tafi Maradi\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "4fa4c189f2736abee4259e988fa1773bb955da2cbb2e3f885f947c129c65467d",
+   "bytes": 6358121
   },
   {
    "id": "incompetech-matt-s-blues",
@@ -6268,8 +6268,8 @@
    "attribution": "\"Matt's Blues\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "bc61f2a9ffbd9dae1f6447078532b05c76fd273df464791be411650a9d60424d",
+   "bytes": 6803460
   },
   {
    "id": "incompetech-funeral-march-for-brass",
@@ -6299,8 +6299,8 @@
    "attribution": "\"Funeral March for Brass\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "390809dfab8987158da616f278ab044f2bed8dd5c87aca746980894360b51c2d",
+   "bytes": 5237990
   },
   {
    "id": "incompetech-super-power-cool-dude",
@@ -6329,8 +6329,8 @@
    "attribution": "\"Super Power Cool Dude\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "20f5111a77fe1e482ae1c5bbeaa64f65c467d3d5b5453e8386afd8afd23a9989",
+   "bytes": 7544689
   },
   {
    "id": "incompetech-laserpack",
@@ -6359,8 +6359,8 @@
    "attribution": "\"Laserpack\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "9da19607351c507328840537491030d2f31e8ee8f87b8921986a5ed11e1e8359",
+   "bytes": 8283031
   },
   {
    "id": "incompetech-funk-game-loop",
@@ -6391,8 +6391,8 @@
    "attribution": "\"Funk Game Loop\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "77ee6c6263db62f5a14ecfdf9e8f758c61683a9d139e611a64790800bd9ea24f",
+   "bytes": 2263379
   },
   {
    "id": "incompetech-zazie",
@@ -6424,8 +6424,8 @@
    "attribution": "\"Zazie\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "82782a7152573f3f644a42a5f83d270c19543eeb5d322bfdea9966883ce132c3",
+   "bytes": 6830855
   },
   {
    "id": "incompetech-chee-zee-beach",
@@ -6456,8 +6456,8 @@
    "attribution": "\"Chee Zee Beach\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "72aad597980de619d19eaeaf23a45cb60d40da8d92de3ee8662d5183e5e06c6e",
+   "bytes": 8136651
   },
   {
    "id": "incompetech-rising",
@@ -6487,8 +6487,8 @@
    "attribution": "\"Rising\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "7f2ca07cd183685f36e6cfa351c715e3029ef828fc662b58b5866f990709ac0f",
+   "bytes": 6061587
   },
   {
    "id": "incompetech-blown-away-no-percussion",
@@ -6517,8 +6517,8 @@
    "attribution": "\"Blown Away - No Percussion\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "e6435f606636840f580bb5a21b75d6a813b57ec12bcc504f9c96287415ff6e68",
+   "bytes": 9039670
   },
   {
    "id": "incompetech-mandeville",
@@ -6548,8 +6548,8 @@
    "attribution": "\"Mandeville\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "12ab9c5d515da7b7d6c8f437281b369cdee4da9a53d7fbda9847a5936c4dc515",
+   "bytes": 8683218
   },
   {
    "id": "incompetech-broken-reality",
@@ -6578,8 +6578,8 @@
    "attribution": "\"Broken Reality\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "fa6a28c6759da93e04235a2b9caa260bfc51ae9ea03af71392d0323fa0dfb06d",
+   "bytes": 8732343
   },
   {
    "id": "incompetech-mana-two-part-3",
@@ -6607,8 +6607,8 @@
    "attribution": "\"Mana Two - Part 3\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "1b1024c984cb547aa27670f11e2bd82bb2e27f21991cfd9400fa0943e6fc531d",
+   "bytes": 7816827
   },
   {
    "id": "incompetech-gustav-sting",
@@ -6641,8 +6641,8 @@
    "attribution": "\"Gustav Sting\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "7ab3f6a0537b3311a2b00de971d282af49c75f33e832e0e775d2e56b69f7ef69",
+   "bytes": 793114
   },
   {
    "id": "incompetech-lewis-and-dekalb",
@@ -6671,8 +6671,8 @@
    "attribution": "\"Lewis and Dekalb\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "f8f1b74b327103a272b7d80a750a891749f0dcd09f516ba395b1fb535cade70f",
+   "bytes": 6448176
   },
   {
    "id": "incompetech-tiki-bar-mixer",
@@ -6703,8 +6703,8 @@
    "attribution": "\"Tiki Bar Mixer\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "9d5fc06a1cc784c9cf35c5dc5059e5d54b2a192bfecf897c5f41ade14bdc2512",
+   "bytes": 6800113
   },
   {
    "id": "incompetech-infados",
@@ -6736,8 +6736,8 @@
    "attribution": "\"Infados\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "4b1f84cd70c2fe098a234de2dee5962ae3cd5efdf7820da1490de5f6261944cd",
+   "bytes": 9060691
   },
   {
    "id": "incompetech-porch-blues",
@@ -6762,8 +6762,8 @@
    "attribution": "\"Porch Blues\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "d3a98328fde8cd37fb6b8b721b3c4cf45233b861820a1f6035f471855da0d1b6",
+   "bytes": 4064170
   },
   {
    "id": "incompetech-gymnopedie-no-1",
@@ -6791,8 +6791,8 @@
    "attribution": "\"Gymnopedie No. 1\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "8cba6bb3da51066ad39520ec218a327bb6222d8fb32bc52f28a1e90b67756f70",
+   "bytes": 7487656
   },
   {
    "id": "incompetech-suave-standpipe",
@@ -6824,8 +6824,8 @@
    "attribution": "\"Suave Standpipe\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "14713f9649ecf4883763d482be64dc730cfb3af06c580ef631c54aca3fac62b3",
+   "bytes": 7018965
   },
   {
    "id": "incompetech-getting-it-done",
@@ -6854,8 +6854,8 @@
    "attribution": "\"Getting it Done\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "bc74076ec1c263f6ac4634403d0acc1ccc5d2e79f2d083243e00d236b547c15b",
+   "bytes": 6717193
   },
   {
    "id": "incompetech-private-eye",
@@ -6884,8 +6884,8 @@
    "attribution": "\"Private Eye\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "0b21e8ac707e025bb1493b54001987d2c9e47c1aba5c9e64beb39d935dcd9f8a",
+   "bytes": 3038595
   },
   {
    "id": "incompetech-poppers-and-prosecco",
@@ -6916,8 +6916,8 @@
    "attribution": "\"Poppers and Prosecco\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "7d02fbcb815a8696fe3e55a4bf74aa6a82fdb3a1ef4ad85d64cbb1f1893dc6d1",
+   "bytes": 6203080
   },
   {
    "id": "incompetech-tango-de-manzana",
@@ -6951,8 +6951,8 @@
    "attribution": "\"Tango de Manzana\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "2a26c442ae7e09e2023618c514795518887109591960b5072024bc483c7e9634",
+   "bytes": 7430814
   },
   {
    "id": "incompetech-finding-the-balance",
@@ -6983,8 +6983,8 @@
    "attribution": "\"Finding the Balance\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "e52b99813e40b611563d4e01ee8c6107b8ed58d4d4b70c992d5250d7d568fb71",
+   "bytes": 8324362
   },
   {
    "id": "incompetech-blown-away",
@@ -7014,8 +7014,8 @@
    "attribution": "\"Blown Away\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "cfcc26a555a993fb671dd3b469f7045511d29f581c61f127be692fc935dda04b",
+   "bytes": 9039654
   },
   {
    "id": "incompetech-montego",
@@ -7046,8 +7046,8 @@
    "attribution": "\"Montego\" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/",
    "source_url": "https://incompetech.com/music/royalty-free/",
    "evidence_url": "https://incompetech.com/music/royalty-free/faq.html",
-   "sha256": null,
-   "bytes": null
+   "sha256": "f06b07737afedd408f348cae2d5a489dbfca00568ade3b548440395fa7057dfb",
+   "bytes": 8242268
   },
   {
    "id": "ia-komiku-the-calling",
@@ -7125,7 +7125,7 @@
    "transcode": "opus128",
    "source_url": "https://archive.org/details/komiku-the-adventure-goes-on-vol.-1",
    "evidence_url": "https://archive.org/details/komiku-the-adventure-goes-on-vol.-1",
-   "sha256": null
+   "sha256": "81d6b77721355839d7b8e18bd03fb72443c7630eead154ea0a2ab33bc13b21fa"
   },
   {
    "id": "ia-komiku-tonight-we-feast",
@@ -7177,7 +7177,7 @@
    "transcode": "opus128",
    "source_url": "https://archive.org/details/komiku-the-adventure-goes-on-vol.-1",
    "evidence_url": "https://archive.org/details/komiku-the-adventure-goes-on-vol.-1",
-   "sha256": null
+   "sha256": "32120edab55c4ad53e82f4b545b4ce70a342198534ecebdc0cf93897b3a8935b"
   },
   {
    "id": "ia-komiku-fear-of-being-mistaken",
@@ -7203,7 +7203,7 @@
    "transcode": "opus128",
    "source_url": "https://archive.org/details/komiku-the-adventure-goes-on-vol.-1",
    "evidence_url": "https://archive.org/details/komiku-the-adventure-goes-on-vol.-1",
-   "sha256": null
+   "sha256": "f2fbbb1692d58ba35915178853fde42b70a88a717fe8071190c1d8b5f6b102ec"
   },
   {
    "id": "ia-komiku-we-are-not-welcome-in-this-territory",
@@ -7229,7 +7229,7 @@
    "transcode": "opus128",
    "source_url": "https://archive.org/details/komiku-the-adventure-goes-on-vol.-1",
    "evidence_url": "https://archive.org/details/komiku-the-adventure-goes-on-vol.-1",
-   "sha256": null
+   "sha256": "7de2f7f5b2d5cb22b5e3a6794d8709ad455508809e49b2a8d683d0e169f352f1"
   },
   {
    "id": "ia-komiku-is-it-sand-or-is-it-snow-i-m-lost-into",
@@ -7255,7 +7255,7 @@
    "transcode": "opus128",
    "source_url": "https://archive.org/details/komiku-the-adventure-goes-on-vol.-1",
    "evidence_url": "https://archive.org/details/komiku-the-adventure-goes-on-vol.-1",
-   "sha256": null
+   "sha256": "a11a25175f28122a5b19972072fe4e5df172cc3bdc3765164bd011a561a69b4e"
   },
   {
    "id": "ia-komiku-fight-for-your-life",
@@ -7281,7 +7281,7 @@
    "transcode": "opus128",
    "source_url": "https://archive.org/details/komiku-the-adventure-goes-on-vol.-1",
    "evidence_url": "https://archive.org/details/komiku-the-adventure-goes-on-vol.-1",
-   "sha256": null
+   "sha256": "f177a691511f8964e050f28f8b690ac395ee72c0d9e254247f3b44f4d3e2636f"
   },
   {
    "id": "ia-komiku-those-dark-memories-i-m-trying-to-escape-myself-from",
@@ -7307,7 +7307,7 @@
    "transcode": "opus128",
    "source_url": "https://archive.org/details/komiku-the-adventure-goes-on-vol.-1",
    "evidence_url": "https://archive.org/details/komiku-the-adventure-goes-on-vol.-1",
-   "sha256": null
+   "sha256": "387ecf41903adb353065b969898fe518ff6fcf4f75729ef1da613f233b4cd4c7"
   },
   {
    "id": "ia-komiku-don-t-flinch",
@@ -7333,7 +7333,7 @@
    "transcode": "opus128",
    "source_url": "https://archive.org/details/komiku-the-adventure-goes-on-vol.-1",
    "evidence_url": "https://archive.org/details/komiku-the-adventure-goes-on-vol.-1",
-   "sha256": null
+   "sha256": "bcf1d29e13b1d0af4e4060e6c02b313e4a58b9085345362145dccd982e26421b"
   },
   {
    "id": "ia-komiku-rouge",
@@ -7359,7 +7359,7 @@
    "transcode": "opus128",
    "source_url": "https://archive.org/details/komiku-the-adventure-goes-on-vol.-1",
    "evidence_url": "https://archive.org/details/komiku-the-adventure-goes-on-vol.-1",
-   "sha256": null
+   "sha256": "fbd2d185b5ad703c0cb57c20f23a76703bb1ea406ef6e5e8e4696742e0490c00"
   },
   {
    "id": "ia-komiku-friendship-is-a-beautiful-link",
@@ -7385,7 +7385,7 @@
    "transcode": "opus128",
    "source_url": "https://archive.org/details/komiku-the-adventure-goes-on-vol.-1",
    "evidence_url": "https://archive.org/details/komiku-the-adventure-goes-on-vol.-1",
-   "sha256": null
+   "sha256": "3a8cea2304c35007a0567730db7fe4ae5009fea40ef6c3c4742379fc5a7e3083"
   },
   {
    "id": "ia-loyalty-freak-music-everyone-is-so-alive",
@@ -7411,7 +7411,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/LoyaltyFreakMusicROBOTDANCE2017113032423755",
    "evidence_url": "https://archive.org/details/LoyaltyFreakMusicROBOTDANCE2017113032423755",
-   "sha256": null
+   "sha256": "ff80319e6414935c8fe3a67cfacd7580ddb3d7bbd0b38b47773f22454bf95269"
   },
   {
    "id": "ia-loyalty-freak-music-high-technologic-beat-explosion",
@@ -7489,7 +7489,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/LoyaltyFreakMusicROBOTDANCE2017113032423755",
    "evidence_url": "https://archive.org/details/LoyaltyFreakMusicROBOTDANCE2017113032423755",
-   "sha256": null
+   "sha256": "0538a0475dae70cdf7026afdc25e1fc401a9c20eacec70701af11e39d894db77"
   },
   {
    "id": "ia-musopen-chopin-canon-in-f-minor",
@@ -7516,7 +7516,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "85c827b4fd44131fea95439379a7f984eb8a0306a2b9a0ad43f2f122012f201d"
   },
   {
    "id": "ia-musopen-chopin-fugue-in-a-minor-b-144",
@@ -7543,7 +7543,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "4522dc5eba565201161e194608bf302f074d3acd5e9610351faf62cea5f28ea3"
   },
   {
    "id": "ia-musopen-chopin-mazurka-op-17-no-3-in-a-flat-major",
@@ -7570,7 +7570,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "0af6e6c924c6a61a9304407b619d241d7f2bec69969791aae815cdbcbc9fb37d"
   },
   {
    "id": "ia-musopen-chopin-mazurka-op-24-no-2-in-c-major",
@@ -7624,7 +7624,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "f7232a8259d776e0b84b5b89fe22a45619ba6dbc97669d18996e2617ab955912"
   },
   {
    "id": "ia-musopen-chopin-mazurka-op-50-no-1-in-g-major",
@@ -7651,7 +7651,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "36e72f2c861ba1b64f8b7df39202de59805dc193f49d7ca3275036867f06c6f3"
   },
   {
    "id": "ia-musopen-chopin-mazurka-op-50-no-2-in-a-flat-major",
@@ -7678,7 +7678,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "6a23b4484b6de0193a6c06dd81c800070d39ea53ac1c6dc93aa1cc2b5b35e12b"
   },
   {
    "id": "ia-musopen-chopin-mazurka-op-56-no-2-in-c-major",
@@ -7705,7 +7705,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "7a670b961add2a1eab3776508d8aca1c0c3422eb77c3b5b5bcaf2b0b828847b6"
   },
   {
    "id": "ia-musopen-chopin-mazurka-op-59-no-2-in-a-flat-major",
@@ -7732,7 +7732,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "53064e534b1ebdfb3e5d18b0abd1836af90c7c68c02f8fe257c2df9e81ac3166"
   },
   {
    "id": "ia-musopen-chopin-mazurka-op-59-no-3-in-f-sharp-minor",
@@ -7759,7 +7759,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "8f9a063385739aabc8e4093f8efeef4c83d5c48d3fb76ca4ad2a732e8724dcc5"
   },
   {
    "id": "ia-musopen-chopin-mazurka-op-7-no-3-in-f-minor",
@@ -7786,7 +7786,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "3d8cc3a3d6388d891e22a69b5d46a48421762b19310cebef84b236cdd2ec065c"
   },
   {
    "id": "ia-musopen-chopin-mazurka-op-7-no-4-in-a-flat-major",
@@ -7813,7 +7813,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "d88df5500c581a458f7943c06fe7f9ca743363a368fafbff501ca5eb3d9be261"
   },
   {
    "id": "ia-musopen-chopin-nocturne-b-108-in-c-minor",
@@ -7840,7 +7840,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "791cc019261bc25284546933f19f0b3f358abc5d40e1ab2cdad9af085f9e2d63"
   },
   {
    "id": "ia-musopen-chopin-nocturne-b-49-in-c-sharp-minor-lento-con-gran-espressione-1",
@@ -7867,7 +7867,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "a4d2b9d02d6ba6cf0bc297f121bedc897727d74cdd731ad67f8dce75471c70d3"
   },
   {
    "id": "ia-musopen-chopin-nocturne-b-49-in-c-sharp-minor-lento-con-gran-espressione-2",
@@ -7894,7 +7894,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "418bad960a78166724b4e4fbad3ab07d9c69331b22faf61b8cc02b734c2c1d77"
   },
   {
    "id": "ia-musopen-chopin-polonaiseb-1ingminor",
@@ -7921,7 +7921,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "6c1a7ef756f240a2cdd51e4fb9481dff501bd8457392364ed7f34f3504320801"
   },
   {
    "id": "ia-musopen-chopin-prelude-op-28-no-1",
@@ -7948,7 +7948,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "98792b09bf837a9b8e6f9d56bc3ab7d045a803187b40c958a96a9167102d3c81"
   },
   {
    "id": "ia-musopen-chopin-prelude-op-28-no-10",
@@ -7975,7 +7975,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "901faf19cfedffaea6a6c7c78bd7dd8d5fa9405ae6f0f05f393bf0c48cb81748"
   },
   {
    "id": "ia-musopen-chopin-prelude-op-28-no-11",
@@ -8002,7 +8002,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "c071260c7a2033671ea634afd52121b37ded83ca0394e26f9f7debdfca97484a"
   },
   {
    "id": "ia-musopen-chopin-prelude-op-28-no-12",
@@ -8056,7 +8056,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "0462723ea7dfd83b0f0c6fe4cbe69fbc92688d7c80d7aabe63dde3645e1737c4"
   },
   {
    "id": "ia-musopen-chopin-prelude-op-28-no-14",
@@ -8083,7 +8083,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "cce1f34eb05fd24cdf7c964c83071b453e0e1f19e4c93a8053aaf68a0dcb7e06"
   },
   {
    "id": "ia-musopen-chopin-prelude-op-28-no-16",
@@ -8110,7 +8110,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "ddf4c1cf02540f63397302196fd9a0739ec9e4a113ca6a339f2a198763190601"
   },
   {
    "id": "ia-musopen-chopin-prelude-op-28-no-17",
@@ -8137,7 +8137,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "bcb79374cf84506e97582849f6f852caae97eee97b301b13ac6fd30794569c40"
   },
   {
    "id": "ia-musopen-chopin-prelude-op-28-no-18",
@@ -8164,7 +8164,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "80109ce9622c4caa2d4a40b3a2d8b4e5328693f79cc47b1490dc7aa6b30cc142"
   },
   {
    "id": "ia-musopen-chopin-prelude-op-28-no-19",
@@ -8191,7 +8191,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "6b4181e7e0131f28c5853dff855a333df8f8b7c02a35929fc255d45e33c3265b"
   },
   {
    "id": "ia-musopen-chopin-prelude-op-28-no-21",
@@ -8218,7 +8218,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "72d0256959f76d3f8e94cf14adffb4c94edee8684090f6299f234d99effed192"
   },
   {
    "id": "ia-musopen-chopin-prelude-op-28-no-22",
@@ -8245,7 +8245,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "86a0553f27b06ee51e7abd3724c28528c906794a96aa13098b5efe271930f373"
   },
   {
    "id": "ia-musopen-chopin-prelude-op-28-no-23",
@@ -8272,7 +8272,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "970868714f9ef31a3acfe81eb1c8e4f5b47594ee6910f7af85b21a60029fc3a8"
   },
   {
    "id": "ia-musopen-chopin-prelude-op-28-no-24",
@@ -8299,7 +8299,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "e362f1fec2d32a89acedb89516b8ffa7fa31fe9d6af719bc061a85b37b59aa33"
   },
   {
    "id": "ia-musopen-chopin-prelude-op-28-no-5",
@@ -8326,7 +8326,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "18b466f6c76fb5de2348e59f6bf9354e9666a52c1755a856ce668cb61683d396"
   },
   {
    "id": "ia-musopen-chopin-prelude-op-28-no-6",
@@ -8407,7 +8407,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "212b425ddba76c2e355e046331eda0906d333569cb6ab3a1f515d15b1fb691f3"
   },
   {
    "id": "ia-musopen-chopin-prelude-op-28-no-3",
@@ -8434,7 +8434,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "aa9bbdedfb82c06ad3d7631a576f42d215ea3069041e0bc5abc38c6f2570099b"
   },
   {
    "id": "ia-musopen-chopin-sonata-for-piano-and-cello-in-g-minor-op-65-iii-largo",
@@ -8461,7 +8461,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "7b9af0c67fd015d75af27a6759e64a2bfa0d1a27059c58e37a49ba2291454d32"
   },
   {
    "id": "ia-musopen-chopin-tarantelleop-43",
@@ -8488,7 +8488,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "8f69b25be7f320c05e80785afd332cca45d207d67c6c3c07645d03ac2de9b996"
   },
   {
    "id": "ia-musopen-chopin-valse",
@@ -8542,7 +8542,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "06419cfb96c80c437c0068988c4e692fe7969504d22cd53bf3a23b960a00e31b"
   },
   {
    "id": "ia-musopen-chopin-variationsinamajorsouvenirdepaganinib-37",
@@ -8569,7 +8569,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "1d487b06263b512b3c2db7b22753f2a53cd4f99eb9a07619484a58d7073f8814"
   },
   {
    "id": "ia-musopen-chopin-waltz-b-133-in-e-flat-major",
@@ -8596,7 +8596,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "a13853adb0756e24ffa54c0ddb59c1c73c4fdcd70f3d41850218ac5355dcb69f"
   },
   {
    "id": "ia-musopen-chopin-waltz-op-64-no-1-in-d-flat-major",
@@ -8623,7 +8623,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "1dbe3d7e0622b1458273d971663e875ef06ac5a5b722a58bd802c60dcefaa83c"
   },
   {
    "id": "ia-musopen-chopin-waltz-op-64-no-2-in-c-sharp-minor",
@@ -8650,7 +8650,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "191d00a058514dc9162739682824a815fad7bd74672f926b5144b99937c132ed"
   },
   {
    "id": "ia-musopen-chopin-waltz-op-69-no-1-in-a-flat-major",
@@ -8677,7 +8677,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "904d1047d91baccf52d2f231946aae680c26dc0c40971a1a8dc5fb60d12c3c47"
   },
   {
    "id": "ia-musopen-chopin-waltz-op-69-no-2-in-b-minor",
@@ -8704,7 +8704,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "9a84fa388cb6ba1d922bd8ed6740ef9c2910909a16a3832aac94fa1e7e4b1c73"
   },
   {
    "id": "ia-musopen-chopin-waltz-op-70-no-1-in-g-flat-major",
@@ -8731,7 +8731,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "4870a60503c9238afe9f766e64e9db15d3ae7c23d77d81dba7eb34b0584618fe"
   },
   {
    "id": "ia-musopen-chopin-waltz-op-70-no-2-in-f-minor",
@@ -8758,7 +8758,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "bd30c02afef10f8fc1219f02a4d97f313af10cb0f1f88f6e73873e81c1d51cf0"
   },
   {
    "id": "ia-musopen-chopin-waltz-op-70-no-3-in-d-flat-major",
@@ -8785,7 +8785,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "e936bdeba4c66a16455edb60d832f2766820ee8be9671c9c3af323d428a5bbc7"
   },
   {
    "id": "ia-musopen-chopin-waltz-no-18-op-posth-eb-major",
@@ -8812,7 +8812,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "026093a5a11103271aecbbe4bf09e6c948f5f5cbeb4c7b9b1bf056fc09c3ca59"
   },
   {
    "id": "ia-musopen-chopin-waltz-no-19-op-posth-a-minor",
@@ -8839,7 +8839,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "3d65e7473a70ab8e92a42af7a3c460baf9f3ef12d23ff681c182d0bc14c9b0dc"
   },
   {
    "id": "ia-musopen-chopin-waltz-no-8-op-64-no-3-ab-major",
@@ -8866,7 +8866,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "8ffd963d07ba1df73565af6d04237158517ea2e4a58df22f3830f77485802b20"
   },
   {
    "id": "ia-musopen-chopin-waltzb-21inaflatmajor",
@@ -8893,7 +8893,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "645429a85248a619ef7d2472b846346a2045e9ce3994dd1c3d997e9a32a30738"
   },
   {
    "id": "ia-musopen-chopin-waltzb-46ineflatmajor",
@@ -8920,7 +8920,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "6c055c93b483992acade7fa0dd4b34182c49a06f3a5c3c55b402eb57808b81f7"
   },
   {
    "id": "ia-musopen-chopin-waltzb-56ineminor",
@@ -8947,7 +8947,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "c550d61edd03dc5ac6c4d7c76e40594a5765a842ca993c4103133cd0c51bb3be"
   },
   {
    "id": "ia-musopen-chopin-waltzop-34no-3infmajor",
@@ -8974,7 +8974,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "3795d3c4f88d8b5f863e91658c3277deb5ac4840ad608695c72f118d1148ed54"
   },
   {
    "id": "ia-musopen-chopin-wiosna",
@@ -9001,7 +9001,7 @@
    "transcode": null,
    "source_url": "https://archive.org/details/musopen-chopin",
    "evidence_url": "https://archive.org/details/musopen-chopin",
-   "sha256": null
+   "sha256": "5671b6254b28e095ed520cc8bbfcd0340f0455c8931126bb040ec4fdfbee9d7d"
   }
  ],
  "generated": {

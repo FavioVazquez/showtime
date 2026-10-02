@@ -5,6 +5,14 @@
  "mirrors": [
   "https://github.com/FavioVazquez/showtime/releases/download/models-v1/"
  ],
+ "audio": {
+  "about": "Mirror of the pinned audio files in st/audio/{music_catalog,sfx_packs,library_manifest}.json: real music, sound effects and library packs that an agent sandbox's egress proxy often blocks (opengameart.org, scottbuckley.com.au, incompetech.com, archive.org, upload.wikimedia.org, bigsoundbank.com, kenney.nl). SHOWTIME_AUDIO_MIRROR has the same semantics as SHOWTIME_MODEL_MIRROR (a base URL, a local folder, comma-separated, or off). scripts/stage_audio_mirror.py builds the release assets; mirror.audio_sources() tries a SHOWTIME_AUDIO_MIRROR folder, then the primary, then these bases, in order. Every copy is sha256-verified against the pinning file.",
+  "tag": "audio-v1",
+  "mirrors": [
+   "https://github.com/FavioVazquez/showtime/releases/download/audio-v1/"
+  ],
+  "naming": "<kind>--<id>.<ext>"
+ },
  "not_mirrored": {
   "piper voices": "GitHub release archives (reachable wherever the mirror is) that bundle GPL-3.0 espeak-ng data",
   "whisper-large-v3-turbo, supertonic-3 and the other setup extras": "opt-in; large-v3-turbo alone is 1.6 GB",

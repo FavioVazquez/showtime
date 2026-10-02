@@ -10,7 +10,11 @@ showtime connects to the internet only to:
 
 1. download its tools and models, during setup or the first time a feature needs one, from the sources listed
    with their checksums in `skills/showtime/setup/manifest.json` (music tracks and sound packs come from their
-   creators' own sites, listed in the music catalog and sound-pack files next to it);
+   creators' own sites, listed in the music catalog and sound-pack files next to it). When a creator's site or a
+   model's own host is blocked (an agent sandbox's egress proxy), the file instead comes from showtime's own
+   mirror: unmodified release assets on `github.com/FavioVazquez/showtime`, checked against the same checksum
+   (`skills/showtime/lib/st/mirror.json`; `SHOWTIME_MODEL_MIRROR` and `SHOWTIME_AUDIO_MIRROR` point at another
+   mirror or turn it off);
 2. fetch media or pages when you ask it to, for example an Openverse, Wikimedia Commons or NASA search, or
    capturing a website you name.
 

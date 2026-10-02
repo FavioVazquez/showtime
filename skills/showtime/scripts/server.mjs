@@ -29,8 +29,9 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { skillDir, nodeModulesDir, showtimeHome } from './lib/deps.mjs';
-import { iconFile } from './lib/iconcache.mjs';
+import { iconFile, iconPackageDir } from './lib/iconcache.mjs';
 import { newKey, isKey, sameKey, cookieKey, keyCookie } from './lib/sessionkey.mjs';
+import { realpathUnderRoot, symlinkRefusal, escapesBySymlink } from './lib/pathguard.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -51,7 +52,11 @@ export const MIME = {
 
 const WATCH_IGNORE = /(^|[\\/])(\.git|node_modules|showtime-out|work|\.showtime|\.cache|__pycache__|\.DS_Store)([\\/]|$)/;
 
-/** Resolve `rel` (URL path, already decoded) under `root`; null if it escapes. */
+/**
+ * Resolve `rel` (URL path, already decoded) under `root`; null if it escapes -- lexically (.., a
+ * drive letter, NUL) or through a symlink inside the tree that points outside it (a project file
+ * `evil -> /etc/passwd` must not be servable as /evil).
+ */
 export function safeJoin(root, rel) {
   const clean = rel.replace(/\\/g, '/').split('/').filter((s) => s && s !== '.');
   if (clean.some((s) => s === '..' || s.includes('\0'))) return null;
@@ -60,7 +65,7 @@ export function safeJoin(root, rel) {
   const abs = path.resolve(root, ...clean);
   const r = path.relative(path.resolve(root), abs);
   if (r.startsWith('..') || path.isAbsolute(r)) return null;
-  return abs;
+  return realpathUnderRoot(root, abs) ? abs : null;
 }
 
 function readConfig(root) {
@@ -117,12 +122,15 @@ export function injectStage(html) {
   return tag + html;
 }
 
-async function sendFile(req, res, file, { inject = false } = {}) {
+async function sendFile(req, res, file, root, { inject = false } = {}) {
+  // safeJoin already checked the *requested* path; re-check here too, because this function also
+  // recurses onto a name it picks itself (index.html below) that was never checked.
+  if (!realpathUnderRoot(root, file)) { res.writeHead(403); return res.end(symlinkRefusal(path.relative(root, file))); }
   let st;
   try { st = await fsp.stat(file); } catch { return notFound(res, req.url); }
   if (st.isDirectory()) {
     const idx = path.join(file, 'index.html');
-    if (fs.existsSync(idx)) return sendFile(req, res, idx, { inject });
+    if (fs.existsSync(idx)) return sendFile(req, res, idx, root, { inject });
     return notFound(res, req.url);
   }
   const ext = path.extname(file).toLowerCase();
@@ -267,17 +275,32 @@ export async function startServer(o) {
         res.writeHead(204, { 'Cache-Control': 'max-age=86400' });
         return res.end();
       }
-      let file = null;
-      if (p.startsWith('/_st/')) file = safeJoin(runtimeDir, p.slice(5));
+      let file = null, fileRoot = null;
+      if (p.startsWith('/_st/')) { fileRoot = runtimeDir; file = safeJoin(fileRoot, p.slice(5)); }
       else if (p.startsWith('/_lib/')) {
-        file = safeJoin(libDir, p.slice(6));
-        // icon packages are fetched per file on first use (lib/iconcache.mjs), not installed
-        if (file && !fs.existsSync(file)) file = (await iconFile(p.slice(6))) || file;
+        fileRoot = libDir;
+        file = safeJoin(fileRoot, p.slice(6));
+        // icon packages are fetched per file on first use (lib/iconcache.mjs), not installed, and
+        // live under their own cache dir (not libDir): the containment root switches with them.
+        if (file && !fs.existsSync(file)) {
+          const rel = p.slice(6);
+          const resolved = await iconFile(rel);
+          if (resolved) {
+            const pkg = /^((?:@[^/]+\/)?[^/]+)\//.exec(rel);
+            file = resolved;
+            fileRoot = (pkg && iconPackageDir(pkg[1])) || fileRoot;
+          }
+        }
       }
-      else if (p.startsWith('/_assets/')) file = safeJoin(assetsDir, p.slice(9));
-      else file = safeJoin(root, p === '/' ? 'index.html' : p);
-      if (!file) { res.writeHead(403); return res.end('forbidden path\n'); }
-      await sendFile(req, res, file, { inject: inject && !p.startsWith('/_') });
+      else if (p.startsWith('/_assets/')) { fileRoot = assetsDir; file = safeJoin(fileRoot, p.slice(9)); }
+      else { fileRoot = root; file = safeJoin(fileRoot, p === '/' ? 'index.html' : p); }
+      if (!file) {
+        const relp = p.startsWith('/_st/') ? p.slice(5) : p.startsWith('/_lib/') ? p.slice(6)
+          : p.startsWith('/_assets/') ? p.slice(9) : (p === '/' ? 'index.html' : p);
+        res.writeHead(403);
+        return res.end(fileRoot && escapesBySymlink(fileRoot, relp) ? symlinkRefusal(relp.replace(/^\/+/, '')) : 'forbidden path\n');
+      }
+      await sendFile(req, res, file, fileRoot, { inject: inject && !p.startsWith('/_') });
     } catch (err) {
       log(`server error ${req.url}: ${err.message}`);
       if (!res.headersSent) res.writeHead(500);

@@ -132,12 +132,14 @@ class Env:
         self.cat_path = self.dir / "catalog.json"
         self.cat_path.write_text(json.dumps(cat), encoding="utf-8")
         self.old = {k: os.environ.get(k) for k in ("SHOWTIME_MUSIC_CATALOG", "SHOWTIME_MUSIC_CACHE", "SHOWTIME_OFFLINE",
-                                                   "SHOWTIME_SEED_DIRS", "SHOWTIME_LIBRARY", "SHOWTIME_SFX_PACKS")}
+                                                   "SHOWTIME_SEED_DIRS", "SHOWTIME_LIBRARY", "SHOWTIME_SFX_PACKS",
+                                                   "SHOWTIME_AUDIO_MIRROR")}
 
     def __enter__(self):
         os.environ["SHOWTIME_MUSIC_CATALOG"] = str(self.cat_path)
         os.environ["SHOWTIME_MUSIC_CACHE"] = str(self.dir / "cache")
         os.environ["SHOWTIME_LIBRARY"] = str(self.dir / "library")
+        os.environ["SHOWTIME_AUDIO_MIRROR"] = "off"   # these fixtures model a single primary host; see test_audio_mirror.py
         for k in ("SHOWTIME_OFFLINE", "SHOWTIME_SEED_DIRS", "SHOWTIME_SFX_PACKS"):
             os.environ.pop(k, None)
         music._CAT.clear()

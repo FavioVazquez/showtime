@@ -15,6 +15,17 @@ from ..common import ShowtimeError, ensure_dir, info
 from . import util as U
 
 
+def deshake_filter(strength: float = 0.5) -> str:
+    """The single-pass fallback filter for a strength 0..1 (a search radius of 16, 32 or 48 px).
+
+    ffmpeg's deshake refuses a radius that is not a multiple of 16 ("rx must be a multiple of 16"),
+    so the radius snaps to the nearest of those three instead of rounding to an arbitrary integer;
+    any other value fails the whole encode."""
+    s = max(0.0, min(1.0, float(strength)))
+    r = 16 * int(round((16 + 32 * s) / 16.0))
+    return "deshake=rx=%d:ry=%d" % (r, r)
+
+
 def stabilize(src, out, *, strength: float = 0.5, preview: bool = False) -> Dict[str, Any]:
     src, out = Path(src), Path(out)
     pr = U.probe(src)
@@ -36,8 +47,7 @@ def stabilize(src, out, *, strength: float = 0.5, preview: bool = False) -> Dict
                           ["-movflags", "+faststart", str(out)])
         method = "vidstab"
     else:
-        r = int(round(16 + 32 * s))
-        vf = "deshake=rx=%d:ry=%d,%s" % (r, r, preset.vf_tail)
+        vf = "%s,%s" % (deshake_filter(s), preset.vf_tail)
         ff.run_ffmpeg(["-i", str(src), "-map", "0:v:0", "-vf", vf] + preset.video + audio +
                       ["-movflags", "+faststart", str(out)])
         method = "deshake"

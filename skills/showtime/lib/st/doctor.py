@@ -290,6 +290,14 @@ class Doctor:
             self.add("network", FAIL if not installed else WARN,
                      "no network: %s; %s%s" % (detail, what, (" [%s]" % ", ".join(signals)) if signals else ""),
                      " ".join(sandbox.fix_lines(host, "network", h, self.p["skill"])), host=host)
+        if not reachable:
+            a_ok, a_detail = sandbox.probe_audio_mirror()
+            if a_ok:
+                self.add("audio mirror", WARN, "the audio mirror answers (%s), so music/sfx/library downloads come "
+                         "from there" % a_detail,
+                         "nothing to do for audio; other first-use downloads (extra voices, media search, lazy "
+                         "models) may still need their hosts allowed in the sandbox's network settings. "
+                         "%s=<URL or folder> picks another mirror" % sandbox.AUDIO_MIRROR_ENV, host=host)
 
     def check_shim(self) -> None:
         """The stable <home>/bin/showtime command: present, current, pointing at a live skill (repaired here)."""

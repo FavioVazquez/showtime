@@ -9,6 +9,7 @@ import net from 'node:net';
 import { pathToFileURL } from 'node:url';
 import { depPath } from './deps.mjs';
 import { UserError } from './cli.mjs';
+import { realpathUnderRoot, symlinkRefusal, escapesBySymlink } from './pathguard.mjs';
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -336,14 +337,43 @@ export function isPrivateIP(ip) {
   return false;
 }
 
-export async function hostIsPrivate(hostname) {
-  const h = hostname.replace(/^\[|\]$/g, '');
-  if (h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.test') || h.endsWith('.local')) return true;
-  if (net.isIP(h)) return isPrivateIP(h);
+/**
+ * 'private' | 'public' | 'unknown' (the name does not resolve here: offline, or DNS only through a
+ * proxy). Folding 'unknown' into "public" would let a host whose DNS lookup merely failed pass the
+ * SSRF guard below -- the bug this guards against.
+ */
+export async function hostPrivacy(hostname) {
+  const h = String(hostname || '').replace(/^\[|\]$/g, '');
+  if (!h || h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.test') || h.endsWith('.local')) return 'private';
+  if (net.isIP(h)) return isPrivateIP(h) ? 'private' : 'public';
   try {
     const addrs = await dns.promises.lookup(h, { all: true });
-    return addrs.some((a) => isPrivateIP(a.address));
-  } catch { return false; }
+    if (!addrs.length) return 'unknown';
+    return addrs.some((a) => isPrivateIP(a.address)) ? 'private' : 'public';
+  } catch { return 'unknown'; }
+}
+
+/** SSRF guard: true unless the host is known to be public (fails closed when DNS cannot tell). */
+export async function hostIsPrivate(hostname) {
+  return (await hostPrivacy(hostname)) !== 'public';
+}
+
+/**
+ * True when a proxy is configured for `url` (HTTP_PROXY/http_proxy for http:, HTTPS_PROXY/https_proxy
+ * for https:) and NO_PROXY/no_proxy does not bypass it for this host. Behind an explicit proxy with no
+ * local DNS resolver, dns.lookup() fails for every public host even though the proxy reaches it fine:
+ * the proxy's own policy governs what it can reach, so an unresolved lookup there is not evidence the
+ * host is unreachable the way it would be with no proxy configured at all.
+ */
+export function proxyConfiguredFor(url) {
+  let u;
+  try { u = typeof url === 'string' ? new URL(url) : url; } catch { return false; }
+  const env = process.env;
+  const proxy = u.protocol === 'http:' ? (env.HTTP_PROXY || env.http_proxy) : (env.HTTPS_PROXY || env.https_proxy);
+  if (!proxy) return false;
+  const host = u.hostname.toLowerCase();
+  const bypass = String(env.NO_PROXY || env.no_proxy || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+  return !bypass.some((e) => e === '*' || host === e.replace(/^\./, '') || host.endsWith(e.startsWith('.') ? e : '.' + e));
 }
 
 const TRACKERS = /(^|\.)(doubleclick\.net|googlesyndication\.com|google-analytics\.com|googletagmanager\.com|facebook\.com\/tr|bat\.bing\.com|clarity\.ms|hotjar\.com|segment\.io|mixpanel\.com|adsrvr\.org|scorecardresearch\.com|quantserve\.com)|\b(analytics|pixel|tracking|beacon)\./i;
@@ -384,6 +414,11 @@ export function sniffExt(buf) {
 /**
  * Download with SSRF protection (every redirect hop re-checked), a per-file cap and a shared
  * byte budget. -> { ok, file, bytes, ext, contentType } or { ok:false, reason }
+ *
+ * A host whose DNS this process cannot resolve ('unknown', not 'private'/'public') is refused as
+ * 'unresolved-host' unless a proxy is configured for it (proxyConfiguredFor): behind an explicit
+ * proxy with no local resolver, that is not evidence the host is unreachable, only that this process
+ * cannot tell by itself, so the proxy's own reachability policy is allowed to decide.
  */
 export async function safeDownload(url, destNoExt, { allowPrivate = false, maxBytes = 20e6, budget, headers = {}, timeout = 15000 } = {}) {
   let cur = url;
@@ -391,7 +426,12 @@ export async function safeDownload(url, destNoExt, { allowPrivate = false, maxBy
     let u;
     try { u = new URL(cur); } catch { return { ok: false, reason: 'bad-url' }; }
     if (!['http:', 'https:'].includes(u.protocol)) return { ok: false, reason: 'scheme' };
-    if (!allowPrivate && await hostIsPrivate(u.hostname)) return { ok: false, reason: 'private-host' };
+    if (!allowPrivate) {
+      const kind = await hostPrivacy(u.hostname);
+      if (kind === 'private' || (kind === 'unknown' && !proxyConfiguredFor(u))) {
+        return { ok: false, reason: kind === 'private' ? 'private-host' : 'unresolved-host' };
+      }
+    }
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), timeout);
     let res;
@@ -504,14 +544,15 @@ const STATIC_MIME = {
   '.flac': 'audio/flac', '.wasm': 'application/wasm', '.pdf': 'application/pdf',
 };
 
-/** `root` + URL path (decoded) -> absolute file, or null when it escapes root (.., drive letters, NUL). */
+/** `root` + URL path (decoded) -> absolute file, or null when it escapes root: lexically (.., drive
+ * letters, NUL) or through a symlink inside the tree that points outside it. */
 export function staticJoin(root, rel) {
   const parts = String(rel).replace(/\\/g, '/').split('/').filter((s) => s && s !== '.');
   if (parts.some((s) => s === '..' || s.includes('\0') || s.includes(':'))) return null;
   const abs = path.resolve(root, ...parts);
   const r = path.relative(path.resolve(root), abs);
   if (r.startsWith('..') || path.isAbsolute(r)) return null;
-  return abs;
+  return realpathUnderRoot(root, abs) ? abs : null;
 }
 
 /**
@@ -541,6 +582,10 @@ export async function serveStatic(target, { spa = true } = {}) {
   const http = await import('node:http');
   const fsp = fs.promises;
   const send = async (req, res, file, status = 200) => {
+    // staticJoin already checked the *requested* path; the caller below also hands this function
+    // names it picked itself (index.html, a pretty-URL ".html", the SPA fallback, 404.html) that were
+    // never checked -- re-check the file actually about to be streamed, once, here.
+    if (!realpathUnderRoot(root, file)) { res.writeHead(403); return res.end(symlinkRefusal(path.relative(root, file))); }
     const s = await fsp.stat(file);
     const type = STATIC_MIME[path.extname(file).toLowerCase()] || 'application/octet-stream';
     const headers = { 'Content-Type': type, 'Accept-Ranges': 'bytes', 'Cache-Control': 'no-store' };
@@ -568,7 +613,7 @@ export async function serveStatic(target, { spa = true } = {}) {
       let p;
       try { p = decodeURIComponent(new URL(req.url, 'http://127.0.0.1').pathname); } catch { res.writeHead(400); return res.end('bad path\n'); }
       let file = staticJoin(root, p);
-      if (!file) { res.writeHead(403); return res.end('forbidden path\n'); }
+      if (!file) { res.writeHead(403); return res.end(escapesBySymlink(root, p) ? symlinkRefusal(p.replace(/^\/+/, '')) : 'forbidden path\n'); }
       if (!isFile(file)) {
         const idx = ['index.html', 'index.htm'].map((n) => path.join(file, n)).find(isFile);
         if (idx) file = idx;

@@ -5,6 +5,25 @@ All notable changes to showtime. Each entry says what changed and why, so this f
 `skills/showtime/lib/st/__init__.py` and `python3 scripts/check_release.py` keeps the plugin manifests, the registry files and
 `setup/package.json` in sync with it.
 
+## 0.3.4 (2026-10-02)
+
+- **Frame 0 of a page with CSS animations could show where the animation had got to in real time.**
+  The stage paused CSS animations and Web Animations at the first seek, but by then they had been running
+  since page load, and transform/opacity animations run on the compositor: pausing them there left the
+  last real-time value on screen until the property changed again, so the first capture had an element a
+  few pixels along (the css-clock fixture's dot was 12 px out at t=0 on about half the runs, which the
+  nightly reported as `frames differ when reached in another order or after a pause (0s)`), and layers
+  that had been animated on the compositor rasterised differently depending on the frames seeked before
+  (the Windows `raster noise` verdict). In render mode `stage.js` now holds every animation from the
+  start (`animation-play-state: paused` in an adopted style sheet, and `Element.animate()` returns a
+  paused animation), so nothing runs before the first seek and a frame depends only on t;
+  `data-st-free` elements are left alone as before.
+- **A seeked `<video>` could be captured before its new frame was on screen.** `seekOne` waited for
+  `seeked` and one frame, but the frame reaches the compositor after `seeked`, so a slow machine captured
+  the previous frame: a black frame 0 in an adopted Python render (qa `first_frame_black` on macOS) and
+  "frames depend on seek order" in `check` for a captured video on Windows. The seek now also waits for
+  the frame to be presented (`requestVideoFrameCallback`), or 500 ms after `seeked` if it never comes.
+
 ## 0.3.3 (2026-10-02)
 
 Behaviour changes to know about (all deliberate, all security or correctness):

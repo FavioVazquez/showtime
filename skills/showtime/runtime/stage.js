@@ -443,6 +443,27 @@
       } catch (e) { reportError('animation seek', e); }
     }
   };
+  // Render mode: animations start held, not running. One that runs from page load until the
+  // first seek goes to the compositor (transform, opacity), and pausing it there leaves the
+  // last real-time value on screen until the property changes again: frame 0 came out with
+  // the element a few pixels along, and composited layers were rasterised differently depending
+  // on the frames seeked before ("raster noise"). Held from the start, a frame depends only on t.
+  function holdAnimations() {
+    var FREE = ':not([data-st-free],[data-st-free] *)';
+    try {
+      var sheet = new CSSStyleSheet();
+      sheet.replaceSync(FREE + ',' + FREE + '::before,' + FREE + '::after' +
+        '{animation-play-state:paused!important}');
+      document.adoptedStyleSheets = document.adoptedStyleSheets.concat([sheet]);
+    } catch (e) { reportError('animation hold', e); }
+    var animate = W.Element && W.Element.prototype.animate;
+    if (typeof animate !== 'function') return;
+    W.Element.prototype.animate = function () {
+      var a = animate.apply(this, arguments);
+      try { if (!(this.closest && this.closest('[data-st-free]'))) a.pause(); } catch (e) { /* ignore */ }
+      return a;
+    };
+  }
 
   // <video>: seek to the middle of the source frame and wait for 'seeked'.
   function videoTarget(v, t) {
@@ -504,14 +525,24 @@
       var target = videoTarget(v, t);                    // again: the duration is known now
       if (Math.abs(v.currentTime - target) < 1e-4 && !v.seeking) return null;
       return new Promise(function (res) {
+        // 'seeked' comes before the new frame reaches the compositor: a capture right after it can
+        // still show the previous frame (black for the first one) on a slow machine. The wait also
+        // takes the frame being presented (requestVideoFrameCallback, which fires after every seek of
+        // a file with a picture), or 500 ms after 'seeked' if it never comes.
+        var seeked = false, shown = typeof v.requestVideoFrameCallback !== 'function' || !v.videoWidth, timer = null;
+        function end() {
+          real.clearTimeout(timer);
+          v.removeEventListener('seeked', done); v.removeEventListener('error', end); res();
+        }
         // a 'seeked' that belongs to an earlier seek can still be queued: only ours ends the wait
         function done() {
           if (v.seeking) return;
-          v.removeEventListener('seeked', done); v.removeEventListener('error', fail); res();
+          seeked = true;
+          if (shown) end(); else if (!timer) timer = real.setTimeout(end, 500);
         }
-        function fail() { v.removeEventListener('seeked', done); v.removeEventListener('error', fail); res(); }
+        if (!shown) v.requestVideoFrameCallback(function () { shown = true; if (seeked) end(); });
         v.addEventListener('seeked', done);
-        v.addEventListener('error', fail);
+        v.addEventListener('error', end);
         v.currentTime = target;
       });
     }).then(function () { return videoData(v); });
@@ -919,6 +950,7 @@
 
   if (RENDER) {
     installShim(RENDER.seed);
+    holdAnimations();
     return;
   }
 

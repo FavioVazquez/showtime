@@ -33,12 +33,12 @@ end. The commands are in `audio.md`.
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| 0. Produced track, composed bed, or none | 43-77 |
-| 1. Decide the job of the music first | 79-115 |
-| 2. Style catalog (showtime audio styles) | 117-172 |
-| 3. Sync music to the edit | 174-208 |
-| 4. Endings | 210-231 |
-| 5. Iterate cheaply | 233-240 |
+| 0. Produced track, composed bed, or none | 43-80 |
+| 1. Decide the job of the music first | 82-118 |
+| 2. Style catalog (showtime audio styles) | 120-175 |
+| 3. Sync music to the edit | 177-211 |
+| 4. Endings | 213-234 |
+| 5. Iterate cheaply | 236-243 |
 
 ## 0. Produced track, composed bed, or none
 
@@ -64,7 +64,10 @@ end. The commands are in `audio.md`.
   `{"kind": "music", "catalog": "<id>", "offset": "highlight", "fit": true}`.
   When the user dislikes a track, `audio music veto <id> --reason "..."` and pick again.
 - A track is downloaded from its creator's site the first time it is used ("fetching X (N MB) for Y"),
-  checked against its pinned sha256 and cached; cached tracks work offline.
+  checked against its pinned sha256 and cached; cached tracks work offline. In an agent sandbox whose
+  proxy blocks the creator's site, it comes from showtime's own audio mirror instead (same sha256
+  check); `SHOWTIME_AUDIO_MIRROR` points at another mirror or folder, `off` disables it (see
+  docs/agents.md).
 - Credits are automatic: the mix records them, and `showtime render` writes `credits.txt`, a
   "Credits (keep in the video description)" block in `share.txt` and an optional end-card line, and
   prints a note for Scott Buckley tracks (his Smart Content ID claims YouTube videos whose

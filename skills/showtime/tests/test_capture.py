@@ -342,6 +342,161 @@ console.log(JSON.stringify(out));
         self.assertEqual(r["host"][0], 403)
         self.assertEqual(r["range"], 206)
 
+    def test_symlink_out_of_root_is_refused(self):
+        """A symlink inside the served root that points outside it must not be servable, for both
+        server.mjs (showtime server/preview) and capture.mjs's serveStatic (--serve)."""
+        base = TMP / "symlink-escape"
+        proj = base / "proj"
+        proj.mkdir(parents=True)
+        (base / "SECRET.txt").write_text("TOP-SECRET-OUTSIDE\n", encoding="utf-8")
+        (proj / "index.html").write_text("<!doctype html><p>inside</p>", encoding="utf-8")
+        (proj / "inside.txt").write_text("INSIDE-OK\n", encoding="utf-8")
+        os.symlink(str(base / "SECRET.txt"), str(proj / "link.txt"))
+        js = r"""
+import { serveStatic } from %s;
+import { startServer } from %s;
+const proj = %s;
+const srv = await startServer({ root: proj, port: 0 });
+const st = await serveStatic(proj);
+const get = async (base, p) => { const r = await fetch(base + p); await r.arrayBuffer().catch(() => {}); return r.status; };
+const out = {
+  serverInside: await get(srv.url, '/inside.txt'), serverLink: await get(srv.url, '/link.txt'),
+  staticInside: await get(st.url, '/inside.txt'), staticLink: await get(st.url, '/link.txt'),
+};
+await srv.close(); await st.close();
+console.log(JSON.stringify(out));
+""" % (json.dumps((SKILL / "scripts" / "lib" / "capture.mjs").as_uri()),
+       json.dumps((SKILL / "scripts" / "server.mjs").as_uri()), json.dumps(str(proj)))
+        node = shutil.which("node", path=ENV.get("PATH")) or "node"
+        cp = subprocess.run([node, "--input-type=module", "-e", js], env=ENV, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, encoding="utf-8", timeout=60)
+        self.assertEqual(cp.returncode, 0, cp.stderr[-1500:])
+        r = json.loads(cp.stdout.strip().splitlines()[-1])
+        self.assertEqual(r["serverInside"], 200, "a plain file inside the root must still be served")
+        self.assertEqual(r["staticInside"], 200, r)
+        self.assertEqual(r["serverLink"], 403, "a symlink pointing outside the root must be refused")
+        self.assertEqual(r["staticLink"], 403, r)
+
+    def test_symlink_at_a_server_picked_name_is_refused(self):
+        """safeJoin/staticJoin only check the *requested* path; a name the server picks for itself
+        afterwards -- a directory's index.html, a pretty-URL ".html", the SPA fallback, 404.html --
+        must be re-checked too, or a symlink at exactly one of those names serves whatever it points
+        at. Covers all cases for both server.mjs and capture.mjs's serveStatic where each applies
+        (server.mjs has no pretty-URL / SPA-fallback / 404.html feature)."""
+        base = TMP / "symlink-escape-names"
+        proj = base / "proj"
+        (proj / "docs").mkdir(parents=True)
+        (base / "SECRET.html").write_text("<p>TOP-SECRET-OUTSIDE</p>", encoding="utf-8")
+        # root index.html is itself the symlink, so both a direct request and the SPA fallback exercise it
+        os.symlink(str(base / "SECRET.html"), str(proj / "index.html"))
+        os.symlink(str(base / "SECRET.html"), str(proj / "docs" / "index.html"))
+        os.symlink(str(base / "SECRET.html"), str(proj / "about.html"))
+        os.symlink(str(base / "SECRET.html"), str(proj / "404.html"))
+        js = r"""
+import { serveStatic } from %s;
+import { startServer } from %s;
+const proj = %s;
+const srv = await startServer({ root: proj, port: 0 });
+const st = await serveStatic(proj);
+const get = async (base, p) => { const r = await fetch(base + p); await r.arrayBuffer().catch(() => {}); return r.status; };
+const out = {
+  serverDocsDir: await get(srv.url, '/docs/'), staticDocsDir: await get(st.url, '/docs/'),
+  staticPrettyUrl: await get(st.url, '/about'), static404: await get(st.url, '/no-such-page.png'),
+  staticSpaFallback: await get(st.url, '/nonexistent'),
+};
+await srv.close(); await st.close();
+console.log(JSON.stringify(out));
+""" % (json.dumps((SKILL / "scripts" / "lib" / "capture.mjs").as_uri()),
+       json.dumps((SKILL / "scripts" / "server.mjs").as_uri()), json.dumps(str(proj)))
+        node = shutil.which("node", path=ENV.get("PATH")) or "node"
+        cp = subprocess.run([node, "--input-type=module", "-e", js], env=ENV, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, encoding="utf-8", timeout=60)
+        self.assertEqual(cp.returncode, 0, cp.stderr[-1500:])
+        r = json.loads(cp.stdout.strip().splitlines()[-1])
+        self.assertEqual(r["serverDocsDir"], 403, "server.mjs: a symlinked directory index.html")
+        self.assertEqual(r["staticDocsDir"], 403, "capture.mjs: a symlinked directory index.html")
+        self.assertEqual(r["staticPrettyUrl"], 403, "capture.mjs: a symlinked about.html via /about")
+        self.assertEqual(r["static404"], 403, "capture.mjs: a symlinked 404.html")
+        self.assertEqual(r["staticSpaFallback"], 403, "capture.mjs: a symlinked root index.html via the SPA fallback")
+
+
+class T1cSSRFGuard(unittest.TestCase):
+    """hostIsPrivate used to treat a DNS lookup failure as "public" (fails open); it must fail closed:
+    an unresolvable host is 'unknown', hostIsPrivate('unknown') is true, and safeDownload refuses it as
+    'unresolved-host' unless a proxy is configured for the URL (proxyConfiguredFor), since behind an
+    explicit proxy with no local resolver a failed lookup says nothing about reachability."""
+
+    UNRESOLVABLE = "this-host-does-not-exist-showtime-test.invalid"   # RFC 2606: .invalid never resolves
+    # this test's own environment may already sit behind a proxy (common in CI and this sandbox);
+    # clear every proxy variable before each run so "no proxy configured" means what it says.
+    _PROXY_VARS = ("HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "NO_PROXY", "no_proxy",
+                  "ALL_PROXY", "all_proxy")
+
+    def _run(self, js):
+        node = shutil.which("node", path=ENV.get("PATH")) or "node"
+        env = {k: v for k, v in ENV.items() if k not in self._PROXY_VARS}
+        cp = subprocess.run([node, "--input-type=module", "-e", js], env=env, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, encoding="utf-8", timeout=60)
+        self.assertEqual(cp.returncode, 0, cp.stderr[-1500:])
+        return json.loads(cp.stdout.strip().splitlines()[-1])
+
+    def test_unresolvable_host_is_unknown_and_fails_closed(self):
+        js = r"""
+import { hostPrivacy, hostIsPrivate } from %s;
+const host = %s;
+const R = {};
+R.kind = await hostPrivacy(host);
+R.isPrivate = await hostIsPrivate(host);
+R.publicKind = await hostPrivacy('1.2.3.4');
+R.privateKind = await hostPrivacy('10.1.2.3');
+console.log(JSON.stringify(R));
+""" % (json.dumps((SKILL / "scripts" / "lib" / "capture.mjs").as_uri()), json.dumps(self.UNRESOLVABLE))
+        r = self._run(js)
+        self.assertEqual(r["kind"], "unknown", "a name that cannot be resolved here is 'unknown', not 'public'")
+        self.assertTrue(r["isPrivate"], "hostIsPrivate must fail closed (true) for an unresolved host")
+        self.assertEqual(r["publicKind"], "public")
+        self.assertEqual(r["privateKind"], "private")
+
+    def test_proxy_configured_for_honours_env_and_no_proxy(self):
+        js = r"""
+import { proxyConfiguredFor } from %s;
+const R = {};
+R.none = proxyConfiguredFor('https://example.com/x');
+process.env.HTTPS_PROXY = 'http://127.0.0.1:9';
+R.withProxy = proxyConfiguredFor('https://example.com/x');
+R.httpUnaffected = proxyConfiguredFor('http://example.com/x');
+process.env.NO_PROXY = 'example.com';
+R.bypassed = proxyConfiguredFor('https://example.com/x');
+R.otherHostStillProxied = proxyConfiguredFor('https://other.example/x');
+delete process.env.HTTPS_PROXY; delete process.env.NO_PROXY;
+console.log(JSON.stringify(R));
+""" % json.dumps((SKILL / "scripts" / "lib" / "capture.mjs").as_uri())
+        r = self._run(js)
+        self.assertFalse(r["none"])
+        self.assertTrue(r["withProxy"])
+        self.assertFalse(r["httpUnaffected"], "HTTPS_PROXY must not apply to an http: URL")
+        self.assertFalse(r["bypassed"], "NO_PROXY must bypass the proxy for a matching host")
+        self.assertTrue(r["otherHostStillProxied"])
+
+    def test_safe_download_refuses_unresolved_host_unless_proxied(self):
+        out = TMP / "ssrf"
+        out.mkdir(exist_ok=True)
+        js = r"""
+import { safeDownload } from %s;
+const host = %s;
+const R = {};
+R.noProxy = (await safeDownload('https://' + host + '/x.png', %s, { timeout: 2000 })).reason;
+process.env.HTTPS_PROXY = 'http://127.0.0.1:9';
+R.withProxy = (await safeDownload('https://' + host + '/x.png', %s, { timeout: 2000 })).reason;
+delete process.env.HTTPS_PROXY;
+console.log(JSON.stringify(R));
+""" % (json.dumps((SKILL / "scripts" / "lib" / "capture.mjs").as_uri()), json.dumps(self.UNRESOLVABLE),
+       json.dumps(str(out / "a")), json.dumps(str(out / "b")))
+        r = self._run(js)
+        self.assertEqual(r["noProxy"], "unresolved-host", "no proxy configured: fail closed")
+        self.assertNotEqual(r["withProxy"], "unresolved-host",
+                            "a configured proxy must bypass the unresolved-host short-circuit")
+
 
 class T2Demo(unittest.TestCase):
     def test_demo_and_autozoom(self):

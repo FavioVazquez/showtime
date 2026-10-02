@@ -222,8 +222,9 @@ def register(sub: argparse._SubParsersAction) -> None:
     q.add_argument("--warning", action="append", default=[], help="a warning to keep (repeatable)")
     q.add_argument("--output", action="append", default=[], metavar="[KIND=]PATH",
                    help="a produced file (repeatable); KIND (final, preview, edl, poster, share, credits, captions, "
-                        "animatic) makes it that kind's latest file, and is inferred from the name when left out; "
-                        "a video under <job>/studio/ is always the animatic, never the final/preview")
+                        "animatic, report) makes it that kind's latest file, and is inferred from the name when left "
+                        "out; a video under <job>/studio/ is always the animatic, never the final/preview; report "
+                        "(.html/.htm/.pdf) is a document deliverable and never becomes the final/preview video")
     q.add_argument("--platform", help="main destination (reels, youtube, ...); '' clears it")
     q.add_argument("--project", help="the project folder this job renders (pointers.project); also set by "
                                      "render --job and found automatically in <job>/<folder>/showtime.json")

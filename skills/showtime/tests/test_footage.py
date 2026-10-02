@@ -1187,6 +1187,66 @@ class Batch2FootageTest(unittest.TestCase):
         self.assertIn("side channel", pr["alpha"])
 
 
+class StabilizeFallbackTest(unittest.TestCase):
+    """The deshake fallback, used when the ffmpeg build has no vid.stab: ffmpeg refuses a deshake
+    search radius that is not a multiple of 16, which used to fail `footage stabilize` at most
+    strengths and every EDL range with "stabilize": true. vid.stab is hidden from ff.has_filter so
+    the fallback runs on any build."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = Path(tempfile.mkdtemp(prefix="st-foot-stab-")).resolve()
+        cls.clip = cls.tmp / "shaky.mp4"
+        ffrun(["-f", "lavfi", "-i", "testsrc2=s=320x180:r=30:d=2", "-f", "lavfi", "-i", "sine=f=300:d=2:sample_rate=48000",
+               "-vf", "crop=288:162:16+12*sin(t*9):9+8*cos(t*7)", "-c:v", "libx264", "-preset", "veryfast",
+               "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", cls.clip])
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    @staticmethod
+    def no_vidstab():
+        from unittest import mock
+        from st import ff
+        real = ff.has_filter
+        return mock.patch.object(ff, "has_filter", lambda name: not name.startswith("vidstab") and real(name))
+
+    def test_deshake_radius_is_always_a_multiple_of_16(self):
+        """The bug: int(round(16 + 32*s)) lands on values like 17, 33, 49 that ffmpeg's deshake
+        refuses outright ("rx must be a multiple of 16"). deshake_filter must always snap to 16/32/48."""
+        from st.footage import stabilize as S
+        for i in range(21):
+            s = i / 20.0
+            m = re.search(r"^deshake=rx=(\d+):ry=(\d+)$", S.deshake_filter(s))
+            self.assertIsNotNone(m, S.deshake_filter(s))
+            rx, ry = int(m.group(1)), int(m.group(2))
+            self.assertEqual(rx, ry, s)
+            self.assertEqual(rx % 16, 0, "strength %g -> rx=%d is not a multiple of 16" % (s, rx))
+            self.assertTrue(16 <= rx <= 48, (s, rx))
+
+    def test_stabilize_deshake_every_strength(self):
+        from st.footage import stabilize as S
+        from st.footage import util as U
+        for s in (0.0, 0.25, 0.7, 1.0):
+            with self.no_vidstab():
+                r = S.stabilize(self.clip, self.tmp / ("stab-%g.mp4" % s), strength=s, preview=True)
+            self.assertEqual(r["method"], "deshake")
+            self.assertAlmostEqual(U.probe(r["output"])["duration"], 2.0, delta=0.15, msg="strength %g" % s)
+
+    def test_edl_range_stabilize_deshake(self):
+        from st.footage import render_edl as R
+        edl = self.tmp / "edl.json"
+        edl.write_text(json.dumps({"sources": {"a": str(self.clip)}, "output": {"width": 288, "height": 162, "fps": 30},
+                                   "ranges": [{"source": "a", "start": 0.2, "end": 1.6, "stabilize": True}],
+                                   "captions": False, "loudness": False}), encoding="utf-8")
+        with self.no_vidstab():
+            rep = R.render(edl, self.tmp / "stable.mp4", preview=True, captions=False, jobs=1)
+        self.assertEqual([m.get("stabilize") for m in rep["segment_meta"]], ["deshake"])
+        self.assertTrue(rep["frames_ok"], rep)
+        self.assertEqual(rep["frames"], 42)
+
+
 if __name__ == "__main__":
     argv = [a for a in sys.argv if a != "--fast"]
     unittest.main(argv=argv, verbosity=2 if "-v" in argv else 1)

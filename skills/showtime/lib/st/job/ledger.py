@@ -314,12 +314,17 @@ def resolve(arg: Optional[PathLike] = None, base: Optional[PathLike] = None) -> 
 
 # ------------------------------------------------------------------ latest outputs
 
-OUTPUT_KINDS = ("final", "preview", "edl", "poster", "share", "credits", "captions", "animatic")
+OUTPUT_KINDS = ("final", "preview", "edl", "poster", "share", "credits", "captions", "animatic", "report")
 # Kinds whose files live under <job>/studio/: a render there is a board asset (animatic), never the
 # job's final or preview, so `showtime qa <job>` keeps checking the real video.
 STUDIO_DIR = "studio"
 VIDEO_EXTS = (".mp4", ".mov", ".webm", ".m4v", ".mkv")
+# "report": a document deliverable (an HTML page or a PDF). It is listed with the job's outputs, and
+# never becomes the final/preview that qa, review-pack and deliver read as a video.
+REPORT_EXTS = (".html", ".htm", ".pdf")
 _KIND_RE = re.compile(r"^(%s)=(.+)$" % "|".join(OUTPUT_KINDS), re.S)
+# Anything that looks like KIND=PATH, for a clear error on an unknown or misspelled kind.
+_ANY_KIND_RE = re.compile(r"^([A-Za-z][\w-]*)=(.+)$", re.S)
 
 
 def infer_kind(path: PathLike) -> Optional[str]:
@@ -338,14 +343,25 @@ def infer_kind(path: PathLike) -> Optional[str]:
         return "share"
     if suf == ".json" and "edl" in name and not name.endswith(".report.json"):
         return "edl"
+    if suf in REPORT_EXTS:
+        return "report"
     return None
 
 
 def parse_output(spec: str) -> Tuple[Optional[str], str]:
-    """`final=path` -> ("final", "path"); a bare path -> (inferred kind or None, path)."""
+    """`final=path` -> ("final", "path"); a bare path -> (inferred kind or None, path).
+
+    Raises ShowtimeError for an unknown KIND=: a typo would otherwise be logged as a file literally
+    named "fnal=cut.mp4", and even become the final pointer through its .mp4 name. A path that exists
+    (even one with "=" in its name) is always treated as a path, never as an unknown kind."""
     m = _KIND_RE.match(spec.strip())
     if m:
         return m.group(1), m.group(2).strip()
+    m = _ANY_KIND_RE.match(spec.strip())
+    if m and not Path(spec).expanduser().exists():
+        raise ShowtimeError("unknown output kind %r in %s (and no file has that name)" % (m.group(1), spec),
+                            hint="use one of %s as KIND=PATH, or pass the path alone to infer the kind from the "
+                                 "file name" % ", ".join(OUTPUT_KINDS))
     return infer_kind(spec), spec
 
 
@@ -368,6 +384,7 @@ _FALLBACK = {
     "credits": ("credits*.txt", "CREDITS*.txt", "*.credits.txt"),
     "captions": ("*.srt", "*.vtt"),
     "animatic": ("studio/media/animatic/*.mp4", "studio/media/animatic/*.webm"),
+    "report": ("report*.html", "report*.htm", "report*.pdf"),
 }
 
 
@@ -778,7 +795,7 @@ def normalize(data: Dict[str, Any], job: Optional[Path] = None) -> Dict[str, Any
     """Fill missing keys (ledgers written by older releases or by hand) and migrate the outputs list.
 
     Older ledgers kept "outputs" as a list of {path, at, stage}; it is now the history "output_log"
-    and "outputs" maps each kind (final, preview, edl, poster, share, credits, captions) to the latest file.
+    and "outputs" maps each kind (final, preview, edl, poster, share, credits, captions, report) to the latest file.
     """
     for k, v in _DEFAULTS.items():
         if k not in data or data[k] is None and isinstance(v, (list, dict)):
@@ -851,8 +868,9 @@ def note(job: Path, *, stage: Optional[str] = None, status: Optional[str] = None
          request: Optional[str] = None, render: Optional[Dict[str, Any]] = None,
          review_mode: Optional[str] = None) -> Dict[str, Any]:
     """Update the ledger. `outputs` entries are paths or KIND=PATH (KIND: final, preview, edl, poster,
-    share, credits, captions, animatic); each is logged, and a known kind becomes that kind's latest
-    pointer. A final/preview video under <job>/studio/ is recorded as the animatic instead.
+    share, credits, captions, animatic, report); each is logged, and a known kind becomes that kind's
+    latest pointer; an unknown KIND=, or a hand-set final/preview that is not a video, raises before
+    anything is saved. A final/preview video under <job>/studio/ is recorded as the animatic instead.
     `project` sets the job's project (also inferred from a recorded render's render.json).
     `baked` maps video paths to the poster time baked into their frame 0.
     auto: the outputs come from a tool (render, edit render, captions --burn, deliver): a variant
@@ -956,6 +974,14 @@ def note(job: Path, *, stage: Optional[str] = None, status: Optional[str] = None
     recorded: List[Dict[str, Any]] = []
     for o in outputs:
         kind, raw = parse_output(str(o))
+        suf = Path(raw).suffix.lower()
+        if kind in ("final", "preview") and not auto and suf not in VIDEO_EXTS:
+            # qa, review-pack and deliver read the final/preview as a video: a report there fails them
+            # later as "unreadable" instead of here, with a clear fix (a tool's own output, --auto, is
+            # a variant already -- see variant_reason -- so it is not refused here).
+            raise ShowtimeError("%s must be a video (%s), not %s" % (kind, ", ".join(VIDEO_EXTS), Path(raw).name),
+                                hint=("record an HTML or PDF document as report=%s" % raw if suf in REPORT_EXTS
+                                      else "pass the rendered video, e.g. --output %s=final.mp4" % kind))
         rp = Path(raw).expanduser()
         if not rp.is_absolute():
             rp = Path.cwd() / rp

@@ -36,7 +36,7 @@ import urllib.parse
 import urllib.request
 import zipfile
 from pathlib import Path, PurePosixPath
-from typing import Any, Callable, Dict, Iterable, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 import numpy as np
 
@@ -277,8 +277,60 @@ def _seeded(sha256: Optional[str], size: Optional[int]) -> Optional[Path]:
     return None
 
 
+def _fetch_one(url: str, dest: Path, ua: str, delays: Dict[str, float], sha256: Optional[str], size: Optional[int],
+              retries: int, polite: bool) -> None:
+    """One source, with its own retries for transient errors. Raises mirror.Blocked when this source will
+    not serve the file (a refusal: next source, no retry), IOError after the retries for anything else.
+    A checksum mismatch is also a Blocked (not this source's fault to retry, but still no good -- the
+    caller moves on, never keeping the part)."""
+    from .. import mirror
+    tmp = dest.with_name(dest.name + ".part")
+    last_err: Optional[BaseException] = None
+    for attempt in range(1, retries + 1):
+        try:
+            if polite:
+                _polite(url, delays)
+            req = urllib.request.Request(url, headers={"User-Agent": ua})
+            with urllib.request.urlopen(req, timeout=120, context=_ssl_context()) as r, open(tmp, "wb") as f:
+                shutil.copyfileobj(r, f, 1 << 20)
+            if size and tmp.stat().st_size != size:
+                raise IOError("size mismatch for %s: got %d, expected %d" % (url, tmp.stat().st_size, size))
+            if sha256:
+                got = sha256_file(tmp)
+                if got != sha256:
+                    try:
+                        tmp.unlink()
+                    except OSError:
+                        pass
+                    raise mirror.Blocked("sha256 mismatch: got %s, expected %s" % (got, sha256))
+            os.replace(str(tmp), str(dest))
+            return
+        except mirror.Blocked:
+            raise
+        except Exception as e:  # noqa: BLE001 - classified below
+            why = mirror.blocked_reason(e)
+            if why is not None:
+                raise mirror.Blocked(why)
+            last_err = e
+            if attempt < retries:
+                time.sleep(2 * attempt)
+    try:
+        tmp.unlink()
+    except OSError:
+        pass
+    raise IOError(str(last_err))
+
+
 def download(url: str, dest: Path, ua: str, delays: Dict[str, float], sha256: Optional[str] = None,
-             size: Optional[int] = None, retries: int = 3) -> Path:
+             size: Optional[int] = None, retries: int = 3, kind: Optional[str] = None,
+             item_id: Optional[str] = None, ext: Optional[str] = None) -> Path:
+    """Fetch `url` into `dest` (cached, seeded, or downloaded and sha256-verified).
+
+    With `kind` ("lib" or "sfx"), `item_id` and `ext` set -- the library tiers and sfx packs both call
+    `install_source()`, which passes these -- a blocked primary falls back to the audio mirror
+    (st/mirror.py `audio_sources`): a SHOWTIME_AUDIO_MIRROR folder copy, then each mirror base. Every
+    copy, from any source, is verified by size and sha256 before it is kept; a mismatch is deleted,
+    never kept."""
     if dest.is_file() and (not sha256 or sha256_file(dest) == sha256) and (not size or dest.stat().st_size == size):
         return dest
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -292,35 +344,41 @@ def download(url: str, dest: Path, ua: str, delays: Dict[str, float], sha256: Op
         raise ShowtimeError("%s is not downloaded and showtime is offline" % url,
                             hint="seed it: `showtime setup --seed DIR --fetch audio-library` with the files from "
                                  "`showtime setup --plan --urls`", code=3)
-    tmp = dest.with_name(dest.name + ".part")
-    last_err: Optional[Exception] = None
-    for attempt in range(1, retries + 1):
+    from .. import mirror
+    sources = mirror.audio_sources(kind, item_id, ext, url) if kind and item_id and ext is not None else [url]
+    tried: List[Tuple[str, str]] = []
+    for src in sources:
+        if isinstance(src, Path):
+            try:
+                if (not size or src.stat().st_size == size) and (not sha256 or sha256_file(src) == sha256):
+                    tmp = dest.with_name(dest.name + ".part")
+                    shutil.copyfile(str(src), str(tmp))
+                    os.replace(str(tmp), str(dest))
+                    return dest
+                tried.append((str(src), "does not match the pinned checksum"))
+            except OSError as e:
+                tried.append((str(src), str(e)))
+            continue
+        if tried:
+            log("  %s: %s; trying the audio mirror at %s" % (url, tried[-1][1], mirror.host(src)))
         try:
-            _polite(url, delays)
-            req = urllib.request.Request(url, headers={"User-Agent": ua})
-            with urllib.request.urlopen(req, timeout=120, context=_ssl_context()) as r, open(tmp, "wb") as f:
-                shutil.copyfileobj(r, f, 1 << 20)
-            if size and tmp.stat().st_size != size:
-                raise ShowtimeError("size mismatch for %s: got %d, expected %d" % (url, tmp.stat().st_size, size))
-            if sha256:
-                got = sha256_file(tmp)
-                if got != sha256:
-                    raise ShowtimeError("sha256 mismatch for %s (upstream changed?)" % url,
-                                        hint="the manifest pin is stale; report it or re-pin with `showtime audio lib pin`")
-            os.replace(str(tmp), str(dest))
+            _fetch_one(src, dest, ua, delays, sha256, size, retries, polite=(src == url))
             return dest
-        except ShowtimeError as e:
-            last_err = e
-            if "mismatch" in str(e):
-                break
-        except Exception as e:  # noqa: BLE001 - network errors: retry
-            last_err = e
-            time.sleep(2 * attempt)
-    try:
-        tmp.unlink()
-    except OSError:
-        pass
-    raise ShowtimeError("download failed: %s (%s)" % (url, last_err))
+        except mirror.Blocked as e:
+            tried.append((src, str(e)))
+            if src == url and not str(e).startswith("sha256"):
+                mirror.mark_blocked(url, str(e))
+            continue
+        except IOError as e:
+            tried.append((src, str(e)))
+            continue
+    label = item_id or url
+    if kind and item_id and ext is not None:
+        msg = mirror.describe_failure(label, url, tried, mirror_file=mirror.audio_name(kind, item_id, ext),
+                                      env=mirror.AUDIO_ENV)
+    else:
+        msg = mirror.describe_failure(label, url, tried)
+    raise ShowtimeError(msg)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -495,7 +553,10 @@ def install_source(src: dict, man: dict, keep_downloads: bool = False) -> List[P
     url = src["url"]
     name = Path(urllib.parse.unquote(urllib.parse.urlparse(url).path)).name
     cache = home() / "cache" / "downloads" / "audio" / src["id"]
-    blob = download(url, cache / name, ua, delays, src.get("sha256"), src.get("bytes"))
+    mirror_kind = "sfx" if src.get("tier") == "packs" else "lib"
+    ext = Path(name).suffix.lstrip(".").lower() or "bin"
+    blob = download(url, cache / name, ua, delays, src.get("sha256"), src.get("bytes"),
+                    kind=mirror_kind, item_id=src["id"], ext=ext)
     src["_sha256"] = src.get("sha256") or sha256_file(blob)
     dest = library_dir() / KIND_DIR.get(src["kind"], "sfx") / src["id"]
     if dest.exists():

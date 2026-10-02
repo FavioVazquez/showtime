@@ -207,7 +207,10 @@ def _video_graph(seg: Dict[str, Any], ctx: Ctx) -> Tuple[str, Optional[Path], Di
                        "unsharp=5:5:0.5:3:3:0.0" % ff.filter_path(trf))
             meta["stabilize"] = "vidstab"
         else:
-            pre.append("deshake=rx=24:ry=24")
+            from . import stabilize as S
+            # strength 0.5 like the vid.stab branch above (smoothing 30); deshake's radius must be a
+            # multiple of 16, which a hard-coded rx=24:ry=24 is not (ffmpeg rejects it outright).
+            pre.append(S.deshake_filter(0.5))
             meta["stabilize"] = "deshake"
     fit = _decide_fit(seg, pr, ctx)
     meta["fit"] = fit

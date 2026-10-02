@@ -189,6 +189,26 @@ def probe_mirror(timeout: float = PROBE_TIMEOUT) -> Tuple[bool, str]:
     return False, "mirrors off"
 
 
+AUDIO_MIRROR_ENV = "SHOWTIME_AUDIO_MIRROR"
+
+
+def probe_audio_mirror(timeout: float = PROBE_TIMEOUT) -> Tuple[bool, str]:
+    """(reachable, detail) for the audio mirror (st/mirror.py `audio_sources`): where music, sfx and
+    library files come from when their own hosts (opengameart.org, scottbuckley.com.au, incompetech.com,
+    archive.org, upload.wikimedia.org, bigsoundbank.com, kenney.nl ...) are blocked. A local
+    SHOWTIME_AUDIO_MIRROR folder counts when it exists."""
+    try:
+        from . import mirror
+    except ImportError:
+        return False, "no mirror list"
+    for d in mirror.audio_local_dirs():
+        if d.is_dir():
+            return True, "folder %s" % d
+    for base in mirror.audio_bases()[:1]:
+        return probe_network(base, timeout)
+    return False, "mirrors off"
+
+
 def _host(url: str) -> str:
     m = re.match(r"^[a-z]+://([^/:]+)", url)
     return m.group(1) if m else url

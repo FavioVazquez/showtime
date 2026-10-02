@@ -688,17 +688,58 @@ def fetch(ref: Any, purpose: Optional[str] = None, seeds: Optional[Sequence[str]
         if not quiet:
             log("fetching %s by %s (%s) for %s" % (t["title"], t["artist"], human_size(t["bytes"]),
                                                    purpose or "the soundtrack"))
-        _polite(t)
+        from .. import mirror
         part = p.with_name(".%s.%d.part" % (p.name, os.getpid()))
+        sources = mirror.audio_sources("music", t["id"], t.get("format") or "mp3", t["file_url"])
+        tried: List[Tuple[str, str]] = []
+        ok = False
         try:
-            info = net.download(t["file_url"], part, max_bytes=int(t["bytes"]) + (1 << 20), timeout=120, retries=2)
-            if info["bytes"] != int(t["bytes"]) or info["sha256"] != t["sha256"]:
-                raise ShowtimeError("%s changed upstream (got %s, %s; the catalog pins %s, %s)" % (
-                    t["file_url"], human_size(info["bytes"]), info["sha256"][:12], human_size(t["bytes"]), t["sha256"][:12]),
-                    why="the file at the creator's site is not the one that was listened to and credited",
-                    hint="pick another track (`showtime audio music pick ...`) and report the id %s so the catalog is "
-                         "re-pinned" % t["id"])
-            os.replace(str(part), str(p))
+            for src in sources:
+                if isinstance(src, Path):
+                    try:
+                        if src.stat().st_size == int(t["bytes"]) and sha256_file(src) == t["sha256"]:
+                            shutil.copyfile(str(src), str(p))
+                            if not quiet:
+                                log("music: %s by %s copied from the audio mirror folder %s"
+                                    % (t["title"], t["artist"], src.parent))
+                            ok = True
+                            break
+                        tried.append((str(src), "does not match the pinned checksum"))
+                    except OSError as e:
+                        tried.append((str(src), str(e)))
+                    continue
+                if src == t["file_url"]:
+                    _polite(t)
+                elif tried:
+                    log("  %s: %s; trying the audio mirror at %s" % (t["id"], tried[-1][1], mirror.host(src)))
+                try:
+                    info = net.download(src, part, max_bytes=int(t["bytes"]) + (1 << 20), timeout=120, retries=2)
+                except Exception as e:  # noqa: BLE001 - classified below, then the next source (if any)
+                    why = mirror.blocked_reason(e)
+                    tried.append((src, why or str(e)))
+                    if src == t["file_url"] and why is not None:
+                        mirror.mark_blocked(src, why)
+                    continue
+                if info["bytes"] != int(t["bytes"]) or info["sha256"] != t["sha256"]:
+                    tried.append((src, "size/sha256 mismatch"))
+                    try:
+                        Path(part).unlink()
+                    except OSError:
+                        pass
+                    continue
+                os.replace(str(part), str(p))
+                ok = True
+                break
+            if not ok:
+                if len(tried) == 1 and tried[0][0] == t["file_url"] and tried[0][1] == "size/sha256 mismatch":
+                    raise ShowtimeError(
+                        "%s changed upstream (the catalog pins %s)" % (t["file_url"], t["sha256"][:12]),
+                        why="the file at the creator's site is not the one that was listened to and credited",
+                        hint="pick another track (`showtime audio music pick ...`) and report the id %s so the "
+                             "catalog is re-pinned" % t["id"])
+                raise ShowtimeError(mirror.describe_failure(
+                    "%s by %s" % (t["title"], t["artist"]), t["file_url"], tried,
+                    mirror_file=mirror.audio_name("music", t["id"], t.get("format") or "mp3"), env=mirror.AUDIO_ENV))
         finally:
             if part.exists():
                 try:

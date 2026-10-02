@@ -694,6 +694,72 @@ class JobTests(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn('showtime assets font "Nosuch Display Zz"', where)
 
+    # ------------------------------------------------------------------ "report" output kind
+
+    def _kinds_job(self, name, files=("q3.html", "q3.pdf", "final.mp4", "take=2.mp4")):
+        base = self.tmp / "kinds"
+        base.mkdir(exist_ok=True)
+        job = Path(json.loads(showtime("job", "init", name, "--json", cwd=base).stdout)["job"])
+        for f in files:
+            (job / f).write_bytes(b"x")
+        return base, job
+
+    def test_19_report_kind(self):
+        """An HTML or PDF deliverable is the job's "report" (inferred from its name, or report=), listed by
+        status next to the final and never replacing it; the fallback finds an unrecorded report*.html."""
+        from st.job import ledger
+        for name, kind in (("q3.html", "report"), ("Q3.HTM", "report"), ("q3.pdf", "report"),
+                           ("bug-report.md", None), ("final.report.json", None)):
+            self.assertEqual(ledger.infer_kind(name), kind, name)
+        base, job = self._kinds_job("readout")
+        showtime("job", "note", job, "--output", job / "q3.html", "--output", "final=%s" % (job / "final.mp4"), cwd=base)
+        data = json.loads((job / "job.json").read_text(encoding="utf-8"))
+        self.assertEqual({k: Path(v).name for k, v in data["outputs"].items()}, {"report": "q3.html", "final": "final.mp4"})
+        showtime("job", "note", job, "--output", "report=%s" % (job / "q3.pdf"), cwd=base)
+        st_ = json.loads(showtime("status", job, "--json", cwd=base).stdout)
+        self.assertEqual(Path(st_["outputs"]["report"]).name, "q3.pdf")
+        self.assertEqual(Path(st_["outputs"]["final"]).name, "final.mp4", "the report never replaces the video")
+        _, other = self._kinds_job("readout-fallback")
+        (other / "report-v2.html").write_bytes(b"x")
+        self.assertEqual(ledger.latest_output(other, "report").name, "report-v2.html")
+
+    def test_20_unknown_output_kind_refused(self):
+        """A misspelled KIND= is refused with the list of kinds and nothing is saved. It used to be logged as a
+        file literally named "fnal=...", and its .mp4 name even made that missing path the final pointer.
+        An existing file with "=" in its name is still a path."""
+        base, job = self._kinds_job("typo")
+        showtime("job", "note", job, "--output", "final=%s" % (job / "final.mp4"), cwd=base)
+        before = (job / "job.json").read_text(encoding="utf-8")
+        cp = showtime("job", "note", job, "--output", "fnal=%s" % (job / "final.mp4"), cwd=base, check=False)
+        self.assertEqual(cp.returncode, 1, cp.stderr)
+        self.assertIn("unknown output kind 'fnal'", cp.stderr)
+        self.assertIn("final, preview, edl", cp.stderr, "the error lists the kinds")
+        self.assertNotIn("Traceback", cp.stderr)
+        self.assertEqual((job / "job.json").read_text(encoding="utf-8"), before, "a refused note saves nothing")
+        showtime("job", "note", job, "--output", "take=2.mp4", cwd=job)
+        data = json.loads((job / "job.json").read_text(encoding="utf-8"))
+        self.assertEqual(Path(data["outputs"]["final"]).name, "take=2.mp4")
+
+    def test_21_final_must_be_a_video(self):
+        """A hand-set final=<page>.html is refused with the report= hint: status would send the job to video qa,
+        which fails on it as unreadable. A tool's output (--auto) stays a variant, never refused."""
+        base, job = self._kinds_job("html-final", files=("q3.html",))
+        before = (job / "job.json").read_text(encoding="utf-8")
+        for kind in ("final", "preview"):
+            cp = showtime("job", "note", job, "--output", "%s=%s" % (kind, job / "q3.html"), cwd=base, check=False)
+            self.assertEqual(cp.returncode, 1, cp.stderr)
+            self.assertIn("%s must be a video" % kind, cp.stderr)
+            self.assertIn("report=", cp.stderr)
+        self.assertEqual((job / "job.json").read_text(encoding="utf-8"), before, "a refused note saves nothing")
+        # a tool's output (--auto) is not refused: a non-video file is logged as a variant, off the pointer
+        cp = showtime("job", "note", job, "--output", "final=%s" % (job / "q3.html"), "--auto", cwd=base)
+        self.assertIn("logged as a variant", cp.stderr)
+        self.assertNotIn("final", json.loads(showtime("status", job, "--json", cwd=base).stdout)["outputs"])
+        (job / "final.mp4").write_bytes(b"x")
+        showtime("job", "note", job, "--output", "final=%s" % (job / "final.mp4"), cwd=base)
+        self.assertEqual(Path(json.loads(showtime("status", job, "--json", cwd=base).stdout)["outputs"]["final"]).name,
+                         "final.mp4")
+
 
 if __name__ == "__main__":
     argv = [a for a in sys.argv if a != "--fast"]

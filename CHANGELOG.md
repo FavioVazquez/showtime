@@ -5,6 +5,60 @@ All notable changes to showtime. Each entry says what changed and why, so this f
 `skills/showtime/lib/st/__init__.py` and `python3 scripts/check_release.py` keeps the plugin manifests, the registry files and
 `setup/package.json` in sync with it.
 
+## 0.3.3 (2026-10-02)
+
+Behaviour changes to know about (all deliberate, all security or correctness):
+- A symlink inside a project that points outside it is no longer served by the preview or capture servers
+  (403, with a message saying to copy the file into the project). showtime never creates such links itself.
+- Page capture refuses a host whose name does not resolve, unless an HTTP(S) proxy is configured for it.
+- `job note --output`: a hand-set `final=`/`preview=` that is not a video, or an unknown `KIND=`, is now an
+  error (use `report=` for HTML and PDF deliverables).
+
+- **An audio mirror for sandboxes.** 0.3.2's model mirror covered models; the hosts real music and sound
+  effects come from (opengameart.org, scottbuckley.com.au, incompetech.com, archive.org,
+  upload.wikimedia.org, bigsoundbank.com, kenney.nl) are blocked by the same sandbox proxies, so a video's
+  soundtrack and sound effects silently went missing instead. The music catalog's `fetch`, the audio
+  library's `download` (also used by sound-effect packs) now try the primary host, then a
+  SHOWTIME_AUDIO_MIRROR folder or URL, then the mirror bases in `lib/st/mirror.json`'s new `audio` block
+  (release assets under the `audio-v1` tag of this repository) when the primary refuses; after one refusal
+  a host's later files go straight to the mirror. Every copy is sha256-verified against the same pin as
+  the primary, and a mismatch is never kept. The primary hosts' politeness rules (OpenGameArt's 10 s,
+  Scott Buckley's no-bulk) still apply; a GitHub mirror needs no delay. `SHOWTIME_AUDIO_MIRROR` has the
+  same semantics as `SHOWTIME_MODEL_MIRROR` (a base URL, a local folder checked before any network,
+  comma-separated, or `off`), and when every source fails the error names the blocked hosts and the mirror
+  file to provide. `scripts/stage_audio_mirror.py` downloads every pinned music track, sound-effect pack
+  and library file from its primary (Scott Buckley's tracks included, with his permission, staged in bulk
+  only by this script), verifies size and sha256, writes LICENSES.txt and SHA256SUMS, and prints the
+  `gh release create`/`gh release upload` commands; it uploads nothing. `showtime doctor` reports a
+  blocked network with a reachable audio mirror as a warning, not a failure. docs/agents.md's Claude app
+  section and the music guide cover it.
+  `--pin` first pins the 218 extended-tier library sources that had no size or sha256 yet (the
+  library's own maintainer pin), so they can be mirrored and verified too.
+- **A symlink inside a served project could point anywhere on disk.** `server.mjs`'s `safeJoin`/
+  `sendFile` and `capture.mjs`'s `staticJoin`/`serveStatic` checked requested paths only as text, so a
+  symlink inside the served folder (`evil -> /etc/passwd`) was servable, and a name either server picks
+  for itself afterwards (a directory's `index.html`, a pretty-URL `.html`, the SPA fallback, `404.html`)
+  was never re-checked at all. Both now resolve the real path and refuse (403) anything outside the
+  served root, via a shared `realpathUnderRoot` helper in the new `scripts/lib/pathguard.mjs`.
+- **The SSRF guard treated "DNS did not resolve" as "safe to fetch."** `capture.mjs`'s `hostIsPrivate`
+  returned `false` (not private) when a lookup failed for any reason, so an unresolvable host passed
+  the guard instead of being refused. `hostPrivacy` now distinguishes `'private' | 'public' | 'unknown'`,
+  and `hostIsPrivate`/`safeDownload` fail closed on `'unknown'` (reason `unresolved-host`) unless a
+  proxy is configured for that URL (`proxyConfiguredFor`, honouring `HTTP(S)_PROXY`/`NO_PROXY`) --
+  behind an explicit proxy with no local resolver, a failed lookup says nothing about reachability.
+- **`footage stabilize`'s deshake fallback used a radius ffmpeg often rejects.** ffmpeg's `deshake`
+  filter requires its search radius to be a multiple of 16; the strength-to-radius formula rounded to
+  arbitrary integers (17, 33, 49, ...) that fail the whole encode, and `render_edl.py`'s own fallback
+  hard-coded `rx=24:ry=24`, which is not a multiple of 16 either. Both now go through a shared
+  `stabilize.deshake_filter()` that snaps the radius to 16, 32 or 48.
+- **`job/ledger.py` had no "report" output kind.** An HTML or PDF deliverable saved with
+  `job note --output` had nowhere to go: it was either ignored or, worse, could be set as the job's
+  `final`/`preview` by name, which `qa`/`review-pack`/`deliver` then fail on as an unreadable video.
+  Output kinds gain `"report"` (`.html`/`.htm`/`.pdf`), inferred from the file name or set with
+  `report=path`; a hand-set `final=`/`preview=` that is not a video is now refused with a hint to use
+  `report=` instead (a tool's own output, `--auto`, is logged as a variant rather than refused). An
+  unknown `KIND=` (e.g. a typo) is now a clear error instead of being recorded as a literal file name.
+
 ## 0.3.2 (2026-09-30)
 
 - **The music catalog widens beyond its two main composers: 48 new tracks (249 to 297), 11 of them new artists.**

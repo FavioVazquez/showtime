@@ -96,6 +96,12 @@ not mirrored. `SHOWTIME_MODEL_MIRROR` points at another mirror: a base URL, or a
 files under their mirror names (`skills/showtime/lib/st/mirror.json` lists them); `off` turns the
 mirror off.
 
+The same proxy also blocks the hosts real music and sound effects come from (opengameart.org,
+scottbuckley.com.au, incompetech.com, archive.org, upload.wikimedia.org, bigsoundbank.com, kenney.nl),
+so a video's soundtrack and sound effects would otherwise be silently missing. The audio mirror (release
+assets under the `audio-v1` tag) covers the music catalog, the sound-effect packs and the core/extended
+library tiers the same way: `SHOWTIME_AUDIO_MIRROR` picks another mirror or folder, `off` disables it.
+
 ## OpenAI Codex
 
 ```bash

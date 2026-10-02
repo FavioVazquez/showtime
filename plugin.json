@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "showtime",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "A local video studio for your coding agent. Describe a video. Your agent directs. Your machine renders. Motion graphics, voice-over, music, footage editing, captions and platform-ready exports, with no cloud AI services or API keys.",
   "author": {
     "name": "Favio Vazquez",

@@ -1199,7 +1199,7 @@ class Installer:
         if plat.os_name() == "linux":
             # PyPI's Linux torch wheels bundle CUDA (~3 GB); the CPU index is much smaller.
             cp = run([uv, "pip", "install", "--python", str(vpy), "--index-url",
-                      "https://download.pytorch.org/whl/cpu", "torch>=2.5,<3"], env=env, timeout=3600)
+                      "https://download.pytorch.org/whl/cpu", "torch>=2.13,<3"], env=env, timeout=3600)
             if cp.returncode != 0:
                 return "fail", "torch (CPU) install failed:\n" + tail(cp.stdout)
         cp = run([uv, "pip", "install", "--python", str(vpy), "-r", str(SETUP_DIR / "requirements-musicgen.in")],

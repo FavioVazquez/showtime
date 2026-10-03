@@ -56,7 +56,10 @@ export async function iconFile(libPath) {
   const file = path.join(dir, ...rel.split('/'));
   if (fs.existsSync(file)) return file;
   if (offline()) return null;
-  const base = `${CDN}/${pkg}@${versions()[pkg]}`;
+  // a package name and a pinned version from setup/manifest.json, nothing else, before they go into the CDN URL
+  const ver = versions()[pkg];
+  if (!/^[\w.+-]+$/.test(String(ver)) || !/^(?:@[\w.-]+\/)?[\w.-]+$/.test(pkg)) return null;
+  const base = `${CDN}/${pkg}@${ver}`;
   try {
     if (!(await download(`${base}/${rel}`, file))) return null;
     const pj = path.join(dir, 'package.json');

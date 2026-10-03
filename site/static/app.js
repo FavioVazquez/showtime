@@ -3,6 +3,14 @@
 (function () {
   var root = document.documentElement;
   var base = document.body.getAttribute('data-root') || '';
+  if (!/^(?:\.\.?\/|[\w.-]+\/)*$/.test(base)) base = '';
+  // media and script URLs from data-* attributes: http(s) only (or file: when the site itself is opened from disk)
+  function safeSrc(u) {
+    try {
+      var x = new URL(u, location.href);
+      return x.protocol === 'http:' || x.protocol === 'https:' || (x.protocol === 'file:' && location.protocol === 'file:') ? x.href : '';
+    } catch (e) { return ''; }
+  }
   var reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   var canHover = matchMedia('(hover: hover) and (pointer: fine)').matches;
   function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
@@ -60,7 +68,7 @@
     var b = e.target.closest('button.watch'); if (!b) return;
     var screen = b.closest('.screen');
     var v = document.createElement('video'); v.controls = true; v.playsInline = true; v.preload = 'auto';
-    v.src = b.getAttribute('data-film'); v.poster = b.getAttribute('data-poster'); v.setAttribute('aria-label', b.getAttribute('data-label') || 'The showtime film');
+    v.src = safeSrc(b.getAttribute('data-film')); v.poster = safeSrc(b.getAttribute('data-poster')); v.setAttribute('aria-label', b.getAttribute('data-label') || 'The showtime film');
     if (teaser) teaser.remove();
     screen.classList.add('playing'); screen.insertBefore(v, b); v.play().catch(function () {}); v.focus();
   });
@@ -74,7 +82,7 @@
       if (!el) {
         if (/\.mp4$/.test(clip)) { el = document.createElement('video'); el.muted = true; el.loop = true; el.playsInline = true; el.setAttribute('aria-hidden', 'true'); el.preload = 'auto'; }
         else { el = document.createElement('img'); el.alt = ''; }
-        el.className = 'loop'; el.src = clip; frame.insertBefore(el, frame.querySelector('.open'));
+        el.className = 'loop'; el.src = safeSrc(clip); frame.insertBefore(el, frame.querySelector('.open'));
         var show = function () { if (frame.matches(':hover') || frame.contains(document.activeElement)) frame.classList.add('previewing'); };
         if (el.tagName === 'VIDEO') el.addEventListener('playing', show); else el.addEventListener('load', show);
       }
@@ -95,8 +103,8 @@
   document.addEventListener('click', function (e) {
     var b = e.target.closest('button.open'); if (!b) return;
     var frame = b.parentNode, still = frame.querySelector('.still');
-    var v = document.createElement('video'); v.controls = true; v.playsInline = true; v.preload = 'auto'; v.src = b.getAttribute('data-full');
-    if (still) v.poster = still.getAttribute('src');
+    var v = document.createElement('video'); v.controls = true; v.playsInline = true; v.preload = 'auto'; v.src = safeSrc(b.getAttribute('data-full'));
+    if (still) v.poster = safeSrc(still.getAttribute('src'));
     v.setAttribute('aria-label', b.getAttribute('aria-label').replace(/^Play /, ''));
     frame.classList.remove('previewing'); frame.classList.add('playing');
     frame.querySelectorAll('.loop,.hint,.open').forEach(function (n) { n.remove(); });
@@ -141,7 +149,7 @@
   function load(cb) {
     if (index) return cb();
     if (window.SHOWTIME_SEARCH) { index = window.SHOWTIME_SEARCH; return cb(); }
-    var s = document.createElement('script'); s.src = base + 'search-index.js';
+    var s = document.createElement('script'); s.src = safeSrc(base + 'search-index.js');
     s.onload = function () { index = window.SHOWTIME_SEARCH || []; cb(); }; document.head.appendChild(s);
   }
   function esc(s) { return s.replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
@@ -163,7 +171,7 @@
       var d = r[1], x = d.x, lx = x.toLowerCase(), i = lx.indexOf(terms[0]), snip = i >= 0 ? x.slice(Math.max(0, i - 50), i + 110) : x.slice(0, 140);
       var s = esc(snip); terms.forEach(function (w) { s = s.replace(new RegExp('(' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'ig'), '<mark>$1</mark>'); });
       var sec = ''; for (var k = 0; k < d.h.length; k++) { if (d.h[k].toLowerCase().indexOf(terms[0]) >= 0) { sec = d.a[k]; break; } }
-      return '<a href="' + base + d.u + (sec ? '#' + sec : '') + '"><b>' + esc(d.t) + '</b><small>' + (i > 50 ? '…' : '') + s + '…</small></a>';
+      return '<a href="' + esc(base + d.u + (sec ? '#' + sec : '')) + '"><b>' + esc(d.t) + '</b><small>' + (i > 50 ? '…' : '') + s + '…</small></a>';
     }).join('') || '<p class="muted" style="padding:10px 11px;margin:0;font-size:.9rem">No guide mentions that.</p>';
     box.hidden = false;
   }

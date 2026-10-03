@@ -16,7 +16,7 @@ const IMG_EXT = /\.(png|jpe?g|webp|bmp|tiff?)$/i;
 // Time functions a page exposes, in the order we prefer them when several exist.
 export const TIME_FNS = ['seek', '__seek', 'seekTo', 'renderAt', 'render', 'renderFrame', 'draw', 'drawFrame', 'drawAt',
   'setTime', 'setFrame', 'gotoTime', 'goto', '__render', '__draw', '__setTime', 'frame', 'update', 'paint', 'tick'];
-const FN_ALT = TIME_FNS.map((n) => n.replace(/\$/g, '\\$')).join('|');
+const FN_ALT = TIME_FNS.map((n) => n.replace(/[\\$]/g, '\\$&')).join('|');
 
 /** Walk a folder (skipping dependency and output folders) -> [relative posix paths]. */
 export function listFiles(root, { max = 4000 } = {}) {
@@ -50,7 +50,7 @@ function read(file, max = 2e6) {
 /** The script text of an HTML page (inline scripts only; external classic scripts are appended by the caller). */
 export function inlineScripts(html) {
   const out = [];
-  const re = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
+  const re = /<script\b([^>]*)>([\s\S]*?)<\/script[^>]*>/gi;
   let m;
   while ((m = re.exec(html))) out.push({ attrs: m[1], text: m[2] });
   return out;
@@ -107,7 +107,7 @@ export function scanPage(html) {
   // window.render = render;  (assigned from a named function)
   const aliasRe = new RegExp(`(?:window|globalThis|self)\\.(${FN_ALT})\\s*=\\s*([A-Za-z_$][\\w$]*)\\s*[;\\n]`, 'g');
   while ((m = aliasRe.exec(all))) {
-    const decl = new RegExp(`function\\s+${m[2].replace(/\$/g, '\\$')}\\s*\\(\\s*([\\w$]*)`).exec(all);
+    const decl = new RegExp(`function\\s+${m[2].replace(/[\\$]/g, '\\$&')}\\s*\\(\\s*([\\w$]*)`).exec(all);
     addFn(m[1], decl ? decl[1] : '', m.index);
   }
   // top-level function render(t) { ... } in a classic script (a global too)

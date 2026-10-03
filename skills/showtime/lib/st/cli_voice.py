@@ -301,6 +301,9 @@ def cmd_cues(args: argparse.Namespace) -> int:
     return 0
 
 
+_LIST_COLS = ("id", "lang", "gender", "grade")
+
+
 def cmd_list(args: argparse.Namespace) -> int:
     from .voice import models, voices
     rows: List[Dict[str, Any]] = []
@@ -335,8 +338,7 @@ def cmd_list(args: argparse.Namespace) -> int:
     print("%-28s %-6s %-3s %-5s %-4s %s" % ("VOICE", "LANG", "SEX", "GRADE", "READY", "NOTES"))
     for r in rows:
         notes = r["notes"] + ("" if r["engine"] == "kokoro" else "  [%s]" % r["license"])
-        print("%-28s %-6s %-3s %-5s %-4s  %s" % (r["id"], r["lang"], r["gender"], r["grade"],
-                                                  "yes" if r["installed"] else "no", notes))
+        print("%-28s %-6s %-3s %-5s %-4s  %s" % (*(r[c] for c in _LIST_COLS), "yes" if r["installed"] else "no", notes))
     sys.stdout.flush()
     print("\nDefaults: en af_heart (female) / am_michael (male), en-gb bf_emma, es ef_dora, fr ff_siwis."
           "\nNot installed = downloads on first use (Piper) or `showtime setup --with supertonic`.", file=sys.stderr)

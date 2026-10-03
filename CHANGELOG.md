@@ -53,6 +53,22 @@ through an HTTP proxy, `.env` files unreadable), plus a Windows race the push CI
   file another process is replacing, so `status` and the run's supervisor could collide on `run.json`; the
   supervisor's failed read then rewrote the file with only its new fields. Reads and replaces now retry for up to 2 s,
   and a failed read never rewrites the file.
+- **Code-scanning hardening (CodeQL).** Found by GitHub's code scanning on a fork of 0.3.4; none was a reported
+  exploit, all are fixed rather than suppressed. The site's player and previews take only http(s) media and script
+  URLs from `data-*` attributes (and `file:` when the site itself is opened from disk), `data-root` must be a relative
+  path, and search-result links are escaped. The standalone player detects a doctype with a loop instead of a regex
+  that backtracked on many `--><!--`, and escapes attribute values and the stage URL it writes; the studio clamps a
+  dial's default to a number from 0 to 100; the icon cache builds its CDN URL only from a valid package name and a
+  pinned version; `adopt` escapes backslashes in the names it puts into regexes, matches `</script >` end tags, and
+  strips `--!>` from a file name written into an HTML comment. The brand-block pattern matches exactly the `<link>`
+  line showtime writes; the Wikimedia rate-limit hint compares the parsed hostname; the caption emoji class and the
+  `motion --where` parser are written without patterns the scanner misreads (same results, checked over every code
+  point and a set of filters); the `ci` workflow runs with read-only repository permissions.
+- **MusicGen loads only safetensors, and outside Intel Macs needs torch 2.13+.** The optional MusicGen extra now
+  passes `use_safetensors=True`, so it never `torch.load`s a pickle (the pinned model revision ships
+  `model.safetensors`). Intel Macs keep torch 2.2.2, the last x86_64 macOS build, whose known flaws are in
+  `torch.load` and in functions MusicGen does not call with outside input; everywhere else the floor is 2.13, the
+  first release with every published PyTorch security fix.
 - **Tests in a sandbox that refuses `listen()` skip instead of failing.** `tests/_listen.py` (`LISTEN_BLOCKED`,
   `needs_listen`, `skip_if_listen_refused()`, `SHOWTIME_TEST_NO_LISTEN=1` to simulate) is used by every test that
   serves something; the keelson fixture tests skip when `.env` files are unreadable; test_delight runs alone under `-j`

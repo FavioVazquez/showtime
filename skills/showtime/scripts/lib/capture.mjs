@@ -359,6 +359,19 @@ export async function hostIsPrivate(hostname) {
 }
 
 /**
+ * May a capture of `pageUrl` download its assets from private addresses? Only for a file: page or a page
+ * that is itself on a private host (a local dev server's assets live there too). Never for an 'unknown'
+ * host: on a proxy-only network a public site's name does not resolve here, and hostIsPrivate (which
+ * fails closed: true) used for this opposite decision turned the downloader's SSRF guard off for it.
+ */
+export async function privateAssetsAllowed(pageUrl) {
+  if (/^file:/i.test(String(pageUrl))) return true;
+  let host;
+  try { host = new URL(pageUrl).hostname || 'localhost'; } catch { return false; }
+  return (await hostPrivacy(host)) === 'private';
+}
+
+/**
  * True when a proxy is configured for `url` (HTTP_PROXY/http_proxy for http:, HTTPS_PROXY/https_proxy
  * for https:) and NO_PROXY/no_proxy does not bypass it for this host. Behind an explicit proxy with no
  * local DNS resolver, dns.lookup() fails for every public host even though the proxy reaches it fine:

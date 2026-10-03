@@ -25,7 +25,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from ..common import ShowtimeError, debug, log, paths, skill_dir
+from ..common import ShowtimeError, debug, log, ort_telemetry_off, paths, skill_dir
 from ..platform import IS_MAC
 
 REMBG_SPEC = "rembg==2.0.85"
@@ -126,7 +126,9 @@ def _rembg_cut(src: Path, dst: Path, model: str, mask_only: bool = False) -> Dic
 
     from PIL import Image
     warnings.filterwarnings("ignore", category=UserWarning, module=r"numba.*")
+    import onnxruntime  # type: ignore
     from rembg import new_session, remove  # type: ignore
+    ort_telemetry_off(onnxruntime)
 
     if model not in REMBG_MODELS:
         raise ShowtimeError("unknown rembg model %r" % model, hint="models: " + ", ".join(REMBG_MODELS))

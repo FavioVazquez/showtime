@@ -15,7 +15,9 @@ Environment exported to every child process:
   SHOWTIME_HOME, SHOWTIME_SKILL, SHOWTIME_PYTHON (venv python), SHOWTIME_NODE_MODULES,
   PATH (~/.showtime/bin and the venv's bin first), PYTHONPATH (+SKILL/lib),
   HF_HOME (~/.showtime/models/hf), PLAYWRIGHT_BROWSERS_PATH (~/.showtime/browsers),
-  NODE_PATH, SUPERTONIC_CACHE_DIR, U2NET_HOME, PYTHONUTF8=1, and the saved plugin
+  NODE_PATH, SUPERTONIC_CACHE_DIR, U2NET_HOME, PYTHONUTF8=1, HF_HUB_DISABLE_TELEMETRY=1 and
+  ORT_DISABLE_TELEMETRY=1 (unless set), NODE_USE_ENV_PROXY=1 and loopback NO_PROXY entries when a
+  proxy is set (node_proxy_env), and the saved plugin
   settings (SHOWTIME_VOICE, SHOWTIME_LANG, SHOWTIME_OPEN_BROWSER, SHOWTIME_MAX_WORKERS,
   SHOWTIME_THREADS, SHOWTIME_SOUND) unless those are already set; see settings_file().
 
@@ -324,6 +326,32 @@ def cache_redirects(home: Path, env: dict) -> dict:
     return out
 
 
+LOOPBACK = ("localhost", "127.0.0.1", "::1")
+
+
+def node_proxy_env(env: dict) -> dict:
+    """What a proxy needs on the Node side ({} when no HTTPS_PROXY / HTTP_PROXY is set). Python's downloads
+    follow those variables by themselves; Node's fetch and http(s).request ignore them unless
+    NODE_USE_ENV_PROXY=1 (Node 24+ and 22.21+; http(s).request from 24.5), so behind a proxy-only network
+    (an agent sandbox's egress proxy) every Node download failed. With it on, Node sends loopback requests
+    (the preview and studio servers, a captured local site) to the proxy too unless NO_PROXY names them:
+    they are added to NO_PROXY and no_proxy (Node and Python read the lowercase one first), keeping what is
+    there. NODE_USE_ENV_PROXY already set (0 turns it off) is left alone."""
+    if not any(env.get(v) for v in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy")):
+        return {}
+    if env.get("NODE_USE_ENV_PROXY", "1") != "1":
+        return {}
+    out = {} if env.get("NODE_USE_ENV_PROXY") else {"NODE_USE_ENV_PROXY": "1"}
+    names = ("NO_PROXY",) if plat.IS_WINDOWS else ("no_proxy", "NO_PROXY")   # Windows: one, case-insensitive
+    have = [n for n in names if env.get(n)]
+    for n in names:
+        parts = [p.strip() for p in (env.get(n) or (env[have[0]] if have else "")).split(",") if p.strip()]
+        add = [h for h in LOOPBACK if h not in [p.lower() for p in parts]]
+        if add or n not in have:
+            out[n] = ",".join(parts + add)
+    return out
+
+
 def build_env(home: Path) -> dict:
     env = dict(os.environ)
     venv = home / "venv"
@@ -367,12 +395,14 @@ def build_env(home: Path) -> dict:
     if ours.is_file():
         env.setdefault("IMAGEIO_FFMPEG_EXE", str(ours))
     env.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
+    env.setdefault("ORT_DISABLE_TELEMETRY", "1")   # onnxruntime's own telemetry client (st/__init__.py)
     env.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
     env.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(home / "browsers"))
     env.setdefault("SUPERTONIC_CACHE_DIR", str(home / "models" / "supertonic3"))
     env.setdefault("U2NET_HOME", str(home / "models" / "u2net"))
     env.setdefault("PYTHONUTF8", "1")
     env.setdefault("PYTHONIOENCODING", "utf-8")
+    env.update(node_proxy_env(env))
     return env
 
 

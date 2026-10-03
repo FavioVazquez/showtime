@@ -765,6 +765,22 @@ class TestRetimeVoiceAndData(TempDirCase):
         self.assertIn("voice script", cp.stderr)
         self.assertEqual(common.read_json(d / "showtime.json")["duration"], 10.0)   # errors write nothing
 
+    def test_from_voice_ducks_catalog_music(self):
+        """Music from the catalog (what `audio cut-plan` writes) ducks under the voice like file, lib and compose
+        music; effects and music that already has a duck are left alone."""
+        d = self._project("vo3")
+        common.write_json(d / "audio" / "mix.json", {"duration": 10.0, "tracks": [
+            {"id": "music", "kind": "music", "catalog": "buckley-with-these-hands", "fit": True},
+            {"kind": "music", "catalog": {"use": "explainer", "pick": 0}},
+            {"kind": "music", "lib": "x/y", "duck": {"under": "vo-hook", "depth_db": 6}},
+            {"kind": "sfx", "synth": {"type": "impact"}, "at": 3.5}]})
+        tl = self._timeline(d / "voice", [("hook", 1.6, 0.35), ("demo", 3.0, 0.6)])
+        rep = json.loads(showtime("retime", d, "--from-voice", tl, "--json").stdout)
+        self.assertTrue(any("music ducks under the voice" in c for c in rep["changes"]), rep["changes"])
+        tracks = [t for t in common.read_json(d / "audio" / "mix.json")["tracks"] if t.get("kind") != "voice"]
+        self.assertEqual([t.get("duck") for t in tracks],
+                         [{"under": "voice"}, {"under": "voice"}, {"under": "vo-hook", "depth_db": 6}, None])
+
     def test_stretch_warning_and_quiet_poster(self):
         d = self._project("st1")
         cp = showtime("retime", d, "-d", "20", "--json")

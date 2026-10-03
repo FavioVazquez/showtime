@@ -8,7 +8,7 @@ before the virtualenv exists). Provides:
 - process: run() with argument lists only, RunError with a stderr tail
 - json:    read_json(), write_json() (atomic), print_json()
 - output:  slugify(), timestamp(), output_dir()
-- misc:    ShowtimeError, sha256_file(), human_size(), ensure_dir()
+- misc:    ShowtimeError, sha256_file(), human_size(), ensure_dir(), ort_telemetry_off()
 - ux:      use_color(), paint(), Progress (n/N, rate, ETA), estimate(),
            fmt_duration(), extra_installed(), require_extra(), debug_enabled()
 """
@@ -38,7 +38,7 @@ __all__ = [
     "get_logger", "run", "read_json", "write_json", "print_json", "slugify",
     "timestamp", "output_dir", "sha256_file", "human_size", "which", "portable_path", "resolve_portable",
     "use_color", "paint", "Progress", "estimate", "fmt_duration", "extra_info", "extra_installed",
-    "require_extra", "debug_enabled",
+    "require_extra", "debug_enabled", "ort_telemetry_off",
 ]
 
 
@@ -173,6 +173,18 @@ def ensure_dir(p: PathLike) -> Path:
 def which(name: str) -> Optional[str]:
     """Find an executable, looking in ~/.showtime/bin first."""
     return plat.which(name, [home() / "bin"])
+
+
+def ort_telemetry_off(rt: Any) -> None:
+    """Turn off onnxruntime's telemetry events (rt: the imported onnxruntime module) before a session is
+    made. A second guard behind ORT_DISABLE_TELEMETRY=1 (st/__init__.py, launcher.build_env), for a
+    process that started onnxruntime without it; builds without the call are left as they are."""
+    off = getattr(rt, "disable_telemetry_events", None)
+    if off is not None:
+        try:
+            off()
+        except Exception:  # noqa: BLE001 - never stop a voice or a cutout over this
+            pass
 
 
 # --------------------------------------------------------------------------

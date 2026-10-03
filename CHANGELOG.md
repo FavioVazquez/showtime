@@ -5,6 +5,59 @@ All notable changes to showtime. Each entry says what changed and why, so this f
 `skills/showtime/lib/st/__init__.py` and `python3 scripts/check_release.py` keeps the plugin manifests, the registry files and
 `setup/package.json` in sync with it.
 
+## 0.3.5 (2026-10-03)
+
+Fixes found by running showtime in a locked-down agent sandbox (no writable HOME, no local `listen()`, egress only
+through an HTTP proxy, `.env` files unreadable), plus a Windows race the push CI caught.
+
+- **onnxruntime's telemetry was on, while PRIVACY.md says showtime has none.** The onnxruntime that Kokoro,
+  alignment, stem separation, rembg and faster-whisper load on Linux (1.30) carries Microsoft's telemetry client and
+  starts it at import; where HOME is read-only it logged "Failed to persist telemetry device ID" and wrote a
+  `:memory:.ses` session file into the current folder. Every showtime process and its children now get
+  `ORT_DISABLE_TELEMETRY=1` (set by `st` itself and by the launcher, unless already set), and
+  `onnxruntime.disable_telemetry_events()` is called before each model loads. PRIVACY.md says which libraries'
+  telemetry showtime turns off and how.
+- **Site capture turned its private-address guard off for a site whose name did not resolve.** 0.3.3 made
+  `hostIsPrivate` fail closed, but `site capture` still used it to decide whether a page's assets may come from
+  private addresses, so a public site that does not resolve locally (the normal case on a proxy-only network) let
+  them. Only a `file:` page or a page on a known private host allows that now (`privateAssetsAllowed` in `capture.mjs`).
+- **Node downloads ignored HTTPS_PROXY.** Node's `fetch` and `http(s).request` use the proxy variables only with
+  `NODE_USE_ENV_PROXY=1`, so on a proxy-only network the Python side downloaded and the Node side (icon fetches, site
+  capture's assets) did not. When a proxy variable is set, the launcher gives Node children `NODE_USE_ENV_PROXY=1` and
+  adds `localhost,127.0.0.1,::1` to `NO_PROXY`/`no_proxy` (keeping your entries), so the preview and studio servers'
+  local requests stay local. Node reads the flag from 22.21 (24.5 for `http.request`); `showtime doctor` warns when a
+  proxy is set and Node is older.
+- **Voice could not start when both the showtime home and `$TMPDIR` had long paths, and setup still said it was
+  done.** espeak-ng cannot read a data folder whose path is over about 140 bytes, so showtime copies its data to a
+  short folder first; in sandboxes where the home and `$TMPDIR` are both long (seen at 175-185 bytes) there was none.
+  The copy now falls back to `/tmp/showtime-espeak-<uid>` on macOS and Linux (0700, used only when it is the current
+  user's own); when even that fails, the hint names the path length and the fix. `showtime setup` now runs doctor's
+  espeak-ng self-test, so it fails instead of reporting success with voice broken.
+- **`retime --from-voice` left catalog music at full level under the voice.** Placing the voice ducks music that
+  has no duck, but only `file`, `lib` and `compose` tracks; a `catalog` track (what `audio cut-plan` writes) was
+  skipped. Catalog music now ducks too.
+- **`voice ipa`'s "no lexicon.json" hint read as a flag `voice script` does not have.** It now says that `--project`
+  is `voice ipa`'s flag and that `voice script` reads the `lexicon.json` next to its script, plus any `--lexicon FILE`.
+- **Setup and doctor said "`showtime` is not on PATH yet" when it was.** A skill's own `bin/showtime` on PATH (a
+  plugin's or a checkout's) now counts, not only the `~/.showtime/bin` command.
+- **`brand capture` took the wrong lines from a README that starts with HTML.** On showtime's own README (no H1) the
+  title was a shell comment in a code block and the tagline a bare video URL. The title is now the first H1 outside
+  code (markdown, setext or a multi-line HTML `<h1>`) and the tagline its lead paragraph, skipping URL-only lines,
+  images, badges, comments and captions; prompts to type are no longer listed as install commands, and brand.md for an
+  adopted kit never prints `None`.
+- **`check` reported caption words at their karaoke state.** A caption word sampled while its card faded in, or
+  dimmed before it was spoken, was measured at that opacity (#e9b949 on #17120e came out at 2.98:1 instead of
+  10.18:1). Caption words are judged at the caption's own opacity, and any text measured at partial opacity is named
+  with it (`#e9b949 at 45% opacity (shows as #765d29) on #17120e`). Real low contrast still fails.
+- **A finished background run on Windows could show as "lost", with no id or command.** Windows refuses to open a
+  file another process is replacing, so `status` and the run's supervisor could collide on `run.json`; the
+  supervisor's failed read then rewrote the file with only its new fields. Reads and replaces now retry for up to 2 s,
+  and a failed read never rewrites the file.
+- **Tests in a sandbox that refuses `listen()` skip instead of failing.** `tests/_listen.py` (`LISTEN_BLOCKED`,
+  `needs_listen`, `skip_if_listen_refused()`, `SHOWTIME_TEST_NO_LISTEN=1` to simulate) is used by every test that
+  serves something; the keelson fixture tests skip when `.env` files are unreadable; test_delight runs alone under `-j`
+  (pty devices).
+
 ## 0.3.4 (2026-10-02)
 
 - **Frame 0 of a page with CSS animations could show where the animation had got to in real time.**

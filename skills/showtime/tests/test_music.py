@@ -46,6 +46,8 @@ import unittest
 import zipfile
 from pathlib import Path
 
+from _listen import need_listen
+
 TESTS_DIR = Path(__file__).resolve().parent
 SKILL = TESTS_DIR.parent
 LAUNCHER = SKILL / "lib" / "st" / "launcher.py"
@@ -74,6 +76,7 @@ class _Handler(http.server.SimpleHTTPRequestHandler):
 
 @contextlib.contextmanager
 def serve(folder: Path):
+    need_listen()
     handler = lambda *a, **k: _Handler(*a, directory=str(folder), **k)  # noqa: E731
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     th = threading.Thread(target=srv.serve_forever, daemon=True)

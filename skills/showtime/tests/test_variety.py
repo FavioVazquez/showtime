@@ -33,6 +33,8 @@ import unittest
 import warnings
 from pathlib import Path
 
+from _listen import needs_listen
+
 TESTS_DIR = Path(__file__).resolve().parent
 SKILL = TESTS_DIR.parent
 LAUNCHER = SKILL / "lib" / "st" / "launcher.py"
@@ -412,6 +414,7 @@ class TestReference(HistoryCase):
         self.assertTrue((job / "references" / "pattern-reel-2" / "reference.md").is_file())
         self.assertIn("pattern-reel-2", showtime("reference", "list", job).stdout)
 
+    @needs_listen
     def test_url_direct_file_and_page(self):
         root = TMP / "served"
         root.mkdir(exist_ok=True)

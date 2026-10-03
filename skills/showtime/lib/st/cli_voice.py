@@ -203,8 +203,9 @@ def register(sub: argparse._SubParsersAction) -> None:
     p = s.add_parser("ipa", help="show phonemes for text (for pronunciation fixes)", formatter_class=_F,
                      description="Print the IPA espeak-ng produces per word, and what the lexicon overrides; the\n"
                                  "phrase line is what the voice reads, overrides included. Copy a line into\n"
-                                 "lexicon.json and edit it to fix a pronunciation. The project's lexicon.json is found\n"
-                                 "like `voice script` finds it (see --project).",
+                                 "lexicon.json and edit it to fix a pronunciation. The lexicon.json read is the one in\n"
+                                 "the current folder (or its one sub-folder that has one), or in --project; `voice\n"
+                                 "script` reads the one next to its script or one folder up.",
                      epilog="Examples:\n  showtime voice ipa \"Showtime runs on Kubernetes\"\n"
                             "  showtime voice ipa \"Te presentamos Showtime\" --lang es")
     p.add_argument("text", help="words to phonemize (inline [word](/ipa/) and [word](respelling) work too)")
@@ -527,8 +528,9 @@ def cmd_ipa(args: argparse.Namespace) -> int:
         fix = ("   lexicon -> %s" % r["lexicon"]) if r["lexicon"] else ""
         print("%-18s %-28s%s%s" % (r["word"], r["espeak"], fix, extra))
     print("\nphrase: %s%s" % (whole, "   (with the lexicon)" if any(r["lexicon"] for r in rows) else ""))
-    print("lexicon: %s" % (", ".join(used) if used else "built-in only (no lexicon.json in %s; pass --project or "
-                                                          "--lexicon)" % pdir), file=sys.stderr)
+    print("lexicon: %s" % (", ".join(used) if used else "built-in only (no lexicon.json in %s; `voice ipa --project DIR` "
+                           "reads DIR's, --lexicon FILE adds one; `voice script` reads the lexicon.json next to its "
+                           "script or one folder up)" % pdir), file=sys.stderr)
     print("lexicon entry format: {\"%s\": \"%s\"}" % (rows[0]["word"], rows[0]["lexicon"] or rows[0]["espeak"]),
           file=sys.stderr)
     return 0

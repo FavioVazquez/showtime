@@ -35,6 +35,8 @@ import time
 import unittest
 from pathlib import Path
 
+from _listen import LISTEN_BLOCKED
+
 TESTS_DIR = Path(__file__).resolve().parent
 SKILL = TESTS_DIR.parent
 REPO = SKILL.parent.parent
@@ -78,6 +80,8 @@ def launcher(*args, env=None, cwd=None, timeout=120):
 
 
 def closed_port() -> int:
+    if LISTEN_BLOCKED:
+        return 9   # a sandbox that refuses bind(): the discard port, which nothing serves (test_music uses it too)
     s = socket.socket()
     s.bind(("127.0.0.1", 0))
     port = s.getsockname()[1]
@@ -349,6 +353,17 @@ class TestShim(Tmp):
             self.assertTrue(any("ln -sf" in x for x in lines), lines)
             os.environ["PATH"] = "%s:/usr/bin:/bin" % (home / "bin")
             self.assertEqual(shim.path_hint(home), [], "already on PATH: nothing to say")
+            # the skill's own launcher on PATH (a plugin's bin/, a checkout) works too: no "not on PATH yet"
+            os.environ["PATH"] = os.pathsep.join([str(SKILL / "bin"), "/usr/bin", "/bin"])
+            self.assertEqual(shim.path_hint(home), [], "the skill's bin/showtime is on PATH")
+            # another program called showtime is not showtime
+            other = self.tmp / "other-bin"
+            other.mkdir()
+            fake = other / ("showtime.cmd" if os.name == "nt" else "showtime")
+            fake.write_text("@echo off\n" if os.name == "nt" else "#!/bin/sh\n", encoding="utf-8")
+            fake.chmod(0o755)
+            os.environ["PATH"] = os.pathsep.join([str(other), "/usr/bin", "/bin"])
+            self.assertTrue(any("not on PATH yet" in x for x in shim.path_hint(home)))
         finally:
             os.environ.clear()
             os.environ.update(old)
@@ -595,9 +610,134 @@ class TestHome(Tmp):
             os.environ.update(old)
 
 
+# ============================================================================ the environment children get
+
+PROXY_VARS = ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "NO_PROXY", "no_proxy", "NODE_USE_ENV_PROXY")
+PRINT_ENV = ("import json, os; print(json.dumps({k: os.environ.get(k) for k in "
+             "('ORT_DISABLE_TELEMETRY', 'NODE_USE_ENV_PROXY', 'NO_PROXY', 'no_proxy')}))")
+
+
+class TestChildEnv(Tmp):
+    """What showtime's child processes inherit: onnxruntime's telemetry off (its Linux wheels start
+    Microsoft's telemetry client at import), and, behind a proxy, Node told to use it (Node's fetch and
+    http(s).request ignore HTTPS_PROXY unless NODE_USE_ENV_PROXY=1) without sending loopback to it."""
+
+    def child_env(self, *, node=False, **extra):
+        """The environment a child of the launcher sees (build_env in a fresh process, as main() runs it)."""
+        env = {k: v for k, v in clean_env(SHOWTIME_HOME=self.tmp / "home", SHOWTIME_SETTINGS=self.tmp / "s.json").items()
+               if k not in PROXY_VARS and k != "ORT_DISABLE_TELEMETRY"}
+        env.update(extra)
+        if node:
+            exe = shutil.which("node")
+            if not exe:
+                self.skipTest("node not found")
+            child = repr([exe, "-e", "const e = process.env; console.log(JSON.stringify(Object.fromEntries("
+                          "['ORT_DISABLE_TELEMETRY', 'NODE_USE_ENV_PROXY', 'NO_PROXY', 'no_proxy'].map((k) => [k, e[k] ?? null]))))"])
+        else:
+            child = repr([sys.executable, "-c", PRINT_ENV])
+        code = ("import subprocess, sys; sys.path.insert(0, %r); from st import launcher as L; "
+                "sys.exit(subprocess.run(%s, env=L.build_env(L.showtime_home())).returncode)" % (str(SKILL / "lib"), child))
+        cp = run([sys.executable, "-c", code], env=env, cwd=self.tmp)
+        self.assertEqual(cp.returncode, 0, cp.stderr)
+        return json.loads(cp.stdout.strip().splitlines()[-1])
+
+    def test_onnxruntime_telemetry_off_in_children(self):
+        self.assertEqual(self.child_env()["ORT_DISABLE_TELEMETRY"], "1", "a child of the launcher")
+        self.assertEqual(self.child_env(node=True)["ORT_DISABLE_TELEMETRY"], "1", "a Node child of the launcher")
+        self.assertEqual(self.child_env(ORT_DISABLE_TELEMETRY="0")["ORT_DISABLE_TELEMETRY"], "0", "a set value wins")
+        # a process that imports st without the launcher (the venv python a test or host runs) and its children
+        env = {k: v for k, v in clean_env().items() if k != "ORT_DISABLE_TELEMETRY"}
+        code = "import subprocess, sys; sys.path.insert(0, %r); import st; subprocess.run([sys.executable, '-c', %r])" % (
+            str(SKILL / "lib"), PRINT_ENV)
+        cp = run([sys.executable, "-c", code], env=env, cwd=self.tmp)
+        self.assertEqual(cp.returncode, 0, cp.stderr)
+        self.assertEqual(json.loads(cp.stdout.strip().splitlines()[-1])["ORT_DISABLE_TELEMETRY"], "1", "import st")
+        # the second guard at session creation: called when the build has it, harmless when it does not
+        from st.common import ort_telemetry_off
+        calls = []
+        ort_telemetry_off(type("Rt", (), {"disable_telemetry_events": staticmethod(lambda: calls.append(1))}))
+        ort_telemetry_off(object())
+        self.assertEqual(calls, [1])
+
+    def test_node_children_use_the_proxy_when_one_is_set(self):
+        r = self.child_env(node=True)
+        self.assertIsNone(r["NODE_USE_ENV_PROXY"], "no proxy: Node's networking stays as it is")
+        self.assertIsNone(r["NO_PROXY"])
+        r = self.child_env(node=True, HTTPS_PROXY="http://proxy.example:3128")
+        self.assertEqual(r["NODE_USE_ENV_PROXY"], "1")
+        no_proxy = r["NO_PROXY"].split(",")
+        for h in ("localhost", "127.0.0.1", "::1"):
+            self.assertIn(h, no_proxy, "loopback (preview, studio, a captured local site) must not go to the proxy")
+        if not IS_WIN:
+            self.assertEqual(r["no_proxy"], r["NO_PROXY"], "Node reads no_proxy first: both carry the list")
+        r = self.child_env(node=True, http_proxy="http://proxy.example:3128", no_proxy="corp.example,localhost")
+        self.assertEqual(r["NODE_USE_ENV_PROXY"], "1", "lowercase proxy variables count too")
+        self.assertEqual(r["no_proxy" if not IS_WIN else "NO_PROXY"].split(",")[:2], ["corp.example", "localhost"],
+                         "the user's own entries are kept, first")
+        r = self.child_env(node=True, HTTPS_PROXY="http://proxy.example:3128", NODE_USE_ENV_PROXY="0")
+        self.assertEqual(r["NODE_USE_ENV_PROXY"], "0", "a set value wins")
+
+    def test_node_really_routes_through_the_proxy(self):
+        """With the launcher's environment, Node's fetch reaches a remote name through HTTPS_PROXY/HTTP_PROXY
+        and a loopback address directly. Needs a Node with NODE_USE_ENV_PROXY (24+, 22.21+)."""
+        exe = shutil.which("node")
+        if not exe:
+            self.skipTest("node not found")
+        ver = tuple(int(x) for x in re.findall(r"\d+", run([exe, "--version"]).stdout)[:2])
+        if not (ver >= (24, 0) or (22, 21) <= ver < (23, 0)):
+            self.skipTest("Node %s has no NODE_USE_ENV_PROXY" % ".".join(map(str, ver)))
+        import http.server
+        import threading
+        seen = []
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def _answer(self):
+                seen.append((self.server.name, self.command, self.path))
+                self.send_response(200 if self.server.name == "target" else 502)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+            do_GET = do_CONNECT = _answer
+
+            def log_message(self, *a):
+                pass
+
+        servers = []
+        for name in ("proxy", "target"):
+            s = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+            s.name = name
+            threading.Thread(target=s.serve_forever, daemon=True).start()
+            servers.append(s)
+        proxy, target = ("http://127.0.0.1:%d" % s.server_address[1] for s in servers)
+        try:
+            js = ("const go = (u) => fetch(u).then((r) => r.status, (e) => 'error');"
+                  "Promise.all([go('http://remote.invalid/x'), go(process.argv[1] + '/y')])"
+                  ".then((r) => console.log(JSON.stringify(r)));")
+            code = ("import subprocess, sys; sys.path.insert(0, %r); from st import launcher as L; "
+                    "sys.exit(subprocess.run([%r, '-e', %r, %r], env=L.build_env(L.showtime_home())).returncode)"
+                    % (str(SKILL / "lib"), exe, js, target))
+            env = {k: v for k, v in clean_env(SHOWTIME_HOME=self.tmp / "home").items() if k not in PROXY_VARS}
+            env["HTTP_PROXY"] = proxy
+            cp = run([sys.executable, "-c", code], env=env, cwd=self.tmp)
+            self.assertEqual(cp.returncode, 0, cp.stderr)
+            self.assertEqual(json.loads(cp.stdout.strip().splitlines()[-1])[1], 200, "loopback goes direct")
+            self.assertTrue(any(n == "proxy" and "remote.invalid" in p for n, _, p in seen), seen)
+            self.assertFalse(any(n == "proxy" and "127.0.0.1" in p for n, _, p in seen), seen)
+        finally:
+            for s in servers:
+                s.shutdown()
+                s.server_close()
+
+
 # ============================================================================ doctor in a sandbox
 
 class TestDoctorSandbox(Tmp):
+    def test_node_proxy_versions(self):
+        """doctor warns when a proxy is set and Node ignores NODE_USE_ENV_PROXY (before 22.21, 23.x-24.4)."""
+        from st.doctor import node_ignores_proxy
+        for ver, ignores in (((20, 11, 1), True), ((22, 20, 0), True), ((22, 21, 0), False), ((23, 9, 0), True),
+                             ((24, 4, 1), True), ((24, 5, 0), False), ((25, 1, 0), False)):
+            self.assertEqual(node_ignores_proxy(ver), ignores, ver)
+
     def doctor(self, env, cwd=None):
         cp = launcher("doctor", "--quick", "--json", env=env, cwd=cwd or self.tmp, timeout=300)
         self.assertIn(cp.returncode, (0, 1), cp.stderr)

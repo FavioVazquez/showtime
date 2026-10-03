@@ -1073,6 +1073,18 @@ class Installer:
             return "fail", "imports failing: " + "; ".join("%s (%s)" % kv for kv in bad.items())
         return "ok", detail + "; python %s" % self.venv_version()
 
+    def step_espeak(self) -> Tuple[str, str]:
+        """The espeak-ng self-test doctor runs (st.voice.espeak.check): Kokoro cannot speak without it."""
+        code = "import json\nfrom st.voice.espeak import check\nprint(json.dumps(check(refresh=True)))\n"
+        cp = run([str(self.vpy), "-c", code], env=dict(self.env_common, PYTHONPATH=str(LIB_DIR)), timeout=300)
+        try:
+            res = json.loads(cp.stdout.strip().splitlines()[-1])
+        except (ValueError, IndexError):
+            return "fail", "the self-test did not run:\n" + tail(cp.stdout)
+        if not res.get("ok"):
+            return "fail", "%s\nfix: %s" % (res.get("error"), res.get("hint"))
+        return "ok", "%s (%s), self-test passed" % (res.get("source"), res.get("lib"))
+
     def venv_version(self) -> str:
         cp = run([str(self.vpy), "-c", "import platform; print(platform.python_version())"])
         return cp.stdout.strip()
@@ -1390,6 +1402,8 @@ class Installer:
                 ffmpeg_ok = self.report.rows[-1]["status"] != "fail"
             if "python" not in self.skip:
                 self.timed("python", self.step_python)
+                if self.report.rows[-1]["status"] != "fail":
+                    self.timed("espeak-ng", self.step_espeak)
                 if not ffmpeg_ok:
                     self.timed("imageio-ffmpeg", self.step_imageio_fallback)
             if "node" not in self.skip:

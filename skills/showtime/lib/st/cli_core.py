@@ -1493,7 +1493,9 @@ def _voice_tracks(spec: Dict[str, Any], voice: Dict[str, Any], rep: Dict[str, An
                             % ", ".join(str(t.get("file") or t.get("id")) for t in others[:3]))
     ducked = 0
     for t in kept:
-        if isinstance(t, dict) and t.get("kind", "music") == "music" and "duck" not in t and (t.get("file") or t.get("lib") or t.get("compose")):
+        # every music source of a mix (audio/mix.py); synth, keystrokes and typewriter are effects
+        if isinstance(t, dict) and t.get("kind", "music") == "music" and "duck" not in t and \
+                any(t.get(k) for k in ("file", "lib", "catalog", "compose")):
             t["duck"] = {"under": "voice"}
             ducked += 1
     rep["changes"].append("voice: %d line(s) placed on their scenes (%s)%s" % (

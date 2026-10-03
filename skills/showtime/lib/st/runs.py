@@ -71,11 +71,22 @@ def display(argv: List[str]) -> str:
 
 # --------------------------------------------------------------------------- run records
 
+# Windows refuses to open a file another process is replacing (and to replace one another process has
+# open), so a reader and the supervisor can collide for a few milliseconds: retry before giving up.
+RETRY_S = 2.0
+
+
 def load(run_dir: Path) -> Optional[Dict[str, Any]]:
-    try:
-        data = json.loads((Path(run_dir) / "run.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
+    f = Path(run_dir) / "run.json"
+    t_end = time.time() + RETRY_S
+    while True:
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            break
+        except (OSError, ValueError):
+            if not f.exists() or time.time() > t_end:
+                return None
+            time.sleep(0.05)
     if not isinstance(data, dict):
         return None
     data["dir"] = str(run_dir)
@@ -87,11 +98,25 @@ def save(run_dir: Path, data: Dict[str, Any]) -> None:
     body = {k: v for k, v in data.items() if k not in ("dir", "log")}
     tmp = Path(run_dir) / (".run.json.%d.tmp" % os.getpid())
     tmp.write_text(json.dumps(body, indent=2) + "\n", encoding="utf-8")
-    os.replace(str(tmp), str(Path(run_dir) / "run.json"))
+    t_end = time.time() + RETRY_S
+    while True:
+        try:
+            os.replace(str(tmp), str(Path(run_dir) / "run.json"))
+            return
+        except PermissionError:
+            if time.time() > t_end:
+                raise
+            time.sleep(0.05)
 
 
 def update(run_dir: Path, **fields: Any) -> Dict[str, Any]:
-    data = load(run_dir) or {}
+    data = load(run_dir)
+    if data is None:
+        if (Path(run_dir) / "run.json").exists():
+            # unreadable even after retrying: writing only `fields` would drop the run's id, command and
+            # folder, and `status` would then call it lost
+            raise OSError("cannot read %s" % (Path(run_dir) / "run.json"))
+        data = {}
     data.update(fields)
     save(run_dir, data)
     return data

@@ -22,6 +22,7 @@ import _isolate  # noqa: F401  (run from a scratch folder: never write into the 
 import http.server
 import json
 import os
+import re
 import shutil
 import socket
 import struct
@@ -34,6 +35,8 @@ import unittest
 import urllib.request
 import zlib
 from pathlib import Path
+
+from _listen import LISTEN_BLOCKED, needs_listen, skip_if_listen_refused
 
 TESTS_DIR = Path(__file__).resolve().parent
 SKILL = TESTS_DIR.parent
@@ -53,6 +56,7 @@ def showtime(*args, check=True, timeout=240, cwd=None):
     cp = subprocess.run([sys.executable, str(LAUNCHER)] + [str(a) for a in args], env=ENV, cwd=cwd,
                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8",
                         errors="replace", timeout=timeout)
+    skip_if_listen_refused(cp)
     if check and cp.returncode != 0:
         raise AssertionError("showtime %s failed (rc=%d):\n%s\n%s" % (
             " ".join(map(str, args)), cp.returncode, cp.stdout[-3000:], cp.stderr[-3000:]))
@@ -113,6 +117,8 @@ def network_ok() -> bool:
 
 NET = network_ok()
 SITE = TMP / "site"
+SERVER = None
+BASE = ""
 
 
 def setUpModule():
@@ -124,20 +130,24 @@ def setUpModule():
     png(SITE / "listing" / "a.png", 64, 64, 4)       # a folder without index.html
     handler = lambda *a, **k: Handler(*a, directory=str(SITE), **k)  # noqa: E731
     global SERVER, BASE
+    if LISTEN_BLOCKED:   # T1Site, T1bServe and T2Demo skip; the rest runs without a server
+        return
     SERVER = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     threading.Thread(target=SERVER.serve_forever, daemon=True).start()
     BASE = "http://127.0.0.1:%d/" % SERVER.server_address[1]
 
 
 def tearDownModule():
-    SERVER.shutdown()
-    SERVER.server_close()
+    if SERVER is not None:
+        SERVER.shutdown()
+        SERVER.server_close()
     if not os.environ.get("SHOWTIME_KEEP_TEST_OUTPUT"):
         shutil.rmtree(TMP, ignore_errors=True)
     else:
         print("kept test output in", TMP)
 
 
+@needs_listen
 class T1Site(unittest.TestCase):
     def test_capture_local(self):
         out = TMP / "cap"
@@ -215,6 +225,7 @@ def port_open(url: str) -> bool:
         return False
 
 
+@needs_listen
 class T1bServe(unittest.TestCase):
     """--serve DIR and the wrong-page guard (audit B1)."""
 
@@ -497,7 +508,40 @@ console.log(JSON.stringify(R));
         self.assertNotEqual(r["withProxy"], "unresolved-host",
                             "a configured proxy must bypass the unresolved-host short-circuit")
 
+    def test_unknown_page_host_never_allows_private_assets(self):
+        """site capture turned the asset downloader's private-address guard off with
+        `allowPrivate = ... || await hostIsPrivate(host)`: since hostIsPrivate fails closed, a public site
+        whose name does not resolve here (a proxy-only network) counted as private. Only a file: page or a
+        page on a known private host may fetch private assets, and no script may use hostIsPrivate to allow
+        anything."""
+        js = r"""
+import { privateAssetsAllowed } from %s;
+const R = {};
+R.unknown = await privateAssetsAllowed('https://' + %s + '/');
+R.publicIp = await privateAssetsAllowed('https://1.2.3.4/');
+R.loopback = await privateAssetsAllowed('http://127.0.0.1:8080/');
+R.localhost = await privateAssetsAllowed('http://localhost:3000/');
+R.file = await privateAssetsAllowed('file:///tmp/site/index.html');
+R.bad = await privateAssetsAllowed('not a url');
+console.log(JSON.stringify(R));
+""" % (json.dumps((SKILL / "scripts" / "lib" / "capture.mjs").as_uri()), json.dumps(self.UNRESOLVABLE))
+        r = self._run(js)
+        self.assertEqual(r, {"unknown": False, "publicIp": False, "loopback": True, "localhost": True,
+                             "file": True, "bad": False})
+        # the capture itself decides with it, and nothing else turns "not known public" into a permission
+        site = (SKILL / "scripts" / "site.mjs").read_text(encoding="utf-8")
+        m = re.search(r"const allowPrivate = ([^\n]+)", site)
+        self.assertTrue(m, "site.mjs no longer computes allowPrivate: update this test")
+        self.assertIn("privateAssetsAllowed(url)", m.group(1))
+        for f in sorted((SKILL / "scripts").rglob("*.mjs")) + sorted((SKILL / "mcp").rglob("*.mjs")):
+            if "node_modules" in f.parts or f.name == "capture.mjs":
+                continue
+            self.assertNotIn("hostIsPrivate", f.read_text(encoding="utf-8"),
+                             "%s: hostIsPrivate fails closed (true for an unknown host); allow with "
+                             "hostPrivacy(...) === 'private' or privateAssetsAllowed" % f.relative_to(SKILL))
 
+
+@needs_listen
 class T2Demo(unittest.TestCase):
     def test_demo_and_autozoom(self):
         out = TMP / "demo"

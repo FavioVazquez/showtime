@@ -80,7 +80,9 @@ Longest files start first (timings of the previous run, kept in `~/.showtime/cac
 failing file's output is printed in full at the end. A new test
 must use temp folders, free ports (port 0) and atomic writes into `~/.showtime/cache`
 (`common.part_path` + `os.replace`, `common.cache_lock`); a file that truly cannot share the machine goes
-in `SERIAL` in `run_all.py`, with the reason. `--shard I/N` runs one of N weight-balanced parts of the
+in `SERIAL` in `run_all.py`, with the reason. A test that serves something (its own HTTP server, or
+showtime's: render, check, snap, export, preview) uses `tests/_listen.py`, so it skips in a sandbox that
+refuses `listen()` (`SHOWTIME_TEST_NO_LISTEN=1` simulates one). `--shard I/N` runs one of N weight-balanced parts of the
 files (CI splits the fast suite into three jobs per OS this way); the split uses only the file names and
 `SHARD_WEIGHTS` in `run_all.py`, so give a new heavy test file a weight there.
 

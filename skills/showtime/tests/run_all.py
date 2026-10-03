@@ -81,6 +81,8 @@ PART_RUNNER = TESTS_DIR / "_part.py"
 SERIAL: dict = {
     "test_export.py": "its HTML player checks watch playback in real time (frames drawn, picture against the "
                       "sound clock); on a 4-core CI runner another file's Chrome starves them",
+    "test_delight.py": "its real `showtime --help` runs on a pseudo-terminal, and a sandbox with few pty devices "
+                       "ran out of them (\"out of pty devices\") while other files held theirs; about a second alone",
 }
 
 MAX_AUTO_JOBS = 8

@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from ..common import ShowtimeError, debug, info
+from ..common import ShowtimeError, debug, info, ort_telemetry_off
 from .. import platform as plat
 from . import util as U
 
@@ -135,6 +135,7 @@ def _istft(spec, n_fft: int, hop: int, window, length: int):
 
 def _session(model: Path, threads: int):
     import onnxruntime as ort
+    ort_telemetry_off(ort)
     so = ort.SessionOptions()
     so.intra_op_num_threads = max(1, threads)
     so.inter_op_num_threads = 1

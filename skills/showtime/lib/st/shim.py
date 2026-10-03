@@ -487,10 +487,23 @@ def on_path(home: Path) -> bool:
         return False
 
 
+def launcher_on_path(home: Path) -> bool:
+    """True when `showtime` on the user's PATH is a showtime launcher: this home's, or a skill's own bin/showtime
+    (a plugin or a checkout put on PATH)."""
+    import shutil
+    if on_path(home):
+        return True
+    found = shutil.which("showtime", path=user_path() or None)
+    try:
+        return bool(found) and valid_skill(Path(found).resolve().parent.parent)
+    except OSError:
+        return False
+
+
 def path_hint(home: Path) -> List[str]:
     """Lines telling the user how to call `showtime` from anywhere (empty when it already works)."""
     home = Path(home)
-    if on_path(home):
+    if launcher_on_path(home):
         return []
     shim = shim_path(home)
     if os.name == "nt":

@@ -51,6 +51,8 @@ import time
 import unittest
 from pathlib import Path
 
+from _listen import needs_listen
+
 TESTS_DIR = Path(__file__).resolve().parent
 SKILL = TESTS_DIR.parent
 LAUNCHER = SKILL / "lib" / "st" / "launcher.py"
@@ -401,6 +403,7 @@ def serve(folder):
     return srv
 
 
+@needs_listen
 class ExportTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

@@ -487,6 +487,96 @@ import shutil; shutil.rmtree(other, ignore_errors=True); shutil.rmtree(tmp, igno
         self.assertTrue(d["other_kept"])
         self.assertTrue(d["list_gone"])
 
+    @unittest.skipIf(plat.IS_WINDOWS, "the /tmp fallback is POSIX only (%ProgramData% is short on Windows)")
+    def test_10_espeak_long_home_and_tmpdir(self):
+        """A data path over espeak-ng's limit with $SHOWTIME_HOME and $TMPDIR both long is copied to
+        /tmp/showtime-espeak-<uid> (this user's 0700 folder; anyone else's is refused); when no short folder
+        works, the hint names the path length, not `showtime setup`."""
+        short = Path(tempfile.mkdtemp(prefix="st-esp-"))
+        self.addCleanup(shutil.rmtree, str(short), True)
+        out = py(r"""
+import json, os, sys, tempfile
+from pathlib import Path
+lib, base, short = sys.argv[1], Path(sys.argv[2]), Path(sys.argv[3])
+sys.path.insert(0, lib)
+for d in ("home", "tmp", "data/espeak-ng-data"):
+    (base / d).mkdir(parents=True, exist_ok=True)
+(base / "data/espeak-ng-data/phontab").write_bytes(b"x")
+os.environ.update(SHOWTIME_HOME=str(base / "home"), TMPDIR=str(base / "tmp"))
+tempfile.tempdir = None
+from st.common import ShowtimeError
+from st.voice import espeak as E
+data = str(base / "data/espeak-ng-data")
+E.SHORT_ROOT = str(short / "ok")
+os.mkdir(E.SHORT_ROOT)
+got = E._short_copy(data)
+mode = oct(os.stat(str(Path(got).parent)).st_mode & 0o777) if got else None
+E.SHORT_ROOT = str(short / "loose")
+os.makedirs(os.path.join(E.SHORT_ROOT, "showtime-espeak-%d" % os.getuid()))
+os.chmod(os.path.join(E.SHORT_ROOT, "showtime-espeak-%d" % os.getuid()), 0o777)
+loose = E._short_copy(data)
+os.environ.update(SHOWTIME_ESPEAK_LIB=str(base / "libespeak-ng.so"), SHOWTIME_ESPEAK_DATA=data)
+try:
+    E.resolve(refresh=True)
+    err = None
+except ShowtimeError as e:
+    err = {"message": e.message, "hint": e.hint}
+print(json.dumps({"home": len(os.fsencode(str(base / "home"))), "tmp": len(os.fsencode(tempfile.gettempdir())),
+                  "got": got, "mode": mode, "loose": loose, "err": err, "check": E.check()}))
+""", SKILL / "lib", self.tmp / ("long-" + "l" * 150), short)
+        d = json.loads(out.strip().splitlines()[-1])
+        self.assertGreater(d["home"], 160)
+        self.assertGreater(d["tmp"], 160)
+        self.assertEqual(d["got"], str(short / "ok" / ("showtime-espeak-%d" % os.getuid()) / "espeak-ng-data"))
+        self.assertTrue((Path(d["got"]) / "phontab").is_file())
+        self.assertEqual(d["mode"], "0o700")
+        self.assertIsNone(d["loose"], "a folder others can write to is not used")
+        self.assertIn("data path too long", d["err"]["message"])
+        self.assertIn("longer than 140 bytes", d["err"]["hint"])
+        self.assertIn("SHOWTIME_HOME or TMPDIR", d["err"]["hint"])
+        self.assertNotIn("showtime setup", d["err"]["hint"])
+        self.assertEqual(d["check"], {"ok": False, "error": d["err"]["message"], "hint": d["err"]["hint"]},
+                         "doctor and setup show this hint")
+
+    def test_11_setup_runs_the_espeak_self_test(self):
+        """Setup does not report success while voice cannot work: it runs doctor's espeak-ng self-test."""
+        from st import lazy
+        su = lazy._setup()
+        home = self.tmp / "setup-espeak"
+        inst = su.Installer(su.parse_args(["--home", str(home)]))
+        inst.vpy = Path(PY)
+        data = home / "espeak-ng-data"
+        data.mkdir(parents=True, exist_ok=True)
+        (data / "phontab").write_bytes(b"x")
+        inst.env_common.update(SHOWTIME_ESPEAK_LIB=str(home / "no-such-libespeak-ng"), SHOWTIME_ESPEAK_DATA=str(data))
+        status, detail = inst.step_espeak()
+        self.assertEqual(status, "fail", detail)
+        self.assertIn("no working espeak-ng", detail)
+        self.assertIn("fix: ", detail)
+        if PY != VPY:
+            self.skipTest("no showtime venv: the passing self-test needs phonemizer")
+        for k in ("SHOWTIME_ESPEAK_LIB", "SHOWTIME_ESPEAK_DATA"):
+            inst.env_common.pop(k)
+        status, detail = inst.step_espeak()
+        self.assertEqual(status, "ok", detail)
+        self.assertIn("self-test passed", detail)
+
+    def test_12_ipa_lexicon_hint_names_real_flags(self):
+        """With no lexicon.json, `voice ipa` says which command reads which lexicon, with flags that exist."""
+        import re
+        empty = self.tmp / "ipa-empty"
+        empty.mkdir(exist_ok=True)
+        cp = subprocess.run([sys.executable, str(LAUNCHER), "voice", "ipa", "hello"], env=ENV, cwd=str(empty),
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8", timeout=120)
+        self.assertEqual(cp.returncode, 0, cp.stderr)
+        hint = next(ln for ln in cp.stderr.splitlines() if ln.startswith("lexicon: "))
+        named = re.findall(r"`voice (\w+) (--[\w-]+)", hint)
+        self.assertTrue(named, hint)
+        for sub, flag in named:
+            self.assertIn(flag, st("voice", sub, "--help").stdout, "%s: `voice %s` has no %s" % (hint, sub, flag))
+        self.assertIn("`voice script` reads the lexicon.json next to its script", hint)
+
+
 if __name__ == "__main__":
     argv = [a for a in sys.argv if a != "--fast"]
     t0 = time.time()

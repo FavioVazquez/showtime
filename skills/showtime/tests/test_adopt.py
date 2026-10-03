@@ -11,9 +11,10 @@ Fixtures (tests/fixtures/adopt/), written the way a model writes them with no to
 Fast (no browser): the Python harness (static scan, frame function pick, bytes frames, the two-order
 hash that catches state kept between frames, the network guard) and the static page/driver scan.
 Full: every fixture adopted into a project; contract, size, fps and length as expected; the original
-folder byte-identical afterwards; determinism measured; `check` clean; `render --from/--to`; `snap`
-shows the injected data (setup script); `export html`; a nondeterministic page and a missing setup
-fail with what/why/fix; `--refresh` picks up an edited original.
+folder byte-identical afterwards; determinism measured; `check` clean; a Python render shows every
+frame at its own time (none black, none late: renders draw the video on a canvas); `render --from/--to`;
+`snap` shows the injected data (setup script); `export html`; a nondeterministic page and a missing
+setup fail with what/why/fix; `--refresh` picks up an edited original.
 
 usage: python tests/test_adopt.py [--fast] [-v]
 """
@@ -47,6 +48,14 @@ TMP = Path(tempfile.mkdtemp(prefix="st-adopt-"))
 
 def tearDownModule():
     shutil.rmtree(TMP, ignore_errors=True)
+
+
+def video_rows(video, y, width=640):
+    """Pixel row y of every frame of a video, as RGB bytes."""
+    from st import ff
+    raw = subprocess.run([ff.ffmpeg_path(), "-v", "error", "-i", str(video), "-vf", "format=rgb24,crop=%d:1:0:%d" % (width, y),
+                          "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], stdout=subprocess.PIPE, check=True).stdout
+    return [raw[i:i + 3 * width] for i in range(0, len(raw), 3 * width)]
 
 
 def showtime(*args, check=True, cwd=None, timeout=900):
@@ -259,9 +268,18 @@ class Adopt(unittest.TestCase):
         self.assertEqual(rep["determinism"]["verdict"], "deterministic")
         self.assertTrue((out / "media" / "frames.webm").exists())
         self.assertFalse(list((FIX / "python-pil").glob("*.mp4")), "the original folder got a video")
+        self.assertIn('<canvas id="frames-still" data-st-video="frames">', (out / "index.html").read_text())
         showtime("render", out, "-o", TMP / "pil.mp4")
         q = showtime("qa", TMP / "pil.mp4", "--project", out, "--json", check=False)
         self.assertIn(json.loads(q.stdout)["verdict"], ("PASS", "WARN"), q.stdout[-2000:])
+        # every frame is the one drawn for its time, not the one before (or black): the progress bar is
+        # 520 * t / 2 px long (10.8 px a frame) and the box crosses row 180 from frame 0
+        bars = video_rows(TMP / "pil.mp4", 306)
+        self.assertEqual(len(bars), 48)
+        shown = [round(sum(1 for x in range(640) if r[3 * x + 1] > 120 and r[3 * x] < 120) / (520 / 48)) for r in bars]
+        self.assertEqual(shown, list(range(48)), "frame k shows the bar of frame shown[k]")
+        box = video_rows(TMP / "pil.mp4", 180)[0]
+        self.assertGreater(sum(1 for x in range(640) if box[3 * x] > 200 and box[3 * x + 2] < 120), 80, "frame 0 has no box")
 
     def test_python_capture(self):
         cp, out, rep = self.adopt("python-capture")

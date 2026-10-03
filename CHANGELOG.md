@@ -49,6 +49,14 @@ through an HTTP proxy, `.env` files unreadable), plus a Windows race the push CI
   dimmed before it was spoken, was measured at that opacity (#e9b949 on #17120e came out at 2.98:1 instead of
   10.18:1). Caption words are judged at the caption's own opacity, and any text measured at partial opacity is named
   with it (`#e9b949 at 45% opacity (shows as #765d29) on #17120e`). Real low contrast still fails.
+- **An adopted Python render could open on black frames, or show each frame late, on a busy machine.** Chrome
+  puts a paused `<video>`'s seeked frame on screen through the video's own compositor submission and skips it while
+  the previous one is still unacknowledged; the frame then goes out only at the next seek, so the capture showed the
+  frame before (black for the first two frames on the Intel Mac runner). `seeked` and `requestVideoFrameCallback` both
+  fire before that submission, so 0.3.4's wait could not see it. In renders the stage now draws a video's frame on a
+  `<canvas data-st-video="ID">` and hides the video (a canvas is captured with the rest of the page), and `showtime
+  adopt` writes its frames page that way (re-adopt, or `--refresh`, to update an existing one). `test_adopt` checks
+  that every frame of the Python render shows its own time.
 - **A finished background run on Windows could show as "lost", with no id or command.** Windows refuses to open a
   file another process is replacing, so `status` and the run's supervisor could collide on `run.json`; the
   supervisor's failed read then rewrote the file with only its new fields. Reads and replaces now retry for up to 2 s,

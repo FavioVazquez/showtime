@@ -497,11 +497,36 @@
         continue;
       }
       if (!v.paused) v.pause();
-      if (Math.abs(v.currentTime - target) < 1e-4 && v.readyState >= 2 && !v.seeking) continue;
+      if (Math.abs(v.currentTime - target) < 1e-4 && v.readyState >= 2 && !v.seeking) { drawVideoCanvas(v); continue; }
       if (MODE !== 'render') { v.currentTime = target; continue; }
-      waits.push(race(seekOne(v, t), 15000, 'video seek ' + key).catch(function (e) { diag.videos[key] = e.message; }));
+      waits.push(seekVideo(v, t, key));
     }
     return waits;
+  }
+  function seekVideo(v, t, key) {
+    return race(seekOne(v, t), 15000, 'video seek ' + key)
+      .then(function () { drawVideoCanvas(v); }, function (e) { diag.videos[key] = e.message; });
+  }
+  // <canvas data-st-video="ID">: in render mode the frame of <video id="ID"> is drawn on this canvas
+  // and the video is hidden. Chrome puts a paused video's new frame on screen through a compositor
+  // submission of the video's own, and skips it while its previous one is still unacknowledged (a busy
+  // or slow machine): the capture then shows the frame before, or nothing for the first one, although
+  // 'seeked' and requestVideoFrameCallback have fired. A canvas is in the page's own frame, which the
+  // capture waits for. For a video that is the whole picture (the page `showtime adopt` writes).
+  function videoCanvas(v) {
+    if (MODE !== 'render' || !v.id) return null;
+    var cs = document.querySelectorAll('canvas[data-st-video]');
+    for (var i = 0; i < cs.length; i++) if (cs[i].getAttribute('data-st-video') === v.id) return cs[i];
+    return null;
+  }
+  function drawVideoCanvas(v) {
+    var c = videoCanvas(v);
+    if (!c || v.readyState < 2 || !v.videoWidth) return;
+    try {
+      if (c.width !== v.videoWidth || c.height !== v.videoHeight) { c.width = v.videoWidth; c.height = v.videoHeight; }
+      c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+      if (v.style.visibility !== 'hidden') v.style.visibility = 'hidden';
+    } catch (e) { reportError('video canvas #' + v.id, e); }
   }
   // A video that appeared after the page loaded (added by a handler, a new src) has no data yet: a
   // seek set then does nothing (no 'seeked' ever comes) and the frame shows nothing. Load it first.
@@ -528,8 +553,11 @@
         // 'seeked' comes before the new frame reaches the compositor: a capture right after it can
         // still show the previous frame (black for the first one) on a slow machine. The wait also
         // takes the frame being presented (requestVideoFrameCallback, which fires after every seek of
-        // a file with a picture), or 500 ms after 'seeked' if it never comes.
+        // a file with a picture), or 500 ms after 'seeked' if it never comes. It fires when the frame is
+        // the player's current one, not when it is on screen (see data-st-video); a canvas draws the current
+        // one, so a video drawn on a canvas waits for it longer.
         var seeked = false, shown = typeof v.requestVideoFrameCallback !== 'function' || !v.videoWidth, timer = null;
+        var exact = !shown && !!videoCanvas(v);
         function end() {
           real.clearTimeout(timer);
           v.removeEventListener('seeked', done); v.removeEventListener('error', end); res();
@@ -538,7 +566,8 @@
         function done() {
           if (v.seeking) return;
           seeked = true;
-          if (shown) end(); else if (!timer) timer = real.setTimeout(end, 500);
+          // a canvas-drawn video waits longer (2 s) for its frame callback; never forever, in case a browser never calls it
+          if (shown) end(); else if (!timer) timer = real.setTimeout(end, exact ? 2000 : 500);
         }
         if (!shown) v.requestVideoFrameCallback(function () { shown = true; if (seeked) end(); });
         v.addEventListener('seeked', done);

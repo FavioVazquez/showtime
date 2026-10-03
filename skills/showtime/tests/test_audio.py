@@ -137,6 +137,14 @@ class AudioTests(unittest.TestCase):
             self.assertIn("usage", st("audio", "lib", sub, "--help").stdout)
 
     # ------------------------------------------------------------------ compose
+    def test_01b_musicgen_loads_safetensors_and_current_torch(self):
+        """MusicGen never torch.loads a pickle, and outside Intel Macs the torch floor carries every security fix."""
+        worker = (SKILL / "lib" / "st" / "audio" / "musicgen_worker.py").read_text(encoding="utf-8")
+        self.assertIn("from_pretrained(a.model, use_safetensors=True", worker)
+        req = (SKILL / "setup" / "requirements-musicgen.in").read_text(encoding="utf-8")
+        self.assertIn("torch>=2.13,<3 ; sys_platform != 'darwin' or platform_machine != 'x86_64'", req)
+        self.assertIn('"torch>=2.13,<3"', (SKILL / "setup" / "setup.py").read_text(encoding="utf-8"))
+
     def test_02_compose(self):
         for style, backend in (("upbeat-tech", "auto"), ("corporate-minimal", "auto"), ("lofi-chill", "auto")):
             out = self.tmp / ("%s.wav" % style)

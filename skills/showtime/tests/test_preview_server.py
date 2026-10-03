@@ -24,6 +24,8 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+from _listen import needs_listen
+
 TESTS_DIR = Path(__file__).resolve().parent
 SKILL = TESTS_DIR.parent
 LAUNCHER = SKILL / "lib" / "st" / "launcher.py"
@@ -77,6 +79,7 @@ process.stdin.on('end', async () => { await keyed.close(); await keyed2.close();
 """
 
 
+@needs_listen
 class TestPreviewKey(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

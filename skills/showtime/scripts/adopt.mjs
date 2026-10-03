@@ -809,12 +809,14 @@ async function adoptPython(ctx, kind) {
     unit = null; fnName = null;
   }
   const index = `<!doctype html>
-<!-- written by \`showtime adopt\`: frames drawn by ${entry.replace(/-->/g, '')} (${mode === 'frames' ? `${fnName}()` : 'its own main'}), played frame-exactly -->
+<!-- written by \`showtime adopt\`: frames drawn by ${entry.replace(/--!?>/g, '')} (${mode === 'frames' ? `${fnName}()` : 'its own main'}), played frame-exactly -->
 <html><head><meta charset="utf-8"><title>${escapeHtml(path.basename(entry))}</title>
 <script src="/_st/stage.js"></script>
-<style>html,body{margin:0;background:#000;overflow:hidden}#frames{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}</style>
+<style>html,body{margin:0;background:#000;overflow:hidden}#frames,#frames-still{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}</style>
 </head><body>
 <video id="frames" src="media/frames.webm" data-start="0" muted playsinline preload="auto"></video>
+<!-- renders draw each frame here (data-st-video): a paused video's own frame can reach the capture late -->
+<canvas id="frames-still" data-st-video="frames"></canvas>
 </body></html>
 `;
   fs.writeFileSync(path.join(dest, 'index.html'), index);

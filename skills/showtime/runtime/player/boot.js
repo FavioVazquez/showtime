@@ -579,10 +579,10 @@
     var bodyAttrs = '';
     for (var b = 0; b < doc.body.attributes.length; b++) {
       var at = doc.body.attributes[b];
-      bodyAttrs += ' ' + at.name + '="' + at.value.replace(/&/g, '&amp;').replace(/"/g, '&quot;') + '"';
+      bodyAttrs += ' ' + at.name + '="' + at.value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;') + '"';
     }
     D.write('<script type="importmap">' + JSON.stringify({ imports: imports }).replace(/</g, '\\u003c') + '<\/script>' +
-      '<script src="' + blobFor(C.stage) + '"><\/script>' +
+      '<script src="' + String(blobFor(C.stage)).replace(/&/g, '&amp;').replace(/"/g, '&quot;') + '"><\/script>' +
       doc.head.innerHTML + '</head><body' + bodyAttrs + '>' + doc.body.innerHTML);
   }
 

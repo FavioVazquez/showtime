@@ -230,7 +230,7 @@ class LaunchTests(unittest.TestCase):
         code = PROBE_JS % {"skill": json.dumps(str(SKILL)), "proj": json.dumps(str(proj)), "t": t, "js": json.dumps(js),
                            "before": json.dumps(list(before))}
         cp = subprocess.run([node, "--input-type=module", "-e", code], env=ENV, stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE, encoding="utf-8", timeout=180)
+                            stderr=subprocess.PIPE, encoding="utf-8", timeout=420)   # a busy 3-core CI runner can take minutes
         self.assertEqual(cp.returncode, 0, cp.stderr[-2000:])
         return json.loads(cp.stdout.strip().splitlines()[-1])
 
@@ -370,7 +370,7 @@ class LaunchTests(unittest.TestCase):
             bad = [f for f in rep["findings"] if f["severity"] in ("error", "warning")]
             self.assertEqual(bad, [], extra)
         rep = json.loads(showtime("render", proj, "--out-dir", self.tmp / "out", "--from", 2.5, "--to", 5.5,
-                                  "--scale", 0.5, "--poster", "none", "--no-audio", "--json").stdout)
+                                  "--scale", 0.5, "--poster", "none", "--no-audio", "--json", timeout=1200).stdout)
         self.assertTrue(Path(rep["output"]).is_file())
         q = json.loads(showtime("qa", rep["output"], "--json", check=False).stdout)
         self.assertIn("rhythm", q)

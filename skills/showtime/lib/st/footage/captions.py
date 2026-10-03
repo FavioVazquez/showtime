@@ -907,8 +907,13 @@ def build(words: List[Dict[str, Any]], out_path, *, style: str = "bold-pop", wid
     return rep
 
 
-EMOJI_RE = re.compile("[\U0001F1E6-\U0001F1FF\U0001F300-\U0001FAFF\u2600-\u27BF\u2B00-\u2BFF\uFE0F\u200D"
-                      "\U0001F3FB-\U0001F3FF]")
+def _span(lo: int, hi: int) -> str:
+    return "%s-%s" % (chr(lo), chr(hi))
+
+
+EMOJI_RE = re.compile("[" + "".join(_span(a, b) for a, b in (
+    (0x1F1E6, 0x1F1FF), (0x1F300, 0x1FAFF), (0x2600, 0x27BF), (0x2B00, 0x2BFF), (0xFE0F, 0xFE0F), (0x200D, 0x200D),
+    (0x1F3FB, 0x1F3FF))) + "]")
 
 
 def _fit_glyphs(font, dw: List[Dict[str, Any]], st: Dict[str, Any], keep_emoji: bool = False):

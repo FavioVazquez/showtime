@@ -28,7 +28,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 
-from ..common import ShowtimeError, debug, info, warn
+from ..common import ShowtimeError, debug, info, ort_telemetry_off, warn
 from . import audio_io as aio
 from . import models
 from .textnorm import Token, base_lang, en_number, normalize_tokens, plain_text, tokenize
@@ -142,6 +142,7 @@ def _w2v_session(allow_download: bool = True):
         return None, None
     import json
     import onnxruntime as rt
+    ort_telemetry_off(rt)
     so = rt.SessionOptions()
     so.log_severity_level = 3
     thr = os.environ.get("SHOWTIME_THREADS")

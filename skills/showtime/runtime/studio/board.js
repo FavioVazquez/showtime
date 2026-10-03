@@ -484,7 +484,7 @@
         (q.allowText ? '<label class="sr" for="qt-' + esc(q.id) + '">Your own answer to: ' + esc(q.text) + '</label><textarea id="qt-' + esc(q.id) + '" data-q="' + esc(q.id) + '" class="qtext" maxlength="2000" placeholder="Or say it in your words, then press Ctrl+Enter"></textarea>' : '') + '</div>';
     }).join('');
     var dials = Core.dialsOf(b).map(function (sl) {
-      var d = sl['default'] != null ? sl['default'] : 50;
+      var d = Math.min(100, Math.max(0, Number(sl['default'] != null ? sl['default'] : 50) || 0));
       return '<div class="dial"><label for="sl-' + esc(sl.id) + '">' + esc(sl.label) + ' <output id="so-' + esc(sl.id) + '">' + d + '</output></label>' +
         '<div class="rng"><span class="proposed" style="left:calc(' + d + '% + ' + (8 - d * 0.16) + 'px)" title="Your agent\'s proposal"></span><input type="range" min="0" max="100" value="' + d + '" id="sl-' + esc(sl.id) + '" data-dial="' + esc(sl.id) + '" aria-describedby="se-' + esc(sl.id) + '"></div>' +
         '<div class="ends" id="se-' + esc(sl.id) + '"><span>' + esc(sl.left || '') + '</span><span>' + esc(sl.right || '') + '</span></div></div>';

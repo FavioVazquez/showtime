@@ -15,7 +15,7 @@ import { launchBrowser } from './lib/chrome.mjs';
 import { parseCli, runMain, UserError, info, warn, c, jobDir, freshPath, fmtBytes, fmtDuration, printHelp, Progress } from './lib/cli.mjs';
 import {
   aspectViewport, newCaptureContext, installConsent, waitConsent, cleanupOverlays, robustGoto, detectBotWall,
-  blockedMarkdown, lazyScroll, scrollMetrics, neutralizeFixed, safeDownload, hostIsPrivate, isTracker,
+  blockedMarkdown, lazyScroll, scrollMetrics, neutralizeFixed, safeDownload, privateAssetsAllowed, isTracker,
   canonicalAssetUrl, contactSheet, slug, relPath, sleep, serveStatic, landingProblem,
 } from './lib/capture.mjs';
 import { extractPage } from './lib/extract.mjs';
@@ -220,7 +220,7 @@ async function captureRun(o, tgt) {
   const shotOpts = (file) => (fmt === 'jpg' ? { path: file, type: 'jpeg', quality: 92 } : { path: file, type: 'png' });
   const warnings = [];
   const phase = (n, total, label) => info(c.dim(`  [${n}/${total}] ${label}`));
-  const allowPrivate = /^file:/.test(url) || await hostIsPrivate(new URL(url).hostname || 'localhost');
+  const allowPrivate = await privateAssetsAllowed(url);   // never for a host DNS cannot place ('unknown')
 
   info(`${c.bold('site capture')} ${url}`);
   info(c.dim(`  output ${out}`));

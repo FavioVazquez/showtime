@@ -86,6 +86,61 @@ def _split_comment(line: str) -> Tuple[str, Optional[str]]:
     return line.strip(), None
 
 
+def _masked(md: str) -> str:
+    """The README with its fenced code blanked (same line count): a `# comment` in a shell block is not a heading."""
+    out: List[str] = []
+    in_code = False
+    for line in md.splitlines():
+        if line.strip().startswith(("```", "~~~")):
+            in_code = not in_code
+            out.append("")
+        else:
+            out.append("" if in_code else line)
+    return "\n".join(out)
+
+
+def _plain(text: str) -> str:
+    """Markdown/HTML as it reads: images, badges, comments and fine print (<sub>, <small>) dropped, links kept
+    as their words, tags and emphasis removed."""
+    t = re.sub(r"<!--.*?-->|<(sub|sup|small)\b[^>]*>.*?</\1\s*>", " ", text, flags=re.S | re.I)
+    t = re.sub(r"<[^>]*>|!\[[^\]]*\]\([^)]*\)", " ", t)
+    t = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", t)
+    return re.sub(r"\s+", " ", re.sub(r"[`*_]", "", t)).strip()
+
+
+def readme_title(md: str) -> Optional[Tuple[str, int, int]]:
+    """The README's first H1 outside code (`# name`, `name` over `===`, or an HTML <h1>, which can span lines):
+    (text, first line, last line). A deeper heading is never the title."""
+    masked = _masked(md)
+    found = []
+    for rx in (r"^#[ \t]+(.+?)(?:[ \t]+#+)?[ \t]*$",r"^(\S[^\n]*)\n=+[ \t]*$", r"<h1\b[^>]*>(.*?)</h1\s*>"):
+        found += [(m.start(), m.end(), m.group(1)) for m in re.finditer(rx, masked, re.M | re.S | re.I)]
+    for start, end, inner in sorted(found):
+        text = _plain(inner)
+        if text:
+            return text, masked.count("\n", 0, start) + 1, masked.count("\n", 0, end) + 1
+    return None
+
+
+def readme_lead(md: str, after: int = 0) -> Optional[Tuple[str, int]]:
+    """The first plain paragraph below line `after`: (text, line). Lines that are only a URL, and paragraphs
+    that are only images, badges or fine print, are skipped; so are lists, quotes, tables, code and headings."""
+    para: List[Tuple[str, int]] = []
+    for i, line in enumerate(_masked(md).splitlines() + [""], 1):
+        s = line.strip()
+        if i <= after or re.match(r"^<?https?://\S+>?$", s):
+            continue
+        if s and not s.startswith("#"):
+            para.append((s, i))
+            continue
+        text = _plain("\n".join(x for x, _ in para))
+        first = next(((x, n) for x, n in para if _plain(x)), None)
+        para = []
+        if first and len(text) >= 20 and not re.match(r"^(>|\||[-*+]\s|\d+[.)]\s|\[!\w+\])", first[0]):
+            return text, first[1]
+    return None
+
+
 def readme_copy(root: Path, name: str) -> Dict[str, Any]:
     """The product's own words from its README, each with file:line: the title, the one-line tagline,
     the install command, the usage commands and the feature bullets. Verbatim, never rephrased."""
@@ -94,35 +149,13 @@ def readme_copy(root: Path, name: str) -> Dict[str, Any]:
         return {}
     rel = p.name if p else "README"
     out: Dict[str, Any] = {"source": rel}
-    lines = md.splitlines()
-    for i, line in enumerate(lines, 1):
-        m = re.match(r"^#\s+(.+)$", line)
-        if m:
-            out["title"] = {"text": re.sub(r"[`*_]|!\[.*?\]\(.*?\)|\[([^\]]*)\]\([^)]*\)", r"\1", m.group(1)).strip(),
-                            "source": "%s:%d" % (rel, i)}
-            break
-    # tagline: the first plain paragraph (not a badge row, a list, a quote or code)
-    in_code = False
-    para: List[Tuple[str, int]] = []
-    for i, line in enumerate(lines + [""], 1):
-        s = line.strip()
-        if s.startswith("```"):
-            in_code = not in_code
-            continue
-        if in_code:
-            continue
-        if not s:
-            if para:
-                text = " ".join(x for x, _ in para)
-                if len(text) >= 20 and not text.startswith(("#", "!", "[!", "<", "|", "-", "*", ">")):
-                    out["tagline"] = {"text": re.sub(r"[`*_]", "", text), "source": "%s:%d" % (rel, para[0][1])}
-                    break
-                para = []
-            continue
-        if s.startswith("#"):
-            para = []
-            continue
-        para.append((s, i))
+    title = readme_title(md)
+    if title:
+        out["title"] = {"text": title[0], "source": "%s:%d" % (rel, title[1])}
+    # tagline: the title's lead paragraph (the first plain one when there is no H1)
+    lead = readme_lead(md, title[2] if title else 0)
+    if lead:
+        out["tagline"] = {"text": lead[0], "source": "%s:%d" % (rel, lead[1])}
     installs: List[Dict[str, Any]] = []
     commands: List[Dict[str, Any]] = []
     features: List[Dict[str, Any]] = []
@@ -132,8 +165,9 @@ def readme_copy(root: Path, name: str) -> Dict[str, Any]:
         for line, ln in _code_lines(body, start):
             cmd, comment = _split_comment(line.lstrip("$ ").rstrip())
             item = {"command": cmd, "comment": comment, "line": line.strip(), "source": "%s:%d" % (rel, ln)}
+            # in an install section any line counts, but a shell comment or a sentence (a prompt to type) does not
             if INSTALL_RX.match(cmd) or re.search(r"install|getting started|setup|quick ?start", h) and len(installs) < 3 \
-                    and not (tool and cmd.lower().startswith(tool + " ")):
+                    and not (tool and cmd.lower().startswith(tool + " ")) and not re.match(r"^#|^[A-Z]\S*\s.*[.!?]$", cmd):
                 if not any(x["command"] == cmd for x in installs):
                     installs.append(item)
             elif tool and re.search(r"(^|[\s|/])%s(\s|$)" % re.escape(tool), cmd.lower()):
@@ -488,7 +522,7 @@ def storyboard_md(kit: Dict[str, Any], base_md: str) -> str:
     if wm:
         parts = " + ".join("\"%s\" in %s%s" % (r["text"], r.get("role") or "ink",
                                                  " %s" % r["color"] if r.get("color") else "") for r in wm.get("runs") or [])
-        L.append("- **Wordmark**: %s (%s). Set the name this way on the end card." % (parts, wm.get("source")))
+        L.append("- **Wordmark**: %s%s. Set the name this way on the end card." % (parts, _src(wm)))
     if pal:
         L.append("- **Ground and accent**: bg `%s`, ink `%s`, accent `%s`%s. One ground for the film, the accent on the "
                  "key word, the prompt and the result line only." % (pal.get("bg", "?"), pal.get("ink", "?"), pal.get("accent", "?"),
@@ -498,9 +532,9 @@ def storyboard_md(kit: Dict[str, Any], base_md: str) -> str:
                                                      "" if contrast(pal["bg"], pal["accent"]) >= 4.5 else
                                                      " (below 4.5:1: `brand apply` deepens it for text, keeping the hue)"))
     code = kit.get("code")
-    if code:
-        L.append("- **Terminal / code look**: `%s` text on `%s` (%s). The product window uses it." % (
-            code.get("fg"), code.get("bg"), code.get("source")))
+    if code and code.get("fg") and code.get("bg"):
+        L.append("- **Terminal / code look**: `%s` text on `%s`%s. The product window uses it." % (
+            code["fg"], code["bg"], _src(code)))
     fonts = kit.get("fonts") or {}
     if not fonts:
         L.append("- **Type**: the product uses a system font stack; the film uses the template's Geist + Geist Mono "

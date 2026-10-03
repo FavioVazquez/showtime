@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from .. import platform as plat
-from ..common import ShowtimeError, debug, info, paths, read_json, warn, write_json
+from ..common import ShowtimeError, debug, info, ort_telemetry_off, paths, read_json, warn, write_json
 from . import TRANSCRIPT_VERSION
 from . import util as U
 from .asr_models import PARAKEET_V3_LANGS
@@ -222,7 +222,9 @@ def _whisper_model(name: str, threads: int):
     key = "w:%s:%d" % (name, threads)
     if key not in _MODEL_CACHE:
         d = _ensure_whisper(name)
+        import onnxruntime   # faster-whisper's VAD is an onnxruntime session
         from faster_whisper import WhisperModel
+        ort_telemetry_off(onnxruntime)
         device = os.environ.get("SHOWTIME_ASR_DEVICE", "cpu")
         compute = os.environ.get("SHOWTIME_ASR_COMPUTE", "int8" if device == "cpu" else "float16")
         t0 = _announce_load("whisper", name)

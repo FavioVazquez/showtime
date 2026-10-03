@@ -116,6 +116,63 @@ file10.txt</pre></section>
 """
 
 
+# a README that leads with HTML: a hero image, a bare video URL, a caption in <sub>, a badge row; an H1 in HTML
+# over two lines; a prompt in the quick start; a `# comment` in a shell block far down
+TRAPS = """<p align="center">
+  <img alt="lumen: a lamp over a table of photos" src="assets/hero.svg" width="100%">
+</p>
+
+https://github.com/user-attachments/assets/1132aa71-7fe5-4345-a925-790d80462fda
+
+<p align="center"><sub>The 1.0 demo: 30 seconds (<a href="docs/demo.md">about the demo</a>).</sub></p>
+
+<p align="center">
+  <a href="LICENSE"><img alt="license: MIT" src="assets/badges/license.svg" height="24"></a>
+  [![build](https://img.shields.io/badge/build-passing-green)](https://ci.example.com/lumen)
+</p>
+
+<h1 align="center">
+  <img alt="" src="assets/mark.svg" width="48"><br>lumen
+</h1>
+
+<h3 align="center">Contact sheets from any folder of photos.<br>Local, private, fast.</h3>
+
+## Quick start
+
+```text
+/plugin marketplace add example/lumen
+/plugin install lumen@lumen
+```
+
+Then ask:
+
+```text
+Make a contact sheet of my holiday photos.
+```
+
+## Other agents
+
+```bash
+npx skills add example/lumen
+/plugin marketplace add example/lumen-mirror
+```
+
+## Requirements
+
+```bash
+# Node.js: the installer from nodejs.org (macOS), or on Linux fnm (distribution packages are often older):
+curl -fsSL https://fnm.vercel.app/install | bash
+```
+"""
+
+# the repo's own brand.json, adopted as it is: no "source", "drafted", "voice" or font "how"
+OWN_KIT = {"schema": 1, "status": "confirmed", "name": "lumen", "tagline": "Contact sheets, locally.",
+           "colors": [{"role": "bg", "hex": "#17120e"}, {"role": "ink", "hex": "#f5ebdc"},
+                      {"role": "accent", "hex": "#e9b949"}],
+           "palette": {"bg": "#17120e", "ink": "#f5ebdc", "accent": "#e9b949"},
+           "fonts": {"display": {"family": "Fraunces", "license": "OFL-1.1"}, "body": {"family": "Inter"}}}
+
+
 def make_repo(root: Path) -> Path:
     (root / "site").mkdir(parents=True)
     (root / ".git").mkdir()
@@ -173,6 +230,33 @@ class BrandFirstTests(unittest.TestCase):
         self.assertEqual(cap.site_folders(repo), [repo / "site"])
         wm = cap.html_wordmark(repo / "site" / "index.html")
         self.assertEqual([(r["text"], r["role"]) for r in wm["runs"]], [("tidy", "ink"), ("line", "accent")])
+
+    def test_01b_readme_traps(self):
+        from st.brand import capture as cap
+        repo = self.tmp / "traps"
+        repo.mkdir()
+        (repo / "README.md").write_text(TRAPS, encoding="utf-8")
+        c = cap.readme_copy(repo, "lumen")
+        # the H1 (HTML, over two lines), never a `# comment` in a code block
+        self.assertEqual(c["title"], {"text": "lumen", "source": "README.md:14"})
+        # its lead: past the URL-only line, the caption in <sub> and the badges
+        self.assertEqual(c["tagline"], {"text": "Contact sheets from any folder of photos. Local, private, fast.",
+                                        "source": "README.md:18"})
+        self.assertEqual(c["install"]["command"], "/plugin marketplace add example/lumen")   # the one shown first
+        self.assertEqual(c["install"]["source"], "README.md:23")
+        others = [x["command"] for x in c.get("install_other") or []]
+        self.assertNotIn("Make a contact sheet of my holiday photos.", others)   # a prompt, not a command
+        # no H1 at all: no title (a deeper heading is never one), the lead is the first plain paragraph
+        (repo / "README.md").write_text(re.sub(r"<h1.*?</h1>\n", "", TRAPS, flags=re.S), encoding="utf-8")
+        c = cap.readme_copy(repo, "lumen")
+        self.assertNotIn("title", c)
+        self.assertEqual(c["tagline"]["text"], "Contact sheets from any folder of photos. Local, private, fast.")
+        # the repo's own kit adopted, without the fields a draft has: brand.md never prints None
+        (repo / "brand.json").write_text(json.dumps(OWN_KIT), encoding="utf-8")
+        showtime("brand", "capture", repo, "-o", self.tmp / "traps-out", "--no-site", "--no-font-lookup", cwd=self.tmp)
+        md = (self.tmp / "traps-out" / "brand.md").read_text(encoding="utf-8")
+        self.assertNotIn("None", md)
+        self.assertIn("brand.json", md.split("\n")[2])     # says where the kit was adopted from
 
     def test_02_capture_repo_records_in_job_and_new_launch_applies(self):
         base = self.tmp / "ws2"

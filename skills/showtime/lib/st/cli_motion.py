@@ -300,7 +300,16 @@ def parse_names(specs: Optional[List[str]]) -> Dict[str, str]:
     return out
 
 
-_WHERE_RE = re.compile(r"^\s*(?P<col>[^=!~<>]+?)\s*(?P<op>!=|!~|=|~|>=|<=|>|<)\s*(?P<val>.*)$")
+_WHERE_OPS = ("!=", "!~", ">=", "<=", "=", "~", ">", "<")
+
+
+def _split_where(w: str) -> Optional[Tuple[str, str, str]]:
+    """'COL<op>VALUE' -> (col, op, value), or None when there is no column or no operator."""
+    at = next((i for i, ch in enumerate(w) if ch in "=!~<>"), -1)
+    if at < 1:
+        return None
+    op = next((o for o in _WHERE_OPS if w.startswith(o, at)), None)
+    return None if op is None else (w[:at], op, w[at + len(op):])
 
 
 def filter_rows(cols: List[str], rows: List[Dict[str, Any]], wheres: Optional[List[str]]) -> Tuple[List[Dict[str, Any]], List[str]]:
@@ -309,12 +318,12 @@ def filter_rows(cols: List[str], rows: List[Dict[str, Any]], wheres: Optional[Li
         return rows, []
     tests = []
     for w in wheres:
-        m = _WHERE_RE.match(str(w))
+        m = _split_where(str(w).strip("\r\n"))
         if not m:
             raise ShowtimeError("--where %r: use COLUMN=VALUE, COLUMN~REGEX or COLUMN>NUMBER" % w,
                                 hint="e.g. --where MSN=CLETPUS --where \"YYYYMM~13$\"")
-        col = _col(cols, m.group("col").strip(), "--where")
-        op, val = m.group("op"), m.group("val").strip().strip('"').strip("'")
+        col = _col(cols, m[0].strip(), "--where")
+        op, val = m[1], m[2].strip().strip('"').strip("'")
         if op in ("~", "!~"):
             try:
                 rx = re.compile(val)

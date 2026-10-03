@@ -40,11 +40,11 @@ a determinism, timing or seek problem.
 | Minimal page | 56-91 |
 | Configuration | 93-109 |
 | Clips: data-start / data-dur | 111-151 |
-| API: Library helpers (built-in adapters), <video> in a page | 153-218 |
-| Determinism: what the render mode does and what to avoid | 220-251 |
-| Readiness | 253-258 |
-| Preview mode | 260-272 |
-| Scene transitions with shaders (layer protocol) | 274-280 |
+| API: Library helpers (built-in adapters), <video> in a page | 153-224 |
+| Determinism: what the render mode does and what to avoid | 226-257 |
+| Readiness | 259-264 |
+| Preview mode | 266-278 |
+| Scene transitions with shaders (layer protocol) | 280-286 |
 
 ## The one rule
 
@@ -204,6 +204,12 @@ Every `<video>` is paused, muted and seeked to the middle of the right source fr
 `data-offset` (in-point in the source, s), `data-rate`, `loop` / `data-loop`, `data-fps` (source
 fps if it differs from the video's), `data-st="off"` (leave it alone). Its clock is its own
 `data-start`, else the nearest clip's.
+
+A `<canvas data-st-video="ID">` styled like `<video id="ID">` (same box, same `object-fit`) gets that
+video's frame drawn on it in renders, and the video is hidden; in the preview it stays empty. Use it
+for a video that is the whole picture: on a busy or slow machine Chrome can put a paused video's
+seeked frame on screen after the capture (the frame before, or nothing for the first one), while a
+canvas is captured with the rest of the page. `showtime adopt` writes its pages this way.
 
 - Use **VP9/WebM** (or AV1) for footage inside pages: Chromium builds without proprietary codecs
   (Playwright's Chromium, some Linux packages) cannot decode H.264. Convert with

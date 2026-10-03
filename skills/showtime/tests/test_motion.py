@@ -27,6 +27,8 @@ import time
 import unittest
 from pathlib import Path
 
+from _listen import need_listen, skip_if_listen_refused
+
 TESTS_DIR = Path(__file__).resolve().parent
 SKILL = TESTS_DIR.parent
 LAUNCHER = SKILL / "lib" / "st" / "launcher.py"
@@ -46,6 +48,7 @@ def showtime(*args, check=True, timeout=600):
     cp = subprocess.run([sys.executable, str(LAUNCHER)] + [str(a) for a in args], env=ENV,
                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8",
                         errors="replace", timeout=timeout)
+    skip_if_listen_refused(cp)   # render, snap and check serve the project on a local port
     if check and cp.returncode != 0:
         raise AssertionError("showtime %s failed (rc=%d):\n%s\n%s" % (
             " ".join(map(str, args)), cp.returncode, cp.stdout[-3000:], cp.stderr[-3000:]))
@@ -480,6 +483,7 @@ class MotionTests(unittest.TestCase):
         drv.write_text(PROBE_JS % {"skill": json.dumps(str(SKILL)), "proj": json.dumps(str(proj)), "t": 3.8, "js": json.dumps(js)},
                        encoding="utf-8")
         cp = subprocess.run([node_exe(), str(drv)], env=ENV, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8", timeout=180)
+        skip_if_listen_refused(cp)
         self.assertEqual(cp.returncode, 0, cp.stderr[-2000:])
         g = json.loads(json.loads(cp.stdout.strip().splitlines()[-1]))
         self.assertAlmostEqual(g["negTop"], g["zero"], delta=1.0)
@@ -514,6 +518,7 @@ class MotionTests(unittest.TestCase):
         drv.write_text(PROBE_JS % {"skill": json.dumps(str(SKILL)), "proj": json.dumps(str(proj)), "t": 2.5, "js": json.dumps(js)},
                        encoding="utf-8")
         cp = subprocess.run([node_exe(), str(drv)], env=ENV, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8", timeout=180)
+        skip_if_listen_refused(cp)
         self.assertEqual(cp.returncode, 0, cp.stderr[-2000:])
         g = json.loads(json.loads(cp.stdout.strip().splitlines()[-1]))
         m = re.search(r"translateY\((-?[\d.]+)px\)", g["page"])
@@ -697,6 +702,7 @@ class AssetsTests(unittest.TestCase):
 
             def log_message(self, *a):
                 pass
+        need_listen()
         srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Quiet)
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         old_paths = media.paths

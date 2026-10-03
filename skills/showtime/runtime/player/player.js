@@ -61,7 +61,12 @@
       vorigin: VORIGIN, page: M.page, html: M.html, stage: M.stage, generator: M.generator, assetBase: assetBase,
       renderConfig: { config: M.config, override: null, alpha: false, settle: 'none', layers: false, seed: M.seed },
     };
-    var hadDoctype = /^\s*(<!--[\s\S]*?-->\s*)*<!doctype/i.test(M.html);
+    // leading comments, then <!doctype ...>: a loop, not a regex (the regex backtracked on many '--><!--')
+    var hadDoctype = (function (h) {
+      h = h.replace(/^\s+/, '');
+      while (h.slice(0, 4) === '<!--') { var e = h.indexOf('-->', 4); if (e < 0) return false; h = h.slice(e + 3).replace(/^\s+/, ''); }
+      return /^<!doctype/i.test(h);
+    })(String(M.html));
     var pack = D.getElementById('st-files');
     var packed = pack ? pack.textContent.trim() : '';
     if (zfiles && zfiles.length > 2) packed = packed.length > 2 ? packed.slice(0, -1) + ',' + zfiles.slice(1) : zfiles;
@@ -220,7 +225,7 @@
   var bar = D.createElement('div');
   bar.className = 'stp-bar';
   bar.innerHTML =
-    '<div class="stp-scrub" role="slider" tabindex="0" aria-label="' + esc(tr('seek')) + '" aria-valuemin="0" aria-valuemax="' + M.duration + '" aria-valuenow="0">' +
+    '<div class="stp-scrub" role="slider" tabindex="0" aria-label="' + esc(tr('seek')) + '" aria-valuemin="0" aria-valuemax="' + (Number(M.duration) || 0) + '" aria-valuenow="0">' +
       '<div class="stp-rail"><div class="stp-buf"></div><div class="stp-hover"></div><div class="stp-fill"></div><div class="stp-ticks"></div></div>' +
       '<div class="stp-knob"></div><div class="stp-tip" hidden></div></div>' +
     '<div class="stp-row">' +

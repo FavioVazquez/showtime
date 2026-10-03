@@ -197,7 +197,7 @@ Kokoro's word times come straight from the model's phoneme durations. The wavefo
 
 ## Pronunciation fixes
 
-1. Run `showtime voice ipa "Kubernetes kubectl" [--lang es]` to see what espeak-ng says for each word. It reads the project's `lexicon.json` like `voice script` does (the current folder, or its one sub-folder with a `lexicon.json`; else `--project <dir>`), shows which lexicon it used, and its `phrase:` line is what the voice reads with the lexicon and inline fixes applied.
+1. Run `showtime voice ipa "Kubernetes kubectl" [--lang es]` to see what espeak-ng says for each word. It reads the `lexicon.json` in the current folder, or its one sub-folder with a `lexicon.json`, or `--project <dir>` (`voice script` has no `--project`: it reads the `lexicon.json` next to its script or one folder up, plus any `--lexicon FILE`), shows which lexicon it used, and its `phrase:` line is what the voice reads with the lexicon and inline fixes applied.
 2. Add an entry to `lexicon.json` next to the script or project, or under `"pronunciations"` in `brand.json`:
 
    ```json
@@ -286,7 +286,7 @@ Tips:
 ## Platform notes and troubleshooting
 
 - **espeak-ng.** showtime uses a system espeak-ng when one is found (Homebrew or MacPorts on macOS, `apt install espeak-ng` on Linux, the `.msi` on Windows). Otherwise it uses the copy inside the `espeakng-loader` wheel, which exists for macOS arm64/x64, Linux x64/arm64 and Windows x64/arm64. Each candidate is tested once in a child process, because a broken espeak kills its process.
-  - A data path over ~140 bytes, or a non-ASCII path on Windows, is copied once to a short folder. This avoids a known espeak-ng path-buffer bug.
+  - A data path over ~140 bytes, or a non-ASCII path on Windows, is copied once to a short folder: `<home>/cache`, `%ProgramData%` on Windows, `$TMPDIR`, then `/tmp/showtime-espeak-<uid>` (your own 0700 folder) on macOS and Linux. This avoids a known espeak-ng path-buffer bug. `showtime setup` runs the same self-test as `showtime doctor`, so it fails when no candidate works.
   - To force a choice, set `SHOWTIME_ESPEAK=bundled|system`, or give exact paths with `SHOWTIME_ESPEAK_LIB` and `SHOWTIME_ESPEAK_DATA`.
 
 | Symptom | Fix |

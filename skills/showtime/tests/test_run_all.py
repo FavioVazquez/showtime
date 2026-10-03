@@ -646,6 +646,51 @@ class TestRunAllPlanning(unittest.TestCase):
         self.assertIn("A.c", note)
         self.assertIn("A.b", note)
 
+    def test_pty_file_runs_alone(self):
+        # test_delight opens a pseudo-terminal: a sandbox with few pty devices ran out of them under -j
+        self.assertIn("test_delight.py", self.ra.SERIAL)
+        cp = subprocess.run([sys.executable, str(TESTS_DIR / "run_all.py"), "--fast", "--list", "-j", "8", "-k", "delight"],
+                            capture_output=True, text=True, timeout=60)
+        self.assertIn("test_delight.py   (serial: ", cp.stdout)
+
+
+class TestListenGuard(unittest.TestCase):
+    """tests/_listen.py: a sandbox that refuses listen() makes the tests that serve something skip, not fail."""
+
+    def load(self):
+        spec = importlib.util.spec_from_file_location("st_listen_t", str(TESTS_DIR / "_listen.py"))
+        mod = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+        spec.loader.exec_module(mod)  # type: ignore[union-attr]
+        return mod
+
+    def test_a_refused_bind_is_detected(self):
+        import socket
+        from unittest import mock
+        env = {k: v for k, v in os.environ.items() if k != "SHOWTIME_TEST_NO_LISTEN"}
+        refused = PermissionError(1, "Operation not permitted")
+        with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(socket.socket, "bind", side_effect=refused):
+            L = self.load()
+        self.assertIn("does not allow listening", L.LISTEN_BLOCKED)
+        with self.assertRaises(unittest.SkipTest):
+            L.need_listen()
+        with mock.patch.dict(os.environ, {"SHOWTIME_TEST_NO_LISTEN": "1"}):
+            self.assertIn("SHOWTIME_TEST_NO_LISTEN", self.load().LISTEN_BLOCKED)
+
+    def test_a_server_refused_in_a_subprocess_skips(self):
+        L = self.load()
+        node = subprocess.CompletedProcess([], 1, "", "Error: listen EPERM: operation not permitted 127.0.0.1\n")
+        with self.assertRaises(unittest.SkipTest):
+            L.skip_if_listen_refused(node)
+        L.skip_if_listen_refused(subprocess.CompletedProcess([], 1, "", "Error: render failed\n"))   # a real failure
+        L.skip_if_listen_refused(subprocess.CompletedProcess([], 0, "listen EPERM in a log line", ""))
+
+    def test_server_tests_skip_where_listen_is_refused(self):
+        env = dict(os.environ, SHOWTIME_TEST_NO_LISTEN="1")
+        cp = subprocess.run([sys.executable, str(TESTS_DIR / "test_preview_server.py"), "--fast"], env=env,
+                            capture_output=True, text=True, timeout=120)
+        self.assertEqual(cp.returncode, 0, cp.stderr[-2000:])
+        self.assertRegex(cp.stderr, r"OK \(skipped=\d+\)")
+
 
 if __name__ == "__main__":
     argv = [a for a in sys.argv if a != "--fast"]

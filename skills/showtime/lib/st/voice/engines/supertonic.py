@@ -18,7 +18,7 @@ from typing import List, Tuple
 
 import numpy as np
 
-from ...common import ShowtimeError, paths
+from ...common import ShowtimeError, ort_telemetry_off, paths
 from ..textnorm import Token
 from ..voices import VoiceSpec
 from .base import Engine, EngineResult, check_speed
@@ -61,7 +61,9 @@ class SupertonicEngine(Engine):
             ok, why = self.available()
             if not ok:
                 raise ShowtimeError("Supertonic is not ready: " + why, hint="run `showtime setup --with supertonic`")
+            import onnxruntime
             from supertonic import TTS
+            ort_telemetry_off(onnxruntime)
             thr = os.environ.get("SHOWTIME_THREADS")
             self._tts = TTS(model="supertonic-3", model_dir=self.model_dir(), auto_download=False,
                             intra_op_num_threads=int(thr) if thr and thr.isdigit() else None)

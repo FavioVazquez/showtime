@@ -5,6 +5,83 @@ All notable changes to showtime. Each entry says what changed and why, so this f
 `skills/showtime/lib/st/__init__.py` and `python3 scripts/check_release.py` keeps the plugin manifests, the registry files and
 `setup/package.json` in sync with it.
 
+## 0.3.5 (2026-10-03)
+
+Fixes found by running showtime in a locked-down agent sandbox (no writable HOME, no local `listen()`, egress only
+through an HTTP proxy, `.env` files unreadable), plus a Windows race the push CI caught.
+
+- **onnxruntime's telemetry was on, while PRIVACY.md says showtime has none.** The onnxruntime that Kokoro,
+  alignment, stem separation, rembg and faster-whisper load on Linux (1.30) carries Microsoft's telemetry client and
+  starts it at import; where HOME is read-only it logged "Failed to persist telemetry device ID" and wrote a
+  `:memory:.ses` session file into the current folder. Every showtime process and its children now get
+  `ORT_DISABLE_TELEMETRY=1` (set by `st` itself and by the launcher, unless already set), and
+  `onnxruntime.disable_telemetry_events()` is called before each model loads. PRIVACY.md says which libraries'
+  telemetry showtime turns off and how.
+- **Site capture turned its private-address guard off for a site whose name did not resolve.** 0.3.3 made
+  `hostIsPrivate` fail closed, but `site capture` still used it to decide whether a page's assets may come from
+  private addresses, so a public site that does not resolve locally (the normal case on a proxy-only network) let
+  them. Only a `file:` page or a page on a known private host allows that now (`privateAssetsAllowed` in `capture.mjs`).
+- **Node downloads ignored HTTPS_PROXY.** Node's `fetch` and `http(s).request` use the proxy variables only with
+  `NODE_USE_ENV_PROXY=1`, so on a proxy-only network the Python side downloaded and the Node side (icon fetches, site
+  capture's assets) did not. When a proxy variable is set, the launcher gives Node children `NODE_USE_ENV_PROXY=1` and
+  adds `localhost,127.0.0.1,::1` to `NO_PROXY`/`no_proxy` (keeping your entries), so the preview and studio servers'
+  local requests stay local. Node reads the flag from 22.21 (24.5 for `http.request`); `showtime doctor` warns when a
+  proxy is set and Node is older.
+- **Voice could not start when both the showtime home and `$TMPDIR` had long paths, and setup still said it was
+  done.** espeak-ng cannot read a data folder whose path is over about 140 bytes, so showtime copies its data to a
+  short folder first; in sandboxes where the home and `$TMPDIR` are both long (seen at 175-185 bytes) there was none.
+  The copy now falls back to `/tmp/showtime-espeak-<uid>` on macOS and Linux (0700, used only when it is the current
+  user's own); when even that fails, the hint names the path length and the fix. `showtime setup` now runs doctor's
+  espeak-ng self-test, so it fails instead of reporting success with voice broken.
+- **`retime --from-voice` left catalog music at full level under the voice.** Placing the voice ducks music that
+  has no duck, but only `file`, `lib` and `compose` tracks; a `catalog` track (what `audio cut-plan` writes) was
+  skipped. Catalog music now ducks too.
+- **`voice ipa`'s "no lexicon.json" hint read as a flag `voice script` does not have.** It now says that `--project`
+  is `voice ipa`'s flag and that `voice script` reads the `lexicon.json` next to its script, plus any `--lexicon FILE`.
+- **Setup and doctor said "`showtime` is not on PATH yet" when it was.** A skill's own `bin/showtime` on PATH (a
+  plugin's or a checkout's) now counts, not only the `~/.showtime/bin` command.
+- **`brand capture` took the wrong lines from a README that starts with HTML.** On showtime's own README (no H1) the
+  title was a shell comment in a code block and the tagline a bare video URL. The title is now the first H1 outside
+  code (markdown, setext or a multi-line HTML `<h1>`) and the tagline its lead paragraph, skipping URL-only lines,
+  images, badges, comments and captions; prompts to type are no longer listed as install commands, and brand.md for an
+  adopted kit never prints `None`.
+- **`check` reported caption words at their karaoke state.** A caption word sampled while its card faded in, or
+  dimmed before it was spoken, was measured at that opacity (#e9b949 on #17120e came out at 2.98:1 instead of
+  10.18:1). Caption words are judged at the caption's own opacity, and any text measured at partial opacity is named
+  with it (`#e9b949 at 45% opacity (shows as #765d29) on #17120e`). Real low contrast still fails.
+- **An adopted Python render could open on black frames, or show each frame late, on a busy machine.** Chrome
+  puts a paused `<video>`'s seeked frame on screen through the video's own compositor submission and skips it while
+  the previous one is still unacknowledged; the frame then goes out only at the next seek, so the capture showed the
+  frame before (black for the first two frames on the Intel Mac runner). `seeked` and `requestVideoFrameCallback` both
+  fire before that submission, so 0.3.4's wait could not see it. In renders the stage now draws a video's frame on a
+  `<canvas data-st-video="ID">` and hides the video (a canvas is captured with the rest of the page), and `showtime
+  adopt` writes its frames page that way (re-adopt, or `--refresh`, to update an existing one). `test_adopt` checks
+  that every frame of the Python render shows its own time.
+- **A finished background run on Windows could show as "lost", with no id or command.** Windows refuses to open a
+  file another process is replacing, so `status` and the run's supervisor could collide on `run.json`; the
+  supervisor's failed read then rewrote the file with only its new fields. Reads and replaces now retry for up to 2 s,
+  and a failed read never rewrites the file.
+- **Code-scanning hardening (CodeQL).** Found by GitHub's code scanning on a fork of 0.3.4; none was a reported
+  exploit, all are fixed rather than suppressed. The site's player and previews take only http(s) media and script
+  URLs from `data-*` attributes (and `file:` when the site itself is opened from disk), `data-root` must be a relative
+  path, and search-result links are escaped. The standalone player detects a doctype with a loop instead of a regex
+  that backtracked on many `--><!--`, and escapes attribute values and the stage URL it writes; the studio clamps a
+  dial's default to a number from 0 to 100; the icon cache builds its CDN URL only from a valid package name and a
+  pinned version; `adopt` escapes backslashes in the names it puts into regexes, matches `</script >` end tags, and
+  strips `--!>` from a file name written into an HTML comment. The brand-block pattern matches exactly the `<link>`
+  line showtime writes; the Wikimedia rate-limit hint compares the parsed hostname; the caption emoji class and the
+  `motion --where` parser are written without patterns the scanner misreads (same results, checked over every code
+  point and a set of filters); the `ci` workflow runs with read-only repository permissions.
+- **MusicGen loads only safetensors, and outside Intel Macs needs torch 2.13+.** The optional MusicGen extra now
+  passes `use_safetensors=True`, so it never `torch.load`s a pickle (the pinned model revision ships
+  `model.safetensors`). Intel Macs keep torch 2.2.2, the last x86_64 macOS build, whose known flaws are in
+  `torch.load` and in functions MusicGen does not call with outside input; everywhere else the floor is 2.13, the
+  first release with every published PyTorch security fix.
+- **Tests in a sandbox that refuses `listen()` skip instead of failing.** `tests/_listen.py` (`LISTEN_BLOCKED`,
+  `needs_listen`, `skip_if_listen_refused()`, `SHOWTIME_TEST_NO_LISTEN=1` to simulate) is used by every test that
+  serves something; the keelson fixture tests skip when `.env` files are unreadable; test_delight runs alone under `-j`
+  (pty devices).
+
 ## 0.3.4 (2026-10-02)
 
 - **Frame 0 of a page with CSS animations could show where the animation had got to in real time.**

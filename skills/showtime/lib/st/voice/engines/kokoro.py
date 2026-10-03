@@ -22,7 +22,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
-from ...common import ShowtimeError, debug
+from ...common import ShowtimeError, debug, ort_telemetry_off
 from .. import espeak, models
 from ..textnorm import Token
 from ..voices import VoiceSpec
@@ -98,6 +98,7 @@ class KokoroEngine(Engine):
         f = models.kokoro_files()
         import onnxruntime as rt
         from kokoro_onnx import Kokoro
+        ort_telemetry_off(rt)
         so = rt.SessionOptions()
         n = _threads()
         if n:

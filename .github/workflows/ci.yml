@@ -60,6 +60,9 @@ env:
   NO_COLOR: "1"
   SHOWTIME_PROGRESS: "auto"
 
+permissions:
+  contents: read
+
 jobs:
   smoke:
     name: fast (${{ matrix.os }}, ${{ matrix.shard }}/3)

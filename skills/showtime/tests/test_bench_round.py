@@ -110,6 +110,14 @@ class NewTasks(unittest.TestCase):
 @unittest.skipUnless(HAVE, "benchmarks/ not present")
 class KeelsonFixture(unittest.TestCase):
     def setUp(self):
+        # examples/.env and .env.example are the fixture (t9 copies them into the workspace and gives them to the
+        # judges as facts, so they keep their names); some agent sandboxes refuse to read any .env* file
+        ex = BENCH / "fixtures" / "keelson" / "examples"
+        for f in (ex / ".env", ex / ".env.example"):
+            try:
+                f.read_bytes()
+            except OSError as e:
+                self.skipTest("this sandbox does not let tests read %s (%s)" % (f.name, e.strerror or e))
         self.tmp = Path(tempfile.mkdtemp(prefix="keelson-"))
         shutil.copytree(BENCH / "fixtures" / "keelson", self.tmp / "k")
         self.env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1", PYTHONPATH=str(self.tmp / "k"))

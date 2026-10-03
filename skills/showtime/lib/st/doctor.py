@@ -194,6 +194,15 @@ class Live:
                     self._write("showtime doctor: still %s, %s so far\n" % (what, fmt_duration(el)))
 
 
+PROXY_VARS = ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy")
+
+
+def node_ignores_proxy(ver: Tuple[int, ...]) -> bool:
+    """True for a Node.js that ignores NODE_USE_ENV_PROXY in fetch and http.request (before 22.21, and 23.x-24.4)."""
+    v = tuple(ver) + (0, 0)
+    return v[:2] < (22, 21) or (23, 0) <= v[:2] < (24, 5)
+
+
 class Doctor:
     def __init__(self, args: argparse.Namespace) -> None:
         self.args = args
@@ -529,6 +538,11 @@ class Doctor:
             self.add("node", FAIL, "Node.js %s at %s is too old" % (vs, node), "install Node.js 24 or 22 LTS (20+)")
         else:
             self.add("node", PASS, "v%s at %s" % (vs, node))
+            if node_ignores_proxy(ver) and any(os.environ.get(k) for k in PROXY_VARS):
+                # the launcher sets NODE_USE_ENV_PROXY=1, which Node reads only from 22.21 (24.5 for http.request)
+                self.add("node proxy", WARN, "a proxy is set, but Node.js %s does not use HTTPS_PROXY/HTTP_PROXY: "
+                         "icon and site-capture downloads from Node will fail on a proxy-only network" % vs,
+                         "install Node.js 24 or 22 LTS (22.21 or later)")
         pkg = self.p["setup"] / "package.json"
         nm = self.p["node_modules"]
         try:
@@ -687,12 +701,7 @@ class Doctor:
                      ("system %s" % esp) if esp else "not checked (the voice module or the venv is missing)",
                      "" if esp else "run `showtime setup`")
             return
-        code = ("import json\nfrom st.common import ShowtimeError\n"
-                "try:\n    from st.voice.espeak import resolve\n    lib, data, src = resolve()\n"
-                "    print(json.dumps({'ok': True, 'lib': lib, 'data': data, 'source': src}))\n"
-                "except ShowtimeError as e:\n"
-                "    print(json.dumps({'ok': False, 'error': e.message if hasattr(e, 'message') else str(e),"
-                " 'hint': getattr(e, 'hint', None)}))\n")
+        code = "import json\nfrom st.voice.espeak import check\nprint(json.dumps(check()))\n"
         env = dict(os.environ)
         env["PYTHONPATH"] = str(self.p["skill"] / "lib")
         try:

@@ -34,7 +34,9 @@ def main() -> int:
     t0 = time.time()
     kw = {"revision": a.revision} if a.revision else {}
     proc = AutoProcessor.from_pretrained(a.model, **kw)
-    model = MusicgenForConditionalGeneration.from_pretrained(a.model, **kw)
+    # safetensors only: never torch.load a pickle (the pinned repo ships model.safetensors; Intel Macs run torch 2.2.2,
+    # whose torch.load has known code-execution flaws)
+    model = MusicgenForConditionalGeneration.from_pretrained(a.model, use_safetensors=True, **kw)
     model.eval()
     sr = int(model.config.audio_encoder.sampling_rate)
     tokens = int(max(1.0, min(30.0, a.seconds)) * 50)

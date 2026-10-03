@@ -130,7 +130,7 @@ def open_url(url: str, *, headers: Optional[Dict[str, str]] = None, timeout: flo
                 if ra is not None and ra > RATE_LIMIT_MAX_WAIT:
                     err.hint = "the server asks to wait about %.0f min before retrying%s" % (
                         ra / 60.0, "; Wikimedia serves thumbnails from another tier: fetch with --max-size 1920 "
-                        "or 3840" if "wikimedia.org" in url else "")
+                        "or 3840" if (urllib.parse.urlsplit(url).hostname or "").split(".")[-2:] == ["wikimedia", "org"] else "")
                 raise err from None
             if 500 <= e.code < 600 and attempt < retries:
                 time.sleep(1.5 * (attempt + 1))

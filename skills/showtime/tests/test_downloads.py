@@ -25,6 +25,8 @@ import threading
 import unittest
 from pathlib import Path
 
+from _listen import need_listen
+
 TESTS_DIR = Path(__file__).resolve().parent
 SKILL = TESTS_DIR.parent
 sys.path.insert(0, str(SKILL / "lib"))
@@ -93,6 +95,7 @@ def fixture_server(files, codes=None):
     _Handler.files = dict(files)
     _Handler.hits = []
     _Handler.codes = dict(codes or {})
+    need_listen()
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
     t = threading.Thread(target=srv.serve_forever, daemon=True)
     t.start()

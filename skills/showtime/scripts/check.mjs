@@ -598,7 +598,7 @@ async function main() {
           // hiding the text changed nothing here: the glyphs are pixels of a canvas, image or
           // transition layer, so their contrast cannot be measured this way
           if (moved[i] !== null && moved[i] < 1.5) { unmeasured.add(l.bid); return; }
-          const alpha = l.opacity * l.color[3];
+          const alpha = (l.readOpacity ?? l.opacity) * l.color[3];
           const fgMed = blend(l.color.slice(0, 3), alpha, s.median);
           const ratio = contrast(fgMed, s.median);
           const worst = Math.min(ratio, contrast(blend(l.color.slice(0, 3), alpha, s.p10), s.p10), contrast(blend(l.color.slice(0, 3), alpha, s.p90), s.p90));
@@ -610,7 +610,7 @@ async function main() {
           const tw = inTx(st);
           const settled = Math.round(alpha * 20) / 20 - (l.blurred ? 1 : 0) - (tw ? 0.5 : 0) - (l.entering ? 0.4 : 0);
           const prev = contrastWorst.get(l.lid);
-          if (!prev || settled > prev.settled || (settled === prev.settled && ratio < prev.ratio)) contrastWorst.set(l.lid, { settled, entering: !!l.entering, bid: l.bid, ratio, worst, need, t: st, tx: tw, fg: hex(l.color.slice(0, 3)), bg: hex(s.median), sel: l.sel, text: blockSeen.get(l.bid) ? blockSeen.get(l.bid).text : '', own: l.own || '', outlined: l.outlined, size: eff, decor: l.decor });
+          if (!prev || settled > prev.settled || (settled === prev.settled && ratio < prev.ratio)) contrastWorst.set(l.lid, { settled, entering: !!l.entering, bid: l.bid, ratio, worst, need, t: st, tx: tw, fg: hex(l.color.slice(0, 3)), alpha, shown: hex(fgMed), bg: hex(s.median), sel: l.sel, text: blockSeen.get(l.bid) ? blockSeen.get(l.bid).text : '', own: l.own || '', outlined: l.outlined, size: eff, decor: l.decor });
         });
       }
       // fonts actually used to paint text (CDP asks the renderer, so fallbacks are visible)
@@ -658,12 +658,16 @@ async function main() {
       else cur.n++;
     }
     const refPal = referencePalette(proj.dir);
+    // the colour as measured: text drawn at partial opacity (its own, an ancestor's or an rgba colour) is
+    // named with that opacity and the colour it shows as, so the pair and the ratio agree
+    const faded = (v) => v.alpha < 0.98;
+    const fgOf = (v) => (faded(v) ? `${v.fg} at ${Math.round(v.alpha * 100)}% opacity (shows as ${v.shown})` : v.fg);
     for (const [, v] of perBlock) {
       if (v.ratio >= v.need) continue;
       // the job's style reference uses this very pair (reference-style.css, `showtime new --job`): large text
       // at WCAG's large-text 3:1 is the look the user asked for, so a note, not an error
       if (refPal.length && v.ratio >= 3 && v.size >= 0.04 * H && !v.tx && !v.entering && nearAny(v.fg, refPal) && nearAny(v.bg, refPal)) {
-        add('info', 'low_contrast', `contrast ${v.ratio.toFixed(2)}:1 for "${snip(v.text)}" at ${fmtTime(v.t)}: ${v.fg} on ${v.bg}, the style reference's own pair (large text, >= 3:1)`,
+        add('info', 'low_contrast', `contrast ${v.ratio.toFixed(2)}:1 for "${snip(v.text)}" at ${fmtTime(v.t)}: ${fgOf(v)} on ${v.bg}, the style reference's own pair (large text, >= 3:1)`,
           { t: v.t, selector: v.sel, ratio: +v.ratio.toFixed(2), reference: true });
         continue;
       }
@@ -674,11 +678,11 @@ async function main() {
       const sev = v.tx || v.outlined || v.decor || v.entering ? 'info' : v.size >= 0.01 * H ? 'error' : 'warning';
       // name the failing span when it is only part of the line (a line number, a diff gutter, one token)
       const what = v.own && v.own !== v.text && v.own.length < v.text.length ? `"${snip(v.own, 30)}" in "${snip(v.text)}"` : `"${snip(v.text)}"`;
-      add(sev, 'low_contrast', `contrast ${v.ratio.toFixed(2)}:1 (needs ${v.need}:1) for ${what} at ${fmtTime(v.t)}: ${v.fg} on ${v.bg}${v.outlined ? ' (has an outline/shadow)' : ''}${v.tx ? txNote(v.tx) : ''}${v.entering ? ' (measured only while its entrance animation runs; check the settled frame with showtime snap --at)' : ''}`,
-        { t: v.t, selector: v.sel, ratio: +v.ratio.toFixed(2), fix: v.ratio < v.need ? `use a ${srgbLum(hexToRgb(v.bg)) < 0.18 ? 'lighter' : 'darker'} text colour, or put a scrim/plate behind the text` : '' });
+      add(sev, 'low_contrast', `contrast ${v.ratio.toFixed(2)}:1 (needs ${v.need}:1) for ${what} at ${fmtTime(v.t)}: ${fgOf(v)} on ${v.bg}${v.outlined ? ' (has an outline/shadow)' : ''}${v.tx ? txNote(v.tx) : ''}${v.entering ? ' (measured only while its entrance animation runs; check the settled frame with showtime snap --at)' : ''}`,
+        { t: v.t, selector: v.sel, ratio: +v.ratio.toFixed(2), fix: v.ratio < v.need ? `${faded(v) && contrast(hexToRgb(v.fg), hexToRgb(v.bg)) >= v.need ? 'draw it at full opacity, ' : ''}use a ${srgbLum(hexToRgb(v.bg)) < 0.18 ? 'lighter' : 'darker'} text colour, or put a scrim/plate behind the text` : '' });
     }
     if (unmeasured.size) add('info', 'contrast_unmeasured', `contrast of ${unmeasured.size} text block(s) could not be measured (drawn on a canvas, image or transition layer at the sampled times)`);
-    report.contrast = [...perBlock.values()].map((v) => ({ text: snip(v.text, 50), ratio: +v.ratio.toFixed(2), worst: +v.worst.toFixed(2), need: v.need, t: v.t, fg: v.fg, bg: v.bg }));
+    report.contrast = [...perBlock.values()].map((v) => ({ text: snip(v.text, 50), ratio: +v.ratio.toFixed(2), worst: +v.worst.toFixed(2), need: v.need, t: v.t, fg: v.fg, bg: v.bg, ...(faded(v) ? { opacity: +v.alpha.toFixed(2) } : {}) }));
     for (const v of canvasContrast.values()) {
       report.contrast.push({ text: snip(v.text, 50), ratio: +v.ratio.toFixed(2), need: v.need, t: v.t, fg: v.fg, bg: v.bg, source: 'canvas' });
       if (v.ratio >= v.need) continue;

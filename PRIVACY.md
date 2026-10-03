@@ -3,6 +3,11 @@
 showtime is open-source software that runs on your own computer. It has no account, no telemetry and no
 server of its own, and it does not collect, store or send your data anywhere.
 
+Some libraries showtime uses have telemetry of their own, and showtime turns it off for every process it
+starts: onnxruntime (the voice, alignment and background-removal models; `ORT_DISABLE_TELEMETRY=1`, plus
+`onnxruntime.disable_telemetry_events()` before each model loads) and the Hugging Face hub client
+(`HF_HUB_DISABLE_TELEMETRY=1`). It sets these only when they are unset.
+
 Your prompts are handled by the coding agent you use (Claude Code, Codex, Cursor, Devin or another), under that
 agent's own privacy policy.
 

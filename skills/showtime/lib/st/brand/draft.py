@@ -289,19 +289,12 @@ def _readme(root: Path) -> Tuple[Optional[str], Optional[str], str]:
     for name in ("README.md", "readme.md", "README.markdown", "README.rst", "README.txt", "README"):
         p = root / name
         if p.is_file():
+            from .capture import readme_lead, readme_title
             txt = _read(p)
-            title = None
-            m = re.search(r"^#\s+(.+)$", txt, re.M)
-            if m:
-                title = re.sub(r"[`*_\[\]<>]|!\[.*?\]\(.*?\)|\(.*?\)", "", m.group(1)).strip() or None
-            tagline = None
-            for para in re.split(r"\n\s*\n", txt):
-                s = para.strip()
-                if not s or s.startswith(("#", "!", "[!", "<", "```", "|", "-", "*", ">")) or len(s) < 25:
-                    continue
-                tagline = re.sub(r"\s+", " ", re.sub(r"[`*_]|\[([^\]]+)\]\([^)]*\)", r"\1", s))[:200]
-                break
-            return title, tagline, txt[:20000]
+            # the first H1 outside code and its lead paragraph (URL-only lines, images and badges skipped)
+            head = readme_title(txt)
+            lead = readme_lead(txt, head[2] if head else 0)
+            return head[0] if head else None, lead[0][:200] if lead else None, txt[:20000]
     return None, None, ""
 
 
@@ -606,11 +599,17 @@ def relativize(kit: Dict[str, Any], dest_dir: Path) -> Dict[str, Any]:
 
 def brand_md(kit: Dict[str, Any], json_name: str = "brand.json") -> str:
     pal = palette(kit)
+    src = kit.get("source") or {}
+    if kit.get("adopted_from"):
+        # the repo's own brand.json has no draft fields (source, drafted, voice, how a font was found)
+        made = "The repo's own kit, adopted from `%s`." % kit["adopted_from"]
+    else:
+        made = "Draft made by `showtime brand init`%s%s." % (
+            " from %s `%s`" % (src.get("kind") or "source", src["path"]) if src.get("path") else "",
+            " on %s" % str(kit["drafted"])[:10] if kit.get("drafted") else "")
     L = ["# Brand kit: %s" % kit.get("name"), "",
-         "Draft made by `showtime brand init` from %s `%s` on %s. **Everything here is inferred**: state it as "
-         "assumptions (quick mode) or show it on the look board (studio), and edit %s to correct it (this file is "
-         "the human summary)." % (
-             (kit.get("source") or {}).get("kind"), (kit.get("source") or {}).get("path"), (kit.get("drafted") or "")[:10], json_name), ""]
+         "%s **Everything here is inferred**: state it as assumptions (quick mode) or show it on the look board "
+         "(studio), and edit %s to correct it (this file is the human summary)." % (made, json_name), ""]
     if kit.get("tagline"):
         L += ["Tagline: %s" % kit["tagline"], ""]
     L += ["## Logo", ""]
@@ -624,11 +623,17 @@ def brand_md(kit: Dict[str, Any], json_name: str = "brand.json") -> str:
     L += ["", "## Fonts", ""]
     for slot, f in (kit.get("fonts") or {}).items():
         st = "installed" if f.get("installed") else ("install: `%s`" % f["install"] if f.get("install") else f.get("note") or "")
-        L.append("- %s: **%s** (%s; %s) %s" % (slot, f.get("family"), f.get("how"), f.get("license") or "license unknown", st))
+        L.append(("- %s: **%s** (%s) %s" % (slot, f.get("family"), "; ".join(
+            x for x in (f.get("how"), f.get("license") or "license unknown") if x), st)).rstrip())
     if not kit.get("fonts"):
         L.append("- none found: the theme fonts will be used")
     v = kit.get("voice") or {}
-    L += ["", "## Voice", "", "- `%s` at speed %s (%s)" % (v.get("id"), v.get("speed"), v.get("note", ""))]
+    L += ["", "## Voice", ""]
+    if v.get("id"):
+        L.append("- `%s`%s%s" % (v["id"], " at speed %s" % v["speed"] if v.get("speed") else "",
+                                  " (%s)" % v["note"] if v.get("note") else ""))
+    else:
+        L.append("- none set: showtime's default voice (audition with `showtime voice list` and `showtime voice say`)")
     L += ["", "## Pronunciations", ""]
     if kit.get("pronunciations"):
         for w, say in kit["pronunciations"].items():

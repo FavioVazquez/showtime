@@ -203,8 +203,9 @@ def register(sub: argparse._SubParsersAction) -> None:
     p = s.add_parser("ipa", help="show phonemes for text (for pronunciation fixes)", formatter_class=_F,
                      description="Print the IPA espeak-ng produces per word, and what the lexicon overrides; the\n"
                                  "phrase line is what the voice reads, overrides included. Copy a line into\n"
-                                 "lexicon.json and edit it to fix a pronunciation. The project's lexicon.json is found\n"
-                                 "like `voice script` finds it (see --project).",
+                                 "lexicon.json and edit it to fix a pronunciation. The lexicon.json read is the one in\n"
+                                 "the current folder (or its one sub-folder that has one), or in --project; `voice\n"
+                                 "script` reads the one next to its script or one folder up.",
                      epilog="Examples:\n  showtime voice ipa \"Showtime runs on Kubernetes\"\n"
                             "  showtime voice ipa \"Te presentamos Showtime\" --lang es")
     p.add_argument("text", help="words to phonemize (inline [word](/ipa/) and [word](respelling) work too)")
@@ -300,6 +301,9 @@ def cmd_cues(args: argparse.Namespace) -> int:
     return 0
 
 
+_LIST_COLS = ("id", "lang", "gender", "grade")
+
+
 def cmd_list(args: argparse.Namespace) -> int:
     from .voice import models, voices
     rows: List[Dict[str, Any]] = []
@@ -334,8 +338,7 @@ def cmd_list(args: argparse.Namespace) -> int:
     print("%-28s %-6s %-3s %-5s %-4s %s" % ("VOICE", "LANG", "SEX", "GRADE", "READY", "NOTES"))
     for r in rows:
         notes = r["notes"] + ("" if r["engine"] == "kokoro" else "  [%s]" % r["license"])
-        print("%-28s %-6s %-3s %-5s %-4s  %s" % (r["id"], r["lang"], r["gender"], r["grade"],
-                                                  "yes" if r["installed"] else "no", notes))
+        print("%-28s %-6s %-3s %-5s %-4s  %s" % (*(r[c] for c in _LIST_COLS), "yes" if r["installed"] else "no", notes))
     sys.stdout.flush()
     print("\nDefaults: en af_heart (female) / am_michael (male), en-gb bf_emma, es ef_dora, fr ff_siwis."
           "\nNot installed = downloads on first use (Piper) or `showtime setup --with supertonic`.", file=sys.stderr)
@@ -527,8 +530,9 @@ def cmd_ipa(args: argparse.Namespace) -> int:
         fix = ("   lexicon -> %s" % r["lexicon"]) if r["lexicon"] else ""
         print("%-18s %-28s%s%s" % (r["word"], r["espeak"], fix, extra))
     print("\nphrase: %s%s" % (whole, "   (with the lexicon)" if any(r["lexicon"] for r in rows) else ""))
-    print("lexicon: %s" % (", ".join(used) if used else "built-in only (no lexicon.json in %s; pass --project or "
-                                                          "--lexicon)" % pdir), file=sys.stderr)
+    print("lexicon: %s" % (", ".join(used) if used else "built-in only (no lexicon.json in %s; `voice ipa --project DIR` "
+                           "reads DIR's, --lexicon FILE adds one; `voice script` reads the lexicon.json next to its "
+                           "script or one folder up)" % pdir), file=sys.stderr)
     print("lexicon entry format: {\"%s\": \"%s\"}" % (rows[0]["word"], rows[0]["lexicon"] or rows[0]["espeak"]),
           file=sys.stderr)
     return 0

@@ -5,7 +5,8 @@
  * Text layout snapshot at the current seek position.
  * o: { width, height, full: boolean, labelGapEm?: number (SVG labels closer than this are crowded, default 0.15) }
  * -> { blocks: [{bid, text, len, rect, opacity, fontSize, scale, decor, sel, clipped, offCanvas, onCanvas, caption, moving}],
- *      leaves: [{lid, bid, rect, color:[r,g,b,a], opacity, fontSize, scale, decor, weight, outlined, sel}] (full only),
+ *      leaves: [{lid, bid, rect, color:[r,g,b,a], opacity, readOpacity, fontSize, scale, decor, weight, outlined, sel}] (full only),
+ *      readOpacity = the opacity contrast is judged at (a caption word's: without its card fade or karaoke dim),
  *      scale = on-screen size / CSS size (transforms such as a camera push or a scaled mockup),
  *      decor = inside [data-st-decor] (UI mockups, thumbnails: detail, not copy the viewer must read)
  *      overlaps: [[bidA, bidB, frac]] (full only), heavy: n (full only),
@@ -276,8 +277,11 @@ export function textSnapshot(o) {
       // SVG <text> is painted with `fill`, not `color`
       const svgFill = typeof SVGElement !== 'undefined' && leaf.el instanceof SVGElement && s.fill && s.fill !== 'none' && !/url\(/.test(s.fill) ? s.fill : null;
       const color = rgba(svgFill || (s.webkitTextFillColor && s.webkitTextFillColor !== s.color && !/rgba\(0, 0, 0, 0\)/.test(s.webkitTextFillColor) ? s.webkitTextFillColor : s.color));
+      // a caption-karaoke word: its card's fade in/out and the dim of a word not yet said are timing states,
+      // so its contrast is judged at the caption's own opacity (the word as it reads when it is spoken)
+      const cap = leaf.el.closest && leaf.el.closest('.st-cap[data-caption]');
       leaves.push({ lid: idOf(leaf.el, 'data-st-lid'), bid, own: (leaf.el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 60), rect: { x: leaf.box.x, y: leaf.box.y, w: leaf.box.r - leaf.box.x, h: leaf.box.b - leaf.box.y },
-        color, opacity: op, fontSize: fs, scale: scaleOf(leaf.el), decor: blk.decor, weight: parseInt(s.fontWeight, 10) || 400, outlined, clipText, sel: sel(leaf.el), chars: leaf.chars, blurred: blurred(leaf.el),
+        color, opacity: op, readOpacity: cap ? opacity(cap) : op, fontSize: fs, scale: scaleOf(leaf.el), decor: blk.decor, weight: parseInt(s.fontWeight, 10) || 400, outlined, clipText, sel: sel(leaf.el), chars: leaf.chars, blurred: blurred(leaf.el),
         entering: animatingOf(leaf.el), portal: !!(leaf.el.closest && leaf.el.closest('[data-st-portal-word],[data-portal]')),
         family: s.fontFamily, style: s.fontStyle });
     }

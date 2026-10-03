@@ -22,7 +22,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from ..common import read_json, write_json
 from . import contrast, font_status, luminance, palette, rgb, to_hex
 
-BLOCK_RX = re.compile(r"\n?<!-- brand kit: .*? -->\n(?:<link [^>]*data-st-brand[^>]*>\n)*<style id=\"st-brand\">.*?</style>\n?", re.S)
+BLOCK_RX = re.compile(r"\n?<!-- brand kit: .*? -->\n(?:<link rel=\"stylesheet\" href=\"[^\"]*\" data-st-brand>\n)*<style id=\"st-brand\">.*?</style>\n?", re.S)
 
 
 def _hex(c: Tuple[float, float, float]) -> str:

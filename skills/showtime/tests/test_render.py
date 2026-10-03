@@ -792,6 +792,47 @@ Film.start({ look: 'paper', fonts: ['650 1em "Inter Variable"'], scenes: functio
         self.assertTrue([x for x in f if x["code"] == "sparse_frame" and x["severity"] == "info"], f)
         self.assertGreaterEqual(rep["design"]["flat_share"], 0.75)
 
+    def test_14d_contrast_of_caption_words_and_faded_text(self):
+        """A caption word is judged at its colours, not at a karaoke state: sampled while its card fades in
+        and the word is still upcoming (dimmed in the minimal style), the accent #e9b949 on #17120e is
+        10.18:1, not the 2.98:1 of a 45% opacity. A caption accent that is really low still fails, and plain
+        text faded to 45% fails with its opacity named, so the colours and the ratio in the message agree."""
+        proj = self.tmp / "capcontrast"
+        write(proj / "showtime.json", json.dumps({"width": 1280, "height": 720, "fps": 30, "duration": 4}))
+        # one card, on screen 1.90-3.60 s: at the 2.00 s sample it is fading in and "Claude" is upcoming
+        write(proj / "words.json", json.dumps([{"text": "Works", "start": 1.95, "end": 2.1}, {"text": "in", "start": 2.1, "end": 2.2},
+                                               {"text": "Claude", "start": 2.2, "end": 2.5, "emph": True}, {"text": "Code.", "start": 2.5, "end": 2.8}]))
+        page = ("<!doctype html><html><head><script src=\"/_st/stage.js\"></script>"
+                "<link rel=\"stylesheet\" href=\"/_lib/@fontsource-variable/inter/index.css\">"
+                "<script type=\"module\" src=\"/_st/components/index.js\"></script>"
+                "<style>body{margin:0;background:#17120e;font-family:'Inter Variable'}.s{position:absolute;inset:0;background:#17120e}"
+                ".st-cap{--cap-ink:#f5ebdc;--cap-accent:%s;--cap-outline:#17120e}"
+                "p{position:absolute;left:60px;top:60px;margin:0;font-size:40px;color:#e9b949;opacity:%s}</style></head><body>"
+                "<section class=\"s\" data-start=\"0\" data-dur=\"4\"><p>Faded note</p>"
+                "<div data-st=\"caption-karaoke\" data-src=\"words.json\" data-style=\"minimal\" data-emphasis=\"free\"></div>"
+                "</section></body></html>")
+
+        def run(accent, note_opacity):
+            write(proj / "index.html", page % (accent, note_opacity))
+            rep = json.loads(showtime("check", proj, "--json", "--no-determinism", "--no-timeline", "--samples", "1", check=False).stdout)
+            low = [f for f in rep["findings"] if f["code"] == "low_contrast"]
+            cap = next(c for c in rep["contrast"] if c["text"].startswith("Works in"))
+            return low, cap
+        low, cap = run("#e9b949", "1")
+        self.assertFalse(low, low)
+        self.assertAlmostEqual(cap["ratio"], 10.18, delta=0.05)
+        self.assertEqual((cap["fg"], cap["bg"]), ("#e9b949", "#17120e"))
+        # a caption accent that is low against the ground is still reported
+        low, cap = run("#4a3a20", "1")
+        self.assertTrue([f for f in low if '"Claude"' in f["message"]], low)
+        self.assertLess(cap["ratio"], 2)
+        # plain text at 45% opacity: still an error, and the message says what was measured
+        low, _ = run("#e9b949", "0.45")
+        faded = [f for f in low if "Faded note" in f["message"]]
+        self.assertTrue(faded and faded[0]["severity"] == "error", low)
+        self.assertIn("#e9b949 at 45% opacity", faded[0]["message"])
+        self.assertAlmostEqual(faded[0]["ratio"], 2.98, delta=0.05)
+
     def test_15_server_hint_for_static_site(self):
         """`showtime server` on a folder without showtime.json points at `site capture --serve`."""
         site = self.tmp / "static-site"

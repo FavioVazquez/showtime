@@ -255,6 +255,13 @@
     // transparent; a background a scene sets itself (a plate) still paints
     if (RENDER && RENDER.alpha) css += 'html,body{background:transparent!important;background-image:none!important}' +
       ':root{--scene-bg:transparent!important}.stage{background:transparent!important}';
+    // the canvas route (see syncVideoCanvases): a canvas-drawn video steps out of the flow, hidden.
+    // Its transitions are off for good (a render finishes every transition at once anyway), so taking
+    // data-st-hidden away to read the video's own style starts none.
+    if (RENDER) css += 'video[data-st-canvas]{transition:none!important}' +
+      'video[data-st-hidden]{position:absolute!important;left:0!important;top:0!important;width:1px!important;height:1px!important;' +
+      'min-width:0!important;min-height:0!important;max-width:none!important;max-height:none!important;margin:0!important;' +
+      'padding:0!important;border:0!important;visibility:hidden!important;pointer-events:none!important}';
     return css;
   }
   function injectStyle() {
@@ -354,11 +361,15 @@
     return s;
   }
   function frameOf(t) { return Math.round(t * cfg.fps); }
-  function edgeFrame(t) {
-    // a time written with a few decimals (7.0667 for frame 212 at 30 fps) snaps to that frame:
-    // anything within 1 ms of a frame boundary is on it
+  // a time written with a few decimals (7.0667 for frame 212 at 30 fps) snaps to that frame:
+  // anything within 1 ms of a frame boundary is on it (-> that frame, else null)
+  function onFrame(t) {
     var x = t * cfg.fps, r = Math.round(x);
-    return Math.abs(x - r) < Math.max(1e-3, cfg.fps * 1e-3) ? r : Math.ceil(x);
+    return Math.abs(x - r) < Math.max(1e-3, cfg.fps * 1e-3) ? r : null;
+  }
+  function edgeFrame(t) {
+    var r = onFrame(t);
+    return r !== null ? r : Math.ceil(t * cfg.fps);
   }
   function clipActive(c, f) {
     if (!isFinite(c.start)) return false;
@@ -479,7 +490,9 @@
     }
     return local + 0.5 / sfps;
   }
-  function videoVisible(v) { return v.getClientRects().length > 0; }
+  // the video's own boxes (render mode reports a canvas-drawn video's boxes from its canvas, see below)
+  var elementRects = W.Element && W.Element.prototype.getClientRects;
+  function videoVisible(v) { return (elementRects ? elementRects.call(v) : v.getClientRects()).length > 0; }
   function seekVideos(t, playing) {
     var vids = document.querySelectorAll('video');
     var waits = [];
@@ -497,36 +510,172 @@
         continue;
       }
       if (!v.paused) v.pause();
-      if (Math.abs(v.currentTime - target) < 1e-4 && v.readyState >= 2 && !v.seeking) { drawVideoCanvas(v); continue; }
+      if (Math.abs(v.currentTime - target) < 1e-4 && v.readyState >= 2 && !v.seeking) continue;
       if (MODE !== 'render') { v.currentTime = target; continue; }
       waits.push(seekVideo(v, t, key));
     }
     return waits;
   }
   function seekVideo(v, t, key) {
-    return race(seekOne(v, t), 15000, 'video seek ' + key)
-      .then(function () { drawVideoCanvas(v); }, function (e) { diag.videos[key] = e.message; });
+    return race(seekOne(v, t), 15000, 'video seek ' + key).catch(function (e) { diag.videos[key] = e.message; });
   }
-  // <canvas data-st-video="ID">: in render mode the frame of <video id="ID"> is drawn on this canvas
-  // and the video is hidden. Chrome puts a paused video's new frame on screen through a compositor
-  // submission of the video's own, and skips it while its previous one is still unacknowledged (a busy
-  // or slow machine): the capture then shows the frame before, or nothing for the first one, although
-  // 'seeked' and requestVideoFrameCallback have fired. A canvas is in the page's own frame, which the
-  // capture waits for. For a video that is the whole picture (the page `showtime adopt` writes).
-  function videoCanvas(v) {
-    if (MODE !== 'render' || !v.id) return null;
+
+  // ------------------------------------------- the canvas route for <video>
+  // Render mode draws every <video> the page shows on a <canvas>. Chrome puts a paused video's new
+  // frame on screen through a compositor submission of the video's own, and skips it while its
+  // previous one is still unacknowledged (a busy or slow machine): the capture then shows the frame
+  // before, or nothing for the first one, although 'seeked' and requestVideoFrameCallback have fired.
+  // A canvas is in the page's own frame, which the capture waits for.
+  //
+  // Each video gets a canvas right after it that takes its place: the canvas is given the video's
+  // computed style every frame (display, position, size, margins, flex and grid placement, object-fit,
+  // transforms, opacity, filters, border-radius, masks, z-index, visibility...), read with the video
+  // back in its own place, so it lays out and paints where the video did. The video itself steps out
+  // of the flow, hidden (data-st-hidden), and keeps running its animations; its boxes
+  // (getBoundingClientRect, offsetWidth...) report the canvas's, so scripts and `showtime check`
+  // measure the same layout. Preview and live playback keep the plain <video>.
+  //   data-st-video="native" on a <video>: leave it a plain video in renders too.
+  //   <canvas data-st-video="ID">: the page's own canvas for <video id="ID"> (styled by the page,
+  //   which `showtime adopt` writes); the frame is drawn there and the video hidden.
+  var VIDEO_CANVAS_MAX = 268435456;  // Chrome's largest canvas (pixels); a bigger video stays a plain one
+  var MIRROR_PROPS = ('display position float clear top right bottom left z-index box-sizing width height ' +
+    'min-width min-height max-width max-height aspect-ratio margin-top margin-right margin-bottom margin-left ' +
+    'padding-top padding-right padding-bottom padding-left ' +
+    'border-top-width border-right-width border-bottom-width border-left-width ' +
+    'border-top-style border-right-style border-bottom-style border-left-style ' +
+    'border-top-color border-right-color border-bottom-color border-left-color ' +
+    'border-top-left-radius border-top-right-radius border-bottom-right-radius border-bottom-left-radius ' +
+    'border-image-source border-image-slice border-image-width border-image-outset border-image-repeat ' +
+    'vertical-align flex-grow flex-shrink flex-basis order align-self justify-self ' +
+    'grid-row-start grid-row-end grid-column-start grid-column-end ' +
+    'object-fit object-position object-view-box image-rendering overflow-x overflow-y overflow-clip-margin ' +
+    'opacity visibility filter backdrop-filter mix-blend-mode isolation clip-path ' +
+    'mask-image mask-size mask-position mask-repeat mask-origin mask-clip mask-composite mask-mode ' +
+    'transform transform-origin transform-box transform-style translate rotate scale backface-visibility ' +
+    'offset-path offset-distance offset-rotate offset-anchor offset-position ' +
+    'box-shadow outline-width outline-style outline-color outline-offset ' +
+    'background-color background-image background-size background-position-x background-position-y ' +
+    'background-repeat background-clip background-origin background-attachment background-blend-mode ' +
+    'shape-outside shape-margin will-change contain zoom pointer-events').split(' ');
+  var mirrorProps = null;  // the ones this browser knows
+  var mirrors = new Set();
+  function nativeVideo(v) { return v.getAttribute('data-st') === 'off' || v.getAttribute('data-st-video') === 'native'; }
+  function pageCanvas(v) {
+    if (!v.id) return null;
     var cs = document.querySelectorAll('canvas[data-st-video]');
     for (var i = 0; i < cs.length; i++) if (cs[i].getAttribute('data-st-video') === v.id) return cs[i];
     return null;
   }
-  function drawVideoCanvas(v) {
-    var c = videoCanvas(v);
-    if (!c || v.readyState < 2 || !v.videoWidth) return;
-    try {
-      if (c.width !== v.videoWidth || c.height !== v.videoHeight) { c.width = v.videoWidth; c.height = v.videoHeight; }
-      c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
-      if (v.style.visibility !== 'hidden') v.style.visibility = 'hidden';
-    } catch (e) { reportError('video canvas #' + v.id, e); }
+  function canvasFits(v) { return !v.videoWidth || (v.videoWidth <= 32767 && v.videoHeight <= 32767 && v.videoWidth * v.videoHeight <= VIDEO_CANVAS_MAX); }
+  /** In a render, is this video's frame captured from a canvas? (Its seek then waits longer for the frame.) */
+  function drawnOnCanvas(v) { return MODE === 'render' && !nativeVideo(v) && (!!pageCanvas(v) || canvasFits(v)); }
+  function drawFrame(v, c) {
+    if (v.readyState < 2 || !v.videoWidth) return false;
+    if (c.width !== v.videoWidth || c.height !== v.videoHeight) { c.width = v.videoWidth; c.height = v.videoHeight; c.__stT = NaN; }
+    var src = v.currentSrc || v.src;
+    if (c.__stT === v.currentTime && c.__stSrc === src) return true;
+    var g = c.getContext('2d');
+    if (!g) throw new Error('no 2D context for a ' + c.width + 'x' + c.height + ' canvas');
+    g.clearRect(0, 0, c.width, c.height);            // transparent video: no trace of the frame before
+    g.drawImage(v, 0, 0, c.width, c.height);
+    c.__stT = v.currentTime; c.__stSrc = src;
+    return true;
+  }
+  // inherited ones: the canvas is the video's sibling, so a value the video only inherits stays
+  // `inherit` (a scene hidden after the seek, as the transition layer pass does, hides the canvas too)
+  var MIRROR_INHERITED = { visibility: 1, 'pointer-events': 1, 'image-rendering': 1 };
+  function readMirrorStyle(v) {
+    var m = v.computedStyleMap(), out = {}, pm = v.parentElement ? v.parentElement.computedStyleMap() : null;
+    if (!mirrorProps) mirrorProps = MIRROR_PROPS.filter(function (p) { try { m.getAll(p); return true; } catch (e) { return false; } });
+    for (var i = 0; i < mirrorProps.length; i++) {
+      var p = mirrorProps[i], val = m.getAll(p).map(String).join(', ');
+      if (MIRROR_INHERITED[p] && pm && pm.getAll(p).map(String).join(', ') === val) val = 'inherit';
+      out[p] = val;
+    }
+    return out;
+  }
+  function applyMirrorStyle(c, s) {
+    var had = c.__stStyle || {};
+    for (var k in s) if (had[k] !== s[k]) c.style.setProperty(k, s[k], 'important');
+    c.__stStyle = s;
+  }
+  function unmirror(v, why) {
+    var c = v.__stCanvas;
+    v.removeAttribute('data-st-hidden'); v.removeAttribute('data-st-canvas');
+    if (c) { mirrors.delete(c); c.remove(); c.__stVideo = null; }
+    v.__stCanvas = null;
+    if (why) {
+      diag.videoNative = diag.videoNative || [];
+      if (diag.videoNative.length < 20) diag.videoNative.push({ video: v.currentSrc || v.src || tagOf(v), why: why });
+    }
+  }
+  /** After every seek in a render: draw each video's frame on its canvas and give the canvas its style. */
+  function syncVideoCanvases() {
+    mirrors.forEach(function (c) {
+      var v = c.__stVideo;
+      if (!v || !v.isConnected || v.__stCanvas !== c || nativeVideo(v)) { if (v && v.__stCanvas === c) unmirror(v); else { mirrors.delete(c); c.remove(); } }
+    });
+    var vids = document.querySelectorAll('video'), todo = [];
+    for (var i = 0; i < vids.length; i++) {
+      var v = vids[i];
+      if (nativeVideo(v)) continue;
+      var pc = pageCanvas(v);
+      if (pc) {
+        if (v.__stCanvas) unmirror(v);
+        try { if (drawFrame(v, pc) && v.style.visibility !== 'hidden') v.style.visibility = 'hidden'; } catch (e) { reportError('video canvas #' + v.id, e); }
+        continue;
+      }
+      if (!v.__stCanvas) {
+        if (v.error || v.readyState < 2 || !v.videoWidth || !v.parentNode || !videoVisible(v)) continue;  // nothing to draw yet: the plain video
+        if (!canvasFits(v)) continue;
+        if (typeof v.computedStyleMap !== 'function') continue;
+      }
+      todo.push(v);
+    }
+    if (!todo.length) return;
+    // read every video's style in its own place (one style pass, no layout), then hide them again
+    todo.forEach(function (v) { if (v.__stCanvas) v.removeAttribute('data-st-hidden'); });
+    var styles = todo.map(function (v) { try { return readMirrorStyle(v); } catch (e) { return e; } });
+    todo.forEach(function (v, k) {
+      var s = styles[k];
+      if (s instanceof Error) { unmirror(v, 'style: ' + s.message); return; }
+      var c = v.__stCanvas, fresh = !c;
+      try {
+        if (fresh) {
+          c = document.createElement('canvas');
+          c.setAttribute('data-st-videoframe', '');
+          c.setAttribute('aria-hidden', 'true');
+          c.__stVideo = v;
+          v.__stCanvas = c;
+          mirrors.add(c);
+          v.setAttribute('data-st-canvas', '');
+        }
+        if (s.display !== 'none') drawFrame(v, c);
+        if (v.nextSibling !== c) v.parentNode.insertBefore(c, v.nextSibling);
+        applyMirrorStyle(c, s);
+        v.setAttribute('data-st-hidden', '');
+      } catch (e) { unmirror(v, e && e.message ? e.message : String(e)); }
+    });
+  }
+  // A canvas-drawn video is out of the flow, 1 px and hidden; its boxes are its canvas's, so code that
+  // measures the video (a cursor or camera aimed at it, check's layout audit) sees where it is drawn.
+  function delegateVideoBoxes() {
+    var P = W.HTMLVideoElement && W.HTMLVideoElement.prototype;
+    if (!P) return;
+    function drawnOn(v) { var c = v.__stCanvas; return c && c.isConnected && v.hasAttribute('data-st-hidden') ? c : null; }
+    ['getBoundingClientRect', 'getClientRects'].forEach(function (k) {
+      var f = W.Element.prototype[k];
+      if (typeof f !== 'function') return;
+      Object.defineProperty(P, k, { configurable: true, writable: true, value: function () { return f.call(drawnOn(this) || this); } });
+    });
+    [[W.HTMLElement, ['offsetLeft', 'offsetTop', 'offsetWidth', 'offsetHeight', 'offsetParent']],
+      [W.Element, ['clientLeft', 'clientTop', 'clientWidth', 'clientHeight']]].forEach(function (pair) {
+      pair[1].forEach(function (k) {
+        var d = Object.getOwnPropertyDescriptor(pair[0].prototype, k);
+        if (!d || !d.get) return;
+        Object.defineProperty(P, k, { configurable: true, get: function () { return d.get.call(drawnOn(this) || this); } });
+      });
+    });
   }
   // A video that appeared after the page loaded (added by a handler, a new src) has no data yet: a
   // seek set then does nothing (no 'seeked' ever comes) and the frame shows nothing. Load it first.
@@ -554,10 +703,10 @@
         // still show the previous frame (black for the first one) on a slow machine. The wait also
         // takes the frame being presented (requestVideoFrameCallback, which fires after every seek of
         // a file with a picture), or 500 ms after 'seeked' if it never comes. It fires when the frame is
-        // the player's current one, not when it is on screen (see data-st-video); a canvas draws the current
-        // one, so a video drawn on a canvas waits for it longer.
+        // the player's current one, not when it is on screen (see the canvas route above); a canvas draws
+        // the current one, so a video drawn on a canvas waits for it longer.
         var seeked = false, shown = typeof v.requestVideoFrameCallback !== 'function' || !v.videoWidth, timer = null;
-        var exact = !shown && !!videoCanvas(v);
+        var exact = !shown && drawnOnCanvas(v);
         function end() {
           real.clearTimeout(timer);
           v.removeEventListener('seeked', done); v.removeEventListener('error', end); res();
@@ -723,12 +872,23 @@
     }
     return null;
   }
+  var fileCfgP = null;
   function loadFileConfig() {
     if (fileCfg || RENDER) return Promise.resolve();
     if (!/^https?:$/.test(W.location.protocol)) return Promise.resolve();
-    return race(fetch('/showtime.json', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }), 5000, 'showtime.json')
+    if (fileCfgP) return fileCfgP;
+    fileCfgP = race(fetch('/showtime.json', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }), 5000, 'showtime.json')
       .then(function (j) { if (j && typeof j === 'object') { fileCfg = j; mergeConfig(); injectStyle(); } })
       .catch(function (e) { reportError('showtime.json', e); });
+    return fileCfgP;
+  }
+  /**
+   * showtime.json "questions" with their times resolved (the tools resolve voice cues before the
+   * page sees them): [{id, t (pause), think, resume, from, prompt, choices, answer, reply: [...]}].
+   */
+  function questions() {
+    var q = fileCfg && Array.isArray(fileCfg.questions) ? fileCfg.questions : [];
+    return q.filter(function (x) { return x && isFinite(x.t); }).map(function (x) { return JSON.parse(JSON.stringify(x)); });
   }
 
   var readyPromise = null;
@@ -741,7 +901,9 @@
       injectStyle();
       watchClips();
       await race(docLoaded(), 30000, 'page load event').catch(function (e) { reportError('ready', e); });
-      await race(preloadFonts(), 20000, 'fonts').catch(function (e) { reportError('ready', e); });
+      // 60 s like the author gates below: a look signature's faces on a cold, busy 4-core runner (Windows on Arm,
+      // check's several pages at once) took over 20 s, which failed check while the render of the same page passed
+      await race(preloadFonts(), 60000, 'fonts').catch(function (e) { reportError('ready', e); });
       emojify();
       await decodeImages();
       await videosLoaded();
@@ -812,6 +974,7 @@
         return p.catch(function (e) { errs.push(reportError('async onSeek at t=' + t.toFixed(3), e)); });
       }));
     }
+    if (MODE === 'render') syncVideoCanvases();
     if (document.fonts && document.fonts.status === 'loading') await race(document.fonts.ready, 10000, 'fonts').catch(function () {});
     started = true;
     if (MODE === 'render') {
@@ -851,10 +1014,19 @@
       hasScore: typeof ST.score === 'function', conflicts: cfgConflicts.slice(),
     };
   }
+  // A clip edge as the stage applies it: a time within 1 ms of a frame (1.9667 at 60 fps) is that frame's
+  // time (1.966666...), the frame the clip starts or ends on. Pages compare these with t (t >= start),
+  // so they must agree with the stage: with the written 1.9667, frame 118 (t = 1.96667) showed the new
+  // scene while `t >= start` was still false, and a canvas drawn only "while active" stayed blank on
+  // the first frame after every cut.
+  function edgeTime(x) {
+    var r = isFinite(x) ? onFrame(x) : null;
+    return r !== null ? r / cfg.fps : x;
+  }
   function clips() {
     if (clipsDirty) parseClips();
     return clipList.map(function (c) {
-      return { name: c.name, id: c.id, tag: tagOf(c.el), start: c.start, end: isFinite(c.end) ? c.end : null };
+      return { name: c.name, id: c.id, tag: tagOf(c.el), start: edgeTime(c.start), end: isFinite(c.end) ? edgeTime(c.end) : null };
     });
   }
   function progress(t, a, b, ease) {
@@ -942,6 +1114,10 @@
     get t() { return current; },
     get frame() { return Math.round(current * cfg.fps); },
     get cfg() { return Object.assign({}, cfg); },
+    /** Stop-and-ask questions from showtime.json (see references/html-export.md § Questions). */
+    get questions() { return questions(); },
+    /** Resolves once showtime.json is read (at once in a render; a preview fetches it). */
+    configReady: function () { return loadFileConfig(); },
     config: function (o) {
       if (o && typeof o === 'object') {
         Object.keys(o).forEach(function (k) { pageCfg[k] = o[k]; });
@@ -980,6 +1156,7 @@
   if (RENDER) {
     installShim(RENDER.seed);
     holdAnimations();
+    delegateVideoBoxes();
     return;
   }
 

@@ -8,8 +8,9 @@ Provenance rules:
   and in Manim projects (manim.json, e.g. <job>/manim/) the build/ scene cache
   and the *-draft* renders in out/.
 - Deliverables are never touched: final/preview videos, poster, exports/,
-  credits, share text, job.json, render.json, SHOWTIME.md, studio/ and anything
-  the user put there. Symlinks are never followed.
+  credits, share text, job.json, render.json, SHOWTIME.md, studio/, the person's
+  notes on the video (review/notes/) and anything the user put there. Symlinks are
+  never followed.
 """
 from __future__ import annotations
 
@@ -22,7 +23,7 @@ from ..common import ShowtimeError, human_size
 
 # (relative path, level) - level "frames" is included in "default" which is included in "all"
 JOB_ITEMS: List[Tuple[str, str]] = [
-    ("work/frames", "frames"),
+    ("work/frames", "frames"), ("work/splice", "frames"),
     ("work/check", "default"), ("work/snap", "default"), ("work/qa", "default"),
     ("work/audio", "default"), ("work/diagnostics", "default"), ("work/review-frames", "default"),
     ("work/video.mp4", "default"), ("work/video.mov", "default"), ("work/video.webm", "default"),
@@ -107,12 +108,21 @@ def plan(target: Path, level: str = "default") -> Dict[str, Any]:
         for c, label in _manim_items(mp, level):
             cands.append(c)
             what[c] = label
-    if kind == "job":  # `render -o other.mp4` keeps intermediates in <stem>.work/
-        for w in sorted(target.glob("*.work")):
+    review = target / "review"
+    if review in cands and (review / "notes").is_dir() and not review.is_symlink():
+        # the person's notes on the video (showtime review) are theirs, not scratch: keep review/notes/
+        cands = [c for c in cands if c != review] + sorted(c for c in review.iterdir() if c.name != "notes")
+    if kind == "job":
+        # a render into a job (--job, -o) keeps its intermediates in <stem>.work/ (span clips: work/<span>.work/,
+        # studio media: work/renders/<name>.work/). Renders since 0.4.0 tidy their own; older ones left the
+        # silent video copy (as large as the final) and the WAV stems there
+        works = sorted(target.glob("*.work")) + sorted(target.glob("work/*.work")) + sorted(target.glob("work/renders/*.work"))
+        for w in works:
             if w.is_dir() and not w.is_symlink():
-                cands.append(w / "frames")
+                cands += [w / "frames", w / "splice"]
                 if LEVELS[level] >= LEVELS["default"]:
                     cands += [w / "audio", w / "diagnostics"]
+                    cands += [w / ("%s.%s" % (n, e)) for n in ("video", "mux") for e in ("mp4", "mov", "webm")]
                 if LEVELS[level] >= LEVELS["all"]:
                     cands = [c for c in cands if not str(c).startswith(str(w))] + [w]
     seen = set()

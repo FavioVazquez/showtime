@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="referrer" content="no-referrer">
+<meta name="generator" content="showtime review">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Cpath fill=%22#B3121F%22 d=%22M22.00,0.00 H78.00 A22,22 0 0 1 100.00,22.00 V78.00 A22,22 0 0 1 78.00,100.00 H22.00 A22,22 0 0 1 0.00,78.00 V22.00 A22,22 0 0 1 22.00,0.00 Z%22/%3E%3Cpath fill=%22#15100E%22 d=%22M35,21 L65,21 C72,35 84,47 84,57 C84,67 79,76 79,86 L21,86 C21,76 16,67 16,57 C16,47 28,35 35,21 Z%22/%3E%3Cpath fill=%22#E9B949%22 d=%22M30.00,77.00 A20,6.5 0 1 0 70.00,77.00 A20,6.5 0 1 0 30.00,77.00 Z%22/%3E%3C/svg%3E%0A">
+<title>Notes</title>
+<style>/*RV:CSS*/</style>
+</head>
+<body>
+<a class="sr skip" href="#list">Skip to the notes</a>
+<header class="top">
+  <div class="top-in">
+    <span class="mark" aria-hidden="true"><svg viewBox="0 0 100 100" focusable="false"><path fill="#B3121F" d="M25.00,4.00 H75.00 A21,21 0 0 1 96.00,25.00 V75.00 A21,21 0 0 1 75.00,96.00 H25.00 A21,21 0 0 1 4.00,75.00 V25.00 A21,21 0 0 1 25.00,4.00 Z"/><path fill="#15100E" d="M35,21 L65,21 C72,35 84,47 84,57 C84,67 79,76 79,86 L21,86 C21,76 16,67 16,57 C16,47 28,35 35,21 Z"/><path fill="#E9B949" d="M30.00,77.00 A20,6.5 0 1 0 70.00,77.00 A20,6.5 0 1 0 30.00,77.00 Z"/></svg></span>
+    <div class="ttl"><h1 id="title">Notes</h1><span class="sub" id="media"></span></div>
+    <span class="pill" id="saved" role="status" aria-live="polite"><i></i><span>Saved on this computer</span></span>
+    <button class="btn ghost icon" id="keysBtn" type="button" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg></button>
+  </div>
+</header>
+<div class="banner" id="banner" role="alert" hidden></div>
+<main class="wrap">
+  <section class="player" aria-label="Video">
+    <div class="stage" id="stage">
+      <div class="layer" id="layer" role="application" aria-label="Video frame: pause, then click a spot or drag a box to add a note" aria-describedby="hint"></div>
+      <div class="hint" id="hint">Pause, then click a spot or drag a box to add a note</div>
+    </div>
+    <div class="bar">
+      <button class="btn icon play" id="playBtn" type="button" aria-label="Play (space)"><svg class="i-play" viewBox="0 0 24 24"><path fill="currentColor" d="M7 4.5v15l12.5-7.5z"/></svg><svg class="i-pause" viewBox="0 0 24 24"><path fill="currentColor" d="M6.5 4.5h4v15h-4zM13.5 4.5h4v15h-4z"/></svg></button>
+      <button class="btn icon ghost" id="backBtn" type="button" aria-label="One frame back (,)" title="One frame back (,)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg></button>
+      <button class="btn icon ghost" id="fwdBtn" type="button" aria-label="One frame forward (.)" title="One frame forward (.)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></button>
+      <div class="time" id="time" aria-live="off"><b>0:00.0</b> <span>/ 0:00</span></div>
+      <div class="scrub" id="scrub" role="slider" tabindex="0" aria-label="Seek" aria-valuemin="0" aria-valuenow="0">
+        <div class="rail"><div class="fill" id="fill"></div><div class="ticks" id="ticks"></div></div><div class="knob" id="knob"></div>
+      </div>
+      <button class="btn primary" id="addBtn" type="button" title="Note at this frame (n)">Add note</button>
+    </div>
+    <form class="composer" id="composer" hidden>
+      <div class="c-head"><strong id="cTitle">New note</strong> <span class="muted" id="cWhere"></span>
+        <button class="linkish" id="cWhole" type="button" hidden>Use the whole frame</button></div>
+      <label class="sr" for="cText">Your note</label>
+      <textarea id="cText" maxlength="2000" rows="3" placeholder="What should change here? Rough is fine."></textarea>
+      <div class="c-row"><span class="muted small">Enter saves · Shift+Enter new line · Esc cancels</span>
+        <span class="grow"></span>
+        <button class="btn ghost" type="button" id="cCancel">Cancel</button>
+        <button class="btn primary" type="submit" id="cSave">Save note</button></div>
+    </form>
+  </section>
+  <aside class="notes" aria-labelledby="nTitle">
+    <div class="n-head"><h2 id="nTitle">Notes <span class="count" id="count">0</span></h2>
+      <span class="muted small" id="nSummary"></span></div>
+    <p class="note-about muted small" id="about">Your notes go to your agent as feedback on this video. They stay on this computer.</p>
+    <ol class="list" id="list" tabindex="-1"></ol>
+    <div class="empty" id="empty">No notes yet. Pause the video where something should change, click the spot (or drag a box around it) and say what you want.</div>
+  </aside>
+</main>
+<dialog id="keysDlg" aria-labelledby="kTitle">
+  <form method="dialog">
+    <h2 id="kTitle">Keyboard shortcuts</h2>
+    <div class="keys">
+      <span class="kbd">space / k</span><span>Play · pause</span>
+      <span class="kbd">← / →</span><span>Back · forward 1 s (shift: 5 s)</span>
+      <span class="kbd">, / .</span><span>One frame back · forward</span>
+      <span class="kbd">n</span><span>Note at this frame (the whole frame; click or drag first to point)</span>
+      <span class="kbd">j / l</span><span>Previous · next note</span>
+      <span class="kbd">e</span><span>Edit the selected note</span>
+      <span class="kbd">Enter</span><span>Save the note you are writing</span>
+      <span class="kbd">Esc</span><span>Cancel</span>
+      <span class="kbd">?</span><span>This help</span>
+    </div>
+    <div class="drow"><button class="btn primary" value="ok">Done</button></div>
+  </form>
+</dialog>
+<div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+<script type="application/json" id="rv-config">/*RV:CONFIG*/</script>
+<script>/*RV:APP*/</script>
+</body>
+</html>

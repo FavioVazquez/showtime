@@ -26,20 +26,24 @@ Component options: `references/components.md`. Scene handoffs: `references/trans
 - Visual hits 1-2 frames before the beat; put SFX on the components' `sync` beats (§8)
 - Determinism: no `Date.now`, timer animation, unseeded `Math.random`, CSS `transition`s, accumulators or
   `will-change`; register library timelines paused (`ST.anime(tl)`) (§10)
+- Showreel tone: 12-14 shots per 15 s on a BPM grid, no technique twice, at least 8 kinds (live counter, words
+  over a liquid shader, 3D, particles, kinetic and glitch type, a pattern system, a tunnel, a morph), a match or
+  zoom-through for surprise, the name landing on the last beats (~1.25 s); `showtime new showreel` (§11)
 
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| 1. The five rules that matter most | 44-64 |
-| 2. Easing by character | 66-82 |
-| 3. Durations | 84-99 |
-| 4. Stagger | 101-112 |
-| 5. Entrances and exits | 114-126 |
-| 6. Camera moves | 128-151 |
-| 7. Type in motion | 153-161 |
-| 8. Rhythm and sound sync | 163-169 |
-| 9. Anti-patterns (and the fix) | 171-186 |
-| 10. Determinism rules (why frames match every time) | 188-197 |
+| 1. The five rules that matter most | 48-68 |
+| 2. Easing by character | 70-86 |
+| 3. Durations | 88-103 |
+| 4. Stagger | 105-116 |
+| 5. Entrances and exits | 118-130 |
+| 6. Camera moves | 132-155 |
+| 7. Type in motion | 157-165 |
+| 8. Rhythm and sound sync | 167-173 |
+| 9. Anti-patterns (and the fix) | 175-190 |
+| 10. Determinism rules (why frames match every time) | 192-201 |
+| 11. Showreel: go all out | 203-254 |
 
 ## 1. The five rules that matter most
 
@@ -130,7 +134,7 @@ short-short-long, with the longest hold on the key message).
 | move | numbers |
 |---|---|
 | push-in (focus) | scale 1.00 -> 1.04-1.08 over the whole shot, `sine.inOut` or `camera` |
-| punch-in (emphasis) | 1.0 -> 1.15-1.3 in 0.25-0.4 s, `power3.out`, hold >= 1 s; never in launch, promo or explainer films, and never on every jump cut (viewers read it as cheap) |
+| punch-in (emphasis) | 1.0 -> 1.15-1.3 in 0.25-0.4 s, `power3.out`, hold >= 1 s; never in launch, promo or explainer films, and never on every jump cut (viewers read it as cheap); fine in a showreel (§11) |
 | zoom to a UI target | 1.5-2x for clicks and typing, 1.3-1.5x for scroll, hard max ~2.8x; transition 0.6 s + 0.55 s x ln(zoom); start 0.15-0.4 s before the action; hold >= 1.2 s |
 | pull-back reveal | author the wide shot at 1x and open scaled in, never shrink a 1x close-up |
 | drift | 2-8 px x, 1-4 px y, 1-3 slow cycles per shot, on the background layer only |
@@ -195,3 +199,56 @@ by the stage relative to the clip start; library timelines must be created pause
 anti-aliasing depend on which frame was drawn before (measured here: up to 84/255 on text edges
 when frames are sought out of order). `showtime check` re-shoots frames after a delay and in shuffled order to catch
 anything tied to wall-clock time.
+
+## 11. Showreel: go all out
+
+The showreel tone (`tones.md`) inverts the restraint above: density, energy and surprise win, and the quality bar
+moves into craft (no banding, no specks, no stutter, no broken frame). `showtime new showreel <dir>` is a working
+15 s reel built from the recipes below (`templates/showreel/reel.js` holds the helpers); swap shots for the
+maker's own work whenever there is any.
+
+**Structure.** Pick a tempo first, then cut on its grid: at 120 BPM a beat is 0.5 s, 15 s is 30 beats. 12-14 shots,
+each 1.5-2.5 beats (one data or 3D shot may take 3-4) and each a different technique; a run of flash words on
+2/3-beat steps; the name takes the last 2-2.5 beats (its reading time, ~1.25 s), tracking or building in on the
+beat and moving to the last frame. The 2026-10-05 rematch: the winner cut 13-14 shots and landed its name in the
+last 1.75 s; the takes that held their name 2.5-3.5 s lost. Nothing sags for more than ~1 s: a settled chart or
+object keeps a push or a turn going. One hit per cut in the mix, a riser into the drop and into the name. Hook
+landed at frame 0 (no blur-in on the poster frame). At least one match or zoom-through where a shot turns into the
+next (the critic's "surprise"): a tunnel whose centre opens into the next shot's ground, a fly-through the counter
+of a letter into the end card. Variety: no technique twice, at least 8 kinds (`tones.md`, showreel, the menu); two
+shots on the same ground with the same layout read as one trick (qa's `showreel_repeats`).
+
+The template's fourteen shots (`showtime new showreel`), seconds: hook, words over a liquid chrome shader (0-1);
+flash words (1-2); particle burst on the drop (2-3); 3D knot, camera dolly (3-4.25); glitch type on red
+(4.25-5); kinetic bands (5-5.75); live data, bars, a line and an odometer counter (5.75-7.5); shape morph
+(7.5-8.25); tile system (8.25-9.25); tunnel that opens into the next ground (9.25-10.25); line drawing
+(10.25-11.5); halftone sphere (11.5-12.5); type as a mask over a shader, flying through the O (12.5-13.75);
+the name (13.75-15).
+
+| technique | recipe (all offline, a pure function of the shot's local time) |
+|---|---|
+| shader ground | a full-frame WebGL fragment shader (`shaderLayer(canvas, frag, {scale: 0.75})`): domain-warped value noise (`fbm(p + 2.6 * fbm2(p + t))`), read as a height field, its normal reflecting a two-colour sky gives liquid chrome; feed `u_t` from the clip's local time, darken a pool under the type (contrast), 4 octaves at 0.75 scale renders fast; `preserveDrawingBuffer: true` |
+| particle burst on a beat | seeded once (`ST.rand('drop')`), positions closed-form: distance `v (1 - e^(-k τ)) / k` with drag k 2-3, an angle that swirls by `s (1 - e^(-1.2 τ))`; draw each as a streak from its position 0.07 s earlier, additive (`lighter`), fading over 1.7-3.3 s so the shot never ends in dust; the hit's core glow stays under a quarter of the frame (flash limit) |
+| kinetic type | flash words on the beat (one per 2/3 beat, `data-st-flash`, on screen from their first frame); bands of 1-3 word repeats in opposite directions with `x = (1 - e^(-2.2 u)) × 46 cqw` (fast in, easing out), a full-bleed colour band behind one row (`box-shadow: 0 0 0 100cqw; clip-path: inset(0 -100cqw)`); an outline stack in a static face (a variable font's outlines show their overlapping contours); glitch as `::before`/`::after` slices of `attr(data-text)` plus an RGB-split `text-shadow`, both from CSS variables set per frame, bursting in the first 0.16 s of each beat (the word is audited once) |
+| 3D object turn | three.js from `/_lib/three` through an import map, lit by `RoomEnvironment` through a PMREM (sigma 0.12: nothing fetched, soft reflections), `MeshPhysicalMaterial` metal 1, roughness about 0.22, iridescence 1, 96+ radial segments (lower roughness and segments read as specks), two coloured point lights; `ST.three(renderer, scene, camera, fn)` turns it and dollies the camera in from local time |
+| live data / counter | `chart(canvas, {value, label})`: hairlines draw out, bars rise on a damped spring (`1 - e^(-6p) cos 9p`) staggered 45 ms, a line draws on with a pulsing head, a ring gauge closes, and an odometer rolls to the number (each wheel turns only while the one below passes 9 -> 0); land it by ~1.25 s and keep a slow push so the settled chart never sits still. Drawn on the canvas, the number is texture; a figure the viewer must read goes in the DOM, held its reading time |
+| words over a liquid shader | the hook: the chrome shader under one display word landed at frame 0; or type as a mask: the shader canvas under a full-frame `var(--ink)` layer with `mix-blend-mode: multiply` and the word in white, so the liquid shows only inside the letters; fly through a letter's counter (`scale` to 60 about the counter's centre, measured with a DOM `Range`, `inExpo` over the last 0.45 s) into the next ground |
+| morph | `morph(canvas, {steps})`: one filled shape whose outline r(θ) blends between circle, star, square and flower on the half beats (eased), turning, with three outline echoes trailing 50 ms apart |
+| pattern system | a grid of 32 tiles (quarter circles, dots, squares, wedges in the palette) each turning a quarter on every half beat, staggered a frame or so |
+| line drawing | `spiro(canvas)`: a hypotrochoid drawing itself on over ~1.1 s with a white core under the ink and a glowing head, over a faint rosette of finished copies turning the other way |
+| halftone | `halftone(canvas)`: a dot grid sized by the shade of a lit sphere whose light swings round, ripples of small dots outside it |
+
+**Canvas shots draw from the stage's clip windows.** A canvas or WebGL shot drawn in `ST.onSeek` only while its
+scene is on screen asks `ST.clips()` (the template's `active(id, t)` and `localTime(id, t)`): those windows are
+frame-exact. A copy of the scene times in the script (`if (t >= 1.9667)`) draws the shot a frame after the cut,
+and the render's first frame after it comes out blank while `snap` looks right; `check` reports it
+(`late_first_frame`). `"render": {"settle": "raf2"}` does not change it.
+
+**Flash words and the hero line.** Texture words carry the energy and may leave before they can be read, only when
+marked and short (`pacing.md` §1); the name or the one message is held its full reading time (`no_hero_line`).
+Shot tags ("01 Shader") are one system: the same corner, every technique shot, or none.
+
+**What the critic flags in reels** (round-1 findings): a placeholder name on the end card; specks on 3D metal; every
+cut a hard cut with no shot turning into the next; a tag system that starts and stops; a blurred poster frame; two
+empty frames before a flash word; a band colour that stops short of the frame; moire in thin far rings; a quiet hook
+under a frame-0 hit; a particle shot that ends as sparse dust.

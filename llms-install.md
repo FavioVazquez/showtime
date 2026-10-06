@@ -65,7 +65,7 @@ MCP Servers; in the Cline CLI: `~/.cline/mcp.json`). Keep any servers that are a
     "showtime": {
       "command": "node",
       "args": ["<showtime>/skills/showtime/mcp/server.mjs"],
-      "env": { "SHOWTIME_MCP_BASE": "<folder where the user wants their videos>" },
+      "env": { "SHOWTIME_MCP_BASE": "<folder where the user wants their videos>", "SHOWTIME_MCP_TOOLS": "all" },
       "timeout": 3600,
       "disabled": false,
       "autoApprove": []
@@ -78,6 +78,8 @@ MCP Servers; in the Cline CLI: `~/.cline/mcp.json`). Keep any servers that are a
   (`C:\\Users\\alice\\showtime\\skills\\showtime\\mcp\\server.mjs`) or use forward slashes.
 - `SHOWTIME_MCP_BASE` is where new projects and `showtime-out/` (the finished videos) go; use the open
   project folder if the user has no preference.
+- `SHOWTIME_MCP_TOOLS` set to `all` lists every tool, voice, music, sound effects and transcription included.
+  Leave it out for the ten core tools only (make, render, check, export, deliver), which keeps the tool list short.
 - `timeout` is in seconds: renders and transcriptions often take longer than the default 60. A long
   tool that runs past about 20 s answers `RUNNING` with a task id instead of timing out; call `status`
   with `{"task": "<id>"}` until it returns the result.

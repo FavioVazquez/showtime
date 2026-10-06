@@ -567,7 +567,8 @@ class TestBrowser(HistoryCase):
         h.record(lk)
         job = make_job("browserjob")
         proj = job / "project"
-        showtime("new", "dom", proj, "--duration", "2", "--size", "640x360", env=env)
+        # the template's own look (a look signature would steer away from the earlier job: no repeat to report)
+        showtime("new", "dom", proj, "--duration", "2", "--size", "640x360", "--look", "template", env=env)
         cp = showtime("check", proj, "--json", "--no-determinism", "--samples", "3", env=env, check=False)
         rep = json.loads(cp.stdout)
         codes = {f["code"]: f for f in rep["findings"]}

@@ -24,6 +24,7 @@ from . import captions as capmod
 from . import phone as phonemod
 from . import media
 from . import floor
+from . import hearing
 
 
 _THRESHOLD_DEFAULTS = {"still_hold_s": 2.5, "launch_hold_s": 3.5, "final_hold_max_s": 4.0, "frozen_fail_s": 6.0, "freeze_noise_db": -50.0}
@@ -91,6 +92,10 @@ RULES = {
     "frozen": "the picture does not change for a long stretch",
     "final_hold": "the last seconds are a still hold",
     "dead_stop": "a fast move halts in one frame with no ease-out (reads as a glitch)",
+    "flash_risk": "more than 3 general flashes in one second (photosensitivity: large, fast swings in brightness)",
+    "showreel_sparse": "a showreel (showreel tone) with fewer shots than its density floor (12 per 15 s)",
+    "showreel_long_end": "a showreel whose end card holds still over 10% of the reel (or whose last shot runs over 20%)",
+    "showreel_repeats": "a showreel with two shots that look alike (the same technique or layout twice)",
     "held_shot": "a long held camera shot with sound (live footage, e.g. a speaker holding still; not frozen)",
     "phone_size": "text smaller than the phone minimum (points at 390 pt wide, per aspect; from showtime check)",
     "phone_reading": "text on screen for less than it takes to read (from showtime check)",
@@ -124,6 +129,7 @@ RULES = {
     "reference_credit": "the \"Style reference:\" credit is missing from credits.txt or share.txt",
 }
 RULES.update(floor.RULES)   # the quality floor (st.qa.floor): looks-cheap patterns, WARN only
+RULES.update(hearing.RULES)  # the hearing pass (st.qa.hearing): what an ear catches, WARN only
 
 
 class Findings:
@@ -282,7 +288,7 @@ def run(video: PathLike, *, project: Optional[PathLike] = None, expect_file: Opt
         raise ShowtimeError("video not found: %s" % vpath, hint="pass the rendered file, e.g. showtime-out/<job>/final.mp4")
     # steps=False (brief output): drop the progress lines, keep the notes (which captions, which picture area)
     progress = ("qa: probing", "qa: measuring loudness", "qa: scanning for black", "qa: contact sheet",
-                "qa: measuring the edit rhythm")
+                "qa: measuring the edit rhythm", "qa: measuring what an ear would catch")
     say = (lambda m: None) if quiet else (lambda m: None if not steps and m.startswith(progress) else log(m))
     proj = find_project(vpath, project)
     expect, expect_src = load_expect(proj, expect_file)
@@ -366,7 +372,7 @@ def run(video: PathLike, *, project: Optional[PathLike] = None, expect_file: Opt
     else:
         say("qa: measuring loudness")
         loud = _check_audio(F, vpath, aus, dur, fps, tgt, expect, lufs, cfg)
-    rep["loudness"] = {k: v for k, v in loud.items() if k not in ("_curves", "_rms")}
+    rep["loudness"] = {k: v for k, v in loud.items() if not k.startswith("_")}
 
     # ---------------------------------------------------------- picture
     say("qa: scanning for black and frozen frames")
@@ -393,6 +399,9 @@ def run(video: PathLike, *, project: Optional[PathLike] = None, expect_file: Opt
     _check_upscale(F, vpath)
     rep["floor"] = _check_floor(F, vpath, dur, W, H, pic, _may_hold_footage(proj, cfg))
     _check_rhythm(F, vpath, dur, fps, proj, cfg, expect, rep, say)
+    if loud.get("_x") is not None:
+        _check_hearing(F, vpath, loud, dur, proj, rep, say)
+    loud.pop("_x", None)
 
     # ---------------------------------------------------------- captions, credits, texts
     caps = caption_files(vpath, proj, captions, W, H, say)
@@ -669,6 +678,7 @@ def _check_audio(F: Findings, vpath: Path, aus: List[Dict[str, Any]], dur: float
     last_sound = next(((len(rms) - i) * hop for i, v in enumerate(reversed(rms)) if v >= thr), None)
     out["first_sound"] = first_sound
     out["_rms"] = {"hop": hop, "db": rms}
+    out["_x"] = x                       # the decoded audio, for the hearing pass (dropped before the report)
     out["last_sound"] = last_sound
     if first_sound is not None and first_sound > 0.5:
         F.add("leading_silence", "WARN", "audio starts at %.2fs; the first seconds are silent" % first_sound, t=0.0,
@@ -805,13 +815,20 @@ POSTER_FLASH_DIFF = 12.0   # same threshold as render's --poster-bake auto
 def _check_rhythm(F: Findings, vpath: Path, dur: float, fps: float, proj: Optional[Path], cfg: Dict[str, Any],
                   expect: Dict[str, Any], rep: Dict[str, Any], say: Any) -> None:
     """Edit rhythm (st.qa.rhythm): measured for every short video; judged for launch, promo, release and
-    trailer films, where hard cuts, too many scenes and a flat music bed read as choppy and cheap."""
+    trailer films, where hard cuts, too many scenes and a flat music bed read as choppy and cheap, and for
+    showreels (st.showreel), where too few shots read as tame. Flashes are judged on every video."""
     from . import rhythm
+    from .. import showreel
     goal = None
+    jdata: Dict[str, Any] = {}
     job = job_of(vpath)
     if job is not None:
-        goal = (read_json(job / "job.json", {}) or {}).get("goal") if (job / "job.json").is_file() else None
-    launch = rhythm.launch_like(cfg, expect, goal)
+        jdata = (read_json(job / "job.json", {}) or {}) if (job / "job.json").is_file() else {}
+        goal = jdata.get("goal")
+    reel = showreel.resolve(cfg, jdata)
+    rep["showreel"] = reel
+    # a showreel is judged on density and energy: the launch grammar (few scenes, few hard cuts) does not apply
+    launch = rhythm.launch_like(cfg, expect, goal) and not reel["on"]
     if dur <= 0 or (dur > 180 and not launch):
         return
     say("qa: measuring the edit rhythm")
@@ -823,11 +840,12 @@ def _check_rhythm(F: Findings, vpath: Path, dur: float, fps: float, proj: Option
     except Exception:  # noqa: BLE001 - the scene list is optional
         scenes = None
     try:
-        r = rhythm.measure(vpath, dur, fps, scenes=scenes, max_seconds=180)
+        r = rhythm.measure(vpath, dur, fps, scenes=scenes, max_seconds=180, showreel=bool(reel["on"]))
     except Exception as e:  # noqa: BLE001 - a measurement aid, never a reason to fail qa
         rep["rhythm"] = {"error": str(e)}
         return
     r["launch"] = launch
+    r["showreel"] = bool(reel["on"])
     r["summary"] = rhythm.summary(r)
     rep["rhythm"] = r
     # motion defects on every video (st.qa.motion): a fast move that halts in one frame
@@ -835,6 +853,16 @@ def _check_rhythm(F: Findings, vpath: Path, dur: float, fps: float, proj: Option
     for d in r.get("dead_stops") or []:
         txt = motion.describe(d, fps)
         F.add("dead_stop", "WARN", txt["message"], t=d["t"], fix=txt["fix"])
+    fl = (r.get("picture") or {}).get("flashes") or {}
+    if fl.get("max_per_s", 0) > rhythm.FLASH_MAX_PER_S:
+        F.add("flash_risk", "WARN", "%d general flashes within one second from %.2fs (large swings in brightness over a "
+              "quarter of the frame or more): more than %d a second can trigger seizures in photosensitive viewers" % (
+                  fl["max_per_s"], fl.get("at") or 0.0, rhythm.FLASH_MAX_PER_S), t=fl.get("at"),
+              fix="at most 3 flashes a second: space strobes and glitch bursts at least 0.33 s apart, shrink them under a "
+                  "quarter of the frame, or lower their contrast (references/pacing.md section 5)")
+    if reel["on"]:
+        _check_showreel(F, r, dur)
+        return
     if not launch:
         return
     L = rhythm.LIMITS
@@ -867,6 +895,79 @@ def _check_rhythm(F: Findings, vpath: Path, dur: float, fps: float, proj: Option
               "edit to ride" % m["range_db"],
               fix="a produced track excerpt with a build (`showtime audio cuts --apply <project>`), or gain_points that "
                   "dip the middle and lift into the end card")
+
+
+def _check_showreel(F: Findings, r: Dict[str, Any], dur: float) -> None:
+    """The showreel tone (st.showreel, st.qa.reel): density (12-14 shots per 15 s), an end card that lands instead of
+    holding (still for at most 10% of the reel), no shot that repeats another. The round-5 blind vote (2026-10-05)
+    went to the reel that kept cutting to the last second; the takes that held their name 2.5-3.5 s lost."""
+    from .. import showreel
+    th = showreel.thresholds()
+    pic = r.get("picture") or {}
+    rl = r.get("reel") or {}
+    shots = max(r["scenes"]["count"] if r.get("scenes") else 0, pic.get("n_layouts", 0), pic.get("n_hard_cuts", 0) + 1,
+                rl.get("n_shots", 0))
+    need = int(round(th["shots_per_15s_min"] * dur / 15.0))
+    if dur >= 5 and shots < need:
+        F.add("showreel_sparse", "WARN", "%d shots in %.1fs: a showreel cuts %d-%d times per 15 s (%d here), or it reads as a calm "
+              "launch film" % (shots, dur, th["shots_per_15s_min"], th["shots_per_15s_max"], need),
+              fix="cut on every 1-2 beats: split long shots, add flash cuts and a new technique per shot (references/tones.md, "
+                  "showreel; motion-craft.md section 11)")
+    else:
+        F.ok("showreel density: %d shots in %.1fs (at least %d)" % (shots, dur, need))
+    end = rl.get("end")
+    if end and dur >= 5:
+        still_max, shot_max = th["end_hold_max_frac"] * dur, th["end_shot_max_frac"] * dur
+        if end["still_s"] > still_max or end["shot_s"] > shot_max:
+            F.add("showreel_long_end", "WARN", "the last shot runs %.1fs from %.2fs and holds still for its last %.1fs: a showreel "
+                  "lands its name on the last beat and keeps it moving (still at most %.1fs, the last shot at most %.1fs here)" % (
+                      end["shot_s"], end["t"], end["still_s"], still_max, shot_max), t=end["t"], end=dur,
+                  fix="spend the end card's seconds on one or two more shots; land the name about 1.25 s before the end "
+                      "(its reading time) and keep it alive (a build, a sweep, a drift) to the last frame (references/tones.md, showreel)")
+        else:
+            F.ok("showreel ending: the last shot %.1fs, still for %.1fs" % (end["shot_s"], end["still_s"]))
+    reps = rl.get("repeats") or []
+    if reps:
+        F.add("showreel_repeats", "WARN", "%d pair(s) of shots look alike (same ground, palette and composition): %s" % (
+                  len(reps), ", ".join("%.2fs and %.2fs" % (x["a"], x["b"]) for x in reps[:6])), t=reps[0]["b"],
+              fix="give each shot its own technique and ground: no technique twice (references/tones.md, showreel, the menu)")
+    elif rl:
+        F.ok("showreel variety: no two shots look alike")
+
+
+def _check_hearing(F: Findings, vpath: Path, loud: Dict[str, Any], dur: float, proj: Optional[Path],
+                   rep: Dict[str, Any], say: Any) -> None:
+    """The hearing pass (st.qa.hearing): voice over the music line by line, quiet stretches, level jumps at
+    cuts, a cut-off ending. Measured on the decoded audio; the block levels go into loudness.json (review-pack
+    builds audio.txt and hearing.png from them), the cheap checks become WARNs."""
+    say("qa: measuring what an ear would catch")
+    try:
+        from .review import _offset, planned_scenes
+        blk = hearing.blocks(loud["_x"], 48000, vpath)
+        lines, src = hearing.speech_lines(vpath, proj)
+        pl = planned_scenes(vpath, proj, dur)
+        starts = [(float(t), n) for t, n in pl["scenes"]] if pl else [(0.0, "")]
+        cuts = [t for t, _ in starts if 0.1 < t < dur - 0.1]
+        hard = ((rep.get("rhythm") or {}).get("picture") or {}).get("hard_cuts") or []
+        cuts = sorted(cuts + [float(t) for t in hard if 0.1 < t < dur - 0.1 and all(abs(t - c) >= 0.5 for c in cuts)])
+        b = sorted(set([0.0] + [t for t, _ in starts if 0.1 < t < dur - 0.1] + [dur]))
+        names = {round(t, 3): n for t, n in starts}
+        scenes = [(b[i], b[i + 1], names.get(round(b[i], 3)) or "scene %d" % (i + 1)) for i in range(len(b) - 1)
+                  if b[i + 1] - b[i] > 0.15]
+        off = _offset(vpath)
+        mp = hearing.own_mix_report(vpath)
+        mix = hearing.mix_facts(read_json(mp, None) if mp else None, off, dur)
+        cues = {k: v - off for k, v in hearing.cue_values(proj).items()}
+        h = hearing.measure(blk, dur, lines=lines, lines_source=src, cuts=cuts, scenes=scenes, mix=mix, cues=cues,
+                            loud=loud)
+    except Exception as e:  # noqa: BLE001 - a measurement aid, never a reason to fail qa
+        rep["hearing"] = {"error": str(e).splitlines()[0][:200] if str(e) else type(e).__name__}
+        return
+    hearing.check(F, h)
+    h["summary"] = hearing.summary(h)
+    h["mix_report"] = str(mp) if mp else None
+    rep["hearing"] = h
+    loud.setdefault("_curves", {})["blocks"] = blk
 
 
 def _check_opening_flash(F: Findings, vpath: Path, fps: float) -> None:
@@ -1481,6 +1582,8 @@ def format_text(rep: Dict[str, Any], verbose: bool = False, brief: bool = False)
     rh = rep.get("rhythm") or {}
     if rh.get("summary"):
         lines.append("  rhythm  %s" % rh["summary"])
+    if (rep.get("hearing") or {}).get("summary"):
+        lines.append("  hearing  %s" % rep["hearing"]["summary"])
     if rep.get("sheet"):
         lines.append("  sheet   %s" % rep["sheet"])
     lines.append("  report  %s" % rep.get("report"))

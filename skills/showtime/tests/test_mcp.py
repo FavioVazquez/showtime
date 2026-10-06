@@ -49,9 +49,12 @@ from st.launcher import build_env, showtime_home  # noqa: E402
 FAST = "--fast" in sys.argv
 NODE = shutil.which("node")
 HOME = showtime_home()
-EXPECTED_TOOLS = {"doctor", "status", "new_project", "render", "check", "snap", "qa", "voice_say", "voice_script",
-                  "transcribe", "audio_compose", "audio_sfx", "audio_mix", "audio_search", "export_html",
-                  "studio_open", "studio_feedback", "deliver_exports", "receipt", "guide"}
+# listed by default; the rest only with SHOWTIME_MCP_TOOLS=all (or --tools=all)
+CORE_TOOLS = {"doctor", "status", "guide", "new_project", "render", "check", "qa", "export_html", "deliver_exports",
+              "receipt"}
+ALL_TOOLS = CORE_TOOLS | {"snap", "voice_say", "voice_script", "transcribe", "audio_compose", "audio_sfx", "audio_mix",
+                          "audio_search", "studio_open", "studio_feedback"}
+EXPECTED_TOOLS = CORE_TOOLS
 SETTINGS_VARS = ("SHOWTIME_VOICE", "SHOWTIME_LANG", "SHOWTIME_OPEN_BROWSER", "SHOWTIME_MAX_WORKERS", "SHOWTIME_THREADS",
                  "SHOWTIME_SOUND")
 
@@ -66,8 +69,8 @@ def clean_env(**extra) -> dict:
     return env
 
 
-def mcp(steps, cwd, mode="legacy", env=None, timeout=300, client=None):
-    plan = {"server": str(SERVER), "cwd": str(cwd), "mode": mode, "env": env or {}, "steps": steps}
+def mcp(steps, cwd, mode="legacy", env=None, timeout=300, client=None, args=None):
+    plan = {"server": str(SERVER), "cwd": str(cwd), "mode": mode, "env": env or {}, "steps": steps, "args": args or []}
     if client:
         plan["client_name"] = client
     cp = subprocess.run([NODE, str(CLIENT)], input=json.dumps(plan), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -218,7 +221,7 @@ class TestProtocol(unittest.TestCase):
             call("audio_sfx", {"type": "whoosh; rm -rf ~"}),
             call("snap", {"target": str(self.tmp), "at": []}),
         ]
-        out = mcp(steps, self.tmp, env=self.env)
+        out = mcp(steps, self.tmp, env=dict(self.env, SHOWTIME_MCP_TOOLS="all"))
         for step, want in zip(out["results"][1:], ["does not exist", "unknown argument", "one of", "one of", "empty",
                                                      "expected form", "non-empty"]):
             res = step["response"]["result"]
@@ -231,7 +234,8 @@ class TestProtocol(unittest.TestCase):
         """audio_search with catalog=true or a use searches the produced-music catalog (no download)."""
         out = mcp([call("audio_search", {"catalog": True, "words": "hands", "limit": 3}),
                    call("audio_search", {"use": "launch", "limit": 3}),
-                   call("audio_search", {"use": "launch; rm -rf ~"})], self.tmp, env=self.env)["results"]
+                   call("audio_search", {"use": "launch; rm -rf ~"})], self.tmp,
+                  env=dict(self.env, SHOWTIME_MCP_TOOLS="audio_search"))["results"]
         self.assertIn("buckley-with-these-hands", text_of(out[1]))
         rows = [l for l in text_of(out[2]).splitlines() if re.match(r"^[a-z0-9]+(-[a-z0-9]+)+ +\d+:\d\d ", l)]
         self.assertEqual(len(rows), 3, text_of(out[2]))
@@ -482,7 +486,7 @@ class TestAnyHost(unittest.TestCase):
     def test_long_tool_task_ids(self):
         # background: true -> a task id at once; status {task} (or {job: id}) -> the full result
         out = mcp([{"method": "tools/list"}, call("doctor", {"full": True, "background": True}, progress=True)],
-                  self.tmp, env=self.env)
+                  self.tmp, env=self.env, args=["--tools=all"])
         tools = {t["name"]: t for t in out["results"][1]["response"]["result"]["tools"]}
         self.assertIn("task", tools["status"]["inputSchema"]["properties"])
         for name in ("render", "transcribe", "audio_compose", "voice_script", "qa"):
@@ -513,6 +517,162 @@ class TestAnyHost(unittest.TestCase):
                    client="claude-code")["results"][1]
         self.assertFalse(text_of(step).startswith("RUNNING:"), text_of(step))
         self.assertIn("showtime doctor", text_of(step))
+
+
+def tool_catalog() -> list:
+    """server.mjs toolCatalog(): every tool's schema and where each argument goes on the command line."""
+    code = "import(%s).then((m) => process.stdout.write(JSON.stringify(m.toolCatalog())))" % json.dumps(SERVER.as_uri())
+    cp = subprocess.run([NODE, "--input-type=module", "-e", code], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                        encoding="utf-8", timeout=60, env=clean_env())
+    assert cp.returncode == 0, cp.stderr
+    return json.loads(cp.stdout)
+
+
+_DEFAULT = re.compile(r"\bdefault\b[:,]?\s*(?:is\s+)?(?:(?:the|a|an)\s+)?([^\s,;)]+)", re.I)
+
+
+def stated_defaults(text: str) -> set:
+    """The defaults a help text states ("(default 9)", "default: auto", "default ./<type>.wav"), normalised."""
+    out = set()
+    for m in _DEFAULT.finditer(text or ""):
+        v = m.group(1).lower()
+        v = (v[2:] if v.startswith("./") else v).strip("`'\".:")
+        out.add({"automatic": "auto", "true": "on", "false": "off"}.get(v, v))
+    return out
+
+
+@unittest.skipUnless(NODE, "Node.js is not installed")
+class TestSchemaDrift(unittest.TestCase):
+    """Every MCP argument against the flag it becomes (lib/st/clispec.py reads argparse and the Node SPECs):
+    the flag exists and is documented, the types agree, a CLI choice list equals the MCP enum (or, where the
+    CLI checks values itself, its help names every MCP value), what the CLI requires is required here, and a
+    default stated in both help texts is the same. A failure names the tool, the argument and the flag."""
+
+    @classmethod
+    def setUpClass(cls):
+        from st.clispec import describe
+        cls.catalog = tool_catalog()
+        cls.cli = {}
+        for t in cls.catalog:
+            for c in t["commands"]:
+                key = " ".join(c["cmd"])
+                if key not in cls.cli:
+                    cls.cli[key] = describe(c["cmd"], node=NODE)
+
+    def test_every_argument_matches_its_flag(self):
+        problems = []
+        for t in self.catalog:
+            props = t["inputSchema"]["properties"]
+            mcp_required = set(t["inputSchema"].get("required") or [])
+            mapped = set()
+            for c in t["commands"]:
+                cmd = " ".join(c["cmd"])
+                spec = self.cli[cmd]
+                where = "%s -> showtime %s" % (t["name"], cmd)
+                used_pos, used_flags = set(), set()
+                for name, to in c["params"].items():
+                    if to is None:
+                        mapped.add(name)
+                        continue
+                    mapped.add(name)
+                    p = props[name]
+                    ptype = p.get("type")
+                    desc = p.get("description", "")
+                    if "pos" in to:
+                        pos = spec["positionals"][to["pos"]] if to["pos"] < len(spec["positionals"]) else None
+                        if pos is None:
+                            problems.append("%s: %s maps to positional %d, which the command does not have"
+                                            % (where, name, to["pos"]))
+                            continue
+                        used_pos.add(to["pos"])
+                        arg, kind, label = pos, ("list" if pos["many"] else "value"), "<%s>" % pos["name"]
+                        cli_required = pos["required"]
+                    else:
+                        arg = spec["options"].get(to["flag"])
+                        if arg is None:
+                            problems.append("%s: %s maps to %s, which the command does not have" % (where, name, to["flag"]))
+                            continue
+                        used_flags.update(arg["flags"])
+                        kind, label, cli_required = arg["kind"], to["flag"], arg["required"]
+                        if not to.get("emitted"):
+                            problems.append("%s: %s is declared as %s but the tool never passes that flag"
+                                            % (where, name, to["flag"]))
+                    # name: documented on both sides
+                    if not arg["help"] or arg.get("hidden"):
+                        problems.append("%s: %s has no help text in the command line" % (where, label))
+                    if not desc:
+                        problems.append("%s: %s has no description" % (where, name))
+                    # type
+                    if (ptype == "boolean") != (kind == "bool"):
+                        problems.append("%s: %s is %s here but %s takes %s" % (
+                            where, name, ptype, label, "no value" if kind == "bool" else "a value"))
+                    if ptype == "number" and arg["type"] == "int":
+                        problems.append("%s: %s takes any number here but %s only whole numbers" % (where, name, label))
+                    if ptype == "string" and arg["type"] in ("int", "float"):
+                        problems.append("%s: %s is a string here but %s takes a number" % (where, name, label))
+                    if ptype == "array" and kind == "bool":
+                        problems.append("%s: %s is a list here but %s is a switch" % (where, name, label))
+                    # choices
+                    enum = p.get("enum")
+                    if to.get("choices"):
+                        pass                      # read by the server from a skill folder (templates/)
+                    elif arg["choices"]:
+                        if sorted(map(str, enum or [])) != arg["choices"]:
+                            problems.append("%s: %s accepts %s here but %s accepts %s" % (
+                                where, name, sorted(enum or []) or "anything", label, arg["choices"]))
+                    elif enum:
+                        missing = [v for v in enum if not re.search(r"(?<![\w.-])%s(?![\w-])" % re.escape(str(v)), arg["help"])]
+                        if missing:
+                            problems.append("%s: %s accepts %s, which the help of %s does not name" % (
+                                where, name, ", ".join(missing), label))
+                    # required
+                    if cli_required and name not in mcp_required:
+                        problems.append("%s: %s is optional here but %s is required" % (where, name, label))
+                    if name in mcp_required and not cli_required and name not in c["required"]:
+                        problems.append("%s: %s is required here but %s is optional (list it in cli.required "
+                                        "when that is on purpose)" % (where, name, label))
+                    # help: a default stated on both sides agrees
+                    if not to.get("invert"):
+                        a, b = stated_defaults(desc), stated_defaults(arg["help"])
+                        if a and b and not a & b:      # one argument may serve two commands: either default
+                            problems.append("%s: %s says default %s but %s says default %s" % (
+                                where, name, "/".join(sorted(a)), label, "/".join(sorted(b))))
+                # what the command needs, some argument must give
+                for i, pos in enumerate(spec["positionals"]):
+                    if pos["required"] and i not in used_pos and not pos.get("hidden"):
+                        problems.append("%s: the command needs <%s> and no argument gives it" % (where, pos["name"]))
+                for flag, arg in spec["options"].items():
+                    if arg["required"] and not set(arg["flags"]) & used_flags:
+                        problems.append("%s: the command needs %s and no argument gives it" % (where, flag))
+            for name in props:
+                if name not in mapped:
+                    problems.append("%s: %s goes to no command (map it, or null for an argument of the server's own)"
+                                    % (t["name"], name))
+        self.assertFalse(problems, "MCP schemas and the command line disagree:\n  " + "\n  ".join(problems))
+
+    def test_core_subset_and_opt_in(self):
+        core = {t["name"] for t in self.catalog if t["core"]}
+        self.assertEqual(core, CORE_TOOLS)
+        self.assertEqual({t["name"] for t in self.catalog}, ALL_TOOLS)
+        tmp = Path(tempfile.mkdtemp(prefix="st-mcp-tools-"))
+        try:
+            env = {"SHOWTIME_SETTINGS": str(tmp / "s.json")}
+            listed = lambda out: {t["name"] for t in out["results"][1]["response"]["result"]["tools"]}  # noqa: E731
+            out = mcp([{"method": "tools/list"}, call("voice_say", {"text": "hi"})], tmp, env=env)
+            self.assertEqual(listed(out), CORE_TOOLS)
+            err = out["results"][2]["response"]["error"]
+            self.assertEqual(err["code"], -32602)
+            self.assertIn("SHOWTIME_MCP_TOOLS=all", err["message"])
+            self.assertEqual(listed(mcp([{"method": "tools/list"}], tmp, env=dict(env, SHOWTIME_MCP_TOOLS="all"))), ALL_TOOLS)
+            self.assertEqual(listed(mcp([{"method": "tools/list"}], tmp, env=dict(env, SHOWTIME_MCP_TOOLS="voice_say, audio_mix"))),
+                             CORE_TOOLS | {"voice_say", "audio_mix"})
+            self.assertEqual(listed(mcp([{"method": "tools/list"}], tmp, env=dict(env, SHOWTIME_MCP_TOOLS="${user_config.tools}"))),
+                             CORE_TOOLS)
+            # the server option wins over the variable
+            self.assertEqual(listed(mcp([{"method": "tools/list"}], tmp, env=dict(env, SHOWTIME_MCP_TOOLS="core"),
+                                        args=["--tools=all"])), ALL_TOOLS)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
 
 
 class TestPluginWiring(unittest.TestCase):

@@ -13,7 +13,8 @@ Hosts:
   * Devin         the CLI's session database (SQLite, read-only): per request, the model id and the token
                   metrics of `message_nodes`, selected in SQL; never a message's text. The sessions counted
                   are the ones whose working folder holds the job. Devin shows tokens, not dollars: the cost
-                  is an estimate at its listed per-token prices (DEVIN_PRICES, dated) and says so.
+                  is an estimate at the providers' API list prices (PRICES, dated; a request past a model's
+                  long-context threshold at that price) and says so.
   * anything else "not reported by this agent".
 
 Cost is what the same tokens cost at the public API list price (PRICES, dated). A subscription plan
@@ -35,23 +36,41 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 NOT_REPORTED = "not reported by this agent"
 MAX_LOG_BYTES = 400 * 1024 * 1024        # a session log larger than this is skipped, not read
 
-# USD per million tokens, Anthropic first-party API list prices. write_1h is the price of the 1-hour
-# cache write (Claude Code's default), write_5m the 5-minute one (1.25x input). Checked against the cost
-# Claude Code itself reported for a benchmark run of claude-opus-5-5 (within a cent).
-PRICES_AS_OF = "2026-09-29"
-PRICES: Dict[str, Dict[str, float]] = {
+# Public API list prices, USD per million tokens, each read on its provider's own pricing page on
+# PRICES_AS_OF (PRICE_SOURCES). input: uncached input; cache_read: a cache hit (OpenAI "cached input");
+# write_5m / write_1h: a cache write (Anthropic's 5-minute and 1-hour prices; OpenAI lists one price; xAI lists
+# none, so a write costs what input costs); output. fast: the fast-mode multiplier (Opus 5.5 fast mode is
+# $8 / $40, twice the standard price). long: the prices of a request whose prompt (input, cache reads and
+# writes) reaches `from` tokens, for every token of that request; only the Devin reader sees single requests,
+# elsewhere the standard price makes the figure a lower bound for such sessions.
+# A model whose price could not be read on its provider's page is left out: its tokens are listed, not priced.
+# Not here (checked 2026-10-05): SWE-2 (Cognition's model in Devin; no provider API page to read it from).
+# Model ids are matched with dots read as dashes, so Devin's grok-4-7 is xAI's grok-4.7.
+PRICES_AS_OF = "2026-10-05"
+PRICE_SOURCES: Dict[str, str] = {
+    "anthropic": "https://platform.claude.com/docs/en/about-claude/pricing",
+    "openai": "https://developers.openai.com/api/docs/pricing",
+    "xai": "https://docs.x.ai/docs/models",
+}
+PRICES: Dict[str, Dict[str, Any]] = {
+    # anthropic (no long-context premium: the full context window is billed at these prices)
     "claude-opus-5-5": {"input": 4.0, "output": 20.0, "cache_read": 0.20, "write_5m": 5.0, "write_1h": 8.0, "fast": 2.0},
     "claude-sonnet-5-5": {"input": 2.0, "output": 10.0, "cache_read": 0.20, "write_5m": 2.5, "write_1h": 4.0},
     "claude-sonnet-5": {"input": 2.0, "output": 10.0, "cache_read": 0.20, "write_5m": 2.5, "write_1h": 4.0},
+    "claude-fable-5-1": {"input": 10.0, "output": 50.0, "cache_read": 0.25, "write_5m": 12.5, "write_1h": 20.0},
     "claude-haiku-4-5": {"input": 1.0, "output": 5.0, "cache_read": 0.10, "write_5m": 1.25, "write_1h": 2.0},
+    # openai (standard tier; long context: more than 272K input tokens)
+    "gpt-6.1-sol": {"input": 2.0, "output": 10.0, "cache_read": 0.10, "write_5m": 2.5, "write_1h": 2.5,
+                    "long": {"from": 272001, "input": 4.0, "output": 15.0, "cache_read": 0.20, "write_5m": 5.0, "write_1h": 5.0}},
+    "gpt-6-sol": {"input": 2.0, "output": 10.0, "cache_read": 0.20, "write_5m": 2.5, "write_1h": 2.5,
+                  "long": {"from": 272001, "input": 4.0, "output": 15.0, "cache_read": 0.40, "write_5m": 5.0, "write_1h": 5.0}},
+    "gpt-6-astra": {"input": 10.0, "output": 50.0, "cache_read": 1.0, "write_5m": 12.5, "write_1h": 12.5,
+                    "long": {"from": 272001, "input": 20.0, "output": 75.0, "cache_read": 2.0, "write_5m": 25.0, "write_1h": 25.0}},
+    # xai (long context: a prompt of 200K tokens or more)
+    "grok-4.7": {"input": 2.0, "output": 6.0, "cache_read": 0.50, "write_5m": 2.0, "write_1h": 2.0,
+                 "long": {"from": 200000, "input": 4.0, "output": 12.0, "cache_read": 1.0, "write_5m": 4.0, "write_1h": 4.0}},
 }
-# Devin's listed per-token prices (USD per million tokens) for the models it runs; it lists no cache-write
-# price, so a cache write counts at the input price. A model not listed here is not priced (a lower bound).
-DEVIN_PRICES_AS_OF = "2026-09-30"
-DEVIN_PRICES: Dict[str, Dict[str, float]] = {
-    "claude-opus-5-5": {"input": 4.0, "output": 20.0, "cache_read": 0.20, "write_5m": 4.0, "write_1h": 4.0},
-    "swe-2": {"input": 0.0, "output": 0.0, "cache_read": 0.0, "write_5m": 0.0, "write_1h": 0.0},
-}
+_PRICE_KEYS = {k.replace(".", "-"): k for k in PRICES}
 _DEVIN_EFFORT = re.compile(r"-(?:minimal|low|medium|high|xhigh|max|slow|fast)$")
 WEB_SEARCH_USD = 0.01                    # per search request
 _DATE_SUFFIX = re.compile(r"-\d{8}$")
@@ -364,8 +383,12 @@ def read_devin(path: Path, since: Optional[float] = None, until: Optional[float]
             continue
         b = models.setdefault(rec["model"], {"messages": 0, "searches": 0, **{k: 0 for k in FIELDS}})
         b["messages"] += 1
+        # a request past the model's long-context threshold is priced at its long-context price
+        lp = (price_of(rec["model"], "devin") or {}).get("long")
+        prompt = rec["input"] + rec["cache_read"] + rec["write_5m"] + rec["write_1h"]
+        tgt = b.setdefault("long", {k: 0 for k in FIELDS}) if lp and prompt >= lp["from"] else b
         for k in FIELDS:
-            b[k] += rec[k]
+            tgt[k] += rec[k]
         if rec["ts"] is not None:
             first = rec["ts"] if first is None else min(first, rec["ts"])
             last = rec["ts"] if last is None else max(last, rec["ts"])
@@ -376,13 +399,16 @@ def read_devin(path: Path, since: Optional[float] = None, until: Optional[float]
 
 # ------------------------------------------------------------------ cost and the summary block
 
-def price_of(model: str, host: Optional[str] = None) -> Optional[Dict[str, float]]:
-    if host == "devin":
-        return DEVIN_PRICES.get(devin_model(model))
-    return PRICES.get(canonical_model(model))
+def price_of(model: str, host: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """The list price of a model id (a Devin id without its effort suffix); None when it is not in PRICES."""
+    m = devin_model(model) if host == "devin" else canonical_model(model)
+    key = _PRICE_KEYS.get(m.replace(".", "-"))
+    return PRICES[key] if key else None
 
 
 def cost_usd(bucket: Dict[str, Any], model: str, host: Optional[str] = None) -> Optional[float]:
+    """Dollars for a model's token bucket: the standard part, plus its `fast` and `long` sub-buckets at those
+    prices. None when the model has no price, or a sub-bucket needs one it lacks (never a guess)."""
     p = price_of(model, host)
     if p is None:
         return None
@@ -393,6 +419,12 @@ def cost_usd(bucket: Dict[str, Any], model: str, host: Optional[str] = None) -> 
         if mult is None:
             return None                     # a fast-mode price we do not know: no cost, never a guess
         usd += mult * sum(fast.get(k, 0) * p[k] for k in FIELDS) / 1e6
+    long = bucket.get("long")
+    if long:
+        lp = p.get("long")
+        if lp is None:
+            return None
+        usd += sum(long.get(k, 0) * lp[k] for k in FIELDS) / 1e6
     usd += bucket.get("searches", 0) * WEB_SEARCH_USD
     return usd
 
@@ -411,7 +443,7 @@ def summarize(rd: Dict[str, Any], transcript_note: str = "") -> Dict[str, Any]:
     unpriced: List[str] = []
     codex = rd.get("host") == "codex"
     for m, b in sorted(models.items()):
-        row = {k: b.get(k, 0) + (b.get("fast") or {}).get(k, 0) for k in
+        row = {k: b.get(k, 0) + (b.get("fast") or {}).get(k, 0) + (b.get("long") or {}).get(k, 0) for k in
                (("input", "cached_input", "output", "reasoning") if codex else FIELDS)}
         row["messages"] = b.get("messages", 0)
         if not codex:
@@ -442,16 +474,16 @@ def summarize(rd: Dict[str, Any], transcript_note: str = "") -> Dict[str, Any]:
             row["token_share"] = round(sum(row[k] for k in FIELDS) / float(res["tokens"]["total"]), 4)
     if devin:
         res["sessions"] = rd.get("sessions")
-        res["prices_as_of"] = DEVIN_PRICES_AS_OF
+        res["prices_as_of"] = PRICES_AS_OF
         priced = [m for m in out_models if m not in unpriced]
         if not priced:
             res["cost_usd"] = None
-            res["cost_note"] = "Devin reports tokens, not dollars; no listed price for %s: cost %s" % (
+            res["cost_note"] = "Devin reports tokens, not dollars; no list price for %s: cost %s" % (
                 ", ".join(unpriced), NOT_REPORTED)
         else:
             res["cost_usd"] = round(usd, 2)
-            res["cost_note"] = ("est., at Devin's listed per-token prices as of %s (Devin reports tokens, not dollars; "
-                                "cache writes at the input price); a plan does not pay per video" % DEVIN_PRICES_AS_OF)
+            res["cost_note"] = ("est., at the providers' API list prices as of %s (Devin reports tokens, not dollars); "
+                                "a plan does not pay per video" % PRICES_AS_OF)
             if unpriced:
                 res["cost_note"] += "; %s not priced, so this is a lower bound" % ", ".join(unpriced)
         if transcript_note:

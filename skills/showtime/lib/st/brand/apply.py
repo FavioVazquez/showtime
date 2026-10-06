@@ -228,6 +228,11 @@ def apply_project(project: Path, kit: Dict[str, Any], *, page: str = "index.html
     t.update(fvals)
     notes += fnotes
     text = BLOCK_RX.sub("\n", text)
+    from ..variety import signatures
+    had_look = signatures.applied(project, page)
+    text = signatures.strip(text)        # the brand is the look: a look signature's block goes
+    if had_look:
+        notes.append("the look signature %s is replaced by the brand kit" % had_look)
     decl = "\n".join("    %s: %s;" % (k, v) for k, v in t.items())
     block = ("<!-- brand kit: %s (%s), applied by `showtime brand apply`; edit brand.json and re-apply, or edit here -->\n"
              "%s<style id=\"st-brand\">\n  :root {\n%s\n  }\n</style>\n") % (
@@ -260,6 +265,7 @@ def apply_project(project: Path, kit: Dict[str, Any], *, page: str = "index.html
             except ValueError:   # another drive on Windows
                 pass
         cfg["brand"] = {"name": kit.get("name"), "file": kf, "accent": t.get("--accent"), "bg": t.get("--bg")}
+        cfg.pop("look", None)
         write_json(cfgp, cfg)
     return {"project": str(project), "tokens": t, "fonts": links, "filled": filled, "notes": notes,
             "brand": kit.get("_file"), "name": kit.get("name")}

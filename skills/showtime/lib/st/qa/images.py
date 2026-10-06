@@ -1,4 +1,4 @@
-"""Contact sheets and the loudness graph (Pillow + numpy, no system fonts).
+"""Contact sheets, the loudness graph and the hearing graph (Pillow + numpy, no system fonts).
 
 Labels use the Inter font setup installs (Pillow's bundled font as a fallback), never system fonts.
 """
@@ -151,6 +151,139 @@ def loudness_graph(t: Sequence[float], momentary: Sequence[Optional[float]], sho
     if gaps:
         head += "   red: silence"
     d.text((L, 9), head, fill=FG, font=font(14))
+    out = Path(out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    im.save(os.fspath(out), "PNG", optimize=True)
+    return out
+
+
+def hearing_graph(h: Dict[str, Any], blk: Dict[str, Any], out: PathLike, *, title: str = "",
+                  width: int = 1400, height: int = 620) -> Path:
+    """The hearing pass on one image (st.qa.hearing). Top: loudness over time (100 ms blocks, thin; a 1 s
+    average, thick; the voice and the bed apart when the stem split them), scene changes as lines with their
+    names, speech as a blue band, effects as ticks, quiet stretches, jumps at cuts and a cut-off ending in red.
+    Bottom: each voice line's level over the music (bars, the threshold as a line) and its words per minute."""
+    from PIL import Image, ImageDraw
+    im = Image.new("RGB", (width, height), BG)
+    d = ImageDraw.Draw(im)
+    dur = float(h.get("duration") or 0.0) or (len(blk.get("programme") or []) * float(blk.get("hop", 0.1))) or 1.0
+    hop = float(blk.get("hop", 0.1))
+    L, R = 58, 16
+    pw = width - L - R
+    T1, B1 = 40, 400                       # loudness panel
+    T2, B2 = 440, height - 34              # voice panel
+    lo, hi = -60.0, 0.0
+    red, amber, blue = SEV_COLORS["FAIL"], SEV_COLORS["WARN"], (110, 160, 255)
+    f, fs = font(12), font(11)
+
+    def X(s: float) -> float:
+        return L + pw * max(0.0, min(1.0, s / dur))
+
+    def Y(v: float) -> float:
+        return T1 + (B1 - T1) * (1 - (max(lo, min(hi, v)) - lo) / (hi - lo))
+
+    for v in range(int(lo), int(hi) + 1, 10):
+        d.line([L, Y(v), L + pw, Y(v)], fill=GRID)
+        d.text((6, Y(v) - 7), "%d" % v, fill=DIM, font=f)
+    step = _nice_step(dur)
+    s = 0.0
+    while s <= dur + 1e-6:
+        d.line([X(s), T1, X(s), B2], fill=GRID)
+        d.text((X(s) - 8, B2 + 6), _fmt_t(s), fill=DIM, font=f)
+        s += step
+    # speech band, quiet stretches
+    for r in h.get("lines") or []:
+        d.rectangle([X(r["start"]), B1 - 8, X(r["end"]), B1 - 2], fill=(52, 78, 130))
+    for q in h.get("quiet") or []:
+        d.rectangle([X(q["start"]), T1, X(q["end"]), B1], fill=(60, 36, 40) if q.get("silent") else (78, 40, 44))
+    # scene changes and names
+    for k, sc in enumerate(h.get("scenes") or []):
+        x = X(sc["start"])
+        if sc["start"] > 0.05:
+            for yy in range(T1, B1, 6):
+                d.line([x, yy, x, yy + 3], fill=DIM)
+        if sc.get("name"):
+            d.text((x + 3, T1 + 2 + 13 * (k % 2)), str(sc["name"])[:22], fill=DIM, font=fs)
+
+    def smooth(vals: List[float], n: int = 10) -> List[Optional[float]]:
+        out_: List[Optional[float]] = []
+        p = [10 ** ((v + 0.691) / 10) if v > -119 else 0.0 for v in vals]
+        acc = 0.0
+        for i, v in enumerate(p):
+            acc += v
+            if i >= n:
+                acc -= p[i - n]
+            m = acc / min(i + 1, n)
+            out_.append(-0.691 + 10 * math.log10(m) if m > 0 else None)
+        return out_
+
+    def poly(vals: Sequence[Optional[float]], color, w: int, shift: float = 0.0) -> None:
+        pts: List[Tuple[float, float]] = []
+        for i, v in enumerate(vals):
+            if v is None or v < lo - 5:
+                if len(pts) > 1:
+                    d.line(pts, fill=color, width=w)
+                pts = []
+                continue
+            pts.append((X((i + 0.5) * hop - shift), Y(v)))
+        if len(pts) > 1:
+            d.line(pts, fill=color, width=w)
+
+    prog = [float(v) for v in blk.get("programme") or []]
+    poly(prog, (80, 92, 118), 1)
+    split = bool(blk.get("voice") and blk.get("bed"))
+    if split:
+        poly(smooth([float(v) for v in blk["bed"]]), (236, 160, 90), 2, shift=0.45)
+        poly(smooth([float(v) for v in blk["voice"]]), blue, 2, shift=0.45)
+    else:
+        poly(smooth(prog), blue, 3, shift=0.45)
+    I = h.get("integrated_lufs")
+    if I is not None:
+        d.line([L, Y(I), L + pw, Y(I)], fill=SEV_COLORS["PASS"], width=1)
+        d.text((L + pw - 130, Y(I) - 16), "integrated %.1f LUFS" % I, fill=SEV_COLORS["PASS"], font=f)
+    # effects: ticks at the top (red when under the rest of the mix)
+    for fx in h.get("sfx") or []:
+        x = X(fx["t"])
+        d.line([x, T1 - 8, x, T1], fill=red if fx.get("flags") else (200, 200, 210), width=2)
+    # jumps at cuts
+    for j in h.get("cuts") or []:
+        if j.get("jump") is None:
+            continue
+        x = X(j["t"])
+        col = red if j.get("flagged") else DIM
+        if j.get("flagged") or abs(j["jump"]) >= 3:
+            d.text((x + 3, Y(max(j["before"], j["after"])) - 18), "%+.0f LU" % j["jump"], fill=col, font=f)
+            d.line([x - 6, Y(j["before"]), x, Y(j["before"])], fill=col, width=2)
+            d.line([x, Y(j["after"]), x + 6, Y(j["after"])], fill=col, width=2)
+    e = h.get("ending") or {}
+    if e.get("abrupt"):
+        d.rectangle([X(dur) - 6, T1, X(dur), B1], fill=red)
+        d.text((X(dur) - 70, T1 + 30), "cut off", fill=red, font=f)
+    # voice panel: level over the music per line, words per minute
+    lo2, hi2 = -10.0, 30.0
+    th = (h.get("thresholds") or {}).get("voice_over_bed_min_db", 8.0)
+
+    def Y2(v: float) -> float:
+        return T2 + (B2 - T2) * (1 - (max(lo2, min(hi2, v)) - lo2) / (hi2 - lo2))
+    for v in (0, 10, 20, 30):
+        d.line([L, Y2(v), L + pw, Y2(v)], fill=GRID)
+        d.text((10, Y2(v) - 7), "%+d" % v, fill=DIM, font=f)
+    d.line([L, Y2(th), L + pw, Y2(th)], fill=amber, width=1)
+    lab = "%g dB: the music competes under this" % th
+    d.text((L + pw - d.textlength(lab, font=fs) - 4, Y2(th) - 15), lab, fill=amber, font=fs)
+    for r in h.get("lines") or []:
+        x0, x1 = X(r["start"]), max(X(r["end"]), X(r["start"]) + 2)
+        v = r.get("voice_over_bed_db")
+        if v is not None:
+            col = red if v < th else (blue if r.get("method") == "stem" else (120, 130, 150))
+            d.rectangle([x0, min(Y2(v), Y2(0)), x1, max(Y2(v), Y2(0))], fill=col)
+        if r.get("wpm") and x1 - x0 >= 26:
+            d.text((x0 + 2, T2 + 2), "%d" % r["wpm"], fill=red if "fast" in r.get("flags", []) else DIM, font=fs)
+    head = (title + "   " if title else "") + "loudness, 100 ms blocks (thin) and 1 s (thick%s)" % (
+        ": blue voice, orange music" if split else "")
+    d.text((L, 9), head, fill=FG, font=font(14))
+    d.text((L, T2 - 22), "voice over the music per line (dB%s); wpm above the bars" % (
+        "" if split else ", grey = estimate from between the words"), fill=FG, font=font(13))
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
     im.save(os.fspath(out), "PNG", optimize=True)

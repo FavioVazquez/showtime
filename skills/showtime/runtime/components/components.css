@@ -227,6 +227,40 @@
 .st-step-check { width: 80%; height: 80%; }
 .st-step-check path { fill: none; stroke: var(--accent-ink, #fff); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1 1; stroke-dashoffset: 1; }
 
+/* ---------- question-beat (a stop-and-ask question's pause and think beat) */
+.st-question-beat { display: flex; flex-direction: column; align-items: center; gap: 3.2cqmin; text-align: center; font-family: var(--font-body, system-ui); color: var(--fg, #fff); }
+.st-qb-prompt { font-family: var(--font-display, inherit); font-weight: var(--weight-display, 700); font-size: 6cqmin; line-height: 1.12; letter-spacing: calc(var(--tracking-display, -0.02em) * 0.5); max-width: 82cqw; text-wrap: balance; }
+.st-qb-choices { display: grid; grid-template-columns: repeat(var(--n, 3), minmax(0, 1fr)); gap: 2cqmin; width: min(86cqw, calc(var(--n, 3) * 34cqmin)); }
+.st-qb-choice { display: flex; align-items: center; min-width: 0; gap: 1.6cqmin; padding: 2cqmin 2.4cqmin; border-radius: var(--radius-lg, 2cqmin); text-align: left; font-size: 4.2cqmin; line-height: 1.2; font-weight: 600;
+  background: color-mix(in oklab, var(--good, #22c55e) calc(var(--on, 0) * 18%), var(--surface, rgb(255 255 255 / 0.06)));
+  border: max(2px, 0.3cqmin) solid color-mix(in oklab, var(--good, #22c55e) calc(var(--on, 0) * 100%), var(--border, rgb(255 255 255 / 0.18))); }
+.st-qb-key { flex: none; display: grid; place-items: center; width: 6cqmin; height: 6cqmin; border-radius: 1.2cqmin; font-size: 3.4cqmin; font-weight: 700;
+  background: color-mix(in oklab, var(--qb-key-fill, var(--good, #22c55e)) calc(var(--on, 0) * 100%), color-mix(in oklab, var(--fg, #fff) 12%, transparent));
+  color: color-mix(in oklab, var(--qb-key-ink, var(--bg, #000)) calc(var(--on, 0) * 100%), var(--fg, #fff)); }
+.st-qb-text { min-width: 0; overflow-wrap: anywhere; }
+.st-qb-measure .st-qb-text { overflow-wrap: normal; }
+.st-qb-foot { display: grid; place-items: center; }
+.st-qb-foot > * { grid-area: 1 / 1; }
+.st-qb-timer { display: flex; align-items: center; gap: 2cqmin; transform-origin: 50% 50%; }
+.st-qb-clock { position: relative; width: 11cqmin; height: 11cqmin; display: grid; place-items: center; }
+.st-qb-ring { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+.st-qb-ring circle { fill: none; stroke-width: 7; }
+.st-qb-ring-track { stroke: color-mix(in oklab, var(--fg, #fff) 16%, transparent); }
+.st-qb-ring-fill { stroke: var(--accent, #4f7cff); stroke-linecap: round; stroke-dasharray: 100 100; stroke-dashoffset: 0; }
+.st-qb-num { position: relative; font-family: var(--font-display, inherit); font-weight: 700; font-size: 5cqmin; font-variant-numeric: tabular-nums; }
+.st-qb-label { font-family: var(--font-mono, ui-monospace, monospace); font-size: 3.2cqmin; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted, rgb(255 255 255 / 0.75)); }
+.st-qb-reply { font-size: 3.6cqmin; line-height: 1.3; color: var(--fg, #fff); max-width: 78cqw; text-wrap: balance; }
+@container (max-aspect-ratio: 5/6) {
+  .st-qb-choices { grid-template-columns: minmax(0, 1fr); width: 86cqw; }
+  .st-qb-prompt { font-size: 7.4cqmin; }
+  .st-qb-choice { font-size: 5cqmin; padding-right: 10cqw; }   /* a long choice's text stays left of the phone apps' right-hand buttons */
+  /* upright, the short side is the width: the small type grows to the phone minimum (2.2% of the height) */
+  .st-qb-key { width: 7.4cqmin; height: 7.4cqmin; font-size: 4.2cqmin; }
+  .st-qb-label, .st-qb-reply { font-size: 4.2cqmin; }
+  /* centred lines stay inside the phone safe zone (x 64-916 of 1080: 2 x 376 px around the centre) */
+  .st-qb-prompt, .st-qb-reply { max-width: 69cqw; }
+}
+
 /* ---------- ken-burns */
 .st-ken-burns { position: absolute; inset: 0; overflow: hidden; }
 .st-kb-media { width: 100%; height: 100%; display: block; transform-origin: 50% 50%; object-fit: cover; }

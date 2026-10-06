@@ -130,7 +130,22 @@ def register_new(sub: argparse._SubParsersAction) -> None:
         "--duration rescales the whole timeline, not just showtime.json: every scene's\n"
         "data-start/data-dur, the poster time, the audio mix (music sections, sfx and voice\n"
         "positions), caption word times and canvas cue tables move together, so the scenes\n"
-        "fill the new length (see `showtime retime --help`)."),
+        "fill the new length (see `showtime retime --help`).\n\n"
+        "--from-storyboard FILE (a Markdown table with one row per shot, `-` for stdin, or a\n"
+        "storyboard.json) writes one scene per shot instead of the template's scenes, in the\n"
+        "template's look: columns Shot, Length, Visual, Narration in any order (Chinese headers\n"
+        "and 秒 too; extra columns such as On screen or Sound are kept), lengths like 5 s, 5s,\n"
+        "0:05, 5-7 s (the middle) or none (estimated from the narration). Each scene shows its\n"
+        "Visual as a brief to build from, not as on-screen copy: only a card or title's quoted\n"
+        "words, text after \"text:\" and an On screen column are shown as written. The narration\n"
+        "becomes narration.md for `showtime voice script`, each line pinned where its shot starts,\n"
+        "so `showtime retime --from-voice` keeps the planned lengths where the voice fits and\n"
+        "grows a shot where it does not; storyboard.json keeps the plan. DOM templates only\n"
+        "(dom, short, launch, data).\n\n"
+        "The page templates (dom, launch, short, data) start in a look signature: a palette,\n"
+        "type pair, motion feel and ground picked from a curated set, away from the looks of\n"
+        "this machine's recent projects and videos. A brand kit or a job's style reference wins;\n"
+        "--look template keeps the template's own look, --look <id> picks one (`showtime signature`)."),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=("Examples:\n"
                 "  showtime new --list\n"
@@ -139,7 +154,10 @@ def register_new(sub: argparse._SubParsersAction) -> None:
                 "  showtime new short my-reel --duration 15\n"
                 "  showtime new dom teaser --size 1280x720 --duration 8\n"
                 "  showtime new film explainer --title \"How it works\"\n"
-                "  showtime new data ~/charts/signups --job signups-data   # a project outside the job folder"))
+                "  showtime new dom promo --look tidewater          # this look signature (or --look template)\n"
+                "  showtime new data ~/charts/signups --job signups-data   # a project outside the job folder\n"
+                "  showtime new dom explainer --from-storyboard storyboard.md   # one scene per shot of a storyboard table\n"
+                "  pbpaste | showtime new short reel --from-storyboard -          # the table on stdin"))
     p.add_argument("template", nargs="?", help="template name (see `showtime new --list`)")
     p.add_argument("dir", nargs="?", help="destination folder (created; must be empty unless --force)")
     p.add_argument("--list", action="store_true", help="list templates and exit")
@@ -163,8 +181,22 @@ def register_new(sub: argparse._SubParsersAction) -> None:
                    help="review mode for this video (showtime.json \"review_mode\", and its job's): quality (the "
                         "default: full review, a critic round before delivery) or lean (a draft pass: no critic round "
                         "unless publish-bound or asked, one look per stage)")
+    p.add_argument("--tone", metavar="TONE",
+                   help="the tone preset (showtime.json \"tone\"; references/tones.md): showreel turns on the go-all-out "
+                        "defaults and checks (flash words, 12-14 shots per 15 s, a ~1 s end card, no shot twice, the "
+                        "showreel critic rubric); without it a job whose brief says showreel, demo reel or go all out "
+                        "gets tone showreel")
     p.add_argument("--no-reference-style", action="store_true",
                    help="do not link the job's style reference (references/*/style.css) into the page")
+    p.add_argument("--from-storyboard", metavar="FILE",
+                   help="one scene per shot of a storyboard (a Markdown table Shot | Length | Visual | Narration, "
+                        "- for stdin, or a storyboard.json); the narration becomes narration.md")
+    p.add_argument("--look", metavar="ID",
+                   help="look signature for a page template (dom, launch, short, data): auto (the default: picked "
+                        "away from this machine's recent looks), template (the template's own look) or an id from "
+                        "`showtime signature`; a brand kit or a job's style reference wins over auto")
+    p.add_argument("--look-seed", metavar="SEED",
+                   help="seed for the automatic pick (default: the folder name); the same seed and history give the same look")
     p.add_argument("--json", action="store_true", help="print the created project as JSON")
     p.set_defaults(func=cmd_new)
 
@@ -184,8 +216,10 @@ def register_new(sub: argparse._SubParsersAction) -> None:
         "the narration instead: lines are matched to scenes by id (a line \"bars\" narrates the\n"
         "scene id=\"bars\"), else in order, else by --map. Each narrated scene becomes --pad +\n"
         "the slots of its lines (a slot runs from a line's start to the next line's start, so it\n"
-        "includes the pause; the last one includes the tail); scenes without a line after the\n"
-        "narration (an end card) keep their length. Every line becomes a voice track at scene\n"
+        "includes the pause; the last one includes the tail; the first line keeps its lead-in, so a\n"
+        "line pinned 2.4 s into the voice starts 2.4 s into the video); scenes without a line after the\n"
+        "narration (an end card) keep their length, and so does a scene marked data-silent (no line on\n"
+        "purpose) between narrated ones. Every line becomes a voice track at scene\n"
         "start + pad in audio/mix.json (music ducks under it), music sections, sound effects\n"
         "and the poster move with their scenes, and the caption layer reads\n"
         "voice/captions.words.json (word times in the video). Files are edited in place;\n"
@@ -270,16 +304,27 @@ def cmd_new(args: argparse.Namespace) -> int:
         from .job import ledger
         job_dir = ledger.resolve(args.job)   # an unknown job is an error before anything is copied
     src = Path(names[args.template]["path"])
+    board = _load_storyboard(args, src) if getattr(args, "from_storyboard", None) else None
     dst = Path(args.dir).expanduser().resolve()
     if dst.exists() and any(dst.iterdir()) and not args.force:
         raise ShowtimeError("%s is not empty" % dst, why="showtime never overwrites earlier work by default",
                             hint="choose a new folder (e.g. %s-2) or pass --force" % dst.name)
     # the template's README.md describes the template (placeholder names, what to edit): it would go
     # stale in the project and ship with it, so it stays in the skill and the path is printed instead
-    shutil.copytree(str(src), str(dst), dirs_exist_ok=True,
-                    ignore=shutil.ignore_patterns("__pycache__", ".DS_Store", "showtime-out", "work", "README.md"))
+    if board is None:
+        shutil.copytree(str(src), str(dst), dirs_exist_ok=True,
+                        ignore=shutil.ignore_patterns("__pycache__", ".DS_Store", "showtime-out", "work", "README.md"))
+    else:
+        dst.mkdir(parents=True, exist_ok=True)    # the template gives its look (theme, size, colours), not its scenes
     cfg_path = dst / "showtime.json"
-    cfg: Dict[str, Any] = read_json(cfg_path, {}) if cfg_path.is_file() else {}
+    cfg: Dict[str, Any] = read_json(cfg_path if board is None else src / "showtime.json", {}) or {}
+    if board is not None:
+        for k in ("subtitle", "kicker", "expect", "score", "page", "questions"):
+            cfg.pop(k, None)                      # the template's own words and checks
+        cfg["title"] = board["title"]             # the storyboard's title card, else the folder name
+        cfg.update({"duration": board["duration"], "poster": 0, "audio": "audio/mix.json"})
+        if board["lang"]:
+            cfg["lang"] = board["lang"]
     if args.aspect:
         cfg["width"], cfg["height"] = ASPECTS[args.aspect]
     if args.size:
@@ -300,7 +345,13 @@ def cmd_new(args: argparse.Namespace) -> int:
     for dim in ("width", "height"):
         if int(cfg[dim]) % 2:
             raise ShowtimeError("%s must be even for H.264 (got %s)" % (dim, cfg[dim]))
+    tone_note = _tone_for_new(args, cfg, job_dir, dst)
     write_json(cfg_path, cfg)
+    sb_files: List[str] = []
+    if board is not None:
+        from . import storyboard as sbmod
+        sb_files = sbmod.write_project(dst, board, title=str(cfg["title"]), theme=sbmod.theme_of(src / "index.html"),
+                                       fonts_home=paths()["fonts"])
     film_score = _vary_film_score(dst, cfg, job_dir) if cfg.get("score") else None
     retimed: Optional[Dict[str, Any]] = None
     if args.duration is not None:
@@ -328,10 +379,15 @@ def cmd_new(args: argparse.Namespace) -> int:
         ref_style = restyle.apply_to_project(dst, job_rec or job_dir, brand_applied=bool(branded and branded.get("applied")))
         if ref_style and ref_style.get("linked"):
             cfg = read_json(cfg_path, cfg)
+    sb_report = _storyboard_report(board, dst, sb_files) if board is not None else None
+    look = _look_new_project(dst, args.template, cfg, branded, ref_style, getattr(args, "look", None), getattr(args, "look_seed", None))
+    if look and look.get("id"):
+        cfg = read_json(cfg_path, cfg)
     result = {"project": str(dst), "template": args.template, "config": cfg, "retime": retimed, "notes": notes,
-              "review_mode": getattr(args, "mode", None),
+              "storyboard": sb_report,
+              "review_mode": getattr(args, "mode", None), "tone": cfg.get("tone"),
               "film_score": film_score,
-              "job": str(job_rec) if job_rec else None, "brand": branded, "reference_style": ref_style,
+              "job": str(job_rec) if job_rec else None, "brand": branded, "reference_style": ref_style, "look": look,
               "template_notes": str(src / "README.md") if (src / "README.md").is_file() else None}
     if args.json:
         print_json(result)
@@ -348,6 +404,8 @@ def cmd_new(args: argparse.Namespace) -> int:
                 film_score["key"], film_score["mode"], film_score["bpm"], film_score["mood"], dst))
         if job_rec:
             log("job %s: project -> %s" % (job_rec.name, dst))
+        if tone_note:
+            log(tone_note)
         if branded and branded.get("applied"):
             from .brand.commands import report as _brand_report
             _brand_report(branded["applied"])
@@ -355,10 +413,138 @@ def cmd_new(args: argparse.Namespace) -> int:
             log(branded["hint"])
         for line in (ref_style or {}).get("log") or []:
             log(line)
-        if (src / "README.md").is_file():
+        for line in (look or {}).get("log") or []:
+            log(line)
+        if sb_report:
+            _print_storyboard(sb_report, dst)
+        elif (src / "README.md").is_file():
             log("template notes (not copied into the project): %s" % (src / "README.md"))
         print(str(dst))
     return 0
+
+
+def _tone_for_new(args: argparse.Namespace, cfg: Dict[str, Any], job_dir: Optional[Path], dst: Path) -> Optional[str]:
+    """Set showtime.json "tone": --tone, else the template's own, else showreel when the job's brief asks for one
+    (st.showreel: "showreel", "demo reel", "go all out" ...). Returns the line to print when the brief set it."""
+    from . import showreel
+    tone = (getattr(args, "tone", None) or "").strip().lower()
+    if tone:
+        cfg["tone"] = tone
+        return showreel.describe({"on": True, "source": "project"}) if tone == showreel.TONE else None
+    if cfg.get("tone"):
+        return None
+    jd = job_dir
+    if jd is None:
+        try:
+            from .job import ledger
+            jd = ledger.enclosing_job(dst)
+        except Exception:  # noqa: BLE001 - a project outside a job is fine
+            jd = None
+    if jd is None or not (Path(jd) / "job.json").is_file():
+        return None
+    r = showreel.resolve({}, read_json(Path(jd) / "job.json", {}) or {})
+    if not r["on"]:
+        return None
+    cfg["tone"] = showreel.TONE
+    return showreel.describe(r) + " (showtime.json \"tone\"; --tone default to turn it off)"
+
+
+def _load_storyboard(args: argparse.Namespace, src: Path) -> Dict[str, Any]:
+    """The storyboard plan for `new --from-storyboard`, checked before anything is written."""
+    from . import storyboard as sbmod
+    page = src / "index.html"
+    if not page.is_file() or re.search(r"Film\.start\s*\(", page.read_text(encoding="utf-8", errors="replace")):
+        raise ShowtimeError("--from-storyboard writes DOM scenes; '%s' is a canvas template" % args.template,
+                            why="a canvas film keeps its timing in a cue table that the voice cannot retime",
+                            hint="showtime new dom %s --from-storyboard %s   (short for 9:16; draw a shot on a "
+                                 "<canvas> inside its scene when it needs one)" % (args.dir or "my-video", args.from_storyboard))
+    if args.duration is not None:
+        raise ShowtimeError("--duration and --from-storyboard both set the length",
+                            hint="the shots' lengths set it; after the voice: showtime retime <dir> --from-voice "
+                                 "<dir>/voice/timeline.json (or -d S to scale the plan)")
+    text = None
+    if args.from_storyboard == "-":
+        text = sys.stdin.buffer.read().decode("utf-8-sig", errors="replace")   # UTF-8 on every OS (Windows consoles too)
+    return sbmod.plan(sbmod.load(args.from_storyboard, stdin_text=text))
+
+
+def _storyboard_report(board: Dict[str, Any], dst: Path, files: List[str]) -> Dict[str, Any]:
+    from . import storyboard as sbmod
+    shots = board["shots"]
+    return {"source": board.get("source"), "shots": len(shots), "duration": board["duration"], "lang": board["lang"],
+            "files": files, "narrated": sum(1 for s in shots if s["narration"]),
+            "estimated": [s["id"] for s in shots if s["estimated"]],
+            "copy": [s["id"] for s in shots if s["copy"]],
+            "too_long": sbmod.fit_lines(board), "notes": board["notes"],
+            "next": (["showtime voice script %s -o %s" % (dst / "narration.md", dst / "voice"),
+                      "showtime retime %s --from-voice %s --total %s" % (dst, dst / "voice" / "timeline.json",
+                                                                          sbmod._secs(board["duration"]))]
+                     if "narration.md" in files else []) +
+                    ["build each shot's picture in its <section> from its brief, and delete the brief",
+                     "showtime check %s" % dst]}
+
+
+def _print_storyboard(rep: Dict[str, Any], dst: Path) -> None:
+    log("storyboard %s: %d shot(s), %s s planned, %d narrated%s; one scene per shot, each showing its brief" % (
+        rep["source"], rep["shots"], rep["duration"], rep["narrated"],
+        " (language: %s)" % rep["lang"] if rep["lang"] else ""))
+    if rep["estimated"]:
+        log("  no length given, estimated from the narration: %s" % ", ".join(rep["estimated"]))
+    if rep["copy"]:
+        log("  on-screen words from the storyboard (cards, titles, text:): %s" % ", ".join(rep["copy"]))
+    for n in rep["notes"]:
+        warn(n)
+    for line in rep["too_long"]:
+        warn("narration longer than its shot (at the planning rate; the voice decides): " + line)
+    log("wrote %s in %s" % (", ".join(rep["files"]), dst))
+    log("next:")
+    for i, step in enumerate(rep["next"], 1):
+        print("  %d. %s" % (i, step))
+
+
+def _look_new_project(dst: Path, template: str, cfg: Dict[str, Any], branded: Optional[Dict[str, Any]],
+                      ref_style: Optional[Dict[str, Any]], choice: Optional[str], seed: Optional[str]) -> Optional[Dict[str, Any]]:
+    """A page template starts in a look signature (st.variety.signatures): picked away from the machine's recent
+    looks, or the one --look names. A brand kit and a job's style reference win over the automatic pick; an
+    applied brand kit wins over --look too."""
+    from .variety import signatures as sigs
+    explicit = choice is not None and str(choice).strip().lower() not in ("", "auto")
+    if choice is not None and str(choice).strip().lower() in ("template", "none", "off"):
+        return {"id": None, "log": ["look: the %s template's own (--look template)" % template]}
+    if template not in sigs.TEMPLATES:
+        if explicit:
+            raise ShowtimeError("the %s template keeps its own look" % template,
+                                why="look signatures dress the page templates: %s" % ", ".join(sigs.TEMPLATES))
+        return None
+    if branded and branded.get("applied"):
+        if explicit:
+            warn("--look %s not applied: the brand kit's colours win" % choice)
+        return {"id": None, "log": ["look: the brand kit's"]}
+    if not explicit:
+        if ref_style and ref_style.get("linked"):
+            return {"id": None, "log": ["look: the style reference's (no look signature)"]}
+        try:
+            from . import brand as brandmod
+            if brandmod.load(dst) is not None:
+                return {"id": None, "log": ["look: a brand kit was found, so no look signature (`showtime brand apply %s` "
+                                            "puts it on the page)" % dst]}
+        except Exception:  # noqa: BLE001 - an unreadable kit: brand apply says why
+            pass
+    try:
+        res = sigs.apply_to_project(dst, template, choice or "auto", seed)
+    except ShowtimeError:
+        if explicit:
+            raise
+        return None
+    except Exception as e:  # noqa: BLE001 - never fail `new` over the automatic look
+        warn("kept the template's look (%s)" % e)
+        return None
+    if not res:
+        return None
+    res["log"] = ["look: %s%s" % (res["describe"], " (picked away from your recent looks)" if res["auto"] else ""),
+                  "  another: showtime signature apply %s next (or an id from `showtime signature`, or template for the "
+                  "template's own look)" % dst]
+    return res
 
 
 LAUNCH_KINDS = ("launch", "promo", "trailer", "teaser", "release")
@@ -446,6 +632,8 @@ def cmd_retime(args: argparse.Namespace) -> int:
         rep["voice"] = {"timeline": voice["timeline"], "mapping": voice["mapping"], "how": voice["how"],
                         "pad": voice["pad"], "captions": voice["words_rel"]}
         rep["notes"] = voice["notes"] + rep["notes"]
+        from .storyboard import compare_voice    # a project from `new --from-storyboard`: the voice against the plan
+        rep["notes"] = rep["notes"] + compare_voice(proj, voice["scenes"], plan)
     else:
         rep = retime_project(proj, float(args.duration), dry_run=args.dry_run)
     return _retime_report(rep, proj, args)
@@ -1150,6 +1338,14 @@ def retime_project(proj: Path, new: float, dry_run: bool = False, plan: Optional
         cfg["poster"] = p1
         if abs(p1 - p0) > 1e-9:
             rep["changes"].append("poster %s -> %s" % (_fmt(p0), _fmt(p1)))
+    # stop-and-ask questions given in seconds move with their scenes (voice cues follow the voice)
+    for q in cfg.get("questions") if isinstance(cfg.get("questions"), list) else []:
+        if isinstance(q, dict) and isinstance(q.get("at"), (int, float)) and not isinstance(q.get("at"), bool):
+            a0 = float(q["at"])
+            a1 = _r(tmap(a0))
+            if abs(a1 - a0) > 1e-9:
+                q["at"] = a1
+                rep["changes"].append("question %s at %s -> %s" % (q.get("id", "?"), _fmt(a0), _fmt(a1)))
     cfg["duration"] = int(new) if float(new).is_integer() and isinstance(cfg.get("duration"), int) else new
     audio = cfg.get("audio")
     fixed: List[str] = []
@@ -1173,7 +1369,7 @@ def retime_project(proj: Path, new: float, dry_run: bool = False, plan: Optional
         if changed:
             writes[mp] = _dump_mix(spec)
             rep["changes"].append("%s: %d value(s) changed%s" % (
-                audio, changed, (" (%d voice track(s) placed)" % added) if added else " (music sections follow the scenes)"))
+                audio, changed, " (the voice lines placed)" if added else " (music sections follow the scenes)"))
     elif isinstance(audio, (list, dict)):
         spec = {"tracks": audio} if isinstance(audio, list) else audio
         fixed = _fixed_music(spec)
@@ -1375,10 +1571,13 @@ def voice_plan(proj: Path, timeline: Path, mapping: Optional[str] = None, pad: f
             "%s->%s" % (ln["id"], names[s] or s + 1) for ln, s in zip(lines, assign)),
                             hint="keep the script in scene order, or fix --map")
     first, last = assign[0], assign[-1]
-    mute = [names[i] or str(i + 1) for i in range(first, last + 1) if i not in set(assign)]
+    # a scene marked data-silent has no narration on purpose (a storyboard shot without a line): it keeps its length
+    mute = [names[i] or str(i + 1) for i in range(first, last + 1)
+            if i not in set(assign) and "data-silent" not in scenes[i]["attrs"]]
     if mute:
         raise ShowtimeError("scene(s) %s sit between narrated scenes but get no line" % ", ".join(mute),
-                            hint="give them a line with --map (line=scene), or move them after the narration")
+                            hint="give them a line with --map (line=scene), mark a scene without narration "
+                                 "data-silent (it keeps its length), or move them after the narration")
     order = sorted(range(len(scenes)), key=lambda i: (scenes[i]["t0"], i))
     if order != list(range(len(scenes))):
         raise ShowtimeError("the scenes are not in time order in the page",
@@ -1390,10 +1589,18 @@ def voice_plan(proj: Path, timeline: Path, mapping: Optional[str] = None, pad: f
     placed: List[Any] = []
     notes: List[str] = []
     cursor = 0.0
+    # the first line's lead-in (`lead_in`, or an `at` pin on it: a music-only opening) is a video time, as when
+    # vo.wav plays from 0: the first narrated scene gets that much picture before its line (at least the pad)
+    lead = max(0.0, float(lines[0].get("start", lines[0]["slot"].get("start", 0)) or 0))
     for i, c in enumerate(scenes):
         if i in by_scene:
             ns = cursor
             lc = ns + pad
+            if i == first and lead > lc + 1e-6:
+                lc = lead
+            elif i == first and pad + 1e-6 < lead < lc - 1e-6:
+                notes.append("line %s starts %.2fs into the voice, but its scene %s starts at %.2fs: it plays at %.2fs"
+                             % (lines[0]["id"], lead, names[i] or i + 1, ns, lc))
             for ln in by_scene[i]:
                 placed.append((ln, _r(lc)))
                 lc += float(ln["slot"].get("duration") or (float(ln["slot"]["end"]) - float(ln["slot"]["start"])))
@@ -1454,7 +1661,7 @@ def voice_plan(proj: Path, timeline: Path, mapping: Optional[str] = None, pad: f
                          "note": "written by `showtime retime --from-voice`: word times in the video",
                          "words": words},
            "mapping": [{"line": ln["id"], "scene": names[s] or s + 1, "at": at} for (ln, at), s in zip(placed, assign)],
-           "how": how, "pad": pad, "notes": notes}
+           "how": how, "pad": pad, "notes": notes, "scenes": names}
     return plan, new, ctx
 
 

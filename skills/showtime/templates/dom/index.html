@@ -23,8 +23,8 @@
   /* ---------- page tokens (derived from the theme; no raw colours below this block). The type
      scale lives on .scene so the @container queries at the end (which query the stage) can swap it. */
   .stage {
-    --ember: color-mix(in oklab, var(--accent) 44%, transparent);
-    --rim: color-mix(in oklab, var(--accent-2) 34%, transparent);
+    --ember: color-mix(in oklab, var(--accent) calc(44% * var(--ground-glow, 1)), transparent);
+    --rim: color-mix(in oklab, var(--accent-2) calc(34% * var(--ground-glow, 1)), transparent);
     --line: color-mix(in oklab, var(--fg) 7%, transparent);
     --ink-soft: color-mix(in oklab, var(--fg) 88%, var(--bg));
     --app-bg: color-mix(in oklab, var(--surface) 92%, var(--fg));
@@ -43,16 +43,16 @@
       radial-gradient(62% 78% at var(--kx, 88%) var(--ky, 108%), var(--ember), transparent 70%),
       radial-gradient(52% 64% at var(--rx, 4%) var(--ry, -8%), var(--rim), transparent 72%),
       var(--bg); }
-  .bg::before { content: ''; position: absolute; inset: 0;
+  .bg::before { content: ''; position: absolute; inset: 0; opacity: min(1, var(--ground-grid, 1));
     background-image: linear-gradient(to right, var(--line) 1px, transparent 1px), linear-gradient(to bottom, var(--line) 1px, transparent 1px);
     background-size: 8cqmin 8cqmin; background-position: 50% 50%;
     -webkit-mask-image: radial-gradient(70% 70% at 50% 45%, black 10%, transparent 78%); mask-image: radial-gradient(70% 70% at 50% 45%, black 10%, transparent 78%); }
   /* one slow ambient move per scene: the key light drifts across the shot */
   .bg::after { content: ''; position: absolute; inset: -20%;
-    background: radial-gradient(30% 30% at 50% 50%, color-mix(in oklab, var(--accent) 16%, transparent), transparent 70%);
+    background: radial-gradient(30% 30% at 50% 50%, color-mix(in oklab, var(--accent) calc(16% * var(--ground-glow, 1)), transparent), transparent 70%);
     animation: sweep var(--sweep, 7s) cubic-bezier(0.37, 0, 0.63, 1) both; }
   @keyframes sweep { from { transform: translate(18%, 10%); } to { transform: translate(-6%, -4%); } }
-  .vig { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(120% 90% at 50% 45%, transparent 55%, rgb(0 0 0 / 0.45)); }
+  .vig { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(120% 90% at 50% 45%, transparent 55%, rgb(0 0 0 / calc(0.45 * var(--ground-vignette, 1)))); }
 
   /* ---------- shared bits */
   .brand { position: absolute; left: 6cqw; top: 6cqh; display: flex; align-items: center; gap: 1.4cqmin;

@@ -33,6 +33,9 @@ slow, fails, or looks different from the preview; or when you need the exact fla
 - Speed: a final takes about 1-2x the video length at 1080p; keep JPEG and 2-3 workers; animate `transform`
   and `opacity`; avoid `backdrop-filter` and full-screen `filter: blur()` above ~20px. Fonts only as files
   (`/_lib/@fontsource/...` or `@font-face`), never system fonts or web font URLs (§ Speed)
+- A length, size or deadline that cannot be met (a long 4K film "in a few minutes") gets a plain no in
+  the first line, the arithmetic and an honest estimate, then what can be done: a preview first, 1080p or
+  30 fps, a shorter cut, the full render in the background. Never lower the spec quietly (§ Speed)
 - After a failed or odd render read `render.log` first; no browser or ffmpeg: `showtime setup`; a `<video>`
   black in renders: convert the clip to VP9/WebM (§ showtime render, § Troubleshooting)
 - Over 20 MB: `showtime deliver exports <file> --targets original --max-mb 20`; animated film grain
@@ -41,15 +44,15 @@ slow, fails, or looks different from the preview; or when you need the exact fla
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| The loop | 54-88 |
-| showtime render <project> | 90-180 |
-| showtime check <project> | 182-234 |
-| showtime snap <project / video> | 236-257 |
-| showtime preview <project> | 259-276 |
-| showtime retime <project> -d <seconds> | 278-316 |
-| Speed | 318-348 |
-| Troubleshooting | 350-364 |
-| Platforms | 366-381 |
+| The loop | 57-91 |
+| showtime render <project> | 93-193 |
+| showtime check <project> | 195-250 |
+| showtime snap <project / video> | 252-273 |
+| showtime preview <project> | 275-292 |
+| showtime retime <project> -d <seconds> | 294-335 |
+| Speed | 337-372 |
+| Troubleshooting | 374-388 |
+| Platforms | 390-405 |
 
 ## The loop
 
@@ -109,8 +112,9 @@ A project is a folder with `showtime.json` and `index.html` (or pass an `.html` 
 | `--lufs N`, `--no-loudnorm`, `--no-audio` | -14 LUFS, -1 dBTP | |
 | `--allow-silent` | off | a project with audio (ST.score or an `audio` mix) fails when its audio fails twice; this ships it silent instead |
 | `--gpu off` | auto | software rendering: slower, most reproducible across machines |
-| `--settle raf1\|raf2\|none` | raf1 | paint wait after each seek (raf2 is extra safe; none can miss paints) |
-| `--keep-frames` | off | keep `work/frames/` |
+| `--settle raf1\|raf2\|none` | raf1 | paint wait after each seek (raf2 is extra safe; none can miss paints). A canvas or WebGL scene blank on the first frame after a cut is not a paint wait: raf2 does not change it; see `late_first_frame` in `check` |
+| `--keep-frames` | off | keep the captured frames (`frames/` in the work folder), also after a failed or interrupted render |
+| `--keep-work` | off | keep the whole work folder: the silent `video.mp4` (about the size of the final) and the WAV stems too |
 | `--size WxH\|9:16` | showtime.json, else the page's `ST.config` | one page, another size for this run (a 9:16 cut of a 16:9 page: the page reads the frame aspect, components size by container units). With `--job` the file is `<job>/1080x1920.mp4`, recorded as a variant; `check` and `snap` take `--size` too |
 
 Encode settings you ship with belong in showtime.json, so every re-render keeps them (flags still win;
@@ -169,9 +173,18 @@ showtime-out/my-video-20260926-101500/
     render.json      settings, browser, timings, capture fps, loudness, warnings, ffprobe summary, "log"
     logs/render.log  every ffmpeg command with its stderr, browser page errors, console errors and
                      warnings, blocked requests, HTTP errors >= 400, warnings, the failure stack
-    video.mp4 (no audio), audio/{score,mix,combined,master}.wav + master.m4a,
-    frames/ (with --keep-frames), diagnostics/ (after failures)
+    audio/           master.m4a (the soundtrack as muxed), mix.json and mix.report.json (review-pack
+                     and qa read the report), mix.voice.wav (the narration alone, 16 kHz: what
+                     `showtime transcribe` reads for this video)
+    diagnostics/     screenshot, DOM and console of a frame that failed (only after a retry or a failure)
+    with --keep-work also: video.mp4 (no audio), audio/{score,mix,combined,master}.wav
+    with --keep-frames also: frames/
 ```
+
+A finished render removes its frames, the silent video copy and the WAV stems (together several
+times the size of the final); a failed or interrupted one (Ctrl-C, a host's SIGTERM) removes its
+frames and keeps its log and diagnostics. `showtime clean <job>` removes what renders from before
+0.4.0 left behind (`<stem>.work/video.mp4`, the WAV stems).
 
 The summary ends with the `output`, `poster`, `report` (render.json) and `log` paths; after a
 failed or odd render, read `render.log` first (`debugging-renders.md`). A render whose output is
@@ -190,6 +203,7 @@ exactly like the renderer and reports findings with the time they happen and a f
 | `network`, `missing_file` | error | remote request (blocked in renders) or 404 |
 | `unstable_frame` | error | pixels keep changing after a seek finished: something runs on real time |
 | `nondeterministic` | error | a frame differs when reached in another order (state kept between frames) |
+| `late_first_frame` | error | the first frame after a hard cut is drawn a frame late: the page draws a scene (a canvas, WebGL) from its own copy of the scene times, so the render shows that frame blank or stale while `snap` looks right. Check walks every cut on a fresh page in order, as a render does. Gate drawing on `ST.clips()` (frame-exact windows) |
 | `clip_timing`, `video` | error | bad `data-start`/`data-dur`, or a video that cannot be decoded/seeked |
 | `font_load_failed` | error | an `@font-face` file failed |
 | `low_contrast` | warning (error below 2:1) | WCAG contrast of text against the real pixels behind it: 4.5:1, or 3:1 for text >= 24px (>= 18.7px bold). Measured where each text is fully faded in, not blurred and outside scene transitions; a text seen only mid-transition gets an info note naming the transition. Large text (>= 4 % of the height) in the colours of the job's style reference (`reference-style.css`) at 3:1 or more is a note: the user asked for that look. |
@@ -206,6 +220,8 @@ exactly like the renderer and reports findings with the time they happen and a f
 | `control_strip` | warning | landscape: text under 32 px (at 1080p) in the bottom 8%, where a player's progress bar and controls sit |
 | `short_text` | warning | text on screen for less than it takes to read (0.3 s + the longer of characters/17 and words/3, per language, min 1 s; part of the phone check, see qa.md); mark text read along with the voice `data-caption` |
 | `beat_words` | note | three or more 1-2 word texts shown one after another, each 0.35-1.2 s (a word per beat): read as one line at no more than words/3 per second, so not `short_text` |
+| `flash_text` | note | showreel tone only: flash words (`data-st-flash`, 1-3 words, 24 characters at most, on screen 0.2 s or more) that leave before their reading time on purpose, so not `short_text` (`tones.md`, showreel) |
+| `no_hero_line` | warning | showreel tone: every text is a flash word, so no line (the name, the one message) is held its reading time; part of the phone check |
 | `tiny_text` | warning | readable text under the phone minimum: points at 390 pt wide (16:9 5 pt, 1:1 10, 4:5 11, 9:16 15) and at least 2.2 % of the frame height; part of the phone check, `report.phone` has the sizes. UI-mockup detail marked `data-st-decor` is exempt; many small texts become one warning that lists them |
 | `poster_not_baked` | info | showtime.json `poster` is set, but the frame differs from the opening, so `render` (`--poster-bake auto`) will not bake it into frame 0 (it would flash on autoplay and loops); poster.jpg is still written. Start the video in the poster's state, or `"render": {"poster_bake": "force"}` |
 | `dead_air` | error / warning | error: for 1.5 s or more no clip is showing (a gap between scenes, or scenes that end before the video does; canvas: only the flat backdrop is drawn), listed in report.json `timeline_holes` (`from`, `to`, `at_end`, `detail`). Warning: a still hold of `--dead-air` seconds or more (default 2.5 s, the same rule as qa `frozen`, so check catches it before the render), or an end hold over 4 s. Fix: add motion (a slow push-in, drift, a progress element) or another beat, or shorten the scene with `showtime retime`. An overlay page for `--alpha` (`<body data-overlay>` or showtime.json `"overlay": true`) gets `overlay_gap` notes instead |
@@ -299,8 +315,11 @@ the scene lengths from the narration instead of one length for all:
   order, else by `--map hook=open,demo=bars` (or a JSON file `{"line": "scene"}`); lines left out
   of the map join the scene of the line before them.
 - Each narrated scene lasts `--pad` (default 0.3 s of picture before its first line) plus the slots
-  of its lines (a slot runs to the next line's start, so it includes the pause). Scenes after the
-  narration (an end card) keep their length; a scene with no line between narrated scenes is an error.
+  of its lines (a slot runs to the next line's start, so it includes the pause). The first line keeps
+  its lead-in: pinned 2.4 s into the voice (`at: 2.4` or `lead_in: 2.4`, a music-only opening), it starts
+  at 2.4 s in the video and its scene grows by that much picture before it (never less than `--pad`).
+  Scenes after the narration (an end card) keep their length; a scene with no line between narrated
+  scenes is an error.
   `--total 30` keeps the video 30 s long: the end card after the narration grows or shrinks to
   absorb the difference (a warning under 2.5 s, an error under 1 s), so you never hand-edit its
   `data-dur`. When every scene is narrated (a narrated close), the last scene's hold after its last
@@ -331,6 +350,11 @@ Rules of thumb:
 
 - A final render takes about 1-2x the video length at 1080p on a mid-range laptop. `showtime check`
   prints an estimate for the current project.
+- Scale it before promising a time: 4K draws four times the pixels of 1080p and 60 fps doubles the
+  frames: about 8x the work, so 5 minutes of 4K at 60 fps (18,000 frames) takes roughly 40-80 minutes or
+  more on a laptop, not minutes,
+  and building the scenes comes first. Say so plainly and offer the faster paths (preview, 1080p/30 fps,
+  a shorter cut, the full render in the background).
 - Keep JPEG capture (default). PNG is only needed for `--alpha` (automatic) or pixel diffs.
 - 2-3 workers is the sweet spot on 4-8 cores; more workers fight over the CPU and the GPU.
 - `--preview` saves encode time and file size, not capture time: Chrome still draws each frame at

@@ -22,7 +22,8 @@ Run `showtime motion` for the live list.
   30 fps), so write beat-synced cuts with 4 decimals (§1)
 - Put SFX and narration on `sync` beats (`count-up.sync.land`, `cursor.sync.click1`) after `await c.ready`; videos
   inside components are muted `<video data-st>` (§1)
-- Where options live: `kinetic-type`, `typewriter`, `caption-karaoke` §2; `lower-third`, `count-up`, `steps` §3;
+- Where options live: `kinetic-type`, `typewriter`, `caption-karaoke` §2; `lower-third`, `count-up`, `steps`,
+  `question-beat` (a stop-and-ask question's pause and think beat) §3;
   `chart`, `world-map` §4; `browser-frame`, `device-frame`, `cursor`, `keystrokes`, `code-block`, `chat-thread`,
   `notifications`, `feature-grid` §5; `camera`, `fit`, `portal`, `ken-burns`, `logo-reveal`, `end-card`, `grain`
   §6; themes and tokens §7; writing your own §8. Live list: `showtime motion`
@@ -41,14 +42,14 @@ Run `showtime motion` for the live list.
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| 1. Setup (two lines) and the time model | 53-97 |
-| 2. Text: kinetic-type, typewriter, caption-karaoke | 99-158 |
-| 3. Identification and numbers: lower-third, count-up, steps | 160-187 |
-| 4. Data: chart, world-map | 189-240 |
-| 5. Product and UI: browser-frame / device-frame, cursor and keystrokes, code-block, ... | 242-304 |
-| 6. Camera, stills, closers, texture | 306-347 |
-| 7. Themes (runtime/themes) | 349-362 |
-| 8. Writing your own component | 364-383 |
+| 1. Setup (two lines) and the time model | 54-98 |
+| 2. Text: kinetic-type, typewriter, caption-karaoke | 100-159 |
+| 3. Identification and numbers: lower-third, count-up, steps, question-beat | 161-202 |
+| 4. Data: chart, world-map | 204-255 |
+| 5. Product and UI: browser-frame / device-frame, cursor and keystrokes, code-block, ... | 257-319 |
+| 6. Camera, stills, closers, texture | 321-362 |
+| 7. Themes (runtime/themes) | 364-377 |
+| 8. Writing your own component | 379-398 |
 
 ## 1. Setup (two lines) and the time model
 
@@ -185,6 +186,20 @@ Prefix and suffix sit tight against the number ("+160%", not "+ 160 %").
 ### steps
 `steps` (array or comma list), `variant` `dots|bar|list`, `cues` (times each step activates; list
 items tick on their own cue), or `first` 0.4 + `every` 1.2.
+
+### question-beat
+The "pause and think" beat of a stop-and-ask question (showtime.json `"questions"`, `html-export.md`
+§ Questions), which is what the MP4 shows where the HTML export stops and asks: the prompt and its
+choices while the narrator asks, a countdown ring for the question's `think` seconds from its `at`,
+then the right choice marked and its reply in the countdown's place. Times come from the question
+(a voice cue follows the narration): it appears where the asking line starts (2.5 s before the pause
+for a time in seconds; `at` on the element sets it), so put it in the scene that asks. `id` (default:
+the first question), `label` (`Pause and think`; write it in the video's language, `""` for none),
+`reveal` true, `reply` true, `keys` true (A B C), `hold` (seconds after the reveal before it fades;
+default: its clip ends it). Sync: `ask`, `pause`, `reveal` (put a soft tick or a chime on them).
+```html
+<div data-st="question-beat" data-id="q1" data-label="Pausa y piensa"></div>
+```
 
 ## 4. Data
 

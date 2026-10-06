@@ -16,27 +16,42 @@ costs nothing to redo. Motion, sound and render just carry it out.
 - Hook: frame 1 already informative and moving (a launch hook is complete at frame 0); no black lead-in, fade
   from black, logo sting or "Introducing…"; readable by 0.3 s, first cut or big change by 2.0 s (§3, §4)
 - Given a video to match, run `showtime reference <video> --job <job> --for <seconds>` first (§4)
+- Explainers, and any video that asks the viewer questions: cold open with the stakes (~10 s), a persistent
+  roadmap of the steps, a one-line bridge after each part, a close that answers the opening; then a cold
+  first-viewer check of every part before the final render (§4)
 - 1–6 words per card; on-screen text never repeats the narration; no banned filler ("unlock", "seamless" ...);
   narration as discrete cues, 1–2 sentences of 6–20 words per scene (§5)
 - Sourced claims only: no invented numbers, benchmarks, users, quotes, logos or versions; a number on screen
   matches its source exactly; label sample data that could pass as real (§6)
+- The user's own claim is checked too: a headline their data does not support ("5x faster" against their own
+  52 s vs 40 s) is flagged before anything is built, with the figure the data does support, stated exactly:
+  1.3x as fast, 30 % faster or 23 % less time, never "30 % less time" (§6)
 - Specifics (file names, flags, output lines, paths, versions) need a source or a run saved to
   `<job>/work/evidence/<name>.txt` and logged with `job note --verified`; never fill a gap with a guess (§6)
 - Every held frame must be true on its own; a failed capture is reported, never faked; no redrawn logos (§6)
 - Open direction: 3–5 concepts from different paths, one unexpected; show all before recommending one (§7)
 - Before building, run the distinctness check: two or more "no" answers mean revise the plan (§8)
+- Videos that ask (showtime.json `"questions"`): ask before you tell (nothing earlier, the cold open included,
+  gives an answer away), one idea per question, three choices, a reply that says why for each; the plan
+  names the mechanism: `questions` in showtime.json, the HTML export (`showtime export html`) stops, the MP4
+  shows a pause and think beat (§9)
+- Given a storyboard table (Shot | Length | Visual | Narration) from another skill: `showtime new dom <dir>
+  --from-storyboard <file>`, named in the plan; shots, lengths and narration kept as written; each Visual is
+  a brief to build, not on-screen copy (§10)
 
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| 1. The one-sentence contract | 41-47 |
-| 2. Finding the angle in the real product | 49-73 |
-| 3. Hooks (the first 2 seconds) | 75-97 |
-| 4. Structures | 99-132 |
-| 5. Writing the lines | 134-147 |
-| 6. Honesty rules (hard) | 149-171 |
-| 7. Pitch round (when direction is open) | 173-190 |
-| 8. Distinctness check (before building) | 192-205 |
+| 1. The one-sentence contract | 56-62 |
+| 2. Finding the angle in the real product | 64-88 |
+| 3. Hooks (the first 2 seconds) | 90-112 |
+| 4. Structures | 114-162 |
+| 5. Writing the lines | 164-177 |
+| 6. Honesty rules (hard) | 179-207 |
+| 7. Pitch round (when direction is open) | 209-226 |
+| 8. Distinctness check (before building) | 228-241 |
+| 9. Videos that ask | 243-265 |
+| 10. A storyboard from another skill | 267-288 |
 
 ## 1. The one-sentence contract
 
@@ -112,6 +127,21 @@ install/CTA, URL, held ≥3 s. A real number or quote may replace one proof beat
 **Explainer.** Pick one: concept (name → mechanism, one layer at a time → implication); process
 (3–6 steps on one consistent stage); list (hook → N parallel items, three is strongest → wrap);
 story (setup → tension → turn → resolution → lesson). Never follow the source's paragraph order.
+**The explainer shape (the default for explainers and for any video that asks the viewer questions).**
+A first-time viewer must always know why the part on screen is there. Without these four pieces a run of
+questions feels random, however good each answer looks:
+1. *Cold open, about 10 s, before the first question or step:* the stakes in plain words, who claims what
+   and what the video will do about it. "Last week a well-known researcher argued that X. His evidence is
+   one Y from 2016. Let's test his argument, one question at a time." The hook rules still hold (§3):
+   frame 1 is already informative.
+2. *Roadmap:* the 3–5 steps as one persistent, readable element (a numbered rail, a checklist), the
+   current step lit at each part, so the viewer always knows where they are.
+3. *Bridges:* after each part, one short spoken line that leads into the next, so each step follows from
+   the last ("So the move came from search. Does a language model search too?").
+4. *Tie-back:* the close answers the opening claim in one line, then the end card.
+Before the final render, check it cold: a reviewer who never read the brief goes through the parts in order
+(frames and narration only) and answers for each "Do I know why this is here, and how it connects to the
+opening?" Every "no" gets fixed (`review.md` §1, the first-viewer pass; the critic does it from `story.txt`).
 **Tutorial / walkthrough.** Outcome preview (2–4 s) → steps, one action per spoken sentence, a
 consistent stage, camera move before each action → recap card → next step. Over 2 min: chapters.
 **Data story.** Headline as the takeaway ("Build time fell 74%") → context state → the change →
@@ -153,6 +183,12 @@ sting. Show the world, not the feature list. The name lands last.
 - Illustrative UI content is fine when it's obviously illustrative ("Exported ✓" toasts, placeholder
   names, sample data). When sample data could be mistaken for real results, label it ("sample data").
 - A number on screen must match its source exactly (you may round only in narration).
+- **The user's claims are claims too.** A headline the user asks for is checked against the data they
+  gave before anything is built. "5x faster than X" next to their own "X 52 s, ours 40 s" is not
+  supported: say so in the first lines, show the arithmetic, offer headlines the data supports, and keep
+  "5x" only if they send a source for it. State a ratio the way it is true: 52 s → 40 s is 1.3x as fast,
+  30 % faster or 23 % less time; "30 % less time" is wrong (speed and time are not the same percentage).
+  When in doubt, show the two measured numbers.
 - **Specifics are claims too.** File names, flag spellings, output lines, line counts, paths, error
   messages and version strings on screen each need a source: the docs (README, CHANGELOG, site) or
   output you produced by running the product in this job. Run it, save the transcript
@@ -203,3 +239,50 @@ Answer honestly. Two or more "no" answers means revise the plan.
 - Could you cut 20% and lose nothing? If yes, cut it.
 - Does it look different from your last five videos (`showtime history`; `showtime check` warns with
   `look_repeat`)? With a reference clip, did you take its grammar and none of its content (`reference.md`)?
+
+## 9. Videos that ask
+
+An explainer can stop and ask before it tells (showtime.json `"questions"`: the HTML export pauses and
+asks, the MP4 shows a "pause and think" countdown; `html-export.md` § Questions).
+- **Ask before you tell.** Ask at the step the viewer can almost take alone, then show it. A question
+  the next line answers anyway, or one nobody could guess, is a quiz, not a step.
+- **One idea per question.** The question names exactly one thing to decide; three or four questions
+  in a 60-90 s video, each its own chapter, with the answer shown between them.
+- **Three choices**: the right one, the near miss most people pick, and one that shows a different
+  misunderstanding. Short (1-4 words), parallel, none a joke.
+- **The reply explains why**, for every choice: "1 + 2 × 5 = 11, one step too far" teaches more than
+  "Wrong". Under 15 words, and true (§6).
+- The narrator asks the question out loud (its line id is the question's `at`), the countdown is
+  silent under ducked music, and the reveal is the next line.
+- **Nothing gives an answer away early.** The cold open poses the puzzle; it does not show the result a
+  later question asks about (an opening "the tower adds up to exactly 3" spoils "what does it add up
+  to?"), and no step answers the next question before it is asked.
+- **The plan says how it asks.** Lay it out in the explainer shape (§4), each piece visible in the plan: the
+  cold open (its line), the roadmap as an on-screen element with its 3-5 step labels, a bridge line after each
+  part, and the close's line that answers the opening in so many words; each question sits in its place,
+  before its answer. Then name the mechanism: the questions go in showtime.json
+  `"questions"` (`at` = the narrator's line), `showtime export html` makes the page that stops and waits
+  for an answer, and the MP4 shows the pause and think beat. The user then knows what they will get.
+
+## 10. A storyboard from another skill
+
+Some skills plan a video and hand it over as a Markdown table, one row per shot: Shot | Length | Visual |
+Narration (Chinese 镜头 | 时长 | 画面 | 旁白 too; columns in any order, extra ones such as On screen or Sound).
+Start from it instead of a template's scenes:
+
+- `showtime new dom <job>/project --from-storyboard storyboard.md` (`short` for 9:16; `-` reads the table from
+  stdin; a storyboard.json from the storyboard artist works too). One scene per shot (`shot-1`, `shot-2` ...),
+  timed from the lengths; a missing length is estimated from the narration.
+- Each scene shows a dashed brief: the Visual as written. It says what to build; it is not on-screen copy. Only a
+  card or title's quoted words, text after `text:` and an On screen column are shown as written. Build every
+  shot's picture from its brief, and add nothing the storyboard and its sources do not support (§6).
+- The narration is `narration.md`, one `## shot-N` line per narrated shot, pinned (`{at=...}`) where its shot
+  starts. Run `showtime voice script <dir>/narration.md -o <dir>/voice`, then the `retime --from-voice` line `new`
+  prints: shots keep their planned lengths where the voice fits and grow where it does not. `new` warns at
+  planning rates (2.8 words/s, 3.2 Chinese characters/s) and retime names the shots the voice outgrew. Cut words
+  rather than accept a rushed read.
+- The table's lengths are the plan; the voice decides. `storyboard.json` keeps the plan, `storyboard.md` goes to
+  the critic's review pack. `check` warns (`storyboard_brief`) while any brief is left.
+- The plan you show lists the shots in order with their lengths and narration exactly as written, says what
+  each Visual brief becomes on screen, and names the command (`--from-storyboard`). Change nothing silently: a
+  length the voice will outgrow or a line you would cut is named, with the reason, for the user to decide.

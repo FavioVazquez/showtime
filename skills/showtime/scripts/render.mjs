@@ -68,7 +68,8 @@ const SPEC = {
     page: { help: 'page inside the project to render (default index.html)' },
     size: { help: 'render at this size for this run: WxH (1080x1920) or an aspect (9:16, 1:1, 4:5); beats showtime.json and ST.config. With --job the file is <job>/<W>x<H>.mp4, a variant that leaves the job\'s final alone', metavar: 'SIZE' },
     settle: { help: 'paint wait per frame: raf1 (default), raf2 (extra safe), none (fastest, can miss paints)' },
-    'keep-frames': { type: 'boolean', help: 'keep work/frames after a successful render' },
+    'keep-frames': { type: 'boolean', help: 'keep the captured frames (work/frames), after a finished, failed or interrupted render' },
+    'keep-work': { type: 'boolean', help: 'keep the whole work folder after the render: the silent video copy and the WAV stems too (default: render.json, logs/, diagnostics/ and the small audio files stay)' },
     'no-check': { type: 'boolean', help: 'with --size: skip the layout check at that size (it stops the render when text is cut off or off frame there)' },
     json: { type: 'boolean', help: 'print a JSON report on stdout' },
     quiet: { type: 'boolean', short: 'q', help: 'no progress output' },
@@ -249,10 +250,26 @@ async function main() {
     await Promise.all(browsers.map((b) => b && b.browser.close().catch(() => {})));
     await server.close().catch(() => {});
   };
-  process.once('SIGINT', () => { interrupted = true; info('\ninterrupted; cleaning up (partial work kept in ' + workDir + ')'); cleanup().finally(() => process.exit(130)); });
+  // an interrupted or failed render leaves its log and diagnostics, not its frames (a long one is gigabytes)
+  const dropFrames = () => {
+    if (a['keep-frames']) return;
+    try { fs.rmSync(framesDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } catch { /* best effort */ }
+    try { fs.rmSync(path.join(workDir, 'splice'), { recursive: true, force: true }); } catch { /* best effort */ }
+  };
+  const onStop = (sig) => {
+    interrupted = true;
+    info(`\ninterrupted; cleaning up (frames ${a['keep-frames'] ? 'kept: --keep-frames' : 'removed'}; log: ${logFile})`);
+    // browsers first (they make the frames), at most 3 s: a host sends SIGKILL a few seconds after SIGTERM;
+    // then a moment for frame writes already on their way, which would otherwise land in a removed folder
+    const settle = (ms) => new Promise((r) => setTimeout(r, ms));
+    Promise.race([cleanup(), settle(3000)]).then(() => settle(300))
+      .finally(() => { dropFrames(); process.exit(sig === 'SIGTERM' ? 143 : 130); });
+  };
+  process.once('SIGINT', () => onStop('SIGINT'));
+  process.once('SIGTERM', () => onStop('SIGTERM'));
 
   try {
-    const b0 = await openBrowser({ gpu });
+    const b0 = await openBrowser({ gpu, ownSignals: true });
     browsers.push(b0);
     const base = cfg.width ? Number(cfg.width) : 1920;
     const baseH = cfg.height ? Number(cfg.height) : 1080;
@@ -396,7 +413,7 @@ async function main() {
         warn(`audio failed (${String(e.message).split('\n')[0]}); retrying once`);
         logLine(`audio failed: ${e && e.stack ? e.stack : e}`);
         try {
-          const b = await openBrowser({ gpu });
+          const b = await openBrowser({ gpu, ownSignals: true });
           browsers.push(b);
           return await buildAudio({ ...audioArgs, browser: b.browser });
         } catch (e2) {
@@ -426,7 +443,7 @@ async function main() {
         let sess = wsess[w] || null;
         try {
           if (!sess) {
-            if (!browsers[w] || !browsers[w].browser.isConnected()) browsers[w] = await openBrowser({ gpu });
+            if (!browsers[w] || !browsers[w].browser.isConnected()) browsers[w] = await openBrowser({ gpu, ownSignals: true });
             sess = await openStage(browsers[w].browser, openOpts);
             sessions.push(sess);
             wsess[w] = sess;
@@ -439,7 +456,7 @@ async function main() {
           for (let k = warm; k >= 1; k--) await sess.seek((s - k) / fps);
           const pending = [];
           for (let i = s; i < e; i++) {
-            if (interrupted) return;
+            if (interrupted) { await Promise.allSettled(pending); return; }   // no write may outlive the frames folder
             const f = framePath(i);
             if (attempt > 0 && fs.existsSync(f) && fs.statSync(f).size > 8) continue;
             const t1 = performance.now();
@@ -474,7 +491,7 @@ async function main() {
     };
     // extra browsers start while worker 0 already captures
     const jobs = perWorker.map(async (runs, w) => {
-      if (w > 0 && !browsers[w]) browsers[w] = await openBrowser({ gpu });
+      if (w > 0 && !browsers[w]) browsers[w] = await openBrowser({ gpu, ownSignals: true });
       for (const r of runs) { if (interrupted) return; await captureRange(w, r); }
     });
     await Promise.all(jobs);
@@ -485,7 +502,7 @@ async function main() {
     for (const [s, e] of plan) for (let i = s; i < e; i++) { const f = framePath(i); if (!fs.existsSync(f) || fs.statSync(f).size <= 8) missing.push(i); }
     if (missing.length) {
       addWarn(`${missing.length} frame(s) missing after capture; re-capturing`);
-      const b = await openBrowser({ gpu });
+      const b = await openBrowser({ gpu, ownSignals: true });
       browsers.push(b);
       const sess = await openStage(b.browser, openOpts);
       sessions.push(sess);
@@ -704,8 +721,9 @@ async function main() {
       if (pr.video.frames && pr.video.frames !== nOut) addWarn(`output has ${pr.video.frames} frames, expected ${nOut}`);
       if (Math.abs((pr.duration || 0) - outDur) > 1.5 / fps + 0.03) addWarn(`output duration ${pr.duration}s differs from ${outDur.toFixed(3)}s`);
     }
-    if (!a['keep-frames']) fs.rmSync(framesDir, { recursive: true, force: true });
-    if (splice && !a['keep-frames']) fs.rmSync(splice.dir, { recursive: true, force: true });   // copies of the old render's stream
+    dropFrames();                                    // the frames, and a splice's copies of the old render's stream
+    const freed = a['keep-work'] ? 0 : tidyWork(workDir, audioDir);
+    if (freed) logLine(`work folder: removed ${fmtBytes(freed)} of intermediates (silent video, WAV stems); --keep-work keeps them`);
     const creditLines = collectCredits(audio, proj.dir, jobFolder || enclosingJob(outFile));
     if (creditLines.length) {
       // lowercase credits.txt for the job's main video, <stem>.credits.txt for any other name (final-2.mp4, launch.mp4)
@@ -835,11 +853,40 @@ async function main() {
     logLine(`render failed: ${e && e.stack ? e.stack : e}`);
     if (e && e.stderr) logLine(`stderr:\n${String(e.stderr).split('\n').slice(-80).join('\n')}`);
     await cleanup();
+    dropFrames();                                    // the log and diagnostics/ say what went wrong
     if (e && typeof e === 'object') e.message = `${e.message}\n  log: ${logFile}`;
     throw e;
   } finally {
     setLogFile(null);
   }
+}
+
+/**
+ * A finished render's work folder, tidied: the silent video copy (video.<ext>, about the size of the final), a
+ * leftover mux file and the WAV stems in audio/ (score, mix, combined, master) go. What later commands read
+ * stays: render.json, logs/, diagnostics/, and in audio/ master.m4a, mix.json, mix.report.json (review-pack,
+ * qa's credits check) and the 16 kHz narration stem *.voice.wav (`showtime transcribe` prefers it to the
+ * final mix). Only these names are touched: in a new job folder the work folder is <job>/work, shared with
+ * qa, snap and check. Returns the bytes removed.
+ */
+function tidyWork(workDir, audioDir) {
+  let freed = 0;
+  const drop = (f) => {
+    try {
+      const st = fs.lstatSync(f);
+      if (!st.isFile()) return;
+      fs.rmSync(f, { force: true });
+      freed += st.size;
+    } catch { /* gone already */ }
+  };
+  for (const ext of ['.mp4', '.mov', '.webm']) { drop(path.join(workDir, `video${ext}`)); drop(path.join(workDir, `mux${ext}`)); }
+  let names = [];
+  try { names = fs.readdirSync(audioDir); } catch { /* no audio */ }
+  for (const n of names) {
+    if (/\.wav$/i.test(n) && !/\.voice\.wav$/i.test(n)) drop(path.join(audioDir, n));
+    else if (/^aac-try\d+\.m4a$/.test(n)) drop(path.join(audioDir, n));
+  }
+  return freed;
 }
 
 /** "12", "2.5": a time in a span file name. */

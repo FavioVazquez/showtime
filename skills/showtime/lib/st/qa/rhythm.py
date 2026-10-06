@@ -18,6 +18,9 @@ on a quiet bed with swells; a film with 17 layouts in 56 s and a flat bed reads 
                 change whether it was a hard cut or continuous (a camera move, a match, a dissolve)
   music         loudness every 0.5 s (dB), its dynamics (10th-90th percentile), and for each scene
                 change whether the music moves there too (an onset or a rise within 0.25 s)
+  flashes       general flashes (photosensitivity, WCAG 2.3.1 style): a frame-to-frame change in linear
+                luminance of 0.1 or more, over FLASH_AREA of the frame or more, the darker side under 0.8;
+                a pair of opposing changes is one flash; the most in any 1 s window (more than 3 is a risk)
 
 Numpy only; frames are decoded small (256x144) through the showtime ffmpeg.
 """
@@ -37,6 +40,41 @@ LAUNCH_WORDS = re.compile(r"\b(launch|promo|promotional|trailer|teaser|release v
 
 # premium launch grammar (the rules qa and the critic check; see references/workflows/launch-video.md)
 LIMITS = {"max_hard_cuts": 5, "max_scenes": 6, "min_music_range_db": 3.0, "max_still_s": 5.5}
+# general flash threshold: a quarter of the frame (the share of a 10-degree field a phone or laptop screen fills is
+# larger, so this is conservative), a 0.1 change in linear luminance, at most 3 flashes in any one second
+FLASH_AREA, FLASH_DELTA, FLASH_DARK, FLASH_MAX_PER_S = 0.25, 0.1, 0.8, 3
+
+
+def _flash_dirs(lum_prev, lum) -> int:
+    """+1 / -1 when this frame is a general flash transition up / down (FLASH_* above), else 0."""
+    import numpy as np
+    d = lum - lum_prev
+    dark = np.minimum(lum, lum_prev) < FLASH_DARK
+    if float(((d >= FLASH_DELTA) & dark).mean()) >= FLASH_AREA:
+        return 1
+    if float(((d <= -FLASH_DELTA) & dark).mean()) >= FLASH_AREA:
+        return -1
+    return 0
+
+
+def flash_rate(dirs: Sequence[int], fps: float) -> Dict[str, Any]:
+    """The most flashes in any 1 s window: transitions in one direction in a row count once, a pair of opposing
+    ones is a flash. dirs: one value per frame (+1, -1, 0)."""
+    ev = [(i, d) for i, d in enumerate(dirs) if d]
+    win = max(1, int(round(fps or 30)))
+    best, at = 0, None
+    for k, (i0, _) in enumerate(ev):
+        seq = []
+        for i, d in ev[k:]:
+            if i - i0 >= win:
+                break
+            if not seq or seq[-1] != d:
+                seq.append(d)
+        n = len(seq) // 2
+        if n > best:
+            best, at = n, i0
+    return {"max_per_s": best, "at": round(at / fps, 3) if at is not None and fps else None,
+            "transitions": len(ev)}
 
 
 def _frames(video: Path, max_seconds: Optional[float]):
@@ -59,20 +97,29 @@ def _frames(video: Path, max_seconds: Optional[float]):
         p.wait()
 
 
-def picture(video: Path, fps: float, max_seconds: Optional[float] = None) -> Dict[str, Any]:
+def picture(video: Path, fps: float, max_seconds: Optional[float] = None, keep: bool = False) -> Dict[str, Any]:
+    """keep: also return the per-frame histograms and layouts ("_hists", "_sigs") for st.qa.reel."""
     import numpy as np
     mads: List[float] = []
+    kept: List[Any] = []
     hds: List[float] = []
     sigs: List[Any] = []
     prev_g = None
     prev_h = None
+    prev_l = None
+    dirs: List[int] = []
     for fr in _frames(video, max_seconds):
         g = fr.astype(np.float32) @ np.array([0.299, 0.587, 0.114], np.float32)
+        lum = np.power(g / 255.0, 2.2)          # linear luminance, near enough for a flash count
+        dirs.append(_flash_dirs(prev_l, lum) if prev_l is not None else 0)
+        prev_l = lum
         sigs.append(g.reshape(18, H_ // 18, 32, W_ // 32).mean(axis=(1, 3)).ravel())
         q = (fr // 64).astype(np.int32)
         idx = q[..., 0] * 16 + q[..., 1] * 4 + q[..., 2]
         hist = np.bincount(idx.ravel(), minlength=64).astype(np.float64)
         hist /= hist.sum() or 1.0
+        if keep:
+            kept.append(hist)
         if prev_g is None:
             mads.append(0.0)
             hds.append(0.0)
@@ -111,13 +158,14 @@ def picture(video: Path, fps: float, max_seconds: Optional[float] = None) -> Dic
         else:
             r = 0
     layouts = _layouts(np.asarray(sigs), mad, cuts, fps)
-    return {"frames": n, "hard_cuts": cut_t, "layout_changes": layouts, "n_layouts": len(layouts) + 1 if n else 0,
+    extra = {"_hists": np.asarray(kept), "_sigs": np.asarray(sigs)} if keep else {}
+    return {**extra, "frames": n, "hard_cuts": cut_t, "layout_changes": layouts, "n_layouts": len(layouts) + 1 if n else 0,
             "moving_fraction": round(float((mad >= 0.35).mean()), 3) if n else 0.0, "n_hard_cuts": len(cut_t), "cuts_per_s": round(len(cut_t) / dur, 3) if dur else 0,
             "shots": shots, "shot_mean_s": round(float(np.mean(shots)), 2) if shots else None,
             "shot_median_s": round(float(np.median(shots)), 2) if shots else None,
             "still_fraction": round(float(still.mean()), 3) if n else 0.0,
             "longest_still_s": round(best / fps, 2) if fps else 0.0, "longest_still_at": round(longest_at, 2),
-            "_mad": mad}
+            "flashes": flash_rate(dirs, fps), "_mad": mad}
 
 
 def _corr(a, b) -> float:
@@ -209,14 +257,19 @@ def _rise(db: Sequence[float], t: float, hop: float = 0.5) -> float:
 
 
 def measure(video: Path, dur: float, fps: float, scenes: Optional[List[float]] = None,
-            max_seconds: Optional[float] = None) -> Dict[str, Any]:
-    """The rhythm report. `scenes` = the project's scene start times (0 first), when known."""
-    pic = picture(video, fps, max_seconds)
+            max_seconds: Optional[float] = None, showreel: bool = False) -> Dict[str, Any]:
+    """The rhythm report. `scenes` = the project's scene start times (0 first), when known. showreel: add the
+    showreel measures (st.qa.reel: shots, the end card's hold, repeats, energy dips) as rep["reel"]."""
+    pic = picture(video, fps, max_seconds, keep=showreel)
     mad = pic.pop("_mad")
+    hists, sigs = pic.pop("_hists", None), pic.pop("_sigs", None)
     mus = music(video, dur)
     rep: Dict[str, Any] = {"picture": pic, "music": {k: v for k, v in (mus or {}).items() if k != "onsets"} if mus else None}
     from .motion import dead_stops
     rep["dead_stops"] = dead_stops(mad, fps, pic["hard_cuts"])
+    if showreel and hists is not None and len(hists):
+        from . import reel
+        rep["reel"] = reel.analyze(hists, sigs, mad, fps)
     if scenes:
         changes = []
         for s in scenes[1:]:
@@ -253,6 +306,9 @@ def summary(r: Dict[str, Any]) -> str:
     if p.get("shot_median_s") is not None:
         parts.append("median shot %.1fs" % p["shot_median_s"])
     parts.append("longest still %.1fs" % p.get("longest_still_s", 0))
+    if r.get("reel"):
+        from . import reel
+        parts.append("showreel: " + reel.summary(r["reel"]))
     m = r.get("music")
     if m:
         parts.append("music dynamics %.1f dB" % m.get("range_db", 0))

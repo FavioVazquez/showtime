@@ -17,11 +17,13 @@ The quality floor (quality mode; lean only warns):
     one per video, `WOULD I POST X: ...`), judged on the video alone, never against another version. A
     "no" (for a pairwise round: either critic's "no" for the winning version) holds delivery like "not
     ready", even when the pairwise preferred the new version; a missing line keeps the round pending.
-  * caption should-fixes cannot ship silently. A SHOULD-FIX (or BLOCKER) line that names captions or
-    subtitles stays open until a later text says what happened to it: a line that also names captions
-    and says `fixed` or `won't fix: <reason>`, in a later round's FINDINGS.md or in the maker's
-    review/round-N/RESPONSE.md (N = the round that raised it, or any later one). Plain word matching,
-    nothing smarter: name the captions in the answer.
+
+Open findings: st.job.findings.collect alone decides which findings count (every Blocker and Should-fix of a
+single round; in a pairwise round only those about the version that came out best) and which are closed (`fixed
+<id>` or `waived <id>: <reason>`, `showtime review-respond`). In quality mode an open one keeps the review pending
+("findings open") after the rounds are done; lean warns; `job note --stage deliver` refuses in both, so qa,
+status, SHOWTIME.md and the delivery gate agree. The 0.3.x caption rule (a word-matched `fixed` / `won't fix:`
+line naming the captions) is gone: a caption finding is a finding like any other, closed by its id.
 """
 from __future__ import annotations
 
@@ -31,16 +33,13 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from .. import review_mode
+from . import findings as gate_findings
 
 MAX_ROUNDS = 3             # the critic protocol's cap (st.qa.review.MAX_ROUNDS)
 KEYS = ".pairwise-keys"    # st.qa.pairwise.KEYS
 _VERDICT = re.compile(r"^\W*VERDICT\W*:?\s*(.*)$", re.I)
 # the absolute verdict: "WOULD I POST THIS: no -- the captions look cheap" (pairwise: "WOULD I POST X: yes -- ...")
 _POST = re.compile(r"^\W*WOULD\s+I\s+POST(?:\s+THIS)?\s*(?:\[?\s*([XY])\s*\]?)?\s*[:=]?\s*(.*)$", re.I)
-_CAPTION = re.compile(r"\b(captions?|subtitles?|subs)\b", re.I)
-_FIXED = re.compile(r"(?<!not )(?<!n't )\bfixed\b|\bwon'?t\s+fix\s*:\s*\S|\bwill\s+not\s+fix\s*:\s*\S", re.I)
-_SECTION = re.compile(r"^\W*(BLOCKERS?|SHOULD[- ]FIX|POLISH|WHAT WORKS|DECLINED TO JUDGE|BEST POSTER FRAME|VERDICT|"
-                      r"PREFERENCE|WOULD I POST|PREVIOUS)\b", re.I)
 
 
 def _read(p: Path) -> Any:
@@ -86,58 +85,6 @@ def parse_would_post(text: str) -> Dict[str, Tuple[str, str]]:
         answer = "yes" if v.startswith("yes") else "no"
         reason = head[1].strip() if len(head) > 1 else re.sub(r"^(yes|no)\W*", "", head[0].strip(), flags=re.I)
         out[(m.group(1) or "").upper()] = (answer, reason)
-    return out
-
-
-def caption_should_fixes(text: str) -> List[str]:
-    """SHOULD-FIX and BLOCKER bullets of one FINDINGS.md that name captions or subtitles."""
-    out: List[str] = []
-    sev = ""
-    for raw in text.splitlines():
-        line = raw.strip().strip("`")
-        h = _SECTION.match(line)
-        if h:
-            sev = h.group(1).upper()
-            continue
-        b = re.match(r"(?:[-*]|\d+[.)])\s*(.*)", line)
-        if b and sev.startswith(("SHOULD", "BLOCKER")) and _CAPTION.search(b.group(1)):
-            body = b.group(1).strip()
-            if body.strip(".() ").lower() not in ("none", "n/a", "..."):
-                out.append(body)
-    return out
-
-
-def resolves_captions(text: str) -> bool:
-    """A line that names captions/subtitles and says `fixed` or `won't fix: <reason>`."""
-    return any(_CAPTION.search(ln) and _FIXED.search(ln) for ln in text.splitlines())
-
-
-def _read_text(f: Path) -> str:
-    try:
-        return f.read_text(encoding="utf-8", errors="replace")[:40000] if f.is_file() else ""
-    except OSError:
-        return ""
-
-
-def _findings_texts(d: Path) -> List[str]:
-    return [t for t in (_read_text(d / "FINDINGS.md"), _read_text(d / "order-1" / "FINDINGS.md"),
-                        _read_text(d / "order-2" / "FINDINGS.md")) if t]
-
-
-def open_caption_fixes(job: Path, rs: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
-    """Caption should-fixes that no later text resolved: [{round, text}] (see the module docstring)."""
-    rs = rounds(job) if rs is None else rs
-    out: List[Dict[str, Any]] = []
-    for i, r in enumerate(rs):
-        d = Path(r["dir"])
-        raised = [c for t in _findings_texts(d) for c in caption_should_fixes(t)]
-        if not raised:
-            continue
-        later = [_read_text(d / "RESPONSE.md")]
-        for r2 in rs[i + 1:]:
-            later += _findings_texts(Path(r2["dir"])) + [_read_text(Path(r2["dir"]) / "RESPONSE.md")]
-        if not any(resolves_captions(t) for t in later if t):
-            out += [{"round": r["round"], "text": c} for c in raised]
     return out
 
 
@@ -230,7 +177,8 @@ def state(job: Path, data: Optional[Dict[str, Any]] = None, video: Optional[Path
     """The job's review state: {mode, mode_source, required, status, pending, message, next, rounds}.
 
     status: 'lean' (not required), 'no final' (nothing finished yet), 'pending', 'waiting' (a pack waits for
-    its critic or for review-verdict), 'not ready' (the last round said so; fix and pair again), 'done',
+    its critic or for review-verdict), 'not ready' (the last round said so; fix and pair again), 'would not
+    post', 'findings open' (a Blocker or Should-fix is neither fixed nor waived), 'done',
     'cap' (three rounds used)."""
     from . import ledger
     if data is None:
@@ -248,14 +196,18 @@ def state(job: Path, data: Optional[Dict[str, Any]] = None, video: Optional[Path
         video, kind = ledger.latest_video(job, data)
         if kind != "final":
             video = None
-    caps = open_caption_fixes(job, rs)
-    if caps:
-        res["caption_fixes_open"] = caps
+    try:
+        g = gate_findings.collect(job)
+    except Exception:  # noqa: BLE001 - an unreadable review folder never breaks qa, status or deliver
+        g = {"applies": False, "findings": [], "open": [], "fixed": [], "waived": [], "unknown": []}
+    if g["applies"]:
+        res["findings"] = {"open": [f["id"] for f in g["open"]], "fixed": [f["id"] for f in g["fixed"]],
+                           "waived": [f["id"] for f in g["waived"]]}
     if mode == "lean":
         res["status"] = "lean"
         res["message"] = "lean mode: no critic round required (review-pack + critic when publish-bound or asked)"
-        if caps:
-            res["warn"] = _caption_message(caps)
+        if g["open"]:
+            res["warn"] = "%s -> %s" % (gate_findings.summary(g), gate_findings.how_to(jn, [f["id"] for f in g["open"]]))
         return res
     if video is None:
         res["status"] = "no final"
@@ -335,12 +287,12 @@ def state(job: Path, data: Optional[Dict[str, Any]] = None, video: Optional[Path
                        else "fix what the critic named in %s, re-render, then showtime review-pack %s --against best"
                        % (lr["dir"], jn))
         return res
-    if caps:
-        res.update(status="caption fix open", pending=True)
-        res["message"] = "review pending: " + _caption_message(caps)
-        res["next"] = ("fix it, re-render and pair again (the critic answers `fixed: <the caption finding>`), or write "
-                       "`won't fix: <reason>` about the captions in %s"
-                       % (job / "review" / ("round-%d" % caps[-1]["round"]) / "RESPONSE.md"))
+    if g["open"]:
+        res.update(status="findings open", pending=True)
+        res["message"] = "review pending: %s%s" % (
+            gate_findings.summary(g), "; the critic rounds are used up, so show the user the open blockers" if cap and any(
+                f["severity"] == "blocker" for f in g["open"]) else "")
+        res["next"] = gate_findings.how_to(jn, [f["id"] for f in g["open"]])
         return res
     if cap:
         return res
@@ -353,15 +305,9 @@ def state(job: Path, data: Optional[Dict[str, Any]] = None, video: Optional[Path
     return res
 
 
-def _caption_message(caps: List[Dict[str, Any]]) -> str:
-    c = caps[0]
-    return ("a caption should-fix from round-%d is unresolved%s: %s (no later `fixed` or `won't fix: <reason>` naming "
-            "the captions)" % (c["round"], " (+%d more)" % (len(caps) - 1) if len(caps) > 1 else "", c["text"][:140]))
-
-
 def pending_line(st: Dict[str, Any]) -> Optional[str]:
-    """The one WARN line for qa / deliver / job note, or None when nothing is pending (lean mode: a caption
-    should-fix left open still warns)."""
+    """The one WARN line for qa / deliver / job note, or None when nothing is pending (lean mode: an open
+    finding still warns)."""
     if not st.get("pending"):
         return ("WARN  %s" % st["warn"]) if st.get("warn") else None
     return "WARN  %s -> %s" % (st["message"], st["next"]) if st.get("next") else "WARN  %s" % st["message"]

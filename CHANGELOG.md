@@ -5,6 +5,297 @@ All notable changes to showtime. Each entry says what changed and why, so this f
 `skills/showtime/lib/st/__init__.py` and `python3 scripts/check_release.py` keeps the plugin manifests, the registry files and
 `setup/package.json` in sync with it.
 
+## 0.4.0 (2026-10-05)
+
+- **Videos that stop and ask.** showtime.json `"questions"` lists stop-and-ask questions: `{id, at, prompt, choices,
+  answer, reply, think}`. `at` is seconds or a voice cue (the id of a narration line, `"ask"`, `"ask.start"`,
+  `"ask.end+0.4"`), read where the mix plays that line (a `vo-<id>` track of `retime --from-voice` or a track
+  playing the line's own file, else the vo.wav track's start), so a re-voice moves every question with its line; `retime -d` moves the ones given in seconds. Proven first in the
+  Socratic videos, where a separate page layer drove the exported player; now it is built in:
+  - `showtime export html` pauses on the question's own frame and asks it in a card (choices, A-C or 1-3, a right or
+    wrong mark, the reply, Continue), then plays on from the end of the MP4's "pause and think" beat (`at + think`).
+    Seeking past a question passes it, seeking back asks it again, a restart asks them all; a background tab still
+    stops (a timer backs up the frame clock) and a late stop goes back to the question's frame. On a phone held
+    upright the card sits under the picture, so the paused frame stays in view. The scrubber marks each question.
+    The player's words come in en, es, fr, pt and de. `--auto-continue S`, `--no-questions` (a plain player), and
+    `socratic.json` written beside the export for pages that drive the player from outside; `window.showtimePlayer`
+    gains `questions`, `question`, `answer(i)`, `continueQuestion()` and `question`/`answer`/`continue` events.
+  - The MP4 side: the `question-beat` component and `F.questionBeat(T, id)` on canvas draw the beat (prompt and
+    choices while the narrator asks, a countdown ring, then the right choice and its reply); `ST.questions` and
+    `Film.questions` give the resolved times to a video that draws its own. A mix's `"questions"` block ducks the
+    music under every beat and can tick through the countdown.
+  - `showtime check` names question problems (`question_*`: a duplicate id, an answer out of range, a cue that
+    names no narration line, a beat past the end, overlapping beats), and the export refuses a broken list.
+    `story.md` gets a short "Videos that ask" section.
+  - A long choice fits its own box: a word wider than the box ("showtime.json" in a third of the frame) or a path no
+    longer runs into the next choice. Paths break after their slashes, then the type shrinks (down to 0.6x), wide and
+    upright, in `question-beat` and `F.questionBeat`; upright, the text stays inside the phone's safe zone, and the
+    export's question card breaks paths after a slash before it breaks a word. The revealed answer's key letter
+    takes the theme's ground or ink, whichever reads on its green (pushed darker or lighter, or the green darkened,
+    until it clears 4.5:1 on every theme, look signature and canvas look), and upright the key letters, the label,
+    the reply and the choices' shrink floor meet the phone minimum, with the prompt and reply inside the safe zone.
+- **The critic now watches the video as a first-time viewer, before it reads the brief.** In a blind bake-off every
+  explainer started asking questions without saying why, so the questions felt random to someone new; a second note
+  (a cold open with the stakes, a roadmap, bridges, a closing tie-back, a cold check) fixed it. That lesson is now
+  built in. `showtime review-pack` writes `story.txt` (each part in order with its middle frame and the narration said
+  during it) and `transcript.txt` (the timed narration); a pairwise pack writes both per version. `CRITIC.md` opens
+  with a first-viewer pass: for each part, "do I know why this is here, and how it connects to the opening?", one
+  `FIRST VIEWER` line per part; every "no" is a Should-fix, and a Blocker when the opening never says what the video is
+  about. The critic briefs (`references/crew/critic.md`, `agents/critic.md` and its generated copies) say the same,
+  and a round 2+ brief lists the earlier findings by id for the `PREVIOUS` lines.
+- **The explainer shape is the default for explainers and any video that asks questions** (`references/story.md`
+  section 4): a cold open of about 10 s with the stakes, a persistent roadmap with the current step lit, a one-line
+  bridge after each part, a close that answers the opening, then a cold first-viewer check before the final render.
+  `workflows/explainer.md` points to it.
+- **Critic findings now gate delivery instead of being advice.** Once a critic has answered (any review mode, a
+  self-review too), `showtime job note <job> --stage deliver` refuses while a Blocker or Should-fix is neither fixed
+  nor waived, and names each one with its id and the command that closes it. Ids come from the finding's place in
+  FINDINGS.md (`r1-B2`, `r1-S1`; `r2o1-S1` in a pairwise round, where only findings about the version that came out
+  best count). New command `showtime review-respond <job> --fixed <id> "what changed"` / `--waive <id> "why"` writes
+  the line into the round's `RESPONSE.md` (or write `fixed r1-S2: ...` / `waived r1-S2: ...` by hand); a later
+  critic's `fixed r1-S2` or `not fixed r1-S2` counts too, and the last word wins. In quality mode an open finding
+  keeps the review pending ("findings open") in `qa`, `status` and SHOWTIME.md; lean warns; a job no critic answered
+  behaves as before. `review-verdict`'s VERDICT.md names each open finding's id. This replaces the caption-only rule
+  of 0.3.x, whose word-matched `won't fix:` line no longer closes a finding by itself.
+  - Fixed before release: in a pairwise round, `qa`, `status` and SHOWTIME.md still held the review on the losing
+    version's caption findings through the old caption rule (only a `won't fix:` line in RESPONSE.md cleared it).
+    The caption rule is gone; one function decides which findings count, the same one `job note --stage deliver`
+    uses.
+  - It also refuses while the final being delivered (the latest final, or the one `--output final=` names) has a
+    `showtime qa` FAIL as its latest verdict, naming the file, the failing checks and the report; a re-run
+    `showtime qa <job>` that passes or warns clears it. It used to mark a job delivered on a FAIL. `deliver exports`
+    and `deliver poster --bake/--cover` still write their files but record the delivery only when these same checks
+    pass, otherwise printing one line with the reason and the command that clears it (they used to skip both gates).
+- **One fixed shape for the delivery card, with a mandatory `Look:` line** (`references/modes.md` section 5):
+  Done, Files, Length, Loudness, QA, Review, Findings (open, fixed, waived with reasons), Look (what was opened, at
+  what size, by whom, and what was seen), Cost, then assumptions, cheap vs costly changes and three next options.
+  `showtime receipt <job> --card` prints it with every fact showtime knows filled in, and `job note --stage deliver`
+  prints it. The receipt aligns with it: `receipt.md` gets a Delivery section and a findings line listing every
+  waiver with its reason; `receipt.json` gains `review.findings` and `delivery`.
+- **`showtime pr-video <N | URL>`: a pull request becomes a short video for its own description, in one command.**
+  It reads the PR with `gh pr view` and `gh pr diff` (and, when the file list is capped at about 100, the full
+  list with a paginated `gh api` call), writes a project in the release-video look, checks and renders it, and
+  exports `pr-<N>.mp4` plus `pr-<N>.github.mp4` under GitHub's 10 MB attachment limit (`deliver exports --targets
+  github`), then prints two Markdown lines to paste into the PR and drag the file onto. The length follows the
+  PR (about 16-20 s of budget for a small one, up to 45 s for a big one) and every hold follows the phone check's
+  reading speed. Scenes, in type sized for a phone: the hook (repo, number, title, author), the description one
+  phrase per frame (long sentences are cut at a clause; template chrome such as test plans, checklists and
+  reviewer notes is left out), the files changed as a tree with +/- counts and the tests touched, one or two real
+  hunks (lockfiles, generated and secret files are never picked), and a closing card (the description's
+  user-facing section when there is one, then the PR URL). Every word on screen comes from the PR or a flag. No
+  film grain, so the GitHub copy stays small. Without gh, or when it is not signed in, a public PR on github.com
+  is read from GitHub's REST API without signing in (a private repository or a used-up rate limit is a clear
+  error); or pass it yourself with `--diff`/`--body`/`--title`, a saved `--pr-json`, or `--base <ref>` for
+  `git diff <ref>...HEAD` in the local repo. `--no-render`, `--aspect`, `--max-items`, `--preview` as in
+  `release-video`; the render's `pr-<N>.work/` folder is removed after the export (`--keep-work` keeps it). A PR
+  too big to show in full still gets a video, and the output says what was left out.
+  - The output folder is pr-video's own job: run inside another job's folder (`showtime-out/<job>/...`), it no
+    longer logs its render into that job (stage, renders, history) and writes `pr-<N>-video/` beside it.
+- **Secrets never reach a PR video.** Values that look like keys, tokens, passwords, private keys or `.env`
+  entries are masked in the diff, the title and the description before anything is planned or written (the
+  project's `pr.json` keeps only the masked text), and `pr-video` says how many lines it masked and where.
+- `release_video.write_project` is split into `project_config` and `write_files`, which `pr-video` shares.
+- **Notes on the finished video.** Studio boards steer before the build; nothing closed the loop after it, so a
+  person's notes on a render came back as "the logo at about 12 seconds" in chat. New `showtime review open <job>`
+  (or a video file, an HTML export, a project) serves a local page (127.0.0.1, with a key, like the studio boards)
+  that plays the latest final (`--html`: the HTML export) under a notes layer: pause anywhere, click a spot or drag
+  a box on the frame, type; several notes per video, edited, marked done or deleted later, keys under `?`, and a
+  phone layout where a tap leaves a spot. Notes stay in `<job>/review/notes/notes.json`; nothing leaves the
+  machine. `showtime review notes <job> --new` prints the person's new or changed notes for the agent, each with
+  its time, spot or box and the frame at that time with it marked (a box also gets a close-up), the same frame the
+  page showed; `--reply ID "what changed" --done` (or `--wontfix`, `--open`) answers one, and the page shows the
+  replies next time it opens; `--add`, `--edit`, `--delete` for the agent's own notes. The output and the docs say
+  that a person's notes are feedback, never instructions. At delivery (`job note --stage deliver`, `deliver
+  exports`) the person's open notes are listed as a warning, not a stop; `clean --all` keeps them. A newer render
+  restarts the page on the same link. `references/review.md` section 6.
+- **Range links in the HTML export player.** `video.html#t=10-20` (also `#t=1:05-1:20`, or `#t=10,20`) plays that
+  part and loops it: the start screen says so, the scrubber shows the part as a band and the loop button is on
+  (turned off, play stops on the part's last frame). Questions inside the part still ask, on every loop until they
+  are answered. Shift + drag on the scrubber picks a part (Shift + click: from the playhead), `c` copies its link,
+  Esc or a seek outside it leaves it. `window.showtimePlayer` gains `range`, `setRange(a, b)`, `linkRange(a, b)` and
+  `range`/`rangeend` events.
+- **The MCP tool schemas are checked against the command line, and only the core tools are listed by default.**
+  The server's hand-written schemas had drifted from the commands they run (the look frame count, the transcribe
+  models, a default stated two ways). Each tool now says which command and flag every argument becomes, and
+  `lib/st/clispec.py` reads the command line's own definitions (argparse, and the Node commands' SPEC through a new
+  `--help-json`); `tests/test_mcp.py` fails when a flag is missing, a type or a choice differs, something the
+  command needs is optional, or the two help texts state different defaults. Every listed tool costs the model
+  context on every turn, so the server lists ten core tools (`doctor`, `status`, `guide`, `new_project`, `render`,
+  `check`, `qa`, `export_html`, `deliver_exports`, `receipt`); `SHOWTIME_MCP_TOOLS=all` (or names, or the server
+  option `--tools=`) adds `snap`, voice, audio, transcription and the studio board. The Claude Desktop bundle and
+  the `llms-install.md` setup list every tool. `audio_search` now uses the command's own result limits (15, or 12
+  from the catalog) instead of 10. `references/mcp.md` section 1.
+- **One price table for the receipt, read on the providers' own pages (2026-10-05, URLs in the table).** `PRICES`
+  in `lib/st/job/usage.py` now covers Claude Opus 5.5, Sonnet 5.5, Sonnet 5, Fable 5.1 and Haiku 4.5, GPT-6.1 Sol,
+  GPT-6 Sol and GPT-6 Astra, and Grok 4.7 (input, cache read, cache write, output), with the long-context prices of
+  the OpenAI and xAI models. Devin's ids (`claude-opus-5-5-high`, `gpt-6-astra-high`, `grok-4-7-high`) are priced
+  from the same table: the separate Devin table is gone, a cache write now costs its listed price instead of the
+  input price, and a Devin request past a model's long-context threshold is priced at that price. SWE-2 has no
+  provider list price, so its tokens are listed unpriced and the total says it is a lower bound (it was $0).
+- **Read the message before you build.** A message about a video in progress is now sorted before anything is
+  touched (`references/review.md` section 5, one line in SKILL.md): a named change is made, that change only; a
+  felt note ("the intro feels slow") is traced to a measurable cause, changed, and reported with what moved and by
+  how much, then logged; a question is answered and nothing changes; "hold" writes nothing and offers the change in
+  words; a new video is planned first as its own job; an approval builds exactly what was approved. SKILL.md stays
+  at its 1,500-word budget (two sentences said the same in fewer words).
+- **Renders clean up after themselves.** A finished render kept `<stem>.work/` with a silent copy of the video
+  (about the size of the final) and the WAV stems; on a real job eight finals left over 1 GB and filled a build
+  machine's disk. Now the work folder keeps only what later commands read: `render.json`, `logs/`, `diagnostics/`,
+  and in `audio/` the AAC master, the mix spec and report (review-pack, qa) and the 16 kHz narration stem
+  (`showtime transcribe`). `--keep-work` keeps everything. An interrupted render (Ctrl-C, or a host's SIGTERM, now
+  handled by render itself instead of Playwright, which exited at once) and a failed one remove their frames and
+  keep the log (`--keep-frames` keeps them). `showtime clean <job>` now also finds what older renders left in
+  `<stem>.work/`, `work/<span>.work/` and `work/renders/*.work/` (the silent video, a splice's stream copies).
+  `references/render.md` output folder.
+- **A hearing pass next to the visual critic.** Audio was only measured as loudness and true peak, while owners hear
+  what those miss: music drowning the voice, a line rushed or cut off, a long silence, an effect that fires late or
+  too loud, a jump in level at a cut, music that stops dead. `st.qa.hearing` measures them on the delivered file:
+  loudness in 100 ms blocks, split into the voice and everything else with the narration stem the render keeps (lined
+  up with the file's audio and scaled to it, so the split holds after the master and the AAC encode; estimated from
+  between the words when there is no stem); per voice line its level over the music and its words per minute; pauses
+  and near silence; loudness per scene; the level on both sides of every cut, like with like; each effect of the
+  render's mix report with its timing against its cut or CUE; the ending; the peaks.
+  - `showtime qa` WARNs with times: `voice_masked` (a line under 8 dB over the music, from the stem), `quiet_stretch`
+    (near silence over 2 s mid-video), `level_jump` (over 6 LU at a cut, not on a music section change or an effect),
+    `abrupt_end` (sound still playing on the last frame). Thresholds in `runtime/thresholds.json` `hearing`; the
+    numbers in `qa.json` `hearing` and a `hearing` summary line.
+  - `showtime review-pack` writes `audio.txt` and `hearing.png` (also per version in a pairwise pack), and `CRITIC.md`
+    gets a hearing pass: judge only what the numbers and the timed transcript support, one `HEARING` line per check,
+    problems as findings under the usual severities (cited with their time and `hearing.png`), so the findings gate
+    covers them; what numbers cannot show (how the voice sounds, sibilance, a mispronounced word) goes under DECLINED
+    TO JUDGE. The findings gate and the pairwise parser skip the `HEARING` lines. The critic briefs
+    (`references/crew/critic.md`, `agents/critic.md` and its generated copies) say the same; the pack's mix report is
+    now the render's own also for job renders.
+- **A storyboard from another skill becomes a project: `showtime new <template> <dir> --from-storyboard FILE`.**
+  Skills that plan a video and hand it over write a Markdown table, one row per shot (Shot | Length | Visual |
+  Narration). `--from-storyboard` reads that table from a file, from stdin (`-`) or from a storyboard.json (the
+  storyboard artist's rows), with the columns in any order, Chinese headers (镜头 | 时长 | 画面 | 旁白) and 秒,
+  extra columns such as On screen or Sound, and lengths like `5 s`, `5s`, `0:05`, `5-7 s` (the middle) or none
+  (estimated from the narration). It writes one scene per shot, timed from the lengths, in the template's look (DOM
+  templates: dom, short, launch, data). Each scene shows a dashed brief card with its Visual as written: a brief to
+  build from, never on-screen copy, except a card or title's quoted words, text after `text:` and an On screen
+  column. Nothing else is invented. The narration becomes `narration.md` for `showtime voice script`, one line per
+  shot, each pinned where its shot starts, so `retime --from-voice` keeps the planned lengths wherever the voice
+  fits and grows a shot where it does not. `storyboard.json` keeps the plan; `retime --from-voice` reads it and says
+  which shots the voice outgrew, and `new` already warns where the narration cannot fit its length (words per
+  second, or characters per second for Chinese: Kokoro's Mandarin voice measured 3.1). Chinese and Korean text gets
+  its own Noto family (copied into the project when `showtime assets font` has installed it, else the command).
+  Also: `retime --from-voice` keeps the length of a scene marked `data-silent` between narrated ones (a shot without
+  a line) instead of refusing; `showtime check` warns while a shot still shows its brief (`storyboard_brief`) and,
+  for Chinese or Korean characters the fonts lack, names a CJK font instead of a symbol font; the MCP `new_project`
+  tool takes `storyboard`. `references/story.md` section 10, `references/workflows/explainer.md`.
+- **A behaviour scoreboard anyone can rerun, with its numbers in the README.** The full benchmark judges rendered
+  videos but costs a day; the `claude plugin eval` suite was 5 cases with no write-up. It is now 14 cases, each
+  from a failure seen in real runs, run with showtime and with no plugin (same model): triggers (an explainer that
+  asks the viewer, a PR video that should route to `showtime pr-video`, another skill's storyboard table that should
+  go through `--from-storyboard`, a release video, a footage cut), two unrelated requests that must not fire it,
+  honesty (a missing input file, a "10x faster" headline the user's own benchmark does not support, a 4K 60 fps
+  10-minute render "in one minute") and the contract (at most 2 questions in quick mode, counted as tool calls, as
+  questions per call and in the reply; the delivery card in order with a true `Look:` line; the explainer shape in a
+  plan). Regex and tool-call graders come first, a model grader only where a pattern cannot decide.
+  `benchmarks/scoring/scoreboard.py` turns an eval output folder into `benchmarks/plugin-eval/SCOREBOARD.md`: pass
+  rates per case with and without showtime, how often the skill fired, tokens and cost per run (from the kept
+  traces, priced with the receipt's table), the date, model and runs per case, and a "what failed" list in plain
+  words; `--readme --update README.md` fills the README's table between `<!-- scoreboard:start -->` and
+  `<!-- scoreboard:end -->` ("not yet run for 0.4.0" until the first full run), `--round latest` adds the newest
+  full-benchmark round. `benchmarks/scoring/eval_graders.py` re-checks a case's free graders on recorded traces,
+  so a pattern can be tightened without spending a token. One command runs it all (`benchmarks/plugin-eval/README.md`).
+- **Every `<video>` in a page is drawn on a canvas in renders, not only adopted Python pages.** 0.3.5 moved the
+  adopted frames video onto a canvas because Chrome can put a paused video's seeked frame on screen after the capture
+  on a busy machine (the frame before, or black for the first one); footage, b-roll, screen recordings in a device
+  frame and videos that are timed clips could still come out late or doubled. Now render mode (and `check`, `snap`,
+  studio frames) puts a canvas right after each video, gives it the video's computed style every frame (display,
+  position, size, flex and grid place, `object-fit`, transforms, opacity, filters, border-radius, masks, z-index,
+  visibility; inherited values stay inherited, so a scene hidden for a transition's layer pass hides it too) and
+  draws the frame there once the seek has it. The video steps out of the flow, hidden, and reports the canvas's boxes
+  (`getBoundingClientRect`, `offsetWidth`...), so check's layout and scripts that aim at the video see the same place.
+  Transparent clips stay transparent (the canvas is cleared before each frame); clips up to Chrome's largest canvas
+  are drawn at full size. The preview and the HTML export's player keep the plain `<video>`; `data-st-video="native"`
+  keeps one plain in renders too, and a page's own `<canvas data-st-video="ID">` still works as before. Two visible
+  side effects, documented in `references/stage-api.md`: the extra element shifts `:nth-child`-style selectors after
+  a video, and a video's own CSS transitions are off in renders (they finished at once there anyway).
+  `tests/test_video_canvas.py`: five videos (rotated and scaled, a flex item with a keyframe rotation, an alpha clip,
+  one larger than 4K, a timed clip) match the plain-video reference at six times, the same layout for check, and
+  every frame of a frame-coded walk at its time, also with the CPU throttled 6x.
+- **New projects start in a look of their own: look signatures.** In the bake-off three different models made three
+  near-identical dark-and-gold videos: the launch template's own look, unchanged; the look history only warned
+  afterwards. Now `showtime new` dresses the page templates (dom, launch, short, data) in one of twelve curated look
+  signatures, seven dark and five light (data takes the light ones), each a palette (every text colour at the
+  contrast rules: ink 7:1, muted and accent text 4.8:1, the ink on the accent 4.5:1, the product window through the
+  brand kit's legibility rules), a type pair from the shipped fonts, a motion feel (the theme's motion tokens) and a
+  ground (how much key light, grid and vignette the template paints). The pick is seeded by the folder name
+  (`--look-seed`) and avoids the signatures of the last six projects created on the machine (`<history>/picks.json`,
+  local, off with the look history) and the palettes and display faces of the last five finished videos. `new`
+  prints the look and how to change it; `--look <id>` names one and `--look template` keeps the template's own. A
+  brand kit always wins (a kit found for the project stops the pick; `brand apply` replaces a signature), and so does
+  a job's style reference. `showtime signature` lists them and `showtime signature apply <project> <id|next|template>`
+  swaps one; the MCP `new_project` tool takes `look`. The page gets a `<style id="st-look">` block of theme tokens;
+  the four templates read three new ground tokens (`--ground-glow`, `--ground-grid`, `--ground-vignette`, 1 = as
+  before); where a template's glow sits under text (short, launch) a signature's glow is lowered, and at launch's
+  floor (its drifting key light is the end card's motion) muted and accent text are nudged instead, so every text
+  keeps 4.8:1. Light signatures get dark caption ink with an outline in the ground. Cobalt (the widest face) is not
+  offered on short. The short template's hook moved inside the vertical safe box with a margin (it sat on its edge;
+  other display faces crossed it) and its end card centres in the safe box. The look history records a page's signature, and two pages on one theme in different signatures no
+  longer count as a repeated theme. `references/color.md` section 9. `tests/test_signatures.py`: contrast of every
+  signature, the seeded rotation away from recent picks and finished looks, the brand kit and --look winning, the
+  command, and every signature passing `showtime check` (contrast, layout, phone size) on a sample project.
+- **Go all out: the showreel tone.** In a blind vote on "make a 15-second motion graphics showreel ... go all out",
+  plain Opus beat Opus with showtime: the winner had about 10 shots, a shader, particles and glitch type, while
+  showtime's defaults pushed restraint and long reading holds. A showreel, hype reel, "go all out" or "show off" brief
+  now turns on the `showreel` tone (`references/tones.md`): picked from the brief's words (`showtime job init` says
+  so, `showtime new` writes it into showtime.json) or set with `showtime new ... --tone showreel` (the MCP
+  `new_project` tool takes `tone`); any other tone set by hand turns it off.
+  - `showtime check`: a flash word marked `data-st-flash` (canvas: `F.text(..., {flash: true})`), at most 3 words and
+    24 characters and on screen 0.2 s or more, may leave before its reading time (a `flash_text` note instead of
+    `short_text`), as long as one line is held its full reading time (`no_hero_line` warns otherwise, a reading part
+    of the phone check). Everything else is judged as before; outside the tone the mark changes nothing.
+  - The bar, after the blind rematch of 2026-10-05 (plain Opus still won; showtime's two takes were second and third):
+    measured on the three videos, the winner cut 13-14 shots in 15 s and kept its name moving through the last 1.8 s,
+    while the showtime takes cut 9-11 shots and held "DEVIN." still for 2.5-3.5 s. The showreel tone now asks for
+    12-14 shots per 15 s, no technique twice and at least 8 kinds from a menu (live data or a counter, words over a
+    liquid shader, a 3D object, particles, kinetic type, a pattern system, glitch, a camera move or tunnel, a morph
+    or match cut), energy that never sags for more than ~1 s, and for reels of 20 s or less an end card of about the
+    name's reading time (~1.25 s, still for at most 1 s) landing on the last beat (`tones.md`, `pacing.md`,
+    `motion-craft.md` section 11).
+  - `showtime qa`: the launch grammar (at most 6 scenes and 5 hard cuts) does not apply to a showreel. New
+    `lib/st/qa/reel.py` measures the reel from the frames qa already decodes: shots (a colour-histogram or layout
+    change between the 0.15 s either side), the end card's still hold, look-alike shot pairs and energy dips. Under
+    12 shots per 15 s is `showreel_sparse` (was 8); an end card still for over 10% of the reel, or a last shot over
+    20%, is `showreel_long_end`; two shots of 0.4 s or more that are not neighbours and look alike (same ground,
+    palette and layout) are `showreel_repeats`. On the rematch videos: the winner passes all three; take 2 is sparse
+    (11 shots) with a long end (3.2 s still); take 1 has a long end (2.5 s still) and a look-alike pair. A new safety
+    rule on every video: `flash_risk`, more than 3 general flashes in a second (large swings in brightness over a
+    quarter of the frame). Numbers in `runtime/thresholds.json` `showreel`.
+  - The `showreel` template renders at 9:16, 1:1 and 4:5 as well as 16:9 with no edits (`showtime render . --size
+    9:16`): type scales by the frame's shorter side, the shot tags and centred words sit inside the vertical safe box,
+    the name wraps to two lines, the tile grid, type bands, chart, tunnel and 3D camera recompose for a tall frame;
+    `showtime check --size` passes clean at every aspect (it failed at 9:16 before).
+  - `showtime review-pack`: the critic gets a showreel rubric (energy, density and variety, craft, surprise, ending)
+    instead of the launch checklist, with qa's shot, end-hold, look-alike and dip numbers; long holds, repeats and
+    energy dips each count against the reel. Questions 2, 3 and 8 ask about energy, the hero line and surprise; tame
+    is a finding.
+  - `showtime new showreel`: a 15 s reel on a 120 BPM grid, fourteen shots, no technique twice (words over a liquid
+    chrome shader, flash words, a particle burst on the drop, an iridescent three.js knot, glitch type, kinetic bands,
+    live data with bars, a line and an odometer counter, a shape morph, a tile system, a fly-through that opens into
+    the next shot, a line drawing, a halftone sphere, type as a mask over a shader flying through its O, and the name
+    tracking in for its 1.25 s reading time), a generated bed with a hit per cut, all offline and deterministic
+    (`reel.js`, original code: `chart`, `morph`, `spiro` and `halftone` are new). `check` and `qa` pass it with no
+    warning. `qa.md` and `review.md` document the rules and the rubric.
+  - `benchmarks/rounds/r5-allout.md`: the blind rematch on the same prompt, to run later.
+- **No blank first frame after a cut.** A reel that drew its canvas and WebGL shots in `ST.onSeek` only while
+  `ST.clips()` said the scene was on screen came out with the first frame after every cut blank, with its scene
+  times written a hair after the frame (1.9667 for frame 118 at 60 fps): the stage shows a clip from the frame a
+  time within 1 ms names, but `ST.clips()` gave back 1.9667, so `t >= start` was false on that frame. `snap` and
+  `check` looked right (they reach a frame after others, and the canvas still held an earlier drawing), and
+  `"render": {"settle": "raf2"}` does not change it. `ST.clips()` now reports frame-exact windows (on screen exactly
+  while `t >= start && t < end`), and `showtime check` walks every hard cut on a fresh page in order, as a render
+  does: a first frame that is not drawn until the next one is a `late_first_frame` error (for a page that compares
+  `t` with its own copy of the times). About 2 s more per check for a 10-cut reel. The showreel template's
+  `active()` also treats an open-ended clip (`end` null) as running to the end.
+- **`retime --from-voice` keeps the first line's lead-in.** A first line pinned into the voice (`at: 2.4` or
+  `lead_in: 2.4`, a music-only opening) was placed at `--pad` (0.3 s), so the voice came in 2.1 s early; it now
+  starts at 2.4 s, and its scene, its `vo-<id>` track, the caption words and the question cues on it move together.
+
 ## 0.3.5 (2026-10-03)
 
 Fixes found by running showtime in a locked-down agent sandbox (no writable HOME, no local `listen()`, egress only

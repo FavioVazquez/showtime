@@ -26,18 +26,21 @@ Treat color like typography. Fewer choices, each doing one job, applied the same
   video; never read a `.cube` file into context (§7)
 - Checks: every hex in the token block, contrast on real pixels mid-transition too, no banding at 200 %, brand
   colors within about 2 levels in the MP4 (§8)
+- No brand: `showtime new` dresses dom, launch, short and data in a look signature picked away from this machine's
+  recent looks; `--look <id|template>` or `showtime signature apply <project> <id|next|template>` changes it (§9)
 
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| 1. Palette roles | 42-57 |
-| 2. Palettes from the brand | 59-80 |
-| 3. Contrast and color vision | 82-89 |
-| 4. What video compression does to color | 91-104 |
-| 5. UI and motion graphics: don't grade | 106-111 |
-| 6. Grading real footage | 113-131 |
-| 7. LUTs | 133-143 |
-| 8. Checks | 145-151 |
+| 1. Palette roles | 45-60 |
+| 2. Palettes from the brand | 62-83 |
+| 3. Contrast and color vision | 85-92 |
+| 4. What video compression does to color | 94-107 |
+| 5. UI and motion graphics: don't grade | 109-114 |
+| 6. Grading real footage | 116-134 |
+| 7. LUTs | 136-146 |
+| 8. Checks | 148-154 |
+| 9. Look signatures | 156-172 |
 
 ## 1. Palette roles
 
@@ -149,3 +152,22 @@ cinematic LUT on the product. "Keep the brand colors exact" means change framing
 - Contrast passes on real pixels at every text moment, including mid-transition frames.
 - No visible banding in the darkest gradient at the final encode. Look at a still frame zoomed to 200%.
 - Brand colors in the final MP4 are within about 2 levels of the source values (sample a flat brand-color area).
+
+## 9. Look signatures
+
+With no brand kit and no style reference, `showtime new` on a page template (dom, launch, short, data) starts
+the project in a look signature: a palette (every text color at the contrast of §3), a type pair, a motion
+feel and a ground (key light, grid, vignette), written into the page as a `<style id="st-look">` block of
+theme tokens. The pick is seeded by the folder name (`--look-seed`) and avoids the signatures of the last six
+projects created on this machine and the palettes and display faces of the last five finished videos
+(`showtime history`), so models working side by side do not all land on one dark-and-gold look. `showtime
+signature` lists the twelve (seven dark, five light; data takes the light ones; film, tutorial and series keep
+their own looks).
+
+- The brand kit always wins: a kit found for the project stops the pick, and `showtime brand apply` replaces a
+  signature. A job's style reference wins too. `--look <id>` names one; `--look template` keeps the template's.
+- Say which look the project got, and change it if the subject asks for another polarity (§2):
+  `showtime signature apply <project> <id>` (or `next`). Edit the block's tokens to adjust one; keep §3.
+- Templates read three ground tokens, multipliers on what they paint: `--ground-glow`, `--ground-grid`,
+  `--ground-vignette` (1 = the template's own ground).
+

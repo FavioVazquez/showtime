@@ -171,6 +171,7 @@ def server_tools(entry: Path) -> List[Dict[str, str]]:
         {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
     ]
     env = {k: v for k, v in os.environ.items() if not k.startswith(("SHOWTIME_OPT_", "SHOWTIME_MCP_TRACE"))}
+    env["SHOWTIME_MCP_TOOLS"] = "all"          # what the bundle's mcp_config sets
     proc = subprocess.Popen([node, str(entry)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, universal_newlines=True, encoding="utf-8", env=env)
     tools = None
@@ -233,7 +234,8 @@ def mcpb_manifest(tools: List[Dict[str, str]]) -> dict:
     ver = version()
     plugin = json.loads(PLUGIN_JSON.read_text(encoding="utf-8"))
     cfg = user_config()
-    env = {"SHOWTIME_MCP_BASE": "${user_config.projects}"}
+    # a desktop client has no shell to fall back on: the bundle lists every tool, not only the core loop
+    env = {"SHOWTIME_MCP_BASE": "${user_config.projects}", "SHOWTIME_MCP_TOOLS": "all"}
     for key in cfg:
         if key != "projects":
             env["SHOWTIME_OPT_" + key.upper()] = "${user_config.%s}" % key

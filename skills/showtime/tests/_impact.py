@@ -104,6 +104,23 @@ OVERRIDES = [
     ("assets/brand/**", []),
     ("benchmarks/**", []),
     ("benchmarks/scoring/**", ["test_bench_judge.py"]),   # the judge's proof that it opened the frames
+    # the behaviour scoreboard: the plugin-eval cases, their offline graders, scoreboard.py and the README block
+    ("benchmarks/plugin-eval/**", ["test_bench_scoreboard.py"]),
+    ("benchmarks/scoring/scoreboard.py", ["test_bench_scoreboard.py"]),
+    ("benchmarks/scoring/eval_graders.py", ["test_bench_scoreboard.py"]),
+    ("benchmarks/scoring/stream_cost.py", ["test_bench_scoreboard.py"]),
+    ("README.md", ["test_bench_scoreboard.py"]),
+]
+
+# Override rules that replace the scans: a changed file matching one runs exactly these tests (plus any OVERRIDES
+# rule it also matches, and the hygiene test), not every test whose recorded run or static closure contains it.
+# For modules every CLI run loads but only a few tests exercise: st.cli imports each cli_*.py to build the parser
+# (a module that fails to import becomes stub commands, so it cannot break the others), so every recorded run of
+# any command "uses" cli_release.py.
+OVERRIDES_ONLY = [
+    (SKILL + "/lib/st/cli_release.py", ["test_release_video.py", "test_pr_video.py", "test_action.py"]),
+    (SKILL + "/lib/st/release_video.py", ["test_release_video.py", "test_pr_video.py", "test_action.py"]),
+    (SKILL + "/lib/st/pr_video.py", ["test_pr_video.py"]),
 ]
 
 SCAN_EXT = (".py", ".mjs", ".js", ".cjs", ".html", ".css", ".json")
@@ -671,6 +688,11 @@ def overrides_for(path: str) -> list:
     return [(pat, tests) for pat, tests in OVERRIDES if match_pattern(path, pat)]
 
 
+def only_overrides_for(path: str) -> list:
+    """[(pattern, tests)] of every OVERRIDES_ONLY rule matching a repository-relative path."""
+    return [(pat, tests) for pat, tests in OVERRIDES_ONLY if match_pattern(path, pat)]
+
+
 def match_pattern(path: str, pat: str) -> bool:
     if "**" in pat:
         prefix, rest = pat.split("**", 1)
@@ -719,6 +741,14 @@ def select(test_names: list, changed: list, deleted: list = (), imap: ImpactMap 
     for f in list(changed) + list(deleted):
         name = PurePosixPath(f).name
         hit = False
+        only = only_overrides_for(f)
+        if only:
+            for pat, tests in only + overrides_for(f):
+                for t in tests:
+                    if t in names:
+                        picked.setdefault(t, []).append((f, [], "override %s%s" % (pat, " (only)" if (pat, tests)
+                                                                                     in only else "")))
+            continue
         if f.startswith(TESTS + "/test_") and name in names:
             picked.setdefault(name, []).append((f, [], "the test file itself"))
             hit = True

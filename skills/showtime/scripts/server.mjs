@@ -32,6 +32,7 @@ import { skillDir, nodeModulesDir, showtimeHome } from './lib/deps.mjs';
 import { iconFile, iconPackageDir } from './lib/iconcache.mjs';
 import { newKey, isKey, sameKey, cookieKey, keyCookie } from './lib/sessionkey.mjs';
 import { realpathUnderRoot, symlinkRefusal, escapesBySymlink } from './lib/pathguard.mjs';
+import { readQuestions, publicQuestions } from './lib/questions.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -70,6 +71,13 @@ export function safeJoin(root, rel) {
 
 function readConfig(root) {
   try { return JSON.parse(fs.readFileSync(path.join(root, 'showtime.json'), 'utf8').replace(/^\uFEFF/, '')); } catch { return {}; }
+}
+
+/** showtime.json as the stage reads it in a preview: "questions" with their voice cues resolved to seconds. */
+function servedConfig(root) {
+  const cfg = readConfig(root);
+  if (!Array.isArray(cfg.questions)) return null;
+  return JSON.stringify({ ...cfg, questions: publicQuestions(readQuestions(root, cfg, { fps: Number(cfg.fps) || 30 }).list) });
 }
 
 /** The audio file the preview player should play, if any (built by `showtime preview`). */
@@ -269,6 +277,13 @@ export async function startServer(o) {
         }
         res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'no-cache' });
         return fs.createReadStream(f).pipe(res);
+      }
+      if (p === '/showtime.json') {
+        const body = servedConfig(root);
+        if (body) {
+          res.writeHead(200, { 'Content-Type': MIME['.json'], 'Cache-Control': 'no-store' });
+          return res.end(req.method === 'HEAD' ? undefined : body);
+        }
       }
       if (p === '/favicon.ico' && !fs.existsSync(path.join(root, 'favicon.ico'))) {
         // browsers ask for it on every page; answer "nothing" instead of a noisy 404

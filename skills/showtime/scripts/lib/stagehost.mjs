@@ -27,13 +27,13 @@ export function isLocalUrl(u) {
 // promoted to a layer earlier (e.g. by a blur animation) -> frames would differ between workers.
 export const CAPTURE_ARGS = ['--disable-lcd-text'];
 
-export async function openBrowser({ gpu = 'auto', headless = true, args = [] } = {}) {
+export async function openBrowser({ gpu = 'auto', headless = true, args = [], ownSignals = false } = {}) {
   const extra = [...CAPTURE_ARGS, ...args];
   try {
-    return await launchBrowser({ gpu, headless, args: extra });
+    return await launchBrowser({ gpu, headless, args: extra, ownSignals });
   } catch (e) {
     if (gpu === 'off') throw e;
-    return launchBrowser({ gpu: 'off', headless, args: extra });
+    return launchBrowser({ gpu: 'off', headless, args: extra, ownSignals });
   }
 }
 

@@ -375,7 +375,7 @@ class TestMcpLook(unittest.TestCase):
         proj.mkdir(parents=True, exist_ok=True)
         (proj / "showtime.json").write_text('{"duration": 2}', encoding="utf-8")
         (proj / "index.html").write_text("<html></html>", encoding="utf-8")
-        env = {"SHOWTIME_HOME": str(TMP / "mcp-home")}
+        env = {"SHOWTIME_HOME": str(TMP / "mcp-home"), "SHOWTIME_MCP_TOOLS": "snap"}   # an optional tool
         out = mcp([{"method": "tools/list"},
                    call("snap", {"target": str(proj), "look": True, "at": [0.5] * 17})], TMP, env=env)
         tools = {t["name"]: t for t in out["results"][1]["response"]["result"]["tools"]}

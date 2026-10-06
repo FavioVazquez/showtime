@@ -32,6 +32,9 @@ Batch visual checks: one `showtime look` per phase, not dozens of single frames 
 - File: H.264 High, `yuv420p`, BT.709 tags, faststart, AAC 48 kHz stereo, duration = `showtime.json` ±1 frame (§2)
 - Audio: −14 LUFS ±1 (or the requested target), true peak ≤ −1.0 dBTP, LRA ≤8 LU (≤11 music-first), music
   18–25 dB under the voice; `loudness` WARNs past 1 LU off target, FAILs past 3 LU (§2, § Tools)
+- Hearing (WARN, with times): a voice line under 8 dB over the music (`voice_masked`, from the narration stem),
+  near silence over 2 s mid-video (`quiet_stretch`), a jump over 6 LU at a cut (`level_jump`), sound still playing
+  on the last frame (`abrupt_end`); `review-pack` hands the critic the full measurements (§2, § Tools)
 - Frame 0 is the thumbnail: a hook complete at t=0 (`"poster": 0`) or a baked poster (`--poster-bake auto`);
   EDL and external videos: `showtime deliver poster <video> --at <t> --bake`. Ship `share.txt` (1–3 sentences,
   no claim not in the video), burned captions for social plus a sidecar, and credits for any CC-BY asset (§2)
@@ -47,16 +50,17 @@ Batch visual checks: one `showtime look` per phase, not dozens of single frames 
 - Quality mode (the default), publish-bound or studio work: `showtime review-pack <job>` (qa's "review pending"
   line names it), then `review.md` with the pack's `CRITIC.md`; lean: publish-bound only (§3)
 - Quality floor (WARN): player controls in the footage, soft or upscaled footage, stepped caption boxes, a
-  small picture in big flat borders; the critic's `WOULD I POST THIS: no` holds delivery in quality mode (§3, § Tools)
+  small picture in big flat borders; the critic's `WOULD I POST THIS: no` holds delivery in quality mode, and
+  each blocker and should-fix it raises is fixed or waived before delivery (§3, § Tools)
 - Only a `final*.mp4` is the latest final; promote a variant: `job note <job> --output final=<file>` (§ Tools)
 
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| 1. Pre-render (on the project) | 61-102 |
-| 2. Post-render (on the MP4) | 104-142 |
-| 3. The critic pass | 144-151 |
-| Tools | 153-339 |
+| 1. Pre-render (on the project) | 65-106 |
+| 2. Post-render (on the MP4) | 108-148 |
+| 3. The critic pass | 150-160 |
+| Tools | 162-371 |
 
 ## 1. Pre-render (on the project)
 
@@ -125,9 +129,11 @@ Batch visual checks: one `showtime look` per phase, not dozens of single frames 
 | Loudness range | ≤8 LU (≤11 for music-first pieces) |
 | Voice vs music under it | Music 18–25 dB below the voice. Voice is always intelligible |
 | Start | Audio present within the first 0.1 s when music is planned from frame 1 |
-| End | Clean button or tail, with no cut-off decay in the last 0.3 s |
+| End | Clean button or tail, with no cut-off decay in the last 0.3 s (`abrupt_end`) |
+| Across cuts | No jump over 6 LU in the bed or the voice that the story does not call for (`level_jump`) |
 - [ ] Listen once on small speakers or earbuds, at least the hook, the reveal and the end. No clicks at edits,
-      no harsh sibilance, and no SFX louder than the voice.
+      no harsh sibilance, and no SFX louder than the voice. The critic cannot listen: its hearing pass judges
+      only the numbers in the pack's `audio.txt` (review.md §1), so these stay yours.
 
 **Deliverables**
 - [ ] Frame 0 is the thumbnail and flows into frame 1: a hook complete at t=0 (`"poster": 0`), or a poster that
@@ -147,8 +153,11 @@ Every finished video in quality mode (the default; qa prints "review pending" wi
 has a verdict), and publish-bound or studio work in lean mode: `showtime review-pack <job>`, then follow
 `review.md`. The critic's
 brief is the `CRITIC.md` the pack writes (severity scale, citation rule, answer format, three rounds
-at most, pairwise from round 2, the absolute `WOULD I POST THIS` line); do not write a brief of your own. Lean work that is not publish-bound gets
-the self-review in `review.md` section 1.
+at most, pairwise from round 2, the absolute `WOULD I POST THIS` line, the first-viewer pass); do not write a brief
+of your own. Lean work that is not publish-bound gets the self-review in `review.md` section 1. Once a critic has
+answered, `showtime job note <job> --stage deliver` waits until each of its blockers and should-fixes is fixed or
+waived (`showtime review-respond`, `review.md` section 4). It also refuses while the final's latest qa verdict is
+FAIL (WARN passes): fix, re-render and run `showtime qa <job>` again.
 
 ## Tools
 
@@ -178,6 +187,9 @@ Which caption files it checks (it prints them; `qa.json` `captions`):
 Output: PASS / WARN / FAIL lines, each with a rule id, a timestamp, the frame at that time
 (`work/qa/<video>/frames/`) and a fix; `qa.json` and `sheet.jpg` (FAIL/WARN frames outlined). Every long
 caption line and every too-fast cue is listed (up to 12 each, the rest counted), so one run shows them all.
+The hearing measurements (voice over the music per line, words per minute, quiet stretches, the level across
+each cut, effects, the ending) are in `qa.json` `hearing`, summed up in the `hearing` line; their 100 ms block
+levels are in `loudness.json` `blocks`, from which `review-pack` writes the critic's `audio.txt` and `hearing.png`.
 Exit code 1 on FAIL (`--strict`: also on WARN). When the video sits in a job folder, the verdict is logged
 per file in `job.json` (`qa_files`); the job's verdict (`qa`, what `status` and `SHOWTIME.md` show) follows
 the job's latest final (else draft) only, so checking an export or a variant never makes the final look
@@ -205,6 +217,10 @@ export itself (`showtime qa <export> --platform github`); without one it FAILs w
 | `clipping` | FAIL | runs of full-scale samples (a squared-off waveform) |
 | `leading_silence` / `trailing_silence` | WARN | sound starts after 0.5 s / the last 2 s are silent |
 | `silent_gap` | WARN ≥ 1 s, FAIL ≥ 3 s | silence inside the video |
+| `voice_masked` | WARN | a voice line sits under 8 dB (`hearing.voice_over_bed_min_db`) over the music under its words. Measured only when the render's narration stem lines up with the file's audio (render keeps `work/audio/mix.voice.wav`; an edit render its speech stem; a voice-only mix over an `ST.score` bed): the stem is aligned (±50 ms) and scaled to the delivered audio, the rest is the bed. Without a stem `review-pack` still estimates it for the critic, never a WARN |
+| `quiet_stretch` | WARN | near silence for 2 s or more mid-video: 100 ms blocks more than 20 LU under the integrated loudness (`quiet_stretch_s`, `quiet_under_lu`), not already a `silent_gap` |
+| `level_jump` | WARN | the level changes more than 6 LU (`level_jump_lu`) across a cut (planned scene starts and hard cuts), 1 s each side, like with like: the bed with the bed (stem), else both sides speech or both not; a cut where speech starts or stops, an effect within 1 s or a music section change at the cut does not count |
+| `abrupt_end` | WARN | the last 0.2 s (of the bed, with a stem) are within 10 dB (`abrupt_end_db`) of the 3 s before and audible: music, or a word, cut off on the last frame. A seamless loop may ignore it |
 | `first_frame_black` | FAIL | frame 0 is black (no poster baked) |
 | `first_frame_flat` | WARN | frame 0 is one flat colour |
 | `poster_flash` | WARN | frame 0 differs sharply from frames 1-2 (a baked poster over an opening that builds from empty): a one-frame flash on autoplay and every loop |
@@ -241,6 +257,10 @@ export itself (`showtime qa <export> --platform github`); without one it FAILs w
 | `too_many_scenes` | WARN (launch films) | more than 6 scenes or layouts in up to 60 s |
 | `dead_hold` | WARN (launch films) | nothing moves for more than 5.5 s |
 | `flat_music` | WARN (launch films without a voice) | the mix's loudness moves less than 3 dB (10th-90th percentile of 0.5 s windows) |
+| `showreel_sparse` | WARN (showreel tone) | fewer than 12 shots per 15 s (scenes, layouts, hard cuts or the showreel shot count, whichever counts most; scaled to the length): a reel that cuts like a launch film loses its brief. The launch rules above do not apply in the showreel tone |
+| `showreel_long_end` | WARN (showreel tone) | the end card holds still (0.25 s windows moving under 1 level) for more than 10% of the reel, or the last shot runs over 20%: the losing reels of the 2026-10-05 rematch held their name 2.5-3.5 s of 15. Land the name on the last beats with its reading time and keep it moving |
+| `showreel_repeats` | WARN (showreel tone) | two shots of 0.4 s or more, not neighbours and not the end card, look alike: colour histogram distance under 0.3 and coarse layout correlation over 0.7 (the same ground, palette and composition: one technique twice) |
+| `flash_risk` | WARN (every video) | more than 3 general flashes in any second: a frame-to-frame change of 0.1 or more in linear luminance over a quarter of the frame or more, the darker side under 0.8, a pair of opposing changes counted as one flash (the WCAG general flash threshold, measured on 256x144 frames). Fix: space strobes and glitch bursts 0.33 s apart, shrink them, or lower their contrast (`pacing.md` §5) |
 
 The optional `expect` block in `showtime.json` (or a file passed with `--expect`) states the brief's
 measurable targets up front:
@@ -262,7 +282,11 @@ longest such stretch, the mix's dynamics, and per planned scene change whether i
 and whether the music moves there (an onset or a +1.5 dB rise). It is judged (the four rules above) for
 launch, promo, release and trailer films: showtime.json `"kind": "launch"` (the launch template sets it),
 `expect.style`, or a job goal that says launch, promo, trailer, teaser or release video. The numbers
-come from the premium grammar in `workflows/launch-video.md`.
+come from the premium grammar in `workflows/launch-video.md`. In the showreel tone (showtime.json `"tone":
+"showreel"`, the job's tone, or a brief that says showreel, demo reel, hype reel, go all out or show off;
+`tones.md`) the launch rules are replaced by the showreel checks (`showreel_sparse`, `showreel_long_end`,
+`showreel_repeats`; `lib/st/qa/reel.py` measures the shots, the end card's still hold, look-alike pairs and
+energy dips into qa.json's `rhythm.reel`), and qa.json has a `showreel` block saying where the tone came from. Flashes (`flash_risk`) are judged on every video.
 
 **Phone check** (the audience complaint: text moves too fast to read and is too small on a phone). One named
 check, printed as one line by both tools:
@@ -272,6 +296,14 @@ phone check: PASS (smallest text 8.1 pt (minimum 5 pt for 16:9); every text held
 phone check: FAIL - type 4.1 pt "Terms apply" at 0:12.4; reading "Sign up today" 0.8s of 2.1s at 0:05.0; under platform UI "Link in bio" at 0:09.0
 phone check: PARTIAL (captions: 12 cues, longest line 34 characters; type size, reading time and UI zones need `showtime check <project>` ...)
 ```
+
+**Showreel flash words.** In the showreel tone only, a text marked `data-st-flash` (canvas: `{flash: true}`)
+of at most 3 words and 24 characters, on screen at least 0.2 s, may leave before its reading time: `check` notes
+it as `flash_text` instead of `short_text`, and the PASS line says "except N flash word(s) (showreel tone)". The
+exemption is that narrow on purpose: an unmarked text, a longer marked line or a 1-frame blip is still
+`short_text`; with no other text held its reading time (the hero line) `check` warns `no_hero_line`, a reading
+part of the phone check; size, contrast, overlaps and platform UI zones are judged as always. Outside the tone the
+mark changes nothing.
 
 `showtime check` measures it before the render and writes the per-frame findings plus a `phone` block in
 `report.json` (aspect, minimum, smallest texts, items with timestamps). `showtime qa` cannot read pixels back

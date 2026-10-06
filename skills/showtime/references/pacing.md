@@ -13,6 +13,9 @@ can be read. The rule is **fast in, then hold**. Never fast in, then gone.
   chars / 13)` s, number 1.2 s after the count-up lands, diagram/code/chart 1.5–2.5 s, end card ≥2.5 s (§1)
 - Reading ceiling about 3 words/s (≤17 characters/s for captions); no text that adds information while the voice
   says something else (§1)
+- Showreel tone only: flash words (`data-st-flash`, 1-3 words, ≥0.2 s) may go before their reading time; the
+  hero line may not; reels ≤20 s cut 12-14 shots per 15 s, never sag for more than ~1 s, and give the end card
+  only the name's reading time (~1.25 s, still for ≤1 s, landing on the last beat) (§1)
 - Whole stagger group ≤0.5 s; first motion 0.1–0.3 s into a scene, hero visible by 0.5 s; hold ≥0.5 s
   (short-form) or ≥1.0 s (explainer) after a settle (§2)
 - Short-form: something changes every 2–4 s; vary shot lengths (short-short-long); one held beat of 1–2 s (§3)
@@ -31,14 +34,14 @@ can be read. The rule is **fast in, then hold**. Never fast in, then gone.
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| 1. Readability timing (text on screen) | 43-59 |
-| 2. Motion durations | 61-75 |
-| 3. Cut rhythm | 77-96 |
-| 4. Beat sync | 98-118 |
-| 5. Flash and strobe limits (safety, not taste) | 120-126 |
-| 6. Narration word budgets | 128-143 |
-| 7. Durations by format | 145-161 |
-| 8. Frame math | 163-168 |
+| 1. Readability timing (text on screen) | 46-69 |
+| 2. Motion durations | 71-85 |
+| 3. Cut rhythm | 87-106 |
+| 4. Beat sync | 108-128 |
+| 5. Flash and strobe limits (safety, not taste) | 130-136 |
+| 6. Narration word budgets | 138-153 |
+| 7. Durations by format | 155-171 |
+| 8. Frame math | 173-178 |
 
 ## 1. Readability timing (text on screen)
 
@@ -57,6 +60,13 @@ Hold time is counted from the moment the **whole line has settled**, not from wh
   while the voice says something else, the viewer can follow neither. Don't do it.
 - Words should never be animated faster than the text can be read. Per-letter effects only work on 1–2 word titles.
 - Test: freeze on the frame where the text is fully settled. If you can't read it twice before it leaves, lengthen the hold.
+- The one exception: in the showreel tone (`tones.md`), a flash word is texture, not message. Mark it
+  `data-st-flash` (a canvas: `F.text(..., {flash: true})`); at most 3 words and 24 characters, on screen at
+  least 0.2 s. `check` then notes it (`flash_text`) instead of `short_text`. Everything else, and the hero line
+  above all, keeps these holds; with no line held its reading time `check` warns `no_hero_line`. Outside the
+  showreel tone the mark changes nothing. The end card of a showreel of 20 s or less is the other exception to
+  the ≥2.5 s end card: the name holds its reading time (about 1.25 s) and keeps moving; qa warns
+  `showreel_long_end` when it holds still for over 10% of the reel.
 
 ## 2. Motion durations
 

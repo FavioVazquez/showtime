@@ -1,6 +1,6 @@
 {
   "name": "showtime",
-  "version": "0.3.5",
+  "version": "0.4.0",
   "description": "A local video studio for your coding agent. Describe a video. Your agent directs. Your machine renders. Motion graphics rendered frame-exactly, voice-over, music and sound design, footage editing from transcripts, captions and platform-ready exports. Everything runs on your machine.",
   "author": {
     "name": "Favio Vazquez"

@@ -83,8 +83,21 @@ export function glyphFix(chars, stack, sample) {
   const list = [...new Set(chars)];
   const scripts = list.filter((ch) => SUBS.includes(ch) || SUPS.includes(ch));
   const arrows = list.filter((ch) => { const c = ch.codePointAt(0); return c >= 0x2190 && c <= 0x21ff; });
-  const rest = list.filter((ch) => !scripts.includes(ch) && !arrows.includes(ch));
+  // Chinese and Korean: the bundled Noto Sans JP has the Japanese kanji set only (most simplified forms such as
+  // 这 or 题, and Hangul, are missing); a whole CJK family fixes them, not a symbol font
+  const cjkFont = (c) => (c >= 0xac00 && c <= 0xd7af) || (c >= 0x1100 && c <= 0x11ff) ? 'Noto Sans KR'
+    : (c >= 0x3400 && c <= 0x9fff) || (c >= 0xf900 && c <= 0xfaff) ? 'Noto Sans SC' : null;
+  const cjk = list.filter((ch) => cjkFont(ch.codePointAt(0)));
+  const rest = list.filter((ch) => !scripts.includes(ch) && !arrows.includes(ch) && !cjk.includes(ch));
   const fixes = [];
+  if (cjk.length) {
+    const fam = cjkFont(cjk[0].codePointAt(0));
+    const id = fam.toLowerCase().replace(/ /g, '-');
+    const sub = fam === 'Noto Sans KR' ? 'korean' : 'chinese-simplified';
+    fixes.push(`add a font for ${cjk.slice(0, 8).join(' ')}${cjk.length > 8 ? ' ...' : ''}: \`showtime assets font "${fam}" --subsets ${sub} ` +
+      `--copy-to <project>/fonts\` (OFL; for traditional Chinese "Noto Sans TC" --subsets chinese-traditional), then ` +
+      `<link rel="stylesheet" href="fonts/${id}/font.css"> and '${fam}' in the font-family before the generic family`);
+  }
   if (scripts.length) {
     const words = String(sample || '').split(/\s+/).filter((w) => [...w].some((ch) => scripts.includes(ch)));
     const eg = words.length ? `"${asMarkup(words[0])}" for "${words[0]}"` : '"CO<sub>2</sub>" for "CO₂"';

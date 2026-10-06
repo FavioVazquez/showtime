@@ -34,6 +34,10 @@ showtime export html <project> --target artifact -o launch.html   # to publish a
 - Embeds: `--controls none --autoplay-muted --loop` in an `<iframe>`, driven by `window.showtimePlayer`
   (§ Sharing and hosting)
 - `-o` never overwrites (`-2`, `-3`); `--lang CODE` sets the player's words (en, es, fr, pt, de) (§ Options)
+- Point someone at a passage with a range link, `video.html#t=1:05-1:20`: it plays that part on a loop
+  (Shift + drag on the scrubber picks one, `c` copies its link) (§ What you get)
+- Videos that ask: showtime.json `"questions"` (`at` = seconds or a narration line id) stop the player at each
+  one; it goes on from the end of the MP4's pause and think beat; `socratic.json` is written beside it (§ Questions)
 - A video report (charts, numbers) is a data story first: build and pace it with `workflows/data-story.md` (a
   change about every 2 s, holds as long as reading needs, callouts that name their year), then export it
 - Use the MP4 for footage-led videos and slow-to-draw pages: playing is drawing. Sound always needs a click;
@@ -42,13 +46,14 @@ showtime export html <project> --target artifact -o launch.html   # to publish a
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| What you get | 53-110 |
-| MP4 or HTML? | 112-122 |
-| Audio modes (--audio): How the live score streams (and why seeking is exact) | 124-155 |
-| Size budget | 157-178 |
-| Sharing and hosting | 180-205 |
-| Options | 207-233 |
-| Limitations | 235-267 |
+| What you get | 58-124 |
+| MP4 or HTML? | 126-136 |
+| Audio modes (--audio): How the live score streams (and why seeking is exact) | 138-169 |
+| Size budget | 171-192 |
+| Sharing and hosting | 194-221 |
+| Questions | 223-266 |
+| Options | 268-296 |
+| Limitations | 298-330 |
 
 ## What you get
 
@@ -82,6 +87,13 @@ It plays in a small player:
 - **deep links**: `film.html#t=72.5`, `#t=1:12.5`, `#t=1m12s` or `#chapter=3` / `#chapter=data` (the
   chapter's label) open the video there: the start screen says where, and playback starts there after
   the click. Changing the hash while it plays jumps there.
+- **range links**: `#t=10-20` (also `#t=1:05-1:20`, or `#t=10,20` as in media fragments) plays that part
+  and **loops** it: the start screen says "Plays 0:10 - 0:20 on a loop", the scrubber shows the part as a
+  band, and the loop button is on; turned off, play stops on the part's last frame (Play starts the part
+  again). Questions inside the part still ask (again on every loop until answered; one after it never
+  does). Seeking outside the part, Esc, or a plain `#t=` leaves it. To make one, **Shift + drag** on the
+  scrubber (Shift + click: from the playhead to the click); `c` (or the link button) then copies the
+  range's link instead of the moment's. Point a reviewer at a passage with a range link.
 - fits any window size or aspect, works with touch, respects reduced motion (no muted autoplay),
   labelled for screen readers; the controls use the system font
 
@@ -100,8 +112,10 @@ Keyboard (shown in the player with `?`):
 | R | restart from the beginning and play |
 | M, ↑ / ↓ | mute, volume |
 | F | fullscreen |
-| C | copy a link to this moment (`#t=`) |
+| C | copy a link to this moment (`#t=`), or to the picked range (`#t=a-b`) |
+| Shift + drag on the scrubber | pick a range to loop and link (Shift + click: from the playhead); Esc clears it |
 | ? , Esc | show / hide the key map |
+| A-C or 1-3, Enter | while a question is asked: answer it, then continue (§ Questions) |
 
 **Frames are exactly the render's.** The page runs in the same stage runtime `showtime render`
 uses (virtual clock, seeded randomness, the same config), and the player seeks it to the
@@ -200,9 +214,56 @@ images at the size they appear; fewer font families and weights.
   `window.showtimePlayer` inside that frame: `ready` (promise), `play()`, `pause()`, `restart()`,
   `seek(t)` (resolves when the frame is drawn), `currentTime`, `duration`, `paused`, `started`,
   `muted`, `volume`, `loop`, `chapters`, `chapter` (current), `goToChapter(i)`, `startTime` (from a
-  deep link), `link(t)` / `copyLink()` (`{url, hash, full}`), `audio`,
-  `on('play'|'pause'|'seek'|'ended'|'loop'|'frame'|'ready'|'restart'|'link', fn)`;
+  deep link), `link(t)` / `copyLink()` (`{url, hash, full}`; `link()` with a range set links the range),
+  `range` (`{a, b}` or null), `setRange(a, b)` / `setRange(null)`, `linkRange(a, b)`, `audio`,
+  `questions`, `question` (the id being asked), `answer(i)`, `continueQuestion()`,
+  `on('play'|'pause'|'seek'|'ended'|'loop'|'frame'|'ready'|'restart'|'link'|'question'|'answer'|'continue'|'range'|'rangeend', fn)`;
   the player element also dispatches `showtime:<event>` DOM events.
+
+## Questions
+
+A video can stop and ask the viewer before it tells them (`story.md` § 9). List the questions in
+showtime.json:
+
+```json
+"questions": [
+  { "id": "q1", "at": "ask-sum", "prompt": "What is it equal to?", "choices": ["2", "3", "It grows forever"],
+    "answer": 1, "reply": {"0": "Close, but it lands on 3.", "1": "Yes: the whole tower equals 3.", "2": "It levels off at 3."},
+    "think": 3 }
+]
+```
+
+- `at`: where the video pauses. Seconds, or a voice cue: the id of a narration line (`## ask-sum` in
+  `narration.md`, the ids in `voice/timeline.json`). `"ask-sum"` is the end of that line's speech,
+  `"ask-sum.start"` its start, `"ask-sum.end+0.4"` adds an offset. Cues are read where the mix plays that
+  line (a `vo-<id>` track `retime --from-voice` writes or a track playing the line's own file, else the
+  `vo.wav` track's start), so a
+  re-voice or a retime moves every question with its line; `retime -d` moves questions given in seconds.
+- `choices` (2-9, three read best) and `answer`, the index of the right one (0 is the first).
+- `reply`: one line shown after any answer, or one per choice (`{"0": "...", "1": "..."}`) that says
+  why. The reply of the right choice is what the MP4 shows at its reveal.
+- `think` (default 3 s): the length of the MP4's "pause and think" beat, from `at`.
+- `"questions": false` turns them off; `showtime check` names every problem (`question_*` errors: a
+  duplicate id, an answer out of range, a cue that names no line, a beat past the end, two beats that
+  overlap), and the export refuses a broken list.
+
+In the HTML export the player pauses on the frame at `at` and a card asks the question: the prompt,
+the choices (A-C or 1-3 on the keyboard), then a right or wrong mark, the reply and Continue (Enter),
+which plays on from `at + think`, the end of the beat the MP4 shows instead. The scrubber marks each
+question (green or red once answered) and the card keeps the score. Seeking past a question passes it;
+seeking back before it asks it again unless it was answered; a restart or a replay asks them all. Play
+while a question waits plays on through the video's own beat. A page that is late (a background tab)
+still stops, back on the question's frame. Over the picture the card sits at the bottom, above the
+controls; on a phone held upright it sits under the picture, so the paused frame stays in view.
+
+- `--auto-continue 6` goes on by itself 6 s after an answer; `--no-questions` exports a plain player
+  (the video still draws its beats); with `--controls none` the embedding page asks them.
+- `socratic.json` is written beside the export (`{title, questions: [{id, pause, resume, prompt, choices,
+  answer, feedback}]}`) for a page that drives the player from outside (`window.showtimePlayer`).
+- The MP4 shows what the video draws itself: the `question-beat` component (`components.md` § 3) or
+  `F.questionBeat` on canvas (`film-api.md` § 12), and in the mix a `"questions"` block ducks the music
+  under every beat and can tick through it (`audio.md` § 5). A video may draw its own beat and use only
+  the times (`ST.questions`, `Film.questions`).
 
 ## Options
 
@@ -219,6 +280,8 @@ images at the size they appear; fewer font families and weights.
 | `--lang CODE` | showtime.json `lang`, else the page's `<html lang>`, else the narration's `lang:`, else en | sets `<html lang>` and the player's own words (Play, Chapters, Sound on, the key help) in en, es, fr, pt or de; other languages get English controls |
 | `--audio-file FILE` | | embed exactly this sound (a WAV, or the shipped MP4's audio) instead of rebuilding the score and the mix |
 | `--title`, `--subtitle`, `--kicker` | showtime.json `title`, `subtitle`, `kicker` | page title and start screen |
+| `--no-questions` | questions asked | a plain player that does not stop at showtime.json `questions` (§ Questions) |
+| `--auto-continue S` | wait for Continue | go on S seconds after a question is answered |
 | showtime.json `"startTitle": false` | title shown | the poster frame already says what the video is (a hook frame): only the Play row sits over the picture, on a light corner scrim; the title still heads the phone layout |
 | `--minify auto\|off` | auto | trim and compress the runtime, scripts and styles (off: as written, uncompressed; for debugging) |
 | `--json` | | report: output, bytes, audio, chapters, sizes by kind, largest files, warnings |

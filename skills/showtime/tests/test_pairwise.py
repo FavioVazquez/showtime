@@ -178,6 +178,11 @@ class PairwisePack(unittest.TestCase):
         # transcripts from each render's own captions
         self.assertIn("narration line two", (pack / key["new"]["label"] / "transcript.txt").read_text(encoding="utf-8"))
         self.assertIn("narration line one", (pack / key["old"]["label"] / "transcript.txt").read_text(encoding="utf-8"))
+        # 0.4.0: each version's parts in order with a frame and the narration said in each (first-viewer pass)
+        story = (pack / key["new"]["label"] / "story.txt").read_text(encoding="utf-8")
+        self.assertIn("part 1  0.00-2.00s  frame: `../%s/frames/" % key["new"]["label"], story)
+        self.assertIn("narration line two", story.split("part 2")[0])
+        self.assertIn("part 2  2.00-4.00s", story)
         # blind: nothing in the pack names the renders
         for f in pack.rglob("*"):
             if f.suffix in (".md", ".txt", ".json"):
@@ -191,7 +196,7 @@ class PairwisePack(unittest.TestCase):
         for b in (b1, b2):
             for word in ("PREFERENCE", "Blocker", "Should-fix", "Polish", "No scores", "DECLINED TO JUDGE",
                          "type detail pass", "timestamp and a frame path", "transcript", "WOULD I POST X",
-                         "WOULD I POST Y", "under your own name"):
+                         "WOULD I POST Y", "under your own name", "First-viewer pass", "story.txt", "FIRST VIEWER"):
                 self.assertIn(word, b)
             self.assertNotIn("1-10", b)
             self.assertIn("`../X/frames/t0000.000s.jpg`", b)
@@ -218,6 +223,9 @@ class PairwisePack(unittest.TestCase):
         self.assertEqual(sorted(f["severity"] for f in v["open_findings"]), ["blocker", "should-fix"])
         self.assertEqual(len(v["dropped"]), 2)
         self.assertTrue((pack / "VERDICT.md").is_file())
+        vmd = (pack / "VERDICT.md").read_text(encoding="utf-8")
+        self.assertRegex(vmd, r"BLOCKER r1o[12]-B1 \[new")           # the id review-respond takes
+        self.assertIn("showtime review-respond", vmd)
         self.assertEqual(Path(json.loads((root / "best.json").read_text(encoding="utf-8"))["video"]).name, "final-2.mp4")
         led = json.loads((self.job / "job.json").read_text(encoding="utf-8"))
         self.assertEqual(Path(led["pointers"]["review_verdict"]).resolve(), (pack / "VERDICT.md").resolve())

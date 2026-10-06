@@ -33,8 +33,8 @@ long commands time out, images cannot be viewed, there is no terminal.
 | 1. Claude Code | 39-58 |
 | 2. Any other agent host | 60-84 |
 | 3. Host behaviour that matters | 86-102 |
-| 4. Environment variables | 104-134 |
-| 5. Scripts and CI | 136-150 |
+| 4. Environment variables | 104-135 |
+| 5. Scripts and CI | 137-151 |
 
 ## 1. Claude Code
 
@@ -108,6 +108,7 @@ missing extra (prints the `showtime setup --with` line) or, for `showtime site c
 | `SHOWTIME_HOME` | install location (default: a `.showtime` folder in the project that setup has used, else `~/.showtime`); a relative value is resolved against the current folder |
 | `SHOWTIME_HEARTBEAT` | seconds between `still running` lines of a long command whose output is not a terminal (default 45; `0` turns them off) |
 | `SHOWTIME_MCP_WAIT` | MCP server: seconds a long tool call waits before it answers with a task id (default 20; Claude Code: until done; `none` = always wait) |
+| `SHOWTIME_MCP_TOOLS` | MCP server: the tools it lists: the ten core tools by default, `all` for every tool, or core plus names (`voice_say,audio_mix`); the server option `--tools=` wins |
 | `SHOWTIME_HOST` | name the agent host for `showtime doctor`'s advice when it guesses wrong: `codex`, `antigravity`, `cursor`, `copilot-cloud`, `gemini`, `devin`, `claude`, `generic` |
 | `SHOWTIME_OUT` | where `showtime-out/` job folders are created (default: the current folder) |
 | `SHOWTIME_OFFLINE=1` | never download |

@@ -274,7 +274,12 @@ def repeats(look: Dict[str, Any], others: List[Dict[str, Any]]) -> List[Dict[str
         same_brand = bool(look.get("brand")) and look.get("brand") == o.get("brand")
         if look.get("template") and look.get("template") == o.get("template"):
             hit("template", o)
-        if look.get("theme") and look.get("theme") == o.get("theme"):
+        # a look signature is the page's whole look: two pages on one theme in different signatures do not repeat it
+        sa, sb = look.get("signature"), o.get("signature")
+        if sa or sb:
+            if sa and sa == sb:
+                hit("theme", o, "the same look signature (%s)" % sa)
+        elif look.get("theme") and look.get("theme") == o.get("theme"):
             hit("theme", o)
         if not same_brand and palette_match(look.get("palette") or [], o.get("palette") or []):
             hit("palette", o)

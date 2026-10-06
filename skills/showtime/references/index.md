@@ -18,7 +18,7 @@ for that step) with a table of its sections; read only what the current step nee
 | `references/workflows/data-story.md` | numbers or charts animated into a story |
 | `references/workflows/footage-edit.md` | recorded footage cut, captioned, reframed, cleaned or graded |
 | `references/workflows/music-video.md` | picture cut or animated to a song |
-| `references/workflows/changelog-video.md` | a pull request, release or changelog turned into a video (unattended, in CI: `showtime release-video`) |
+| `references/workflows/changelog-video.md` | a pull request, release or changelog turned into a video (unattended, in CI: `showtime release-video`; a PR video for its description: `showtime pr-video`) |
 | `references/workflows/trailer.md` | a teaser or trailer |
 | `references/workflows/slideshow.md` | photos or screenshots set to music |
 | `references/workflows/voiceover-only.md` | narration added to an existing video |
@@ -33,7 +33,7 @@ for that step) with a table of its sections; read only what the current step nee
 | `references/onboarding.md` | first run, setup missing, or the user asks what showtime needs |
 | `references/studio.md` | the user wants options first, or accepted the studio offer |
 | `references/boards.md` | writing or changing a studio board (`board.json`) |
-| `references/review.md` | the critic round on a finished video (quality mode), a critique, or notes from the user or a critic |
+| `references/review.md` | the critic round on a finished video (quality mode), a critique, notes from the user or a critic, the notes page where the person points at frames (`showtime review open`), or any message about a video in progress (§5: what to change, and when to change nothing) |
 | `references/diagnosing.md` | the user reports a problem ("it came out wrong", "setup failed") |
 | `references/crew.md` | handing work to crew sub-agents; each role's brief is `references/crew/<role>.md`, shared rules in `references/crew/rules.md` |
 | `references/harness-notes.md` | installing, or running showtime from another agent host, a script or CI |
@@ -64,7 +64,7 @@ for that step) with a table of its sections; read only what the current step nee
 | `references/transitions.md` | choosing scene handoffs (CSS and WebGL) |
 | `references/film-api.md` | drawing a canvas film or tutorial with `Film` |
 | `references/series.md` | a tutorial series: several episodes for one product sharing one kit (`showtime series`) |
-| `references/html-export.md` | sharing a project as a single-file interactive HTML video (`showtime export html`) |
+| `references/html-export.md` | sharing a project as a single-file interactive HTML video (`showtime export html`); a video that stops and asks the viewer (showtime.json `questions`) |
 | `references/manim.md` | equations, proofs, graphs, grid transforms: math and diagram animation with Manim |
 | `references/synth-score.md` | writing music or sound design in code with `Synth` |
 | `references/debugging-renders.md` | a render fails, flickers, shows black or frozen frames, or differs from the preview |

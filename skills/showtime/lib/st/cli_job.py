@@ -13,6 +13,7 @@ COMMANDS = {
     "qa": "Check a finished video: file, loudness, black/frozen/silent, captions, credits -> PASS/WARN/FAIL",
     "review-pack": "Build a critic packet for a render: contact sheets, key frames, loudness graph, CRITIC.md",
     "review-verdict": "Decide a pairwise review round: the new render wins only if preferred in both orders",
+    "review-respond": "Mark critic findings fixed or waived (with a reason); without flags, list them and what is open",
     "job": "Job ledger: showtime job init|note|discard|list|show (job.json + SHOWTIME.md)",
     "status": "Where the latest (or given) job stands, in three lines",
     "clean": "Remove intermediates showtime created in a job or project (frames, scratch); asks first",
@@ -117,7 +118,8 @@ def register(sub: argparse._SubParsersAction) -> None:
     p = sub.add_parser("review-pack", help=COMMANDS["review-pack"], formatter_class=RAW, description=(
         "Make a folder a critic (a fresh sub-agent or a person) can judge without the session:\n"
         "sheet.jpg (1 frame/s), scenes.jpg (every scene middle and each cut at -0.1s/mid/+0.2s),\n"
-        "frames/ (frame 0, hook, poster, last frame, scene frames), loudness.png, qa/ (a fresh qa run),\n"
+        "frames/ (frame 0, hook, poster, last frame, scene frames), loudness.png, audio.txt and\n"
+        "hearing.png (the sound measured for the hearing pass), qa/ (a fresh qa run),\n"
         "thumb-168x94.png, context/ (brief, storyboard, SHOWTIME.md, showtime.json, check.json, mix report)\n"
         "and CRITIC.md (the brief: the eight judging questions, severity scale, citation rule, answer\n"
         "format, 3-round limit).\n"
@@ -168,6 +170,31 @@ def register(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--round", type=int, help="round number (default: the latest pairwise round)")
     p.add_argument("--json", action="store_true", help="print the verdict as JSON")
     p.set_defaults(func=cmd_review_verdict)
+
+    p = sub.add_parser("review-respond", help=COMMANDS["review-respond"], formatter_class=RAW, description=(
+        "Once a critic has answered, every Blocker and Should-fix in the job's FINDINGS.md files must be fixed\n"
+        "or waived before `showtime job note <job> --stage deliver` records the delivery (any review mode; a job\n"
+        "no critic answered is not affected). Each finding has an id from its place: r1-B2 is round 1's second\n"
+        "blocker, r1-S1 its first should-fix, r2o1-S1 the first should-fix of order 1 in pairwise round 2 (only\n"
+        "findings about the version that came out best count there).\n\n"
+        "--fixed ID NOTE   you fixed it: NOTE says what changed (prove it: showtime snap <new> --at T --compare <old>)\n"
+        "--waive ID REASON it ships as is: REASON is one line (a blocker only with the user's OK)\n"
+        "Both repeat. The lines go to review/round-N/RESPONSE.md of the latest answered round (by hand:\n"
+        "`fixed r1-S2: ...`, `waived r1-S2: ...`); a later critic's `fixed r1-S2` or `not fixed r1-S2` in its\n"
+        "PREVIOUS lines counts too, and the last word about an id wins. Waivers are listed in the receipt.\n"
+        "Without --fixed or --waive it lists every finding with its id and state."),
+        epilog=("examples:\n"
+                "  showtime review-respond                       # list the current job's findings and what is open\n"
+                "  showtime review-respond my-job --fixed r1-S1 \"title raised to 64 px; snap 3.2 s compared\"\n"
+                "  showtime review-respond my-job --waive r1-S2 \"the brand kit sets this weight; user agreed\"\n"
+                "  showtime review-respond my-job --fixed r1-B1 \"hook re-rendered\" --fixed r1-S3 \"bridge line added\""))
+    p.add_argument("job", nargs="?", help="job folder or name (default: the current or newest job)")
+    p.add_argument("--fixed", nargs=2, action="append", default=[], metavar=("ID", "NOTE"),
+                   help="mark a finding fixed, saying what changed (repeatable)")
+    p.add_argument("--waive", nargs=2, action="append", default=[], metavar=("ID", "REASON"),
+                   help="ship a finding as is, with a one-line reason (repeatable)")
+    p.add_argument("--json", action="store_true", help="print the findings and their state as JSON")
+    p.set_defaults(func=cmd_review_respond)
 
     # ------------------------------------------------------------------ job
     j = sub.add_parser("job", help=COMMANDS["job"], formatter_class=RAW, description=(
@@ -464,6 +491,129 @@ def cmd_review_verdict(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_review_respond(args: argparse.Namespace) -> int:
+    from .job import findings, ledger
+    job = ledger.resolve(args.job)
+    g = findings.collect(job)
+    marks = [(i, n, "fixed") for i, n in args.fixed] + [(i, n, "waived") for i, n in args.waive]
+    if marks:
+        if not g["applies"]:
+            raise ShowtimeError("no critic has answered in %s yet, so there is nothing to mark" % job.name,
+                                hint="build a pack with showtime review-pack %s and have a critic write FINDINGS.md" % job.name)
+        known = {f["id"]: f for f in g["findings"]}
+        lines = []
+        for raw_id, note, verb in marks:
+            fid = findings.norm_id(raw_id)
+            f = known.get(fid)
+            if f is None:
+                raise ShowtimeError("%s names no blocker or should-fix of %s" % (raw_id, job.name),
+                                    hint="showtime review-respond %s lists the ids (%s)" % (
+                                        job.name, ", ".join(sorted(known)) or "none"))
+            note = " ".join(str(note).split())
+            if not note:
+                raise ShowtimeError("--%s %s needs a one-line %s" % ("fixed" if verb == "fixed" else "waive", fid,
+                                                                    "note on what changed" if verb == "fixed" else "reason"))
+            lines.append("- %s %s: %s  (finding: %s)" % (verb, fid, note, findings.short(f, 90)))
+        d = findings.latest_answered_round(job)
+        resp = d / findings.RESPONSE
+        old = resp.read_text(encoding="utf-8", errors="replace") if resp.is_file() else (
+            "# Response to the critic (%s)\n\nOne line per finding: `fixed <id>: what changed` or `waived <id>: why it "
+            "ships as is`. Written by showtime review-respond; the last word about an id wins.\n\n" % d.name)
+        with open(str(resp), "w", encoding="utf-8", newline="\n") as fh:
+            fh.write((old if old.endswith("\n") or not old else old + "\n") + "\n".join(lines) + "\n")
+        try:
+            ledger.note(job, event="review response: %s" % ", ".join("%s %s" % (v, findings.norm_id(i)) for i, _, v in marks))
+        except Exception:  # noqa: BLE001 - the response file is what counts
+            pass
+        for ln in lines:
+            log("recorded in %s: %s" % (resp, ln[2:]))
+        g = findings.collect(job)
+    if args.json:
+        print_json(g)
+        return 0
+    if not g["applies"]:
+        print("no critic has answered in %s yet: nothing gates the delivery (quality mode: showtime review-pack %s)"
+              % (job.name, job.name))
+        return 0
+    for f in g["findings"]:
+        state = f["status"].upper() if f["status"] == "open" else f["status"]
+        extra = "  (%s: %s)" % (f["by"], f["note"]) if f["status"] != "open" and f.get("note") else ""
+        print("%-9s %-10s %-6s %s%s" % (f["id"], f["severity"], state, findings.short(f, 100), extra))
+    if not g["findings"]:
+        print("no blockers or should-fix findings in %s" % job.name)
+    for u in g["unknown"]:
+        print("note: %s is named in a fixed/waived line but is no blocker or should-fix of this job" % u)
+    if g["open"]:
+        print("delivery: held by %d open finding%s; %s" % (len(g["open"]), "" if len(g["open"]) == 1 else "s",
+                                                        findings.how_to(job.name, [f["id"] for f in g["open"]])))
+    else:
+        print("delivery: clear (%d fixed, %d waived)" % (len(g["fixed"]), len(g["waived"])))
+    return 0
+
+
+def deliver_block(job, outputs=(), files=()):
+    """Why the job cannot be marked delivered, or None: the delivered final's latest qa is a FAIL, or a critic's
+    Blocker or Should-fix is neither fixed nor waived. Returns {gate (qa | findings), reason, message, fix}
+    (message: the full refusal).
+
+    The final judged: the first of `files` with a qa record of its own (deliver exports: the exported video;
+    poster --bake/--cover: the new file, else its source), else a final in `outputs` (KIND=PATH, recorded by the
+    same command), else the job's latest final. Unreadable ledgers or review folders never block."""
+    from .job import findings, ledger
+    try:
+        data = ledger.load(job)
+        final = None
+        for o in outputs or ():   # a final recorded by this same note is the one being delivered
+            kind, raw = ledger.parse_output(str(o))
+            rp = Path(raw).expanduser()
+            rp = rp if rp.is_absolute() else Path.cwd() / rp
+            if rp.is_file() and ledger.role_kind(job, kind, str(rp), False, data) == "final":
+                final = rp
+        cands = [Path(f) for f in files or () if f]
+        final = next((f for f in cands if ledger.qa_own(data, f)), None) or final or \
+            (cands[0] if cands else ledger.latest_output(job, "final", data))
+        q = ledger.qa_gate_error(job, data, final) if final is not None else None
+    except Exception:  # noqa: BLE001 - an unreadable ledger never blocks here (note itself reports it)
+        q = None
+    if q:
+        msg = "the job cannot be marked delivered: " + q["reason"] + ("\n    report: %s" % q["report"] if q["report"] else "")
+        return {"gate": "qa", "reason": q["reason"], "message": msg, "fix": q["fix"]}
+    try:
+        g = findings.collect(job)
+    except Exception:  # noqa: BLE001 - an unreadable review folder never blocks
+        return None
+    if g["applies"] and g["open"]:
+        msg, hint = findings.gate_error(job, g)
+        ids = [f["id"] for f in g["open"]]
+        reason = "%d critic finding%s open (%s)" % (len(ids), "" if len(ids) == 1 else "s", ", ".join(ids[:6]) +
+                                                    (", ..." if len(ids) > 6 else ""))
+        return {"gate": "findings", "reason": reason, "message": msg, "fix": hint}
+    return None
+
+
+def _deliver_gate(job, outputs=()) -> None:
+    """`job note --stage deliver`: refuse (an error) when deliver_block names a reason."""
+    b = deliver_block(job, outputs)
+    if b:
+        raise ShowtimeError(b["message"], hint=b["fix"])
+
+
+def deliver_held_line(job, b) -> str:
+    """deliver exports / poster --bake/--cover: the one line when the files were written but the gate held."""
+    return "files written, but job %s is not marked delivered: %s; %s" % (job.name, b["reason"], b["fix"])
+
+
+def _notes_warning(job) -> None:
+    """At delivery: the person's notes on the video (showtime review) that are still open, as a warning."""
+    from .job import notes
+    try:
+        w = notes.warning(job)
+    except Exception:  # noqa: BLE001 - unreadable notes never block a delivery
+        return
+    if w:
+        warn(w)
+
+
 def cmd_job_init(args: argparse.Namespace) -> int:
     from .job import ledger
     if args.platform:
@@ -477,10 +627,13 @@ def cmd_job_init(args: argparse.Namespace) -> int:
         log("showtime-out/ is inside a git repo: wrote showtime-out/.gitignore so renders are never committed")
     setup = None if args.no_check else _setup_check()
     from . import review_mode as rmode
+    from . import showreel
     rv, rv_src = data["review_mode"], data["review_mode_source"]
+    reel = showreel.resolve({}, data)      # a showreel / "go all out" brief: the showreel tone (references/tones.md)
     if args.json:
         out = {"job": str(d), "ledger": str(d / "job.json"), "notes": str(d / "SHOWTIME.md"), "mode": data["mode"],
-               "review_mode": {"mode": rv, "source": rmode.SOURCES.get(rv_src, rv_src), "summary": rmode.SUMMARY[rv]}}
+               "review_mode": {"mode": rv, "source": rmode.SOURCES.get(rv_src, rv_src), "summary": rmode.SUMMARY[rv]},
+               "showreel": reel}
         if setup is not None:
             out["setup"] = {"ok": setup.get("ok"), "counts": setup.get("counts"),
                             "problems": [r for r in setup.get("checks") or [] if r.get("status") in ("warn", "fail")]}
@@ -488,6 +641,9 @@ def cmd_job_init(args: argparse.Namespace) -> int:
     else:
         log("job %s (%s mode)" % (d.name, data["mode"]))
         log("review: " + rmode.describe(rv, rv_src))
+        if reel["on"]:
+            log("tone: " + showreel.describe(reel) + "; `showtime new showreel <dir> --job %s` starts from the "
+                "showreel template (references/tones.md, showreel)" % d.name)
         if setup is not None:
             from .doctor import quick_lines
             sys.stderr.write("\n".join(quick_lines(setup)) + "\n")   # stdout stays the job folder alone
@@ -508,6 +664,8 @@ def _setup_check():
 def cmd_job_note(args: argparse.Namespace) -> int:
     from .job import ledger
     job = ledger.resolve(args.job)
+    if args.stage == "deliver" and (args.status or "done") == "done":
+        _deliver_gate(job, args.output)
     data = ledger.note(job, stage=args.stage, status=args.status, seconds=args.seconds, verified=args.verified,
                        assumed=args.assumed, questions=args.question, answers=args.answer, next_cmd=args.next_cmd,
                        pointers=args.pointer, warnings=args.warning, goal=args.goal, outputs=args.output,
@@ -517,11 +675,17 @@ def cmd_job_note(args: argparse.Namespace) -> int:
                        render=_parse_render(args.render, args.render_span, args.seconds, args.render_base))
     if args.stage == "deliver" and (args.status or "done") == "done":
         from .job import receipt
-        receipt.refresh(job)                # the natural end of a job: receipt.md, receipt.json, the share.txt line
+        if receipt.refresh(job) and not args.json:   # the natural end of a job: receipt.md, receipt.json, share.txt
+            from .common import read_json
+            rec = read_json(job / "receipt.json", None)
+            if isinstance(rec, dict):
+                sys.stderr.write("delivery card (references/modes.md section 5): end with this shape; fill in the <...> "
+                                 "lines, and Look: always\n" + receipt.card(rec))
         rv = _review_of(job)
         if rv and rv.get("pending"):
             from .job import review_state
             sys.stderr.write(review_state.pending_line(rv) + "  (delivered without the quality-mode critic round)\n")
+        _notes_warning(job)
     if args.json:
         print_json(data)
     else:

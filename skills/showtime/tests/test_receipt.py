@@ -206,6 +206,52 @@ class UsageTests(unittest.TestCase):
             self.assertNotIn(bad, blob)
 
 
+class PriceTableTests(unittest.TestCase):
+    """Known token counts give the list-price dollars (usage.PRICES, read on each provider's page)."""
+
+    M = 1_000_000
+
+    def bucket(self, **kw):
+        return dict({k: 0 for k in usage.FIELDS}, **kw)
+
+    def test_table_is_dated_and_sourced(self):
+        self.assertRegex(usage.PRICES_AS_OF, r"^\d{4}-\d\d-\d\d$")
+        self.assertTrue(all(u.startswith("https://") for u in usage.PRICE_SOURCES.values()))
+        for model, p in usage.PRICES.items():
+            for k in usage.FIELDS:
+                self.assertGreater(p[k], 0, (model, k))
+            if "long" in p:
+                self.assertTrue(all(p["long"][k] >= p[k] for k in usage.FIELDS), model)
+
+    def test_one_million_of_each(self):
+        # input + cache read + cache write (5 min) + output, one million tokens each
+        want = {"claude-opus-5-5": 4 + 0.20 + 5 + 20, "claude-sonnet-5-5": 2 + 0.20 + 2.5 + 10,
+                "claude-fable-5-1": 10 + 0.25 + 12.5 + 50, "claude-haiku-4-5": 1 + 0.10 + 1.25 + 5,
+                "gpt-6.1-sol": 2 + 0.10 + 2.5 + 10, "gpt-6-astra": 10 + 1 + 12.5 + 50, "grok-4.7": 2 + 0.50 + 2 + 6}
+        b = self.bucket(input=self.M, cache_read=self.M, write_5m=self.M, output=self.M)
+        for model, usd in want.items():
+            self.assertAlmostEqual(usage.cost_usd(b, model), usd, places=6, msg=model)
+        # Claude Code's 1-hour cache writes
+        self.assertAlmostEqual(usage.cost_usd(self.bucket(write_1h=self.M), "claude-opus-5-5"), 8.0)
+        self.assertAlmostEqual(usage.cost_usd(self.bucket(write_1h=self.M), "claude-fable-5-1"), 20.0)
+        # a dated id and Opus fast mode (twice the price)
+        self.assertAlmostEqual(usage.cost_usd(self.bucket(output=self.M), "claude-haiku-4-5-20251001"), 5.0)
+        fast = dict(self.bucket(), fast=self.bucket(input=self.M, output=self.M))
+        self.assertAlmostEqual(usage.cost_usd(fast, "claude-opus-5-5"), 48.0)
+        self.assertIsNone(usage.cost_usd(dict(self.bucket(), fast=self.bucket(input=1)), "claude-haiku-4-5"))
+
+    def test_devin_ids_and_long_context(self):
+        for devin_id, model in (("claude-opus-5-5-high", "claude-opus-5-5"), ("gpt-6-astra-high", "gpt-6-astra"),
+                                ("grok-4-7-high", "grok-4.7"), ("gpt-6-1-sol-medium", "gpt-6.1-sol"),
+                                ("claude-fable-5-1-max", "claude-fable-5-1")):
+            self.assertIs(usage.price_of(devin_id, "devin"), usage.PRICES[model], devin_id)
+        self.assertIsNone(usage.price_of("swe-2-high", "devin"))          # no provider list price
+        long = dict(self.bucket(input=self.M), long=self.bucket(input=self.M, output=self.M))
+        self.assertAlmostEqual(usage.cost_usd(long, "gpt-6-astra-high", "devin"), 10 + 20 + 75)
+        self.assertAlmostEqual(usage.cost_usd(long, "grok-4-7-high", "devin"), 2 + 4 + 12)
+        self.assertIsNone(usage.cost_usd(long, "claude-opus-5-5"))       # no long-context price: never a guess
+
+
 class ReceiptTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -454,13 +500,14 @@ class DevinTests(unittest.TestCase):
         o, s = m["claude-opus-5-5-high"], m["swe-2-medium"]
         self.assertEqual((o["input"], o["output"], o["cache_read"], o["write_5m"], o["messages"]), (10, 1000, 100000, 20000, 1))
         self.assertEqual((s["input"], s["output"], s["cache_read"], s["messages"]), (100000, 4000, 800000, 2))
-        self.assertAlmostEqual(o["cost_usd"], (10 * 4 + 1000 * 20 + 100000 * 0.2 + 20000 * 4) / 1e6, places=4)
-        self.assertEqual(s["cost_usd"], 0.0)
+        # Anthropic's list price, the cache write at the 5-minute price; SWE-2 has no provider list price
+        self.assertAlmostEqual(o["cost_usd"], (10 * 4 + 1000 * 20 + 100000 * 0.2 + 20000 * 5) / 1e6, places=4)
+        self.assertIsNone(s["cost_usd"])
         self.assertAlmostEqual(o["token_share"] + s["token_share"], 1.0, places=3)
         self.assertLess(o["token_share"], s["token_share"])
         self.assertIn("est.", u["cost_note"])
-        self.assertIn(usage.DEVIN_PRICES_AS_OF, u["cost_note"])
-        self.assertNotIn("lower bound", u["cost_note"])
+        self.assertIn(usage.PRICES_AS_OF, u["cost_note"])
+        self.assertIn("swe-2-medium not priced, so this is a lower bound", u["cost_note"])
         self.assertEqual(u["subagents"], 0)
         blob = json.dumps(u)
         for bad in ("SECRET", "sk-ant", "private-devin-dir", "other-folder-xyz", "r-a1"):
@@ -468,6 +515,37 @@ class DevinTests(unittest.TestCase):
         whole = usage.read_usage(db, where=job)                                    # no window: the early message too
         self.assertEqual(whole["models"]["swe-2-medium"]["messages"], 3)
         self.assertEqual(usage.read_usage(db, where=self.tmp / "nowhere")["status"], "not_reported")
+
+    def test_devin_long_context_requests(self):
+        """A request whose prompt passes the model's long-context threshold is priced at that price."""
+        import sqlite3
+        work = self.tmp / "longctx"
+        work.mkdir()
+        db = work / "sessions.db"
+        con = sqlite3.connect(str(db))
+        con.executescript(DEVIN_SCHEMA)
+        t0 = time.time()
+        con.execute("INSERT INTO sessions (id, working_directory, backend_type, model, agent_mode, created_at, "
+                    "last_activity_at) VALUES ('s', ?, 'windsurf', 'gpt-6-astra-high', 'normal', ?, ?)",
+                    (str(work), int(t0), int(t0)))
+
+        def node(n, mid, model, i, o, cr, cc):
+            m = {"role": "assistant", "message_id": mid, "metadata": {"created_at": iso_utc(t0 + n), "generation_model": model,
+                 "metrics": {"input_tokens": i, "output_tokens": o, "cache_read_tokens": cr, "cache_creation_tokens": cc}}}
+            con.execute("INSERT INTO message_nodes (session_id, node_id, chat_message, created_at) VALUES ('s', ?, ?, ?)",
+                        (n, json.dumps(m), int(t0 + n)))
+        node(1, "a", "gpt-6-astra-high", 1000, 1000, 100000, 0)           # 101K prompt: standard
+        node(2, "b", "gpt-6-astra-high", 2000, 1000, 270000, 1000)        # 273K prompt: long context
+        node(3, "c", "grok-4-7-high", 1000, 500, 199000, 0)               # 200K prompt: long context
+        con.commit()
+        con.close()
+        u = usage.read_usage(db, host="devin", where=work)
+        a, g = u["models"]["gpt-6-astra-high"], u["models"]["grok-4-7-high"]
+        self.assertEqual((a["input"], a["cache_read"], a["write_5m"], a["output"]), (3000, 370000, 1000, 2000))
+        want_a = (1000 * 10 + 100000 * 1 + 1000 * 50 + 2000 * 20 + 270000 * 2 + 1000 * 25 + 1000 * 75) / 1e6
+        self.assertAlmostEqual(a["cost_usd"], want_a, places=4)
+        self.assertAlmostEqual(g["cost_usd"], (1000 * 4 + 199000 * 1 + 500 * 12) / 1e6, places=4)
+        self.assertNotIn("lower bound", u["cost_note"])
 
     def test_devin_receipt_found_by_itself_and_lead_review_flagged(self):
         job, db = self.job_and_db("devinreceipt")

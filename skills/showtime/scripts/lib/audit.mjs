@@ -4,11 +4,12 @@
 /**
  * Text layout snapshot at the current seek position.
  * o: { width, height, full: boolean, labelGapEm?: number (SVG labels closer than this are crowded, default 0.15) }
- * -> { blocks: [{bid, text, len, rect, opacity, fontSize, scale, decor, sel, clipped, offCanvas, onCanvas, caption, moving}],
+ * -> { blocks: [{bid, text, len, rect, opacity, fontSize, scale, decor, flash, sel, clipped, offCanvas, onCanvas, caption, moving}],
  *      leaves: [{lid, bid, rect, color:[r,g,b,a], opacity, readOpacity, fontSize, scale, decor, weight, outlined, sel}] (full only),
  *      readOpacity = the opacity contrast is judged at (a caption word's: without its card fade or karaoke dim),
  *      scale = on-screen size / CSS size (transforms such as a camera push or a scaled mockup),
  *      decor = inside [data-st-decor] (UI mockups, thumbnails: detail, not copy the viewer must read)
+ *      flash = inside [data-st-flash] (a flash word: texture in the showreel tone, scripts/lib/showreel.mjs)
  *      overlaps: [[bidA, bidB, frac]] (full only), heavy: n (full only),
  *      covers: [{text, by, sel, bySel, rect}] (full only): text hidden under a small opaque element that
  *      carries its own text (a badge, callout or pill on top of a label),
@@ -92,6 +93,8 @@ export function textSnapshot(o) {
     } catch { return 1; }
   }
   const decorOf = (el) => !!(el.closest && el.closest('[data-st-decor]'));
+  // flash word (data-st-flash): texture in the showreel tone, may leave before its reading time (scripts/lib/showreel.mjs)
+  const flashOf = (el) => !!(el.closest && el.closest('[data-st-flash]'));
   // mid-way through a short entrance on the element or an ancestor: a finite animation (<= 1.5 s) of
   // opacity, colour, filter or a clip/mask (a slow push-in on the scene is not an entrance)
   const ENTER_PROPS = /^(opacity|color|filter|backdropFilter|clipPath|mask|maskImage|webkitMaskImage|backgroundColor|background)$/;
@@ -259,7 +262,7 @@ export function textSnapshot(o) {
     let blk = blocks.get(bid);
     if (!blk) {
       const text = (b.innerText || b.textContent || '').replace(/\s+/g, ' ').trim();
-      blk = { bid, el: b, box: null, opacity: 0, fontSize: 0, scale: scaleOf(b), decor: decorOf(b), text: text.slice(0, 2000), len: text.length, sel: sel(b),
+      blk = { bid, el: b, box: null, opacity: 0, fontSize: 0, scale: scaleOf(b), decor: decorOf(b), flash: flashOf(b), text: text.slice(0, 2000), len: text.length, sel: sel(b),
         caption: !!b.closest('[data-caption],[data-vo],[data-st-read]') };
       blocks.set(bid, blk);
     }
@@ -314,7 +317,7 @@ export function textSnapshot(o) {
     }
     const v = blk.vbox || r;
     const iv = blk.ibox || v;
-    out.push({ bid: blk.bid, text: blk.text, len: blk.len, rect, opacity: +blk.opacity.toFixed(3), fontSize: blk.fontSize, scale: +blk.scale.toFixed(3), decor: blk.decor, sel: blk.sel,
+    out.push({ bid: blk.bid, text: blk.text, len: blk.len, rect, opacity: +blk.opacity.toFixed(3), fontSize: blk.fontSize, scale: +blk.scale.toFixed(3), decor: blk.decor, flash: blk.flash, sel: blk.sel,
       clipped, offCanvas, onCanvas: inside, caption: blk.caption, moving: !!(blk.el.closest && blk.el.closest('[data-st-moving]')), vrect: { x: v.x, y: v.y, w: v.r - v.x, h: v.b - v.y },
       irect: { x: iv.x, y: iv.y, w: Math.max(0, iv.r - iv.x), h: Math.max(0, iv.b - iv.y) } });
   }

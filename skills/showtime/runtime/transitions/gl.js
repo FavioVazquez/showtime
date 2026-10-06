@@ -267,6 +267,9 @@ async function fixClone(orig, clone) {
       c.style.setProperty('transition', 'none');
     }
     if (tag === 'SCRIPT') { c.remove(); continue; }
+    // a render draws videos on a canvas of their own (stage.js, the canvas route): the clone shows the
+    // video in its own place instead, as an image like any other video
+    if (o.__stVideo) { c.remove(); continue; }
     if (tag === 'IMG') jobs.push(imageDataURL(o).then((u) => { c.setAttribute('src', u); c.removeAttribute('srcset'); c.removeAttribute('loading'); }));
     else if (tag === 'CANVAS' && !o.hasAttribute('data-st-gl')) {
       const img = document.createElement('img');
@@ -277,6 +280,8 @@ async function fixClone(orig, clone) {
       const img = document.createElement('img');
       img.setAttribute('src', o.readyState >= 2 ? frameDataURL(o, o.videoWidth, o.videoHeight) : '');
       copyBox(o, img);
+      img.removeAttribute('data-st-hidden');
+      img.removeAttribute('data-st-canvas');
       img.style.objectFit = getComputedStyle(o).objectFit;
       c.replaceWith(img);
     } else if (tag === 'IFRAME') {
@@ -341,6 +346,7 @@ export function solo(scene) {
   for (let e = scene; e && e.parentElement; e = e.parentElement) {
     for (const sib of e.parentElement.children) {
       if (sib === e || sib.tagName === 'SCRIPT' || sib.tagName === 'STYLE' || sib.tagName === 'LINK') continue;
+      if (sib.__stVideo === e) continue;   // the canvas a render draws this video on (stage.js)
       saved.push([sib, sib.style.visibility]);
       sib.style.visibility = 'hidden';
     }

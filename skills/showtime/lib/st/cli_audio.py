@@ -303,7 +303,7 @@ def _register_music(s) -> None:
                              "  showtime audio music search epic --source buckley --json")
     p.add_argument("words", nargs="*", help="words matched against title, artist, moods, uses, instruments")
     _music_filters(p)
-    p.add_argument("--limit", "-n", type=int, default=12)
+    p.add_argument("--limit", "-n", type=int, default=12, help="maximum results (default 12)")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_music_search)
 
@@ -494,7 +494,7 @@ def _register_lib(s) -> None:
     p.add_argument("--rhythmic", action="store_true", default=None)
     p.add_argument("--tier", help="core, extended, generated, byo")
     p.add_argument("--distinct", action="store_true", help="one result per variant group")
-    p.add_argument("--limit", "-n", type=int, default=15)
+    p.add_argument("--limit", "-n", type=int, default=15, help="maximum results (default 15)")
     p.add_argument("--paths", action="store_true", help="print absolute file paths")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_lib_search)

@@ -30,8 +30,9 @@ lets the user judge pace before anything is built. References: `references/pacin
 - Durations sum exactly to the target length. Voice-led: take the lengths from the job's
   `voice/timeline.json` slots, never from guesses; text-led: from the reading-time rules.
 - Scene lengths follow `pacing.md` (holds, cut rhythm); flag any scene over the platform's patience.
-- Stub project: `showtime new <template> <own dir>/stub --duration <length>`, one plain section per
-  panel with its key visual blocked out (real captures, real copy, placeholders labelled). Then
+- Stub project: `showtime new <template> <own dir>/stub --from-storyboard <own dir>/storyboard.json` writes
+  one section per panel (ids, lengths, a labelled brief card each); block out each key visual in it (real
+  captures, real copy, placeholders labelled). Then
   `showtime check <own dir>/stub` and `showtime snap <own dir>/stub --at <mid-time of each panel>`;
   look at every image.
 - Animatic: the stub with panel stills, the scratch VO and the temp bed if they exist, rendered with

@@ -674,10 +674,10 @@ class TestRetimeVoiceAndData(TempDirCase):
         return d
 
     @staticmethod
-    def _timeline(folder, lines):
-        """A voice-script timeline: [(id, speech seconds, pause after)]."""
+    def _timeline(folder, lines, lead=0.0):
+        """A voice-script timeline: [(id, speech seconds, pause after)], the first line `lead` s into vo.wav."""
         (folder / "lines").mkdir(parents=True, exist_ok=True)
-        t, out = 0.0, []
+        t, out = float(lead), []
         for i, (lid, dur, pause) in enumerate(lines):
             words = [{"text": "w%d" % k, "start": round(t + k * dur / 2, 3), "end": round(t + (k + 1) * dur / 2 - 0.05, 3),
                       "line": lid} for k in range(2)]
@@ -736,6 +736,35 @@ class TestRetimeVoiceAndData(TempDirCase):
         cp = showtime("retime", d, "--from-voice", tl, "--total", "6.5", check=False)
         self.assertNotEqual(cp.returncode, 0)
         self.assertIn("end card", cp.stderr)
+
+    def test_from_voice_keeps_the_first_lines_lead_in(self):
+        """A first line pinned 2.4 s into the voice (`at: 2.4` or `lead_in: 2.4`, a music-only opening) starts at
+        2.4 s in the video, not at --pad: its scene, its vo-<id> track, the caption words and the question cues on
+        it all move together; the later lines keep their slots after it."""
+        from st.cli_core import _Tags
+        from st import questions
+        d = self._project("vo-lead")
+        cfg = common.read_json(d / "showtime.json")
+        cfg["questions"] = [{"id": "q1", "at": "hook.start", "prompt": "?", "choices": ["a", "b"], "answer": 0}]
+        common.write_json(d / "showtime.json", cfg)
+        tl = self._timeline(d / "voice", [("hook", 1.6, 0.35), ("demo", 3.0, 0.6)], lead=2.4)
+        rep = json.loads(showtime("retime", d, "--from-voice", tl, "--json").stdout)
+        html = (d / "index.html").read_text(encoding="utf-8")
+        wins = [(round(c["t0"], 3), round(c["t1"], 3)) for c in _Tags(html).resolve() if c["parent"] is None]
+        # hook = 2.4 s of picture before its line + slot 1.95; demo = pad 0.3 + 3.6; the end card keeps 2 s
+        self.assertEqual(wins, [(0.0, 4.35), (4.35, 8.25), (8.25, 10.25)])
+        self.assertEqual(rep["to"], 10.25)
+        mix = common.read_json(d / "audio" / "mix.json")
+        self.assertEqual([(t["id"], t["start"]) for t in mix["tracks"] if t.get("kind") == "voice"],
+                         [("vo-hook", 2.4), ("vo-demo", 4.65)])
+        words = common.read_json(d / "voice" / "captions.words.json")["words"]
+        self.assertEqual((words[0]["start"], words[2]["start"]), (2.4, 4.65))
+        self.assertEqual([b["t"] for b in questions.beats(d)], [2.4])
+        # a lead-in shorter than --pad keeps the pad (the picture before the first line never shrinks)
+        d2 = self._project("vo-lead2")
+        tl2 = self._timeline(d2 / "voice", [("hook", 1.6, 0.35), ("demo", 3.0, 0.6)], lead=0.1)
+        rep2 = json.loads(showtime("retime", d2, "--from-voice", tl2, "--dry-run", "--json").stdout)
+        self.assertEqual([m["at"] for m in rep2["voice"]["mapping"]], [0.3, 2.55])
 
     def test_from_voice_order_map_and_errors(self):
         d = self._project("vo2")

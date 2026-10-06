@@ -16,13 +16,13 @@
      a faint baseline grid and a soft vignette; every colour comes from the theme */
   .scene { padding: 7cqh 7cqw; background:
       radial-gradient(70% 80% at 12% 0%, color-mix(in oklab, var(--surface) 90%, white), transparent 70%),
-      radial-gradient(60% 70% at 100% 100%, color-mix(in oklab, var(--accent-2) 12%, transparent), transparent 70%),
+      radial-gradient(60% 70% at 100% 100%, color-mix(in oklab, var(--accent-2) calc(12% * var(--ground-glow, 1)), transparent), transparent 70%),
       var(--bg); }
-  .scene::before { content: ''; position: absolute; inset: 0; pointer-events: none;
+  .scene::before { content: ''; position: absolute; inset: 0; pointer-events: none; opacity: min(1, var(--ground-grid, 1));
     background-image: linear-gradient(to bottom, color-mix(in oklab, var(--fg) 6%, transparent) 1px, transparent 1px);
     background-size: 100% 6cqmin;
     -webkit-mask-image: radial-gradient(80% 80% at 50% 50%, black, transparent 80%); mask-image: radial-gradient(80% 80% at 50% 50%, black, transparent 80%); }
-  .scene::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(130% 100% at 50% 45%, transparent 60%, color-mix(in oklab, var(--fg) 10%, transparent)); }
+  .scene::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(130% 100% at 50% 45%, transparent 60%, color-mix(in oklab, var(--fg) calc(10% * var(--ground-vignette, 1)), transparent)); }
 
   /* ---------- 1. title: kicker, the takeaway at hero size, a rule that draws under it */
   .open { display: flex; flex-direction: column; justify-content: center; gap: 3.6cqh; }

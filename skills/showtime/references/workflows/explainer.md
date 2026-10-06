@@ -9,6 +9,15 @@ transform, geometry), build it with Manim instead: `references/manim.md`.
 
 ## Essentials
 
+- Got a storyboard from another skill (a Shot | Length | Visual | Narration table)? Start here:
+  `showtime new dom <job>/project --from-storyboard <file>` (one scene per shot, `narration.md` ready for the
+  voice), then follow what it prints; the plan names that command and keeps the shots, lengths and narration
+  as written (`story.md` §10)
+- One that stops and asks the viewer: showtime.json `"questions"` (`at` = a narration line id), in the
+  explainer shape, every piece in the plan: a cold open with the puzzle, a roadmap on screen (name its step
+  labels), a bridge after each part, a close whose line answers the opening; `showtime export html` makes the page that stops and asks, the MP4 shows a pause and
+  think beat. Say both in the plan; no line before a question gives its answer away (`story.md` §4, §9;
+  `html-export.md` § Questions)
 - Defaults: 45-60 s, 16:9 at 1920x1080, 30 fps, `film` template, voice `af_heart` (state it as an
   assumption), 2.5-3 words per second. A 9:16 explainer: `showtime new short` and `social-short.md` (§ Defaults)
 - Script first: one line per scene, 6-20 words, numbers and acronyms spelled out; on screen show the payload,
@@ -22,11 +31,11 @@ transform, geometry), build it with Manim instead: `references/manim.md`.
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| Inputs | 31-34 |
-| Defaults | 36-46 |
-| Steps | 48-92 |
-| Pitfalls | 94-104 |
-| Read next | 106-109 |
+| Inputs | 40-43 |
+| Defaults | 45-55 |
+| Steps | 57-107 |
+| Pitfalls | 109-119 |
+| Read next | 121-124 |
 
 ## Inputs
 
@@ -52,8 +61,12 @@ file's steps 2-3 (subject and script); `film` works vertically only if you re-la
    work. Pick one explainer shape (concept, process, list, story; `story.md` section 4) and a visual
    spine from the subject's own world (the transplant test). *Done when:* the contract is in SHOWTIME.md.
 3. **Script first.** Write narration as discrete cues, one line per scene, 6-20 words each, written for
-   the ear (`story.md` section 5, `voice.md` "Writing for the ear"). Use the word budgets in `pacing.md`
-   section 6 to size it to the length. Spell out numbers and acronyms for the voice.
+   the ear (`story.md` section 5, `voice.md` "Writing for the ear"). Use the explainer shape (`story.md`
+   section 4): a cold open with the stakes, a roadmap of the steps on screen, a bridge line after each
+   part, a close that answers the opening. Use the word budgets in `pacing.md`
+   section 6 to size it to the length. Spell out numbers and acronyms for the voice. A video that asks
+   the viewer: give each question its own narration line (`## ask-1`), asked before the line that answers
+   it, and list the questions in showtime.json `"questions"` with `at` on that line (`story.md` §9).
 4. **Project.** `showtime new film <job>/project --title "..." --duration <target>` (the cue table and
    score scale to the target).
 5. **Voice.** Save the script as `<job>/project/narration.md` (one `## id` heading per scene), then
@@ -88,7 +101,9 @@ file's steps 2-3 (subject and script); `film` works vertically only if you re-la
    -o <job>/captions.ass --srt <job>/final.srt` (recorded as the job's captions).
 9. **Final.** `"poster"` in `showtime.json`, then `showtime render <job>/project --job <job>`.
 10. **Verify.** `showtime qa <job>` (the latest final, plus the job's captions); `showtime look <job>`.
-    Quality mode (the default; lean: publish-bound only): review-pack and critic (`review.md`).
+    Quality mode (the default; lean: publish-bound only): review-pack and critic (`review.md`), whose
+    first-viewer pass asks of every part why it is there; fix or waive each blocker and should-fix
+    (`showtime review-respond`).
 11. **Deliver.** Share copy (YouTube chapters if over 2 minutes), exports, the delivery card.
 
 ## Pitfalls

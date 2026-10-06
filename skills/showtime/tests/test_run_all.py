@@ -246,6 +246,20 @@ class TestSelection(unittest.TestCase):
         s = self.sel([SK + "/lib/st/common.py"], traces={"fast:test_alpha.py": {SK + "/lib/st/common.py"}})
         self.assertIn("test_beta.py", s["tests"])
 
+    def test_only_overrides_replace_the_scans(self):
+        # every recorded CLI run loads cli_release.py (st.cli imports each cli_*.py for the parser); only the
+        # release and PR tests exercise it
+        names = TESTS + ["test_release_video.py", "test_pr_video.py", "test_action.py", "test_foundation.py"]
+        rec = {"fast:test_alpha.py": {SK + "/lib/st/cli_release.py", SK + "/lib/st/pr_video.py"}}
+        s = I.select(names, [SK + "/lib/st/cli_release.py"], [], self.m, rec)
+        self.assertFalse(s["all"])
+        self.assertEqual(sorted(s["tests"]), ["test_action.py", "test_foundation.py", "test_pr_video.py",
+                                              "test_release_video.py", "test_skill_structure.py"])
+        self.assertIn("(only)", s["tests"]["test_pr_video.py"][0][2])
+        self.assertNotIn("(only)", s["tests"]["test_foundation.py"][0][2])     # the cli_*.py rule still adds
+        s = I.select(names, [SK + "/lib/st/pr_video.py"], [], self.m, rec)
+        self.assertEqual(sorted(s["tests"]), ["test_pr_video.py", "test_skill_structure.py"])
+
     def test_override_patterns(self):
         self.assertTrue(I.match_pattern("docs/a/b.md", "docs/**"))
         self.assertTrue(I.match_pattern(SK + "/templates/dom/README.md", SK + "/templates/**/*.md"))

@@ -144,47 +144,15 @@ def frames_at(video: Path, times: Sequence[float], out: Path, dur: float, fps: f
 
 
 def transcript(video: Path, proj: Optional[Path]) -> Tuple[str, str]:
-    """(text, source): the narration of this render, from its own caption sidecar, else the project's voice
-    timeline or caption files when they are not newer than the render (a re-voice after it would lie)."""
-    from . import captions as qa_captions
-
-    def lines(cues: List[Tuple[float, float, str]]) -> str:
-        return "\n".join("[%7.2fs - %7.2fs] %s" % (a, b, t) for a, b, t in cues if t.strip())
-
-    for ext in (".srt", ".vtt", ".ass"):
-        side = video.with_suffix(ext)
-        if side.is_file():
-            cues = qa_captions.parse(side)["cues"]
-            return lines([(c["start"], c["end"], c["text"]) for c in cues]), "its caption file %s" % side.suffix
-    if proj is None:
-        return "", ""
-    try:
-        vt = video.stat().st_mtime
-    except OSError:
-        return "", ""
-    off = review._offset(video)
-    tl = proj / "voice" / "timeline.json"
-    if tl.is_file() and tl.stat().st_mtime <= vt + 1:
-        data = read_json(tl, {}) or {}
-        cues = []
-        for ln in (data.get("lines") if isinstance(data, dict) else None) or []:
-            if isinstance(ln, dict) and ln.get("text") and ln.get("start") is not None:
-                a = float(ln.get("speech_start", ln["start"])) - off
-                b = float(ln.get("speech_end", ln.get("end", a))) - off
-                cues.append((a, b, str(ln["text"])))
-        if cues:
-            return lines(cues), "the voice timeline"
-    for f in (proj / "voice" / "vo.srt", proj / "vo.srt", proj / "captions.srt", proj / "final.srt"):
-        if f.is_file() and f.stat().st_mtime <= vt + 1:
-            cues = qa_captions.parse(f)["cues"]
-            return lines([(c["start"] - off, c["end"] - off, c["text"]) for c in cues]), "the project's captions"
-    return "", ""
+    """(text, source): the narration of this render (st.qa.review.narration), one timed line per cue."""
+    cues, source = review.narration(video, proj)
+    return review.cue_lines(cues), source
 
 
-def asr_transcript(video: Path, scratch: Path) -> Tuple[str, str]:
+def asr_cues(video: Path, scratch: Path) -> Tuple[List[Tuple[float, float, str]], str]:
     """Speech recognition of one render with a model that is already installed (never a download), so a
     version without caption files still gets a transcript when the other version has one: otherwise the
-    critic could tell the two apart by which one has a transcript. ("", "") when that is not possible."""
+    critic could tell the two apart by which one has a transcript. ([], "") when that is not possible."""
     old = os.environ.get("SHOWTIME_OFFLINE")
     os.environ["SHOWTIME_OFFLINE"] = "1"
     try:
@@ -194,7 +162,7 @@ def asr_transcript(video: Path, scratch: Path) -> Tuple[str, str]:
         words = [w for w in U.words_of(doc) if w.get("start") is not None]
     except Exception as e:  # noqa: BLE001 - no model, no audio, no speech: the brief says so
         log("review-pack: no speech transcript for one version (%s)" % str(e).splitlines()[0][:120])
-        return "", ""
+        return [], ""
     finally:
         if old is None:
             os.environ.pop("SHOWTIME_OFFLINE", None)
@@ -207,8 +175,14 @@ def asr_transcript(video: Path, scratch: Path) -> Tuple[str, str]:
             cues[-1][2].append(str(w["text"]).strip())
         else:
             cues.append([w["start"], w["end"], [str(w["text"]).strip()]])
-    text = "\n".join("[%7.2fs - %7.2fs] %s" % (a, b, " ".join(t)) for a, b, t in cues)
-    return text, "speech recognition" if text else ""
+    out = [(float(a), float(b), " ".join(t)) for a, b, t in cues]
+    return out, "speech recognition" if out else ""
+
+
+def asr_transcript(video: Path, scratch: Path) -> Tuple[str, str]:
+    """(text, source) of asr_cues."""
+    cues, source = asr_cues(video, scratch)
+    return review.cue_lines(cues), source
 
 
 def _scrub(text: str, video: Path, label: str) -> str:
@@ -275,6 +249,18 @@ def build_side(pre: Dict[str, Any], video: Path, proj: Optional[Path], pack: Pat
     except Exception as e:  # noqa: BLE001 - the crops help the critic; they must not stop the pack
         say("review-pack: %s: text crops skipped (%s)" % (label, e))
     loud = review.loudness_png(qdir, q, d / "loudness.png", dur, "video %s" % label)
+    hear = None
+    try:
+        from . import hearing
+        b = sorted(set([0.0] + [c for c in cuts if 0.2 < c < dur - 0.2] + [dur]))
+        hear = hearing.for_pack(video, proj, q, qdir, cuts=[c for c in cuts if 0.1 < c < dur - 0.1],
+                                scenes=[(b[i], b[i + 1], "part %d" % (i + 1)) for i in range(len(b) - 1) if b[i + 1] - b[i] > 0.15],
+                                out_dir=d, name="video %s" % label, title="video %s" % label)
+        if hear:
+            tp = Path(hear["text"])
+            tp.write_text(_scrub(tp.read_text(encoding="utf-8"), video, label), encoding="utf-8", newline="\n")
+    except Exception as e:  # noqa: BLE001 - the hearing material helps the critic; it must not stop the pack
+        say("review-pack: %s: hearing measurements skipped (%s)" % (label, e))
     poster = next((p for p, (t, lab) in zip(mp, matched) if lab == "poster %s" % label), mp[0] if mp else None)
     thumb_small = str(images.thumbnail_preview(poster, d / ("thumb-168x94.png" if W >= H else "thumb-94x168.png"),
                                                (168, 94) if W >= H else (94, 168))) if poster else None
@@ -282,10 +268,26 @@ def build_side(pre: Dict[str, Any], video: Path, proj: Optional[Path], pack: Pat
             "cuts": [round(c, 3) for c in cuts],
             "frames": [{"t": round(t, 3), "label": lab, "path": str(p)} for p, (t, lab) in zip(mp, matched)],
             "text_crops": text_crops, "loudness_graph": loud, "thumbnail_preview": thumb_small,
+            "hearing": {"text": hear["text"], "graph": hear["graph"]} if hear else None,
             "qa": {"verdict": q["verdict"], "summary": q["summary"], "text": str(d / "qa.txt")},
-            "transcript": str(d / "transcript.txt"),
+            "transcript": str(d / "transcript.txt"), "story": str(d / "story.txt"),
             "launch_rhythm": (q.get("rhythm") or {}).get("summary") if (q.get("rhythm") or {}).get("launch") else None,
             "_q": q}
+
+
+def story_of(side: Dict[str, Any], pre: Dict[str, Any], cues: List[Tuple[float, float, str]], source: str,
+             pack: Path) -> str:
+    """One version's parts in order (cuts as the boundaries), each with the matched frame nearest its middle
+    and its narration, for the first-viewer pass. Paths are relative to a brief's order-N folder."""
+    dur = side["duration"]
+    b = sorted(set([0.0] + [c for c in pre["cuts"] if 0.2 < c < dur - 0.2] + [dur]))
+    parts = []
+    od = pack / "order-1"
+    for a, e in [(b[i], b[i + 1]) for i in range(len(b) - 1) if b[i + 1] - b[i] > 0.15]:
+        inside = [f for f in side["frames"] if a <= f["t"] < e]
+        best = min(inside, key=lambda f: abs(f["t"] - (a + e) / 2)) if inside else None
+        parts.append((a, e, "", _rel(best["path"], od) if best else None))
+    return review.story_text(parts, cues, source, where="your brief's folder")
 
 
 # ------------------------------------------------------------------ the pack
@@ -359,16 +361,19 @@ def build(target: Optional[str], against: str, *, out: Optional[str] = None, pro
         lab = pr["label"]
         sides[lab] = build_side(pr, by_label[lab], projs[lab], pack, keys, matched, sheet_times,
                                 record=role[lab] == "new", platform=platform, lufs=lufs, expect_file=expect_file, say=say)
-    say("review-pack: narration transcripts")
-    texts = {lab: transcript(by_label[lab], projs[lab]) for lab in LABELS}
+    say("review-pack: narration transcripts and the parts in order")
+    narr = {lab: review.narration(by_label[lab], projs[lab]) for lab in LABELS}
     for lab in LABELS:
         other = "Y" if lab == "X" else "X"
-        if not texts[lab][0] and texts[other][0]:
-            texts[lab] = asr_transcript(by_label[lab], keys / ("asr-%s" % lab))
-    for lab in LABELS:
+        if not narr[lab][0] and narr[other][0]:
+            narr[lab] = asr_cues(by_label[lab], keys / ("asr-%s" % lab))
+    texts = {lab: (review.cue_lines(narr[lab][0]), narr[lab][1]) for lab in LABELS}
+    for i, lab in enumerate(LABELS):
         Path(sides[lab]["transcript"]).write_text(
             (texts[lab][0] or "(no narration transcript for this version: no caption file, voice timeline or recognised "
                                "speech belongs to it)") + "\n", encoding="utf-8", newline="\n")
+        Path(sides[lab]["story"]).write_text(story_of(sides[lab], pre[i], narr[lab][0], narr[lab][1], pack),
+                                             encoding="utf-8", newline="\n")
     say("review-pack: side-by-side sheets")
     W, H = sides["X"]["size"]
     thumb = 360 if W >= H else 220
@@ -447,7 +452,9 @@ def _side_block(s: Dict[str, Any], base: Path) -> str:
 - Contact sheet at the shared times: `{sheet}`
 - Every frame around each cut ({ncuts} cuts): `{cuts}`
 - Loudness over time: `{loud}`
+- {hear}
 - Narration transcript (you cannot hear it): `{tr}`
+- The parts in order, each with its middle frame and its narration: `{story}`
 - Thumbnail at feed size: `{thumb}`
 - Frames at the matched times (the same times as the other video; past its end a card says so):
 {frames}
@@ -456,6 +463,10 @@ def _side_block(s: Dict[str, Any], base: Path) -> str:
 """.format(lab=lab, w=s["size"][0], h=s["size"][1], fps=s["fps"], dur=s["duration"], verdict=s["qa"]["verdict"],
            qa=r(s["qa"]["text"], base), sheet=r(s["sheet"], base), ncuts=len(s["cuts"]),
            cuts=r(s["cut_strips"], base), loud=r(s["loudness_graph"], base), tr=r(s["transcript"], base),
+           story=r(s.get("story"), base),
+           hear=("Sound, measured for the hearing pass (you cannot listen): `%s`, plotted in `%s`" % (
+               r(s["hearing"]["text"], base), r(s["hearing"]["graph"], base)) if s.get("hearing") else
+               "Sound, measured for the hearing pass: (none: no measured audio track)"),
            thumb=r(s["thumbnail_preview"], base), frames=frames, crops=crops)
 
 
@@ -487,11 +498,16 @@ Paths below are relative to this brief's folder.
 Context (what the video was asked to be):
 {ctx}
 {launch}
+{first_viewer}
+
+{hearing}
+
 ## How to judge
 Look at every image of {a}, then every image of {b}, before writing. Measure geometry in pixels on the
-full-size frames, not by eye on the sheets. You cannot hear either video: judge sound from the loudness
-plots and the transcripts, and say so under DECLINED TO JUDGE. When the brief is silent, judge by what a
-reasonable viewer on the target platform expects.
+full-size frames, not by eye on the sheets. You cannot hear either video: judge sound from each video's
+`audio.txt`, `hearing.png`, loudness plot and transcript (the hearing pass above), and list what they cannot
+show under DECLINED TO JUDGE. When the brief is silent, judge by what a reasonable viewer on the target
+platform expects.
 
 {questions}
 Weigh them for both videos. Then prefer one: the one you would ship. Answer "tie" only when you truly
@@ -513,6 +529,10 @@ VERDICT {a}: ship | ship after fixes | not ready
 VERDICT {b}: ship | ship after fixes | not ready
 WOULD I POST {a}: yes | no  -- one reason, judged on {a} alone (not against {b})
 WOULD I POST {b}: yes | no  -- one reason, judged on {b} alone (not against {a})
+FIRST VIEWER (one line per part of each video's story.txt; every "no" is also listed below):
+- [{a}] part 1 (0.00-8.20s) ../{a}/frames/...jpg: yes | no  -- why
+HEARING (one line per check of the hearing pass, per video; every problem is also listed below):
+- [{a}] voice over music: ok | problem  -- the numbers from its audio.txt
 WHAT WORKS (max 3 per video, so it is kept):
 - [{a}] ...
 BLOCKERS:
@@ -521,7 +541,7 @@ SHOULD-FIX:
 - ...
 POLISH:
 - ...
-DECLINED TO JUDGE (what you could not or chose not to assess, e.g. audio quality):
+DECLINED TO JUDGE (what you could not or chose not to assess, e.g. how the voice sounds):
 - ...
 BEST POSTER FRAME: [{a} or {b}] t=..s because ...
 ```
@@ -530,13 +550,21 @@ BEST POSTER FRAME: [{a} or {b}] t=..s because ...
            cmp=_rel(m["compare"][first + second], od), ctx=ctx, launch=launch,
            questions=review.QUESTIONS.replace("open every text crop above", "open every text crop listed")
            .replace("Answer these eight questions for yourself first", "Answer these eight questions for each video first"),
-           severity=review.SEVERITY, absolute=review.ABSOLUTE)
+           severity=review.SEVERITY, absolute=review.ABSOLUTE,
+           hearing=review.hearing_brief("each video's `audio.txt` and `hearing.png`")
+           .replace("You cannot hear this video.", "You cannot hear either video.")
+           .replace("Write one line per check under HEARING (`- voice", "Write one line per check and video under HEARING (`- [%s] voice" % first)
+           .replace("finding under the usual severities, with its time\nand `hearing.png`",
+                    "finding under the usual severities, with its video, its time\nand that video's `hearing.png`"),
+           first_viewer=review.FIRST_VIEWER.format(story="each video's `story.txt` (first %s, then %s)" % (first, second))
+           .replace("Write one line per part under FIRST VIEWER: `- part 2",
+                    "Write one line per part under FIRST VIEWER, tagged with its video: `- [%s] part 2" % first))
 
 
 # ------------------------------------------------------------------ findings and the verdict
 
-HEAD = re.compile(r"^\s*(BLOCKERS?|SHOULD[- ]FIX|POLISH|WHAT WORKS|DECLINED TO JUDGE|BEST POSTER FRAME|VERDICT|PREFERENCE)\b",
-                  re.I)
+HEAD = re.compile(r"^\s*(BLOCKERS?|SHOULD[- ]FIX|POLISH|WHAT WORKS|DECLINED TO JUDGE|BEST POSTER FRAME|VERDICT|PREFERENCE|"
+                  r"WOULD I POST|PREVIOUS|FIRST[- ]VIEWER|HEARING)\b", re.I)
 SEV_OF = {"BLOCKER": "blocker", "BLOCKERS": "blocker", "SHOULD-FIX": "should-fix", "SHOULD FIX": "should-fix",
           "POLISH": "polish"}
 T_RE = re.compile(r"\bt\s*=\s*(\d+(?:\.\d+)?)\s*s\b", re.I)
@@ -647,6 +675,7 @@ def verdict(target: Optional[str] = None, rnd: Optional[int] = None) -> Dict[str
     if not isinstance(key, dict):
         raise ShowtimeError("round-%d is not a pairwise round (no key in %s)" % (n, root / KEYS),
                             hint="review-verdict judges rounds built with review-pack --against")
+    from ..job import findings as gate
     parsed = []
     for k in (1, 2):
         f = pack / ("order-%d" % k) / "FINDINGS.md"
@@ -654,7 +683,13 @@ def verdict(target: Optional[str] = None, rnd: Optional[int] = None) -> Dict[str
             raise ShowtimeError("round-%d has no answer for order %d yet (%s)" % (n, k, f),
                                 hint="dispatch a fresh critic with only %s and ask for FINDINGS.md next to it"
                                      % (f.parent / "CRITIC.md"))
-        p = parse_findings(f.read_text(encoding="utf-8", errors="replace"))
+        text = f.read_text(encoding="utf-8", errors="replace")
+        p = parse_findings(text)
+        ids = {g["text"]: g["id"] for g in gate.parse(text, "r%do%d" % (n, k))}     # the ids review-respond takes
+        for it in p["findings"]:
+            fid = ids.get(" ".join(it["text"].strip("`").split()))
+            if fid:
+                it["id"] = fid
         if p["preference"] is None:
             raise ShowtimeError("%s has no readable PREFERENCE line (X, Y or tie)" % f,
                                 hint="ask the critic to fix that one line; do not guess it")
@@ -727,8 +762,11 @@ def verdict_md(v: Dict[str, Any]) -> str:
     if not v["blind"]:
         out.append("- Not blind: at least one order is a self-review by the maker, who knows which is new; say so to the user")
     out += ["- Next: %s" % v["next"], "", "## Open findings of the best version"]
-    out += ["- %s [%s, order %d] %s" % (f["severity"].upper(), f["role"], f["order"], f["text"]) for f in v["open_findings"]] \
-        or ["- (none)"]
+    out += ["- %s%s [%s, order %d] %s" % (f["severity"].upper(), " %s" % f["id"] if f.get("id") else "", f["role"], f["order"],
+                                          f["text"]) for f in v["open_findings"]] or ["- (none)"]
+    if any(f.get("id") for f in v["open_findings"]):
+        out += ["", "Before delivery each blocker and should-fix above is fixed or waived: "
+                "`showtime review-respond <job> --fixed <id> \"what changed\"` or `--waive <id> \"why\"`."]
     if v["dropped"]:
         out += ["", "## Dropped (no video, time or frame)"] + ["- %s" % d for d in v["dropped"]]
     return "\n".join(out) + "\n"

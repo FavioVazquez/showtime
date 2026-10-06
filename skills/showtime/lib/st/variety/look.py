@@ -5,6 +5,7 @@ A look is what a viewer would call "the same style" across two videos:
   template     the showtime template the project came from (showtime.json "template"; older projects:
                inferred from their files)
   theme        the runtime theme the page loads (/_st/themes/<name>.css)
+  signature    the look signature the page wears, when it has one (`showtime signature`)
   palette      ground, text and accent colours (the page's :root tokens over its theme's; canvas films:
                their palette; a brand kit's colours when there is no page)
   type         the display and body families (--font-display / --font-body, loaded font files)
@@ -28,7 +29,7 @@ from typing import Any, Dict, List, Optional, Sequence
 from ..common import read_json, skill_dir
 
 TONES = ("default", "polished", "playful", "deadpan", "chaotic", "cinematic", "app-store", "documentary",
-         "retro", "corporate-parody", "minimal", "keynote", "technical")
+         "retro", "corporate-parody", "minimal", "keynote", "technical", "showreel")
 GENERIC_FONTS = {"sans-serif", "serif", "monospace", "system-ui", "cursive", "fantasy", "ui-sans-serif",
                  "ui-serif", "ui-monospace", "ui-rounded", "georgia", "inherit", "initial"}
 CAMERA_TRANSITIONS = {"through": "through", "match": "match", "pan": "pan", "zoom-through": "zoom-through",
@@ -430,6 +431,9 @@ def project_look(project: Path) -> Dict[str, Any]:
     if theme:
         look["theme"] = theme
         vars_.update(root_vars(_read(themes_dir() / (theme + ".css"))))
+    sig = re.search(r"<!-- look signature: .*? \(([\w-]+)\)", page)
+    if sig:
+        look["signature"] = sig.group(1)       # the look signature the page wears (st.variety.signatures)
     for name, t in texts.items():
         if name.endswith((".html", ".css")):
             vars_.update(root_vars(t))

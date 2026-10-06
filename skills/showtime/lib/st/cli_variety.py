@@ -10,6 +10,7 @@ from .common import ShowtimeError, print_json, slugify
 COMMANDS = {
     "history": "The looks of your recent videos (local only): list, check a project for repeats, clear, off/on",
     "reference": "Break a reference video into its grammar (pace, shots, palette, motion, sound) for the plan",
+    "signature": "The look signatures new page projects start in: list them, or swap a project's",
 }
 
 _F = argparse.RawDescriptionHelpFormatter
@@ -107,6 +108,67 @@ def register(sub: argparse._SubParsersAction) -> None:
     r.add_argument("--strict", action="store_true", help="diff: exit 1 when a KEEP item is off")
     r.add_argument("--json", action="store_true", help="print JSON")
     r.set_defaults(func=cmd_reference)
+
+    g = sub.add_parser("signature", help=COMMANDS["signature"], formatter_class=_F, description=(
+        "Look signatures: whole looks a new page project starts in, like a film's score. Each is a palette\n"
+        "(ground, ink, muted, surfaces, two accents, every text colour at accessible contrast), a type pair,\n"
+        "a motion feel and a ground treatment (how much key light, grid and vignette).\n\n"
+        "`showtime new` on dom, launch, short or data picks one away from the looks of the last projects\n"
+        "created here and the last videos finished here (the look history), seeded by the folder name\n"
+        "(--look-seed), and says which. A brand kit or a job's style reference wins over it; `--look\n"
+        "template` keeps the template's own look. The page gets a <style id=\"st-look\"> block of theme\n"
+        "tokens; edit it, or swap it here.\n\n"
+        "  list                 the signatures (default)\n"
+        "  apply <project> <id> swap the project's look: an id, next (the next pick in rotation) or\n"
+        "                       template (take the signature out)"),
+        epilog="Examples:\n"
+               "  showtime signature\n"
+               "  showtime signature apply my-video tidewater\n"
+               "  showtime signature apply my-video next\n"
+               "  showtime signature apply my-video template")
+    gs = g.add_subparsers(dest="signature_cmd", metavar="<subcommand>")
+    g.add_argument("--json", action="store_true", help="print JSON")
+    g.set_defaults(func=cmd_signature_list)
+    p = gs.add_parser("list", help="the look signatures", formatter_class=_F)
+    p.add_argument("--template", help="only the ones this template can wear (dom, launch, short, data)")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_signature_list)
+    p = gs.add_parser("apply", help="swap a project's look signature", formatter_class=_F,
+                      epilog="Examples:\n  showtime signature apply my-video cobalt\n  showtime signature apply my-video next")
+    p.add_argument("project", help="project folder (showtime.json + index.html)")
+    p.add_argument("id", help="a signature id, next, or template")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_signature_apply)
+
+
+# ------------------------------------------------------------------ look signatures
+
+def cmd_signature_list(args: argparse.Namespace) -> int:
+    from .variety import signatures as sigs
+    tpl = getattr(args, "template", None)
+    rows = sigs.compatible(tpl) if tpl else sigs.catalog()
+    if tpl and not rows:
+        raise ShowtimeError("the %s template keeps its own look" % tpl, hint="look signatures dress: %s" % ", ".join(sigs.TEMPLATES))
+    recent = [x["id"] for x in sigs.recent_picks()]
+    if getattr(args, "json", False):
+        print_json({"signatures": rows, "recent_picks": recent, "templates": {k: list(v) for k, v in sigs.TEMPLATES.items()}})
+        return 0
+    print("look signatures (showtime new <template> <dir> --look <id>; showtime signature apply <project> <id>):")
+    for r in rows:
+        print("  %-10s %-5s %s%s" % (r["id"], r["polarity"], sigs.describe(r), "  [recent]" if r["id"] in recent else ""))
+    print("templates: %s (data: light grounds only); film, tutorial and series keep their own looks" % ", ".join(sigs.TEMPLATES))
+    return 0
+
+
+def cmd_signature_apply(args: argparse.Namespace) -> int:
+    from .variety import signatures as sigs
+    res = sigs.set_project(Path(args.project), args.id)
+    if getattr(args, "json", False):
+        print_json(res)
+        return 0
+    prev = " (was %s)" % res["previous"] if res.get("previous") else ""
+    print("look: %s%s" % (res["describe"], prev))
+    return 0
 
 
 # ------------------------------------------------------------------ history

@@ -20,9 +20,12 @@ protocol itself (phases, boards, questions) is in `studio.md`; the board format 
 - Start: `showtime job init <slug> --mode studio --goal "..."`, then `showtime studio init <job>`; to quick:
   fill open decisions as assumed, `showtime job note --mode quick`; a switch never deletes work (§2, §3)
 - Crew never render the final, open boards or ask the user; you merge, check and render (§4)
-- End every job with the delivery card: `final` is the file qa checked; quote the qa verdict with loudness and
-  true peak; list every assumption; exactly three next options with time estimates (§5)
-- Record it: `showtime job note --stage deliver --verified "qa PASS ..." --next "<option 1 command>"` (§5)
+- End every job with the delivery card, one fixed shape: Done, Files, Length, Loudness, QA, Review, Findings,
+  Look (what you or your reviewer actually opened, at what size, and what was seen; never left out), Cost,
+  Assumed, cheap vs costly, three next options. `showtime receipt <job> --card` fills in what showtime knows (§5)
+- Record it: `showtime job note --stage deliver --verified "qa PASS ..." --next "<option 1 command>"`; it
+  refuses while the final's latest qa is a FAIL, or a critic's blocker or should-fix is neither fixed nor
+  waived (§5)
 - Review mode, a second choice: quality (default) gives every finished video the full review, a critic round
   before delivery included; lean (a draft pass, no critic unless publish-bound) only when the user says quick
   draft, rough cut, lean, cheap, don't review. Say which in the opening line (§6)
@@ -32,12 +35,12 @@ protocol itself (phases, boards, questions) is in `studio.md`; the board format 
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| 1. Quick mode (the default) | 42-82 |
-| 2. Studio mode (opt-in) | 84-105 |
-| 3. Switching | 107-115 |
-| 4. Sub-agents (the crew) | 117-133 |
-| 5. The delivery card | 135-165 |
-| 6. Review mode: quality (default) or lean | 167-202 |
+| 1. Quick mode (the default) | 45-85 |
+| 2. Studio mode (opt-in) | 87-108 |
+| 3. Switching | 110-118 |
+| 4. Sub-agents (the crew) | 120-136 |
+| 5. The delivery card | 138-187 |
+| 6. Review mode: quality (default) or lean | 189-226 |
 
 ## 1. Quick mode (the default)
 
@@ -134,19 +137,26 @@ The critic is different: it receives only `CRITIC.md` from `showtime review-pack
 
 ## 5. The delivery card
 
-The last message of every job, quick or studio. Short, scannable, paths first:
+The last message of every job, quick or studio, in this shape and this order. Short, scannable, paths first.
+`showtime receipt <job> --card` prints it with Files to Findings and Cost filled in from the job (and
+`job note --stage deliver` prints it too); you write Done, Look, Assumed, the changes and the options:
 
 ```
 Done: 20 s launch video for acme-cli (16:9, 1920x1080, 30 fps)
-  final     showtime-out/acme-launch-20260926-101500/final.mp4   (qa PASS: -14.0 LUFS, -1.4 dBTP)
-  poster    .../poster.jpg (baked into frame 0 by render)
-  share     .../share.txt   credits .../credits.txt (2 CC-BY music credits: paste into the post)
-  exports   .../exports/final.reels.mp4, final.youtube.mp4
-
+  Files:    showtime-out/acme-launch-20260926-101500/final.mp4, poster.jpg (baked into frame 0), share.txt,
+            credits.txt (2 CC-BY music credits: paste into the post), exports/ (final.reels.mp4, final.youtube.mp4)
+  Length:   20.0 s, 1920x1080, 30 fps
+  Loudness: -14.0 LUFS integrated, -1.4 dBTP true peak (target -14)
+  QA:       PASS (0 fail, 0 warn) on final.mp4
+  Review:   round 2 of 3, pairwise: the new version wins; both critics would post it
+  Findings: 0 open; fixed r1-B1, r1-S1; waived r1-S2 (the brand kit sets the thin weight; user agreed)
+  Look:     I opened review/round-2/X/sheet.jpg (20 frames at 400 px) and frames/t0001.500s.jpg at 1280 px:
+            the hook text is crisp and complete at 1.5 s; cuts.jpg shows no flash at 8.2 s. A reviewer read
+            look-3.jpg (1280 px composite): end card URL readable, nothing cut off.
+  Cost:     about $1.84 (API-equivalent), 412,300 tokens
 Assumed: no voice-over; the "4x faster" line comes from the README benchmark table.
 Cheap to change (minutes): any text, colours, music style, a scene's length, sound effects, exports.
 Costly (a new pass): the story order, adding a voice-over, a different aspect layout, new footage.
-
 Next, pick one:
   1. A 9:16 cut for Reels with captions (about 4 min)
   2. Add a narrated version (voice af_heart, about 6 min)
@@ -154,15 +164,27 @@ Next, pick one:
 ```
 
 Rules for the card:
-- Quality mode: name the critic round's verdict ("review: round 1, ship after fixes; 2 fixes applied"), or say
-  it was a self-review; lean: say no critic round ran.
-- `final` is the file qa checked (the job's latest final: `final-2.mp4` after a re-render, the baked
+- Every line is there, in this order; a fact you do not have says so ("Cost: not reported by this agent",
+  "Loudness: no audio"), never left out.
+- **Look:** is never left out or vague. Name what was opened (which contact sheet, frame or crop, by file), at
+  what size, by whom (you, or a reviewer sub-agent reading `look-N.md`), and one concrete thing seen in it.
+  "Looks good" is not a Look line. If nothing was looked at, say "Look: none" and why; never claim a look that
+  did not happen (the receipt counts images made, not images opened).
+- `Files`: the final is the file qa checked (the job's latest final: `final-2.mp4` after a re-render, the baked
   `final.poster.mp4` after `deliver poster --bake`), never an older one.
-- Quote the qa verdict with its loudness and true peak; never "should be fine".
+- `Loudness` and `QA`: the numbers qa measured on that file; never "should be fine".
+- `Review`: the critic round's verdict, or "a self-review", or (lean) "no critic round ran".
+- `Findings`: open ids (none may be open at delivery: `showtime review-respond`), the fixed ids, and every
+  waiver with its reason.
 - List every assumption that reached the video, especially anything the user did not confirm.
 - Cheap vs costly is about this job's actual structure (a voice-led video makes timing changes costly).
 - Exactly three next options, each concrete and with a time estimate.
-- Record it: `showtime job note --stage deliver --verified "qa PASS ..." --next "<option 1 command>"`.
+- Record it: `showtime job note --stage deliver --verified "qa PASS ..." --next "<option 1 command>"`. It
+  refuses while the final being delivered (the latest final, or the one `--output final=` names) has a qa FAIL
+  as its latest verdict, naming the file and the failing checks: fix, re-render, `showtime qa <job>` (WARN
+  passes). Once a critic has answered, it refuses while a blocker or should-fix is neither fixed nor waived,
+  and names each (`review.md` §4). `deliver exports` and `deliver poster --bake/--cover` always write their
+  files but mark the job delivered only when these checks pass; otherwise they say why in one line.
 
 ## 6. Review mode: quality (default) or lean
 
@@ -198,5 +220,7 @@ quality.
 final prints `WARN review pending ... -> <command>` until a critic round has a verdict (a single round:
 FINDINGS.md with its VERDICT line; a pairwise round: `showtime review-verdict`). `showtime status`, the
 SHOWTIME.md next command, `showtime deliver exports` and `showtime job note --stage deliver` say the same. A
-round that said "not ready" keeps it pending until a later round or the three-round cap. The line never
-changes the video's own qa verdict or exit code, and lean prints none of it. The protocol: `review.md`.
+round that said "not ready" keeps it pending until a later round or the three-round cap, and so does a critic's
+blocker or should-fix that is neither fixed nor waived ("findings open"). The line never changes the video's
+own qa verdict or exit code, and lean prints none of it until a critic has run. Once one has (any mode),
+`showtime job note --stage deliver` refuses while a finding is open (`review.md` §4). The protocol: `review.md`.

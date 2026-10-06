@@ -19,7 +19,7 @@ https://github.com/user-attachments/assets/1132aa71-7fe5-4345-a925-790d80462fda
   <img alt="runs on your machine" src="assets/readme/badges/local.svg" height="24">
   <img alt="API keys: none" src="assets/readme/badges/keys.svg" height="24">
   <a href="#works-with"><img alt="tested with Claude Code, Codex, Cursor, Devin and OpenCode" src="assets/readme/badges/agents.svg" height="24"></a>
-  <a href="CHANGELOG.md"><img alt="status: 0.3, early" src="assets/readme/badges/status.svg" height="24"></a>
+  <a href="CHANGELOG.md"><img alt="status: 0.4, early" src="assets/readme/badges/status.svg" height="24"></a>
   <a href="#requirements"><img alt="tested: Intel Mac, Apple Silicon, Linux x64, Linux arm64, Windows x64, Windows 11 on Arm" src="assets/readme/badges/tested.svg" height="24"></a>
   <a href="#requirements"><img alt="still to run: Windows 10/11 desktop" src="assets/readme/badges/windows.svg" height="24"></a>
 </p>
@@ -548,6 +548,28 @@ was not part of the round. I'm showtime's author, so treat these as anecdotes, n
 loss is in the [benchmark report](https://faviovazquez.github.io/showtime/benchmark/), with each earlier version a
 click away; the method and the code to rerun it are in [`benchmarks/`](benchmarks/).
 
+### Behaviour scoreboard
+
+A cheaper check anyone can rerun with one command: 14 one-sentence requests run through `claude plugin eval`, each
+with showtime and with no plugin at all (same model). Does the skill fire on video requests and stay out of
+unrelated ones, does it report a missing file or an unsupported claim instead of inventing around it, and does it
+keep its contract? Regex and tool-call checks first, a model grader only where a pattern cannot decide; tokens and
+cost per run, and every failure in plain words, are in [SCOREBOARD.md](benchmarks/plugin-eval/SCOREBOARD.md).
+
+<!-- scoreboard:start -->
+
+| Behaviour | Cases | With showtime | Without (same model, no plugin) |
+|---|---|---|---|
+| Skill fires on a video request | 12 | 36/36 (100%) | - |
+| Stays out of unrelated requests | 2 | 6/6 (100%) | 6/6 (100%) |
+| Honest about inputs and limits | 7 | 18/21 (86%) | 10/21 (48%) |
+| Keeps the contract (questions, card, plan shape) | 7 | 16/21 (76%) | 11/21 (52%) |
+| All cases | 14 | 35/42 (83%) | 25/42 (60%) |
+
+`claude plugin eval`, 2026-10-05, showtime 0.4.0, agent claude-opus-5-5, judge sonnet, 3 runs per case per arm; median tokens per run 65.3k with showtime, 34.7k without; the whole run cost $36.00 at list price. Every case, every failure and how to rerun it: [SCOREBOARD.md](benchmarks/plugin-eval/SCOREBOARD.md).
+
+<!-- scoreboard:end -->
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/readme/divider-dark.svg">
   <img alt="" src="assets/readme/divider-light.svg" width="100%">
@@ -598,7 +620,8 @@ The agents live in [`agents/`](agents/); their briefs, in
 For a video you will publish, a fix is judged by preference, not by a score. After a fix, `showtime review-pack --against best`
 sets the new render beside the best one so far as a blind pair, and two fresh critics judge it, one in each order.
 `showtime review-verdict` applies the rule: the new render wins only when it is preferred both times; a tie or a split
-keeps the older one. There are up to three rounds, then the best version ships with its open findings listed
+keeps the older one. There are up to three rounds. Before the job is marked delivered, every blocker and should-fix the
+critics raised is fixed or waived with a one-line reason (`showtime review-respond`), and the receipt lists each waiver
 ([review guide](skills/showtime/references/review.md)).
 
 <picture>
@@ -720,7 +743,7 @@ attribution, a look history so videos do not repeat, style references, adopting 
 | Footage | `transcribe`, `pack`, `edit`, `captions`, `footage`, `autozoom` |
 | Capture and assets | `site`, `demo`, `doc`, `assets` |
 | Studio | `studio`, `brand` (`init`, `capture`, `apply`, `skip`) |
-| Job and QA | `status`, `qa`, `review-pack`, `review-verdict`, `receipt`, `history`, `reference`, `job`, `clean` |
+| Job and QA | `status`, `qa`, `review-pack`, `review-verdict`, `review-respond`, `receipt`, `history`, `reference`, `job`, `clean` |
 | Deliver | `deliver` (posters, platform exports, thumbnails, README loops) |
 | Setup | `setup`, `doctor`, `report`, `paths`, `guide`, `version`, `help` |
 | More | `series` (a tutorial series sharing one kit) |
@@ -779,6 +802,61 @@ scene files written for it. `showtime manim check` also renders a draft and runs
 detectors on it, so a near-black scene or a barely visible change is reported before the full render.
 
 </details>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/readme/divider-dark.svg">
+  <img alt="" src="assets/readme/divider-light.svg" width="100%">
+</picture>
+
+## New in 0.4.0
+
+**Videos that ask, and notes on the finished video**
+
+- **Videos that stop and ask.** List questions in showtime.json and the HTML export pauses on that frame, asks, marks
+  the answer, replies and plays on; the MP4 gets a "pause and think" beat with a countdown and the answer. A question
+  can sit on a narration line, so a re-voice moves it with the line ([guide](skills/showtime/references/html-export.md)).
+- **Notes on the finished video.** `showtime review open <job>` serves a local page that plays the latest render:
+  pause, click a spot or drag a box on the frame, type a note. Your agent reads them with `showtime review notes`,
+  fixes, and replies on the same note.
+- **Range links** in the HTML player: `video.html#t=10-20` plays that part on a loop.
+
+**New ways in**
+
+- **`showtime pr-video <N | URL>`**: a pull request becomes a short video for its own description in one command,
+  with a copy under GitHub's 10 MB attachment limit. A public PR works without a GitHub login, and values that look
+  like secrets never reach the video.
+- **A storyboard from another skill becomes a project**: `showtime new <template> <dir> --from-storyboard FILE`
+  reads a Markdown table (Shot | Length | Visual | Narration, in any order, English or Chinese headers).
+- **Go all out: the showreel tone.** A "showreel" or "go all out" brief turns it on: 12-14 shots in 15 s, no
+  technique twice, flash words allowed, the name landing late and short; `qa` judges density, the ending and repeats.
+  The `showreel` template renders at 16:9, 9:16, 1:1 and 4:5 with no edits.
+
+**A stricter quality gate**
+
+- **The critic watches as a first-time viewer** before it reads the brief: for each part, does a newcomer know why it
+  is there? Explainers default to a cold open with the stakes, a roadmap, bridges and a close that answers the opening.
+- **Findings gate delivery.** A job is not marked delivered while a critic's Blocker or Should-fix is neither fixed
+  nor waived (`showtime review-respond --fixed | --waive`), and every waiver keeps its reason in the receipt.
+- **A hearing pass** next to the visual critic: music over the voice, a rushed or cut-off line, a long silence, a
+  late or loud effect, a jump in level at a cut, music that stops dead.
+- **One delivery card** with a mandatory `Look:` line saying what was opened, at what size, and what was seen.
+
+**Better-looking by default**
+
+- **Twelve look signatures.** `showtime new` dresses the page templates in one of twelve curated looks (palette at
+  the contrast rules, a type pair, a motion feel), picked away from your recent videos (`--look <id>` to choose).
+- **No blank or late first frames** after a cut or in a `<video>`: every video is drawn on a canvas in renders, and
+  `check` warns `late_first_frame`.
+
+**Proof**
+
+- **A behaviour scoreboard anyone can rerun** ([above](#behaviour-scoreboard)): 35/42 with showtime, 25/42 without.
+- **A blind rematch** on the round-1 showreel prompt ([round notes](benchmarks/rounds/r5-allout.md)): showtime 0.4.0
+  lost round 5; after the density fix its two takes ranked first and second in round 6, ahead of the plain take that
+  had won round 1. One voter (me, showtime's author), partly blind: an anecdote, not a result.
+
+Limits: the hearing pass and the checks measure the file; whether a video is good is still the critic's and your
+call. The full list is in the [changelog](CHANGELOG.md).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/readme/divider-dark.svg">
@@ -1153,9 +1231,10 @@ features are used only when present, with portable fallbacks.
 <summary><b>Use showtime from other tools (MCP)</b></summary>
 
 showtime ships an MCP server (`skills/showtime/mcp/server.mjs`, Node only, no extra install) with a
-small set of coarse tools: `doctor`, `new_project`, `render`, `check`, `snap`, `qa`, `voice_say`,
-`voice_script`, `transcribe`, `audio_compose`, `audio_sfx`, `audio_mix`, `audio_search`, `export_html`,
-`studio_open`, `studio_feedback`, `deliver_exports`, `receipt` and `status`. Each runs the matching `showtime`
+small set of coarse tools: `doctor`, `new_project`, `render`, `check`, `qa`, `export_html`, `deliver_exports`,
+`receipt`, `guide` and `status` by default, and with `SHOWTIME_MCP_TOOLS=all` also `snap`, `voice_say`,
+`voice_script`, `transcribe`, `audio_compose`, `audio_sfx`, `audio_mix`, `audio_search`, `studio_open` and
+`studio_feedback` (the Claude Desktop bundle lists them all). Each runs the matching `showtime`
 command on your machine and answers with a short summary and the paths it wrote; a tool that runs longer than about
 20 seconds answers with a task id, and `status` reports progress and the result. The plugins register it for you.
 For Claude Desktop or any other MCP client, run `~/.showtime/bin/showtime mcp` (see [MCP only](#mcp-only) for the

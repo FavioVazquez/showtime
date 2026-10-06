@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>showtime: showreel (go all out)</title>
+<script src="/_st/stage.js"></script>
+<link rel="stylesheet" href="/_st/themes/neon.css">
+<link rel="stylesheet" href="/_st/themes/fonts/instrument-serif.css">
+<link rel="stylesheet" href="/_st/themes/fonts/anton.css">
+<script type="importmap">{ "imports": { "three": "/_lib/three/build/three.module.js", "three/addons/": "/_lib/three/examples/jsm/" } }</script>
+<style>
+  /* A 15 s showreel at 120 BPM (a beat every 0.5 s): fourteen shots, 1.5-3.5 beats each, cut on the beat grid, no
+     technique twice, flash words as texture (data-st-flash), and the name landing on the last beats (1.25 s, its
+     reading time, moving to the last frame). Tone "showreel" in showtime.json: references/tones.md (showreel) and
+     motion-craft.md section 11. */
+  :root { --cobalt: #2337ff; --lime: #d8ff3a; --hot: #ff4fd8; --ice: #29e7ff; --red: #ff3b30; --paper: #f1ede4; --ink: #05060f; }
+  .scene { background: var(--bg); }
+  canvas.full { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .center { position: absolute; inset: 0; display: grid; place-items: center; }
+  .display { font: 800 1em/0.9 var(--font-display); letter-spacing: -0.04em; color: var(--fg); margin: 0; }
+  /* a shot label in the corner: what the technique is (a flash word, gone with its shot), one system on every technique shot */
+  .tag { position: absolute; left: 4.5cqw; top: 7cqh; font: 600 min(3.2cqh, 4.2cqw)/1 var(--font-mono); letter-spacing: 0.14em; z-index: 3;
+    text-transform: uppercase; color: #fff; padding: 0.8cqh 1.2cqh; background: rgb(5 6 15 / 0.78); border-radius: 0.6cqh; }
+  .tag b { color: var(--ice); font-weight: 600; margin-right: 1.2cqh; }
+  /* type scales by the shorter side (min of cqh and cqw), so the same reel renders at 9:16 and 1:1 (render --size 9:16);
+     on a tall frame the tags move inside the vertical safe box (platform UI covers the top ~11% and the sides) */
+  @container (aspect-ratio < 1) {
+    .tag { left: 8cqw; top: 13cqh; }
+    /* centred words sit in the middle of the safe box (x 6-85%, y 11.5-75% of a 9:16 frame), not of the frame */
+    .center, #end .stack { padding: 11.5cqh 15cqw 25cqh 6cqw; }
+  }
+
+  /* ---------- 1. hook: words over a liquid chrome shader, landed by frame 0 and settling */
+  #hook .word { font-size: min(25cqh, 14.5cqw); text-shadow: 0 0.6cqh 4cqh rgb(0 0 0 / 0.55); animation: settle 1s var(--ease-out) both; }
+  @keyframes settle { from { transform: scale(1.1); } to { transform: scale(1); } }   /* sharp from frame 0: it is the poster */
+
+  /* ---------- 2. flash words on the beat: three words, a third of a second each */
+  #flash { background: var(--ice); }
+  #flash .w { position: absolute; inset: 0; display: grid; place-items: center; color: var(--ink); font-size: min(30cqh, 15cqw); }
+  #flash .w span { display: inline-block; animation: skew 0.33s var(--ease-out) both; }
+  @keyframes skew { from { transform: translateY(6cqh) skewX(-14deg); } to { transform: none; } }   /* on screen from its first frame */
+
+  /* ---------- 4. 3D: the canvas is drawn by three.js */
+  #object { background: radial-gradient(70% 70% at 50% 45%, #1a1240, #05060f 70%); }
+
+  /* ---------- 5. glitch type on red: RGB split + sliced copies (pseudo-elements, so the text is audited once) */
+  #glitch { background: var(--red); }
+  #glitch .g { position: relative; font-size: min(26cqh, 14cqw); color: var(--ink);
+    text-shadow: calc(var(--gx, 0) * 1cqh) 0 0 rgb(255 255 255 / 0.95), calc(var(--gx, 0) * -1cqh) 0 0 rgb(41 231 255 / 0.95); }
+  #glitch .g::before, #glitch .g::after { content: attr(data-text); position: absolute; inset: 0; color: var(--ink); }
+  #glitch .g::before { clip-path: inset(18% 0 58% 0); transform: translateX(calc(var(--s1, 0) * 1cqh)); }
+  #glitch .g::after { clip-path: inset(62% 0 12% 0); transform: translateX(calc(var(--s2, 0) * 1cqh)); }
+
+  /* ---------- 6. kinetic type bands (texture: flash words) */
+  #bands { background: var(--cobalt); }
+  #bands .rows { position: absolute; inset: -20cqh -20cqw; display: flex; flex-direction: column; justify-content: center; gap: 4cqh;
+    transform: rotate(-8deg); }
+  #bands .row { display: flex; gap: 5cqh; white-space: nowrap; font: 800 min(11cqh, 8cqw)/1 var(--font-display); letter-spacing: -0.03em; color: #fff; }
+  #bands .row.alt { color: var(--ink); background: var(--lime); padding: 1.6cqh 0; box-shadow: 0 0 0 100cqw var(--lime); clip-path: inset(0 -100cqw); }
+  #bands .row span { flex: none; word-spacing: 0.18em; }
+  #bands .row.tall { display: none; }   /* two more rows fill a tall frame */
+  @container (aspect-ratio < 0.7) { #bands .row.tall { display: flex; } }
+
+  /* ---------- 9. shape system: a grid of tiles turning on the half-beats, on black */
+  #grid { background: var(--ink); }
+  #grid .tiles { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(4, 1fr); }
+  @container (aspect-ratio < 1) { #grid .tiles { grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(8, 1fr); } }
+  #grid .tile { position: relative; overflow: hidden; }
+  #grid .tile i { position: absolute; inset: 0; }
+
+  /* ---------- 13. type as a mask: the heat shader shows only inside the letters, then the camera flies through the O */
+  #mask { background: var(--ink); }
+  #mask .veil { position: absolute; inset: 0; background: var(--ink); mix-blend-mode: multiply; display: grid; place-items: center; }
+  #mask .big { font: 400 min(46cqh, 28.5cqw)/1 'Anton', sans-serif; letter-spacing: 0.01em; color: #fff; white-space: nowrap; }
+
+  /* ---------- 14. end card: the name tracks in on the beat, a light sweeps it, the frame keeps drifting */
+  #end { background: radial-gradient(80% 90% at 50% 50%, #12143a, var(--ink) 75%); }
+  #end .stack { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3.4cqh; }
+  #end .name { position: relative; font-size: min(17cqh, 14cqw); white-space: nowrap; }
+  #end .name em { font-style: normal; color: var(--hot); }
+  @container (aspect-ratio <= 1) { #end .name { white-space: normal; text-align: center; line-height: 0.95; } }   /* a tall or square frame: the name on two lines, bigger */
+  #end .sweep { position: absolute; inset: -10% -20%; pointer-events: none; mix-blend-mode: overlay;
+    background: linear-gradient(100deg, transparent 40%, rgb(255 255 255 / 0.9) 50%, transparent 60%); }
+  #end .role { font: 600 min(3.4cqh, 4.4cqw)/1 var(--font-mono); letter-spacing: 0.32em; text-transform: uppercase; color: var(--ice); }
+</style>
+</head>
+<body>
+<div class="stage">
+
+  <!-- 1. Hook (0-1 s): words over a liquid chrome shader, landed at frame 0. SLOT: the word. -->
+  <section class="scene" id="hook" data-start="0" data-dur="1">
+    <canvas class="full" id="chrome"></canvas>
+    <div class="center"><h1 class="display word">MOTION</h1></div>
+    <div class="tag" data-st-flash><b>01</b>Shader</div>
+  </section>
+
+  <!-- 2. Flash words (1-2 s): one word per 2/3 beat, texture not message (data-st-flash). SLOT: three words. -->
+  <section class="scene" id="flash" data-start="#hook" data-dur="1">
+    <div class="w display" data-start="+0" data-dur="0.333" data-st-flash><span>TYPE.</span></div>
+    <div class="w display" data-start="+0.333" data-dur="0.333" data-st-flash><span>SHAPE.</span></div>
+    <div class="w display" data-start="+0.666" data-dur="0.334" data-st-flash><span>LIGHT.</span></div>
+  </section>
+
+  <!-- 3. Particle burst on the drop (2-3 s) -->
+  <section class="scene" id="burst" data-start="#flash" data-dur="1">
+    <canvas class="full" id="burstc"></canvas>
+    <div class="tag" data-st-flash><b>02</b>Particles</div>
+  </section>
+
+  <!-- 4. A 3D object turn (3-4.25 s): three.js, lit by a generated room, the camera dollies in -->
+  <section class="scene" id="object" data-start="#burst" data-dur="1.25">
+    <canvas class="full" id="three"></canvas>
+    <div class="tag" data-st-flash><b>03</b>3D</div>
+  </section>
+
+  <!-- 5. Glitch type (4.25-5 s): bursts on the beats. SLOT: the word (and its data-text). -->
+  <section class="scene" id="glitch" data-start="#object" data-dur="0.75">
+    <div class="center"><div class="display g" data-text="GLITCH" data-st-flash>GLITCH</div></div>
+    <div class="tag" data-st-flash><b>04</b>Type FX</div>
+  </section>
+
+  <!-- 6. Kinetic type bands (5-5.75 s): texture, so every repeat is a flash word. SLOT: the band words. -->
+  <section class="scene" id="bands" data-start="#glitch" data-dur="0.75">
+    <div class="tag" data-st-flash><b>05</b>Kinetic</div>
+    <div class="rows" data-st-flash>
+      <div class="row" data-dir="1"><span>TYPE IN MOTION</span><span>TYPE IN MOTION</span><span>TYPE IN MOTION</span><span>TYPE IN MOTION</span></div>
+      <div class="row alt" data-dir="-1"><span>REEL 2026</span><span>REEL 2026</span><span>REEL 2026</span><span>REEL 2026</span><span>REEL 2026</span></div>
+      <div class="row" data-dir="1"><span>KINETIC TYPE</span><span>KINETIC TYPE</span><span>KINETIC TYPE</span><span>KINETIC TYPE</span></div>
+      <div class="row alt tall" data-dir="-1"><span>REEL 2026</span><span>REEL 2026</span><span>REEL 2026</span><span>REEL 2026</span><span>REEL 2026</span></div>
+      <div class="row tall" data-dir="1"><span>TYPE IN MOTION</span><span>TYPE IN MOTION</span><span>TYPE IN MOTION</span><span>TYPE IN MOTION</span></div>
+    </div>
+  </section>
+
+  <!-- 7. Live data (5.75-7.5 s): bars spring up, a line draws on, a counter rolls to its number. SLOT: value, label. -->
+  <section class="scene" id="data" data-start="#bands" data-dur="1.75">
+    <canvas class="full" id="chartc"></canvas>
+    <div class="tag" data-st-flash><b>06</b>Data</div>
+  </section>
+
+  <!-- 8. Morph (7.5-8.25 s): one shape turning circle, star, square, flower on the half beats -->
+  <section class="scene" id="morph" data-start="#data" data-dur="0.75">
+    <canvas class="full" id="morphc"></canvas>
+    <div class="tag" data-st-flash><b>07</b>Morph</div>
+  </section>
+
+  <!-- 9. Shape system (8.25-9.25 s): 32 tiles turning a quarter on every half beat -->
+  <section class="scene" id="grid" data-start="#morph" data-dur="1">
+    <div class="tiles" id="tiles"></div>
+    <div class="tag" data-st-flash><b>08</b>Systems</div>
+  </section>
+
+  <!-- 10. Fly-through (9.25-10.25 s): rings rushing at the camera, opening into the next shot's pink ground -->
+  <section class="scene" id="tunnel" data-start="#grid" data-dur="1">
+    <canvas class="full" id="tunnelc"></canvas>
+    <div class="tag" data-st-flash><b>09</b>Camera</div>
+  </section>
+
+  <!-- 11. Line drawing (10.25-11.5 s): a hypotrochoid drawing itself on, turning -->
+  <section class="scene" id="spiro" data-start="#tunnel" data-dur="1.25">
+    <canvas class="full" id="spiroc"></canvas>
+    <div class="tag" data-st-flash><b>10</b>Line</div>
+  </section>
+
+  <!-- 12. Halftone (11.5-12.5 s): a lit sphere in dots, the light swinging round -->
+  <section class="scene" id="halftone" data-start="#spiro" data-dur="1">
+    <canvas class="full" id="dotsc"></canvas>
+    <div class="tag" data-st-flash><b>11</b>Halftone</div>
+  </section>
+
+  <!-- 13. Type as a mask (12.5-13.75 s): a hot shader inside the letters, then a fly-through the O into the end card. SLOT: the word (keep an O). -->
+  <section class="scene" id="mask" data-start="#halftone" data-dur="1.25">
+    <canvas class="full" id="heat"></canvas>
+    <div class="veil"><div class="big" id="maskword" data-st-flash>COLOR</div></div>
+    <div class="tag" data-st-flash><b>12</b>Mask</div>
+  </section>
+
+  <!-- 14. End card (13.75-15 s): the hero line, the name, its reading time and no more. SLOT: the name and the role. -->
+  <section class="scene" id="end" data-start="#mask" data-dur="1.25">
+    <div class="stack">
+      <div class="display name" id="name">YOUR NAME<em>.</em><div class="sweep" data-st-decor></div></div>
+      <div class="role" data-st-flash>Motion designer</div>
+    </div>
+  </section>
+
+  <div data-st="grain"></div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { shaderLayer, burst, tunnel, chart, morph, spiro, halftone, localTime, active } from './reel.js';
+
+// ---- shaders (original): domain-warped value noise; "chrome" reflects a two-colour sky off its height field
+const NOISE = `
+float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float noise(vec2 p) { vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1, 0)), u.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y); }
+float fbm(vec2 p) { float v = 0.0, a = 0.5; for (int i = 0; i < 4; i++) { v += a * noise(p); p = p * 2.03 + vec2(1.7, 9.2); a *= 0.5; } return v; }
+float field(vec2 p, float t) {
+  vec2 q = vec2(fbm(p + vec2(0.0, t * 0.25)), fbm(p + vec2(5.2, 1.3) - t * 0.2));
+  return fbm(p + 2.6 * q + vec2(1.7, 9.2) + t * 0.15);
+}`;
+const CHROME = NOISE + `
+uniform vec3 u_a; uniform vec3 u_b; uniform float u_dim; uniform float u_zoom;
+void main() {
+  vec2 uv = (gl_FragCoord.xy - 0.5 * u_res) / u_res.y;
+  vec2 p = uv * u_zoom;
+  float e = 0.01;
+  float h = field(p, u_t), hx = field(p + vec2(e, 0.0), u_t), hy = field(p + vec2(0.0, e), u_t);
+  vec3 n = normalize(vec3((h - hx) / e, (h - hy) / e, 0.9));
+  vec3 rd = normalize(vec3(uv, -1.6));
+  vec3 r = reflect(rd, n);
+  vec3 sky = mix(u_b, u_a, smoothstep(-0.35, 0.65, r.y));
+  float spec = pow(max(0.0, dot(r, normalize(vec3(0.3, 0.7, 0.6)))), 28.0);
+  float rim = pow(1.0 - abs(n.z), 1.5);
+  vec3 col = sky * (0.35 + 0.9 * rim) + vec3(1.0) * spec * 0.9;
+  col *= mix(1.0, smoothstep(0.0, 0.75, length(uv * vec2(0.9, 1.4))), u_dim);   // darker where the word sits
+  gl_FragColor = vec4(col, 1.0);
+}`;
+const HEAT = NOISE + `
+void main() {
+  vec2 uv = (gl_FragCoord.xy - 0.5 * u_res) / u_res.y;
+  float h = field(uv * 1.8, u_t * 1.6);
+  vec3 a = vec3(0.35, 0.05, 0.75), b = vec3(1.0, 0.18, 0.55), c = vec3(1.0, 0.72, 0.18);
+  vec3 col = mix(a, b, smoothstep(0.25, 0.55, h));
+  col = mix(col, c, smoothstep(0.58, 0.8, h));
+  gl_FragColor = vec4(col, 1.0);
+}`;
+
+const chrome = shaderLayer(document.getElementById('chrome'), CHROME, { scale: 0.75 });
+const heat = shaderLayer(document.getElementById('heat'), HEAT, { scale: 0.75 });
+const sparks = burst(document.getElementById('burstc'), { n: 1600, seed: 'drop' });
+const rings = tunnel(document.getElementById('tunnelc'), { into: '#ff4fd8' });   // opens into the line drawing's ground
+// SLOT: the number the counter rolls to and its label (texture: drawn on the canvas, not read)
+const data = chart(document.getElementById('chartc'), { value: 900, label: 'FRAMES RENDERED', land: 1.25 });
+const shape = morph(document.getElementById('morphc'), { steps: ['circle', 'star', 'square', 'flower'], every: 0.25 });
+const lines = spiro(document.getElementById('spiroc'), { dur: 1.1 });
+const dots = halftone(document.getElementById('dotsc'));
+
+// ---- the 3D object: an iridescent torus knot, lit by a generated room (no files, nothing fetched)
+const cv = document.getElementById('three');
+const stage = document.querySelector('.stage').getBoundingClientRect();
+const renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true, preserveDrawingBuffer: true, alpha: true });
+renderer.setPixelRatio(1);
+renderer.setSize(stage.width, stage.height, false);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+const scene = new THREE.Scene();
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.12).texture;
+const camera = new THREE.PerspectiveCamera(35, stage.width / stage.height, 0.1, 100);
+const knot = new THREE.Mesh(new THREE.TorusKnotGeometry(1, 0.34, 480, 96),
+  new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 1, roughness: 0.22, iridescence: 1, iridescenceIOR: 1.6,
+    iridescenceThicknessRange: [200, 900] }));
+scene.add(knot);
+const keyA = new THREE.PointLight(0xff4fd8, 260, 0, 2), keyB = new THREE.PointLight(0x29e7ff, 260, 0, 2);
+keyA.position.set(-3.5, 2.5, 3);
+keyB.position.set(3.5, -1.5, 2.5);
+scene.add(keyA, keyB);
+ST.three(renderer, scene, camera, (t) => {
+  const u = localTime('object', t);
+  const k = ST.ease.outCubic(ST.clamp(u / 1.25, 0, 1));
+  knot.rotation.set(0.5 + u * 1.1, u * 2.6, 0.2);
+  const back = camera.aspect < 1 ? 1.55 : 1;   // a tall frame is narrow: pull back so the knot keeps its sides
+  camera.position.set(Math.sin(u * 0.8) * 1.4, 0.3, (9.0 - 2.0 * k) * back);
+  camera.lookAt(0, 0, 0);
+});
+
+// ---- the tile grid (built once; each tile turns on the half beats, eased, from t alone)
+const tiles = document.getElementById('tiles');
+const pal = ['#2337ff', '#ff3b30', '#f1ede4', '#d8ff3a', '#ff4fd8'];
+const rr = ST.rand('tiles');
+for (let i = 0; i < 32; i++) {
+  const d = document.createElement('div');
+  d.className = 'tile';
+  if (i === 0) { d.innerHTML = '<i></i>'; d.dataset.turn = '0'; d.dataset.lag = '0'; tiles.appendChild(d); continue; }   // under the shot tag
+  const sh = rr.int(0, 3), c = pal[rr.int(0, pal.length - 1)];
+  const bg = sh === 0 ? `radial-gradient(circle at 0 100%, ${c} 70%, transparent 71%)`
+    : sh === 1 ? `radial-gradient(circle, ${c} 44%, transparent 45%)`
+      : sh === 2 ? `linear-gradient(${c}, ${c}) center / 46% 46% no-repeat` : `conic-gradient(${c} 0 25%, transparent 0)`;
+  d.innerHTML = `<i style="background:${bg}"></i>`;
+  d.dataset.turn = String(rr.sign());
+  d.dataset.lag = String(rr.int(0, 3) * 0.04);
+  tiles.appendChild(d);
+}
+
+// ---- the mask word: the camera flies through the counter of its O (measured once the fonts are in)
+const word = document.getElementById('maskword');
+let oAt = null;
+function oCentre() {
+  if (oAt) return oAt;
+  const node = word.firstChild, i = node.textContent.indexOf('O');
+  const r = document.createRange();
+  r.setStart(node, Math.max(0, i));
+  r.setEnd(node, Math.max(0, i) + 1);
+  const b = r.getBoundingClientRect(), v = word.parentElement.getBoundingClientRect();
+  if (!b.width || !v.width) return null;
+  oAt = [b.left + b.width / 2 - v.left, b.top + b.height * 0.5 - v.top];
+  return oAt;
+}
+
+const nameEl = document.getElementById('name'), sweep = document.querySelector('#end .sweep');
+const roleEl = document.querySelector('#end .role');
+const hash = (a, b) => { const x = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return x - Math.floor(x); };
+
+ST.onSeek((t) => {
+  if (active('hook', t)) chrome.draw(t + 3.0, { u_a: [0.75, 0.86, 1.0], u_b: [0.04, 0.05, 0.16], u_dim: 0.85, u_zoom: 2.4 });
+  if (active('burst', t)) sparks.draw(localTime('burst', t));
+  if (active('data', t)) data.draw(localTime('data', t));
+  if (active('morph', t)) shape.draw(localTime('morph', t));
+  if (active('tunnel', t)) { const u = localTime('tunnel', t); rings.draw(u, u * 0.8); }
+  if (active('spiro', t)) lines.draw(localTime('spiro', t));
+  if (active('halftone', t)) dots.draw(localTime('halftone', t));
+  // glitch: a burst of slice offsets and RGB split on each beat, quiet between (every 2 frames a new offset)
+  if (active('glitch', t)) {
+    const u = localTime('glitch', t), beat = u % 0.5, f = Math.floor(u * 15);
+    const on = beat < 0.16 ? 1 - beat / 0.16 : 0;
+    const g = document.querySelector('#glitch .g');
+    g.style.setProperty('--gx', String((0.4 + 1.6 * on) * (hash(f, 1) > 0.5 ? 1 : -1)));
+    g.style.setProperty('--s1', String(on * (hash(f, 2) - 0.5) * 9));
+    g.style.setProperty('--s2', String(on * (hash(f, 3) - 0.5) * 9));
+  }
+  // kinetic bands: alternating directions, a fast start that eases out
+  if (active('bands', t)) {
+    const tall = innerHeight >= innerWidth;   // a tall or square frame travels less, so each word crosses it slower
+    const u = localTime('bands', t), x = (1 - Math.exp(-2.6 * u)) * (tall ? 26 : 46);
+    document.querySelectorAll('#bands .row').forEach((row) => {
+      row.style.transform = `translateX(${Number(row.dataset.dir) * x - 12}cqw)`;
+    });
+  }
+  // tiles: a quarter turn every half beat, staggered a frame or so per tile
+  if (active('grid', t)) {
+    const u = localTime('grid', t);
+    tiles.querySelectorAll('.tile').forEach((d) => {
+      const v = Math.max(0, u - Number(d.dataset.lag)), step = Math.floor(v / 0.25), frac = ST.ease.outCubic(ST.clamp((v % 0.25) / 0.16, 0, 1));
+      d.firstChild.style.transform = `rotate(${Number(d.dataset.turn) * 90 * (step + frac)}deg)`;
+    });
+  }
+  // the mask: the shader runs inside the letters; a slow push, then the last 0.45 s fly through the O
+  if (active('mask', t)) {
+    const u = localTime('mask', t);
+    heat.draw(u + 2.0);
+    const o = oCentre();
+    const fly = ST.ease.inExpo(ST.clamp((u - 0.8) / 0.45, 0, 1));
+    const s = (1 + 0.06 * u) * Math.pow(60, fly);
+    const veil = word.parentElement;
+    if (o) veil.style.transformOrigin = `${o[0]}px ${o[1]}px`;
+    veil.style.transform = `scale(${s})`;
+  }
+  // end card: the name tracks in on the beat (0.35 s), a light sweeps across it, the frame keeps a slow push
+  if (active('end', t)) {
+    const u = localTime('end', t);
+    const k = ST.ease.outExpo(ST.clamp(u / 0.35, 0, 1));
+    nameEl.style.letterSpacing = `${0.5 * (1 - k) - 0.04}em`;
+    nameEl.style.transform = `scale(${1.12 - 0.12 * k + 0.035 * u})`;
+    nameEl.style.opacity = String(ST.clamp(u / 0.08, 0, 1));
+    sweep.style.transform = `translateX(${-120 + 240 * ST.ease.inOutCubic(ST.clamp((u - 0.3) / 0.6, 0, 1))}%)`;
+    const r = ST.ease.outCubic(ST.clamp((u - 0.15) / 0.3, 0, 1));
+    roleEl.style.transform = `translateY(${(1 - r) * 2}cqh)`;
+    roleEl.style.opacity = String(r);
+  }
+});
+</script>
+</body>
+</html>

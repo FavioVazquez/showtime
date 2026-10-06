@@ -69,7 +69,7 @@ or when the user already described the video.
 | 6 | animatic | draft video (or live slides) + bed, notes by timecode | **hard stop** | the user signs off on pace and order |
 | 7 | lock | brief.md "Locked" summary in chat (5-8 lines) | yes | the user says lock (or "go") |
 | 8 | build | the workflow file for the video type (`references/workflows/`), from its Project step, with the picked storyboard and bed replacing its structure and music steps; show the midpoint contact sheet and the draft | - | `showtime qa <job>` passes |
-| 9 | review | final video, notes by timestamp | - | accepted, or notes mapped to targeted re-renders |
+| 9 | review | final video on the notes page (`showtime review open <job>`, `review.md` §6): notes on a spot or box of a frame | - | accepted, or every note answered and mapped to targeted re-renders |
 
 **Crew.** Each phase can be handed to specialist sub-agents while you stay the only voice to the
 user and the only writer of `studio/`: the pitch round to the creative director, brand designer and

@@ -16,6 +16,7 @@ Spec (all times in seconds on the output timeline):
       {"kind": "music", "catalog": {"use": "explainer", "pick": 0}, "fit": true}
     ],
     "sections": [{"name": "intro", "start": 0, "end": 4}, ...],      (optional; for the report)
+    "questions": {"duck_db": 12, "tick": true},                       (optional; see below)
     ("duration" may be left out inside a project: the showtime.json duration is used)
     "master": {"lufs": -14, "true_peak": -1, "engine": "st"} }
 
@@ -57,6 +58,12 @@ Track fields
              of the mix" when judging if this one is masked. Tracks of one family (same file stem or id
              prefix, e.g. keyclick-01..38; the same synth type) never mask each other either
 
+Stop-and-ask questions (showtime.json "questions", each with a "pause and think" beat of `think`
+seconds from its `at`): a top-level "questions" block, `true` or {"duck_db": 12, "tick": false,
+"tick_gain_db": -4}, lowers every music and ambience track by duck_db through each beat (0.25 s in,
+0.4 s out) and, with "tick", adds a soft clock tick on each second of the countdown. The beat times
+are read from the project's showtime.json (voice cues resolved), so they follow a re-voice.
+
 Relative paths resolve against the mix.json folder, then the project root (the
 nearest folder with showtime.json), then the current directory.
 """
@@ -73,6 +80,7 @@ import numpy as np
 from scipy import signal
 
 from ..common import ShowtimeError, cache_lock, home, log, portable_path, read_json, warn, write_json
+from .. import questions as _questions
 from . import SR, dsp, master, meter, sfx, wav
 
 KIND_REF = {"voice": -16.0, "music": -20.0, "ambience": -32.0}
@@ -944,6 +952,42 @@ def _sections(spec: dict, placed_meta: List[dict], dur: float) -> List[dict]:
     return out
 
 
+def _question_beats(spec: dict, bases: List[Path], spec_path: Optional[Path]) -> Tuple[List[dict], Dict[str, Any]]:
+    """The project's question beats and the mix's "questions" options ({} when the block is absent)."""
+    q = spec.get("questions")
+    if not q:
+        return [], {}
+    opts = dict(q) if isinstance(q, dict) else {}
+    proj = next((b for b in bases if (Path(b) / "showtime.json").is_file()), None)
+    if proj is None:
+        return [], opts
+    mix_dir = spec_path.resolve().parent if spec_path else None
+    return _questions.beats(Path(proj), [t for t in spec.get("tracks") or [] if isinstance(t, dict)], mix_dir), opts
+
+
+def _qnum(opts: Dict[str, Any], name: str, default: float, lo: float, hi: float) -> float:
+    v = opts.get(name)
+    if v is None:
+        return default
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        raise ShowtimeError("mix \"questions\": %s must be a number (got %r)" % (name, v))
+    if not lo <= f <= hi:
+        raise ShowtimeError("mix \"questions\": %s=%s is out of range [%s, %s]" % (name, f, lo, hi))
+    return f
+
+
+def _beat_duck(beats: List[dict], depth_db: float, n: int) -> np.ndarray:
+    """Gain (linear) that lowers a bed by depth_db through every beat: 0.25 s in, 0.4 s out."""
+    pts: List[Tuple[float, float]] = [(0.0, 0.0)]
+    for b in beats:
+        a, e = float(b["t"]), float(b["resume"])
+        pts += [(max(pts[-1][0], a - 0.25), 0.0), (max(pts[-1][0], a), -depth_db), (max(pts[-1][0], e), -depth_db),
+                (max(pts[-1][0], e + 0.4), 0.0)]
+    return _envelope(pts, n)
+
+
 def render(spec: Any, out_path, spec_path: Optional[Path] = None, root: Optional[Path] = None,
            report_path: Optional[Path] = None, ffmpeg_check: bool = False) -> Dict:
     if isinstance(spec, (str, Path)):
@@ -956,6 +1000,17 @@ def render(spec: Any, out_path, spec_path: Optional[Path] = None, root: Optional
     if sr_out not in (44100, 48000):
         raise ShowtimeError("sample_rate must be 48000 or 44100")
     bases = _bases(spec_path, root)
+    # stop-and-ask questions: a soft tick on each second of every pause and think beat (opt-in)
+    qbeats, qopts = _question_beats(spec, bases, spec_path)
+    ticks = []
+    if qbeats and qopts.get("tick"):
+        for b in qbeats:
+            for k in range(int(math.ceil(float(b["think"]) - 1e-6))):
+                ticks.append({"id": "q-tick-%s-%d" % (b["id"], k + 1), "kind": "sfx", "texture": True, "align": "hit",
+                              "synth": {"type": "tick", "intensity": 0.5, "seed": 17 + k}, "at": round(b["t"] + k, 4),
+                              "gain_db": _qnum(qopts, "tick_gain_db", -4.0, -40.0, 12.0)})
+    if ticks:
+        spec = dict(spec, tracks=list(spec["tracks"]) + ticks)
     tracks = spec["tracks"]
     # load sources first (needed to infer the duration)
     loaded = []
@@ -989,6 +1044,8 @@ def render(spec: Any, out_path, spec_path: Optional[Path] = None, root: Optional
     if dur <= 0 or dur > 3600:
         raise ShowtimeError("duration must be between 0 and 3600 seconds")
     N = int(round(dur * SR))
+    q_depth = _qnum(qopts, "duck_db", 12.0, 0.0, 40.0) if qbeats else 0.0
+    q_env = _beat_duck(qbeats, q_depth, N) if qbeats and q_depth > 0 else None
     buses: Dict[str, np.ndarray] = {}
     per_track: List[Dict] = []
     placed: Dict[int, np.ndarray] = {}
@@ -1007,6 +1064,9 @@ def render(spec: Any, out_path, spec_path: Optional[Path] = None, root: Optional
         if gpts:
             y = y * _envelope(gpts, y.shape[0])[:, None]
             pinfo = dict(pinfo, gain_points=[[round(t, 3), round(d, 2)] for t, d in gpts])
+        if q_env is not None and kind in ("music", "ambience") and y.shape[0] == N:
+            y = y * q_env[:, None]
+            pinfo = dict(pinfo, question_duck_db=q_depth)
         placed[i] = y
         tid = str(tr.get("id") or "%s%d" % (kind, i))
         rec = {"id": tid, "index": i, "kind": kind, "source": src.meta.get("source"),
@@ -1231,6 +1291,12 @@ def render(spec: Any, out_path, spec_path: Optional[Path] = None, root: Optional
         "credits_file": portable_path(credits_path, rp.parent) if credits_path else None, "warnings": warnings,
         "voice_stem": portable_path(voice_stem, rp.parent) if voice_stem else None,
     }
+    if spec.get("questions"):
+        report["questions"] = {"beats": [{k: b[k] for k in ("id", "t", "resume")} for b in qbeats],
+                               "duck_db": q_depth, "ticks": len(ticks)}
+        if not qbeats:
+            warnings.append("the mix has a \"questions\" block, but the project has no questions with a time "
+                            "(showtime.json \"questions\"; `showtime check` names any that do not resolve)")
     if ffmpeg_check:
         report["ffmpeg_ebur128"] = meter.ffmpeg_ebur128(out_path)
     write_json(rp, report)

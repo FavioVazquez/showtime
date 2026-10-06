@@ -68,8 +68,9 @@ def synth_video(path, dur=4.0, size="640x360", tone=True, bt709=True):
     if bt709:
         args += ["-vf", "setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv",
                  "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709"]
-    if tone:
-        args += ["-af", "volume=7.8dB", "-c:a", "aac", "-b:a", "192k", "-shortest"]
+    if tone:   # a well-made master ends its sound with a fade (qa's abrupt_end otherwise)
+        args += ["-af", "volume=7.8dB,afade=t=out:st=%g:d=0.6" % (float(dur) - 0.6), "-c:a", "aac", "-b:a", "192k",
+                 "-shortest"]
     ffmpeg(*(args + ["-movflags", "+faststart", str(path)]))
     return path
 
@@ -612,6 +613,14 @@ Film.start({ look: 'dark', design: [1920, 1080], scenes(T, g, F) {
         brief = (Path(m["dir"]) / "CRITIC.md").read_text(encoding="utf-8")
         for q in ("Hook: at 1.5 s", "Clarity:", "Readability:", "Craft:", "Distinctness:", "Poster:", "Honesty:", "Story logic:"):
             self.assertIn(q, brief)
+        # 0.4.0: the first-viewer pass gets the parts in order with their middle frames and narration
+        for word in ("First-viewer pass", "story.txt", "transcript.txt", "FIRST VIEWER", "how it connects to what"):
+            self.assertIn(word, brief)
+        story = (Path(m["dir"]) / "story.txt").read_text(encoding="utf-8")
+        self.assertIn("part 1  0.00-1.00s  (intro)  frame: `frames/", story)
+        self.assertIn("part 3  2.00-3.00s  (outro)", story)
+        self.assertIn("no narration transcript", story)
+        self.assertTrue((Path(m["dir"]) / "transcript.txt").is_file())
         # every frame around each cut (2 before .. 4 after), and a variant in the job is named, not packed
         self.assertTrue(Path(m["cut_strips"]).is_file())
         self.assertEqual(len(list((Path(m["dir"]) / "cut-frames").glob("*.jpg"))), 14)
@@ -622,6 +631,11 @@ Film.start({ look: 'dark', design: [1920, 1080], scenes(T, g, F) {
         self.assertEqual([Path(x).name for x in m2["not_in_pack"]], ["final-16x9.mp4"])
         self.assertIn("Not in this pack", (Path(m2["dir"]) / "CRITIC.md").read_text(encoding="utf-8"))
         self.assertTrue(any(Path(c).name == "final.srt" for c in m2["context"]), m2["context"])
+        story = (Path(m2["dir"]) / "story.txt").read_text(encoding="utf-8")
+        part1 = story.split("part 2")[0]
+        self.assertIn("Hi", part1)                                # the line said during part 1, in part 1
+        self.assertIn("Narration from its caption file .srt", story)
+        self.assertIn("Hi", (Path(m2["dir"]) / "transcript.txt").read_text(encoding="utf-8"))
         # 10: the pack carries the packed video's own mix report, not another mix's report in <job>/work
         (job / "work").mkdir(exist_ok=True)
         (job / "work" / "mix.report.json").write_text(json.dumps({"which": "side mix"}), encoding="utf-8")

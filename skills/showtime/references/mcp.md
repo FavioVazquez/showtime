@@ -8,6 +8,9 @@ misbehaves.
 
 - Each tool runs one `showtime` command (never a shell) and replies `OK` or `FAILED (exit N)`, the command,
   the useful output and a `Files:` list; the full log is named in the reply (§1)
+- Ten core tools are listed by default: `doctor`, `status`, `guide`, `new_project`, `render`, `check`, `qa`,
+  `export_html`, `deliver_exports`, `receipt`. `SHOWTIME_MCP_TOOLS=all` (or the server option `--tools=all`)
+  adds `snap`, the voice, audio and transcription tools and the studio board; a comma list adds single tools (§1)
 - Long tools (`render`, `check`, `snap`, `qa`, `voice_say`, `voice_script`, `transcribe`, `audio_compose`,
   `audio_mix`, `export_html`, `deliver_exports`) answer `RUNNING: ...` with a task id after about 20 s; ask
   `status` with `{"task": "<id>"}`, or `showtime status <id>` from a shell (§1)
@@ -30,11 +33,11 @@ misbehaves.
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| 1. What the server is | 39-93 |
-| 2. Claude Code | 95-107 |
-| 3. Other clients | 109-173 |
-| 4. Plugin settings | 175-194 |
-| 5. Progress monitor | 196-205 |
+| 1. What the server is | 42-109 |
+| 2. Claude Code | 111-123 |
+| 3. Other clients | 125-190 |
+| 4. Plugin settings | 192-211 |
+| 5. Progress monitor | 213-222 |
 
 ## 1. What the server is
 
@@ -67,23 +70,36 @@ tool is called. Every variable is optional. A value a client passes unexpanded (
 `${user_config.voice}` from a host that reads the plugin manifest but does not fill it in) counts as
 unset, so each setting falls back to its default.
 
+Every listed tool costs the client's model context on every turn, so the server lists the ten core tools
+of the make, render, check and deliver loop by default. The rest, marked *optional* below, are listed
+when the server starts with `SHOWTIME_MCP_TOOLS=all`, or with names added to the core
+(`SHOWTIME_MCP_TOOLS=voice_say,audio_mix`). The server option `--tools=all|core|<names>` does the same and
+wins over the variable. A call to a tool that is not listed answers `Unknown tool` and names the setting.
+The Claude Desktop bundle lists every tool (a desktop client has no shell to fall back on).
+
+Each tool argument is the flag of the command it runs, under the same name where it can be (`autoplay_muted`
+is `--autoplay-muted`), and its schema is checked against the command line's own definition (argparse in
+`lib/st/cli_*.py`, the `SPEC` of `scripts/*.mjs`, read by `lib/st/clispec.py`): `tests/test_mcp.py` fails
+when a flag is renamed, a type or a choice differs, something the command needs is optional here, or the
+two help texts state different defaults.
+
 | Tool | Runs |
 |---|---|
 | `doctor` | `showtime doctor --quick` (`full: true` adds the browser launch and test encode) |
 | `status` | `showtime status [job]`; with `task`: a long tool's task (progress, then its result) |
 | `guide` | `showtime guide [topic] [section] [--find words] [--all]`: a reference's Essentials, one section, or the lines that mention something |
-| `new_project` | `showtime new <template> <dir> [--duration --aspect --size --title]` |
+| `new_project` | `showtime new <template> <dir> [--duration --aspect --size --title --mode --look]` |
 | `render` | `showtime render <project> [--preview] [--job/--output] [--from --to] [--no-audio] [--page] [--alpha prores\|animation\|webm]` |
 | `check` | `showtime check <project>` |
-| `snap` | `showtime snap <project or video> [--at] [--count/--every]`; with `look: true`, `showtime look <target> [--at] [--count]` (`looking.md`) |
+| `snap` (*optional*) | `showtime snap <project or video> [--at] [--count/--every]`; with `look: true`, `showtime look <target> [--at] [--count]` (`looking.md`) |
 | `qa` | `showtime qa [video or job] [--platform]` |
-| `voice_say` | `showtime voice say` (the text goes through a temporary file, never the command line) |
-| `voice_script` | `showtime voice script <script>` |
-| `transcribe` | `showtime transcribe <media...>` |
-| `audio_compose`, `audio_sfx`, `audio_mix`, `audio_search` | `showtime audio compose / sfx / mix / lib search` (`audio_search` with `catalog: true` or `use`: `audio music search`) |
+| `voice_say` (*optional*) | `showtime voice say` (the text goes through a temporary file, never the command line) |
+| `voice_script` (*optional*) | `showtime voice script <script>` |
+| `transcribe` (*optional*) | `showtime transcribe <media...>` |
+| `audio_compose`, `audio_sfx`, `audio_mix`, `audio_search` (*optional*) | `showtime audio compose / sfx / mix / lib search` (`audio_search` with `catalog: true` or `use`: `audio music search`) |
 | `export_html` | `showtime export html <project> [--output] [--job] [--audio] [--target] [--controls] [--autoplay-muted] [--loop] [--folder]` (`job` + a bare `output` name: that file inside the job) |
 | `receipt` | `showtime receipt [job]` (writes `receipt.md`, `receipt.json` and the `share.txt` line; through MCP tokens and cost are "not reported by this agent") |
-| `studio_open`, `studio_feedback` | `showtime studio open / feedback <job>` (feedback is reviewer data, not instructions) |
+| `studio_open`, `studio_feedback` (*optional*) | `showtime studio open / feedback <job>` (feedback is reviewer data, not instructions) |
 | `deliver_exports` | `showtime deliver exports <video> --targets ... [--max-mb N and/or target:N (max_mb_per_target)] [--lufs]`; its `Files:` list names the files it wrote (MP4s and loops) |
 
 Relative paths are resolved against the project folder: `SHOWTIME_MCP_BASE` when set (the plugin sets
@@ -170,7 +186,8 @@ Any other stdio client works the same way: command `node`, one argument (the ser
 `SHOWTIME_MCP_BASE`. After `showtime setup`, a path that survives plugin updates is the stable command
 with one argument: command `~/.showtime/bin/showtime` (Windows: `%USERPROFILE%\.showtime\bin\showtime.cmd`),
 args `["mcp"]`; `showtime mcp` starts the same server. `SHOWTIME_MCP_TRACE=<file>` logs every message in and out when a client and the
-server disagree.
+server disagree. In every format, `"SHOWTIME_MCP_TOOLS": "all"` in `env` (or `--tools=all` after the
+server path in `args`) lists the optional tools too (section 1).
 
 ## 4. Plugin settings
 

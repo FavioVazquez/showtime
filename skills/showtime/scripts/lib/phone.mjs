@@ -77,7 +77,7 @@ export function minSize(W, H, cfg = DEFAULTS) {
 
 /** The finding codes that make up each part of the phone check. */
 export const PHONE_CODES = {
-  reading: ['short_text'],
+  reading: ['short_text', 'no_hero_line'],
   size: ['tiny_text'],
   zone: ['safe_zone', 'edge_margin', 'control_strip'],
 };
@@ -104,7 +104,7 @@ export function createPhone({ W, H, lang = 'en', cfg = DEFAULTS }) {
       const cur = seen.get(key);
       if (!cur || px < cur.px) seen.set(key, { text: String(text).replace(/\s+/g, ' ').trim(), px, t, caption: !!caption });
     },
-    summarize(findings, { timelineRan = true } = {}) {
+    summarize(findings, { timelineRan = true, flashExempt = 0 } = {}) {
       const items = [];
       for (const f of findings) {
         const part = partOf(f);
@@ -123,6 +123,7 @@ export function createPhone({ W, H, lang = 'en', cfg = DEFAULTS }) {
         min_pt: min.pt, min_px: Math.ceil(min.px),
         lang: langBase(lang), reading: { cps: rate.cps, wps: rate.wps, lead_s: cfg.reading_lead_s, min_s: cfg.reading_min_s },
         checked: { size: true, zones: true, reading: !!timelineRan },
+        flash_exempt: flashExempt,   // showreel tone: flash words left before their reading time on purpose
         texts: seen.size,
         smallest: smallest ? { text: smallest.text.slice(0, 40), px: Math.round(smallest.px), pt: +ptOf(smallest.px, W, cfg).toFixed(1), t: +Number(smallest.t).toFixed(2) } : null,
         smallest_texts: bySize.slice(0, 8).map((x) => ({ text: x.text.slice(0, 40), px: Math.round(x.px), pt: +ptOf(x.px, W, cfg).toFixed(1), t: +Number(x.t).toFixed(2), caption: x.caption })),
@@ -140,7 +141,7 @@ export function describe(it) {
   const at = it.t != null ? ` at ${clock(it.t)}` : '';
   const q = quoted(it.message);
   if (it.part === 'size') return it.count ? `type: ${it.count} texts under the minimum${at}` : `type ${it.pt ?? '?'} pt "${q}"${at}`;
-  if (it.part === 'reading') return `reading "${q}" ${it.held ?? '?'}s of ${it.need ?? '?'}s${at}`;
+  if (it.part === 'reading') return it.code === 'no_hero_line' ? `no hero line held its reading time (only flash words)${at}` : `reading "${q}" ${it.held ?? '?'}s of ${it.need ?? '?'}s${at}`;
   return `${it.code === 'control_strip' ? 'under the player controls' : it.code === 'edge_margin' ? 'at the frame edge' : 'under platform UI'} "${q}"${at}`;
 }
 
@@ -151,7 +152,7 @@ export function phoneLine(ph) {
   if (!ph.checked.reading) parts.push('reading time not checked (--no-timeline)');
   if (ph.ok) {
     const sm = ph.smallest ? `smallest text ${ph.smallest.pt} pt (minimum ${ph.min_pt} pt for ${ph.aspect})` : `minimum ${ph.min_pt} pt for ${ph.aspect}`;
-    const rd = ph.checked.reading ? `every text held to its reading time at ${ph.reading.cps} characters/s${ph.reading.wps ? ` or ${ph.reading.wps} words/s` : ''} (${ph.lang})` : null;
+    const rd = ph.checked.reading ? `every text held to its reading time at ${ph.reading.cps} characters/s${ph.reading.wps ? ` or ${ph.reading.wps} words/s` : ''} (${ph.lang})${ph.flash_exempt ? ` except ${ph.flash_exempt} flash word(s) (showreel tone)` : ''}` : null;
     return `phone check: PASS (${[sm, rd, 'nothing under platform UI', ...parts].filter(Boolean).join('; ')})`;
   }
   const shown = ph.items.slice(0, 6).map(describe);

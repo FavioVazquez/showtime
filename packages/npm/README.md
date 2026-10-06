@@ -41,6 +41,7 @@ It needs Python 3.8+ or [uv](https://docs.astral.sh/uv/). `showtime doctor` chec
 |---|---|
 | `SHOWTIME_MCP_BASE` | Folder that relative paths (and new projects) resolve against. Default: the client's working folder. |
 | `SHOWTIME_HOME` | Where showtime keeps its tools, models and caches. Default: `~/.showtime`. |
+| `SHOWTIME_MCP_TOOLS` | `all` lists every tool (voice, music, sound effects, transcription, stills, the studio board). Default: the ten core tools of the make, render, check and deliver loop. |
 
 ## More
 

@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 import { parseArgs } from 'node:util';
 import { showtimeHome, skillDir } from './deps.mjs';
 import { maybeChime } from './delight.mjs';
+import { readQuestions, publicQuestions } from './questions.mjs';
 
 export const IS_WIN = process.platform === 'win32';
 const COLOR = process.stderr.isTTY && !process.env.NO_COLOR && process.env.TERM !== 'dumb';
@@ -112,9 +113,17 @@ export function hintFor(msg) {
  * Parse argv with node:util parseArgs and handle --help / --debug.
  * spec: { name, usage, summary, options: {name: {type, short, default, help, multiple}}, examples: [], positionals: 'desc' }
  * Returns values plus `_` (positionals).
+ * --help-json prints the spec itself (usage and options) and exits: lib/st/clispec.py reads the Node
+ * commands' options that way, so the MCP tool schemas can be checked against them (tests/test_mcp.py).
  */
 export function parseCli(spec, argv = process.argv.slice(2)) {
   CMD = `showtime ${spec.name}`;
+  if (argv.includes('--help-json')) {
+    const options = Object.fromEntries(Object.entries(spec.options || {}).map(([k, o]) => [k, {
+      type: o.type || 'string', ...(o.short ? { short: o.short } : {}), ...(o.multiple ? { multiple: true } : {}), help: o.help || '' }]));
+    process.stdout.write(JSON.stringify({ name: spec.name, usage: spec.usage, options }) + '\n');
+    process.exit(0);
+  }
   const options = { help: { type: 'boolean', short: 'h' }, debug: { type: 'boolean' }, verbose: { type: 'boolean' } };
   for (const [k, v] of Object.entries(spec.options || {})) {
     options[k] = { type: v.type || 'string' };
@@ -248,7 +257,11 @@ export function resolveProject(arg, { page: pageOpt } = {}) {
     if (config[k] !== undefined && !(Number(config[k]) > 0)) throw new UserError(`showtime.json: "${k}" must be a positive number (got ${JSON.stringify(config[k])})`);
   }
   const title = config.title || path.basename(dir);
-  return { dir, page, config, configPath: fs.existsSync(configPath) ? configPath : null, title, slug: slugify(title) };
+  // stop-and-ask questions: voice cues resolved to times here, so the stage (ST.questions), the
+  // export and check all see the same seconds; `questions` keeps the issues for check and export
+  const questions = readQuestions(dir, config, { fps: Number(config.fps) || 30 });
+  const cfgOut = questions.off ? config : { ...config, questions: publicQuestions(questions.list) };
+  return { dir, page, config: cfgOut, configPath: fs.existsSync(configPath) ? configPath : null, title, slug: slugify(title), questions };
 }
 
 export function slugify(s, max = 48) {

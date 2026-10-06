@@ -930,6 +930,7 @@
       color: typeof g.fillStyle === 'string' ? g.fillStyle : null, alpha: +g.globalAlpha.toFixed(3),
       cam: +(S.camZoom || 1).toFixed(3),
       decor: !!(o.decor || S.decor > 0),
+      flash: !!o.flash,   // a flash word: texture in the showreel tone (scripts/lib/showreel.mjs)
     });
   }
 
@@ -948,7 +949,8 @@
    * Draw text. o: {size, weight, family ('sans'|'serif'|'mono'|'display'|css), italic, color,
    * alpha, align ('left'|'center'|'right'), baseline ('alphabetic'|'middle'|'top'|'bottom'),
    * tracking (em, e.g. -0.02), maxWidth (shrinks to fit), stroke (color), strokeWidth,
-   * shadow ({blur, x, y, color} | true), decor (UI-mockup detail, see F.decor)}. Returns the drawn width.
+   * shadow ({blur, x, y, color} | true), decor (UI-mockup detail, see F.decor), flash (a flash word: in the
+   * showreel tone it may leave before its reading time, references/tones.md)}. Returns the drawn width.
    */
   F.text = function (str, x, y, o) {
     o = o || {};
@@ -1651,6 +1653,153 @@
   };
 
   // @end annotate
+  // @part questions: questionBeat choiceFit goodKey
+  // ================================================================== stop-and-ask questions
+  /**
+   * The "pause and think" beat of a stop-and-ask question (showtime.json "questions", Film.questions),
+   * which is what the MP4 shows where the HTML export stops and asks: the prompt and its choices while
+   * the narrator asks, a countdown ring from the question's pause `t` for its `think` seconds, then
+   * the right choice marked and its reply. q: a question id or a question from Film.questions.
+   * o: {x, y (centre of the block; default the frame's centre), width, size (prompt, design px at
+   * 1080p), choiceSize, label ('Pause and think'; '' for none), from (when it appears; default the
+   * asking line's start), hold (fade out this many seconds after the reveal; 0 = stay), reveal,
+   * reply, alpha}. -> {phase: '' | 'ask' | 'think' | 'reveal', left (countdown seconds), q}
+   */
+  // A choice's lines and size inside width w: words wrap (a path may also break after a slash or a
+  // hyphen); while a word is wider than the box or it takes more than three lines, the type shrinks,
+  // down to 0.6x or `floor` px (F.text's maxWidth shrinks a still wider word further: never clipped).
+  function choiceFit(c, w, size, floor) {
+    var o = { size: size, weight: 600 }, min = Math.min(size, Math.max(size * 0.6, floor || 0)), lines = [];
+    var words = String(c).split(/\s+/).filter(Boolean).map(function (wd) { return wd.split(/(?<=[\/-])(?=[^\/-])/); });
+    for (var pass = 0; pass < 12; pass++) {
+      o.size = size;
+      lines = [];
+      var line = '', wide = false;
+      words.forEach(function (segs) {
+        segs.forEach(function (seg, si) {
+          var test = line ? line + (si ? '' : ' ') + seg : seg;
+          if (line && F.measure(test, o) > w) { lines.push(line); line = seg; } else line = test;
+          if (F.measure(seg, o) > w) wide = true;
+        });
+      });
+      lines.push(line);
+      if ((!wide && lines.length <= 3) || size <= min) break;
+      size = Math.max(min, size * 0.94);
+    }
+    return { lines: lines, size: size };
+  }
+  // the revealed answer's key: its letter is the palette's bg or ink, whichever reads better on pal.good,
+  // pushed toward black or white until it clears 5.5:1 (4.5 plus room for grain and vignette); when no
+  // push gets there (paper's mid green), the light one sits on the green darkened just enough
+  function goodKey(pal) {
+    var target = 5.5, good = pal.good;
+    var cands = [pal.bg, pal.ink].sort(function (a, b) { return F.contrast(b, good) - F.contrast(a, good); });
+    for (var i = 0; i < cands.length; i++) {
+      var to = F.luminance(cands[i]) <= F.luminance(good) ? '#000000' : '#ffffff', c = cands[i];
+      for (var t = 0.05; t <= 1.0001 && F.contrast(c, good) < target; t += 0.05) c = F.mixColor(cands[i], to, t);
+      if (F.contrast(c, good) >= target) return { ink: c, fill: good };
+    }
+    var light = F.luminance(pal.bg) >= F.luminance(pal.ink) ? pal.bg : pal.ink, fill = good;
+    for (var d = 0.05; d <= 1.0001 && F.contrast(light, fill) < target; d += 0.05) fill = F.mixColor(good, '#000000', d);
+    return { ink: light, fill: fill };
+  }
+  F.questionBeat = function (T, q, o) {
+    o = o || {};
+    if (typeof q === 'string') {
+      var qid = q;
+      q = F.questions.filter(function (x) { return x.id === qid; })[0];
+      if (!q) warnOnce('qb:' + qid, 'no question "' + qid + '" in showtime.json "questions"');
+    }
+    if (!q) return { phase: '', left: 0, q: null };
+    var u = F.u, from = o.from !== undefined ? o.from : Math.min(q.from, q.t), R = q.resume, hold = o.hold || 0;
+    var out = hold > 0 ? E.exit(clamp((T - R - hold) / 0.4)) : 0;
+    var left = clamp(R - Math.max(T, q.t), 0, q.think);
+    var phase = T < from || out >= 1 ? '' : T < q.t ? 'ask' : T < R ? 'think' : 'reveal';
+    if (!phase) return { phase: phase, left: left, q: q };
+    var g = S.g, pal = F.pal, n = q.choices.length, wide = F.W >= F.H;
+    var W = o.width || Math.min(F.W * (wide ? 0.84 : 0.88), 1600 * u);
+    var ps = (o.size || (wide ? 76 : 84)) * u, cs = (o.choiceSize || (wide ? 44 : 52)) * u;
+    // upright, centred lines stay inside the phone safe zone (x 64-916 of 1080)
+    var cw = wide ? W : Math.min(W, 2 * (F.W * 916 / 1080 - (o.x === undefined ? F.W / 2 : o.x)));
+    var lines = F.wrap(q.prompt, cw, { size: ps, weight: 750 }), plh = ps * 1.12;
+    var gap = 24 * u, bh0 = cs * 2.3, rr = 60 * u;
+    var bw = wide ? Math.min((W - gap * (n - 1)) / n, 620 * u) : W;
+    // each choice fits its own box: words wrap (a path after its slashes), then the type shrinks; the
+    // box grows for a second or third line (a row of boxes shares the tallest)
+    var k = bh0 * 0.56, kpad = bh0 * 0.22, tw = bw - kpad - k - cs * 1.1;
+    var cx = o.x === undefined ? F.W / 2 : o.x;
+    var x0 = wide ? cx - (n * bw + (n - 1) * gap) / 2 : cx - bw / 2;
+    // upright: a long choice's text stays left of the phone apps' right-hand buttons (x < 916 of 1080)
+    if (F.H > F.W) tw = Math.max(tw * 0.7, Math.min(tw, F.W * 916 / 1080 - (x0 + kpad + k + cs * 0.55)));
+    // upright, the short side is the width: small type is held at the phone minimum (2.2% of the height)
+    var floor = wide ? 0 : F.H * 0.0225;
+    var fits = q.choices.map(function (c) { return choiceFit(c, tw, cs, floor); });
+    var gk = goodKey(pal);
+    var bhs = fits.map(function (f) { return Math.max(bh0, f.lines.length * f.size * 1.18 + cs * 1.15); });
+    var bhMax = Math.max.apply(null, bhs);
+    if (wide) bhs = bhs.map(function () { return bhMax; });
+    var rowsH = wide ? bhMax : bhs.reduce(function (a, b) { return a + b; }, 0) + (n - 1) * gap;
+    var total = lines.length * plh + 48 * u + rowsH + 56 * u + rr * 2;
+    var y = (o.y === undefined ? F.H / 2 : o.y) - total / 2;
+    var vis = clamp((T - from) / 0.3) * (1 - out) * (o.alpha === undefined ? 1 : o.alpha);
+    g.save();
+    g.globalAlpha *= vis;
+    var a = E.reveal(clamp((T - from) / 0.5));
+    lines.forEach(function (ln, i) {
+      F.text(ln, cx, y + (i + 0.82) * plh + (1 - a) * 18 * u, { size: ps, weight: 750, align: 'center', alpha: a, color: pal.ink });
+    });
+    y += lines.length * plh + 48 * u;
+    var shown = o.reveal !== false && T >= R, r = shown ? E.reveal(clamp((T - R) / 0.45)) : 0;
+    q.choices.forEach(function (c, i) {
+      var p = E.reveal(clamp((T - from - 0.25 - i * 0.07) / 0.45)), right = i === q.answer;
+      var bh = bhs[i], bx = wide ? x0 + i * (bw + gap) : x0, by = y;
+      if (!wide) for (var j = 0; j < i; j++) by += bhs[j] + gap;
+      var alpha = p * (right ? 1 : lerp(1, 0.55, r)), on = right ? r : 0;
+      g.save();
+      g.globalAlpha *= alpha;
+      g.translate(0, (1 - p) * 22 * u);
+      F.box(bx, by, bw, bh, 18 * u, { fill: F.mixColor(pal.panel, pal.good, on * 0.22), stroke: F.mixColor(pal.line, pal.good, on), lineWidth: (2 + on * 2) * u });
+      var kx = bx + kpad, f = fits[i], flh = f.size * 1.18;
+      F.box(kx, by + (bh - k) / 2, k, k, 10 * u, { fill: on > 0.5 ? gk.fill : F.rgba(pal.ink, 0.1) });
+      F.text(String.fromCharCode(65 + i), kx + k / 2, by + bh / 2, { size: Math.max(cs * 0.78, floor), weight: 750, align: 'center', baseline: 'middle', color: on > 0.5 ? gk.ink : pal.ink });
+      f.lines.forEach(function (ln, li) {
+        F.text(ln, kx + k + cs * 0.55, by + bh / 2 + (li - (f.lines.length - 1) / 2) * flh,
+          { size: f.size, weight: 600, baseline: 'middle', color: pal.ink, maxWidth: tw });
+      });
+      g.restore();
+    });
+    y += rowsH + 56 * u;
+    // the countdown: whole seconds left; the ring empties from the pause to the reveal
+    var tIn = clamp((T - q.t + 0.2) / 0.3), tOut = clamp((T - R) / 0.3), ta = E.reveal(tIn) * (1 - tOut);
+    var label = o.label === undefined ? 'Pause and think' : String(o.label), ls = Math.max(30 * u, floor);
+    if (ta > 0) {
+      var lw = label ? F.measure(label, { size: ls, weight: 600, tracking: 0.1 }) + 28 * u : 0;
+      var rx = cx - lw / 2, ry = y + rr, sc = lerp(0.85, 1, E.smooth(tIn));
+      g.save();
+      g.globalAlpha *= ta;
+      g.translate(rx, ry); g.scale(sc, sc); g.translate(-rx, -ry);
+      g.lineCap = 'round'; g.lineWidth = 9 * u;
+      g.strokeStyle = F.rgba(pal.ink, 0.16);
+      g.beginPath(); g.arc(rx, ry, rr * 0.82, 0, Math.PI * 2); g.stroke();
+      if (left > 0.001) {
+        g.strokeStyle = pal.accent;
+        g.beginPath(); g.arc(rx, ry, rr * 0.82, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * left / q.think); g.stroke();
+      }
+      F.text(String(Math.max(1, Math.ceil(left - 1e-6))), rx, ry, { size: rr * 0.95, weight: 750, align: 'center', baseline: 'middle', color: pal.ink });
+      if (label) F.text(label.toUpperCase(), rx + rr + 28 * u, ry, { size: ls, weight: 600, tracking: 0.1, baseline: 'middle', color: pal.muted });
+      g.restore();
+    }
+    var reply = o.reply === false ? '' : q.reply[q.answer] || '';
+    if (shown && reply) {
+      var rp = E.reveal(clamp((T - R - 0.25) / 0.5));
+      F.paragraph(reply, cx, y + rr + 14 * u + (1 - rp) * 16 * u,   // where the countdown was
+        { size: Math.max(40 * u, floor), width: wide ? W * 0.9 : cw, align: 'center', color: pal.ink, alpha: rp, lineHeight: 1.3 });
+    }
+    g.restore();
+    return { phase: phase, left: left, q: q };
+  };
+
+  // @end questions
   // @part paths: pathUpTo catmull path
   /** Resample a polyline so progress is proportional to length. Returns [[x,y], ...] up to p. */
   function pathUpTo(pts, p, smooth) {
@@ -2719,7 +2868,7 @@
    * What the last rendered frame drew, for QA tools (check, snap): {t, width, height, design, look,
    * texts: [{text, x, y, w, h (output CSS px), size (px on screen), font, color, alpha,
    * cam (camera zoom the text was drawn under; > 1 = cropped by the framing on purpose),
-   * decor (UI-mockup detail: F.decor or {decor: true}), z (draw order)}], covers: [{kind ('callout' |
+   * decor (UI-mockup detail: F.decor or {decor: true}), flash (a flash word: {flash: true}), z (draw order)}], covers: [{kind ('callout' |
    * 'caption' | 'band' | 'dim'), text, x, y, w, h, z, anchor (callout), hole (dim)}] (cards drawn over the
    * picture, and spotlight dims: text drawn before one and under it is hidden or dimmed on purpose), fonts, error}.
    */
@@ -2735,6 +2884,8 @@
   // Expose the internal state read-only for debugging.
   Object.defineProperty(F, 'g', { get: function () { return S.g; } });
   Object.defineProperty(F, 's', { get: function () { return S.s; } });
+  /** showtime.json "questions", times resolved (ST.questions): [{id, t, think, resume, from, prompt, choices, answer, reply}]. */
+  Object.defineProperty(F, 'questions', { get: function () { return root.ST && root.ST.questions ? root.ST.questions : []; } });
   F.pal = PALETTES.dark;
   F.W = 1920; F.H = 1080; F.u = 1; F.T = 0;
 

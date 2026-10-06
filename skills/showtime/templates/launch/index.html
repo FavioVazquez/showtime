@@ -33,8 +33,8 @@
     --win-accent: var(--accent); --win-line: var(--line);
     --win-shadow: 0 4cqh 10cqh rgb(0 0 0 / 0.55); --win-shadow-tall: 0 1.2cqh 3cqh rgb(0 0 0 / 0.35);
     --chip-bg: color-mix(in oklab, var(--surface) 90%, var(--fg)); --chip-fg: var(--fg); --chip-accent: var(--accent);
-    --key-light: color-mix(in oklab, var(--accent) 17%, transparent);
-    --rim-a: color-mix(in oklab, var(--accent) 7%, transparent); --rim-b: rgb(120 140 255 / 0.06); --vignette: rgb(0 0 0 / 0.5);
+    --key-light: color-mix(in oklab, var(--accent) calc(17% * var(--ground-glow, 1)), transparent);
+    --rim-a: color-mix(in oklab, var(--accent) calc(7% * var(--ground-glow, 1)), transparent); --rim-b: rgb(120 140 255 / 0.06); --vignette: rgb(0 0 0 / calc(0.5 * var(--ground-vignette, 1)));
     color-scheme: dark;
   }
   .stage { background: var(--bg); }

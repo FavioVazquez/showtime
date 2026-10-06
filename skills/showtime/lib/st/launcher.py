@@ -61,7 +61,7 @@ STDLIB_CLI = ("paths", "new", "retime", "data", "install", "guide", "config")   
 GROUPS = [
     ("make", "Make a video from an HTML/canvas project",
      ["new", "retime", "data", "adopt", "preview", "render", "export", "check", "look", "snap", "score", "motion", "code",
-      "server", "manim", "release-video"],
+      "server", "manim", "release-video", "pr-video"],
      ["showtime new dom my-launch --aspect 16:9",
       "showtime retime my-launch -d 20            # or --from-voice voice/timeline.json",
       "showtime preview my-launch",
@@ -96,10 +96,11 @@ GROUPS = [
       "showtime studio open launch-teaser",
       "showtime brand init --from ."]),
     ("job/qa", "Where a job stands, and proof it is done",
-     ["status", "qa", "review-pack", "review-verdict", "job", "receipt", "clean"],
+     ["status", "qa", "review-pack", "review-verdict", "review-respond", "review", "job", "receipt", "clean"],
      ["showtime status",
       "showtime qa final.mp4 --project my-video",
       "showtime review-pack showtime-out/launch-20260926-101500",
+      "showtime review open launch     # the person leaves notes on frames of the finished video",
       "showtime receipt                # what the job took: rounds, renders, time, tokens, cost"]),
     ("deliver", "Posters, platform exports, thumbnails",
      ["deliver"],
@@ -757,7 +758,7 @@ def utf8_stdio(streams=None) -> None:
 NO_BACKGROUND = ("help", "version", "status", "mcp", "-h", "--help", "-V", "--version")
 # Commands that finish in seconds, print their own progress (doctor), or serve until stopped: no heartbeat.
 QUIET_COMMANDS = {"help", "version", "paths", "install", "status", "config", "new", "retime", "data", "job", "clean", "brand", "report",
-                  "doctor", "mcp", "server", "preview", "studio"}
+                  "doctor", "mcp", "server", "preview", "studio", "review"}
 HEARTBEAT_DEFAULT = 45.0
 SUBCOMMAND_GROUPS = {"audio", "voice", "edit", "deliver", "export", "site", "demo", "doc", "assets", "manim",
                      "footage", "motion"}

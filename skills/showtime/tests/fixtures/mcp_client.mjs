@@ -9,7 +9,7 @@ import { spawn } from 'node:child_process';
 import readline from 'node:readline';
 
 const plan = JSON.parse(await new Promise((res) => { let s = ''; process.stdin.on('data', (c) => { s += c; }); process.stdin.on('end', () => res(s)); }));
-const child = spawn(process.execPath, [plan.server], { cwd: plan.cwd, env: { ...process.env, ...(plan.env || {}) }, stdio: ['pipe', 'pipe', 'pipe'] });
+const child = spawn(process.execPath, [plan.server, ...(plan.args || [])], { cwd: plan.cwd, env: { ...process.env, ...(plan.env || {}) }, stdio: ['pipe', 'pipe', 'pipe'] });
 let stderr = '';
 child.stderr.on('data', (c) => { stderr += c; });
 const pending = new Map();

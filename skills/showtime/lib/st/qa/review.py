@@ -2,7 +2,8 @@
 
 The critic (a fresh sub-agent, or a person) gets a folder, never the session:
 contact sheets (1 per second, every scene, every transition midpoint), key
-frames, full-size crops of the largest text lines (the type detail pass), a loudness graph, the qa verdict, copies of the brief/storyboard/ledger
+frames, full-size crops of the largest text lines (the type detail pass), a loudness graph, the sound measured
+for the hearing pass (audio.txt and hearing.png, st.qa.hearing), the qa verdict, copies of the brief/storyboard/ledger
 and a CRITIC.md brief with the severity scale and the answer format. Each pack
 is one round: review/round-1/, review/round-2/. The protocol allows three critic
 rounds; a round counts once a critic's FINDINGS.md is in it, so a round without
@@ -212,6 +213,84 @@ def planned_scenes(video: Path, proj: Optional[Path], dur: float) -> Optional[Di
     return {"scenes": found, "source": source}
 
 
+# ------------------------------------------------------------------ narration and the story in order
+
+Cue = Tuple[float, float, str]
+
+
+def narration(video: Path, proj: Optional[Path]) -> Tuple[List[Cue], str]:
+    """(cues in video time, source): the narration of this render, from its own caption sidecar, else the
+    project's voice timeline or caption files when they are not newer than the render (a re-voice after it
+    would lie). ([], "") when there is none."""
+    from . import captions as qa_captions
+    for ext in (".srt", ".vtt", ".ass"):
+        side = video.with_suffix(ext)
+        if side.is_file():
+            try:
+                cues = qa_captions.parse(side)["cues"]
+            except Exception:  # noqa: BLE001 - an unreadable sidecar is no narration
+                continue
+            return [(float(c["start"]), float(c["end"]), str(c["text"])) for c in cues], "its caption file %s" % side.suffix
+    if proj is None:
+        return [], ""
+    try:
+        vt = video.stat().st_mtime
+    except OSError:
+        return [], ""
+    off = _offset(video)
+    tl = proj / "voice" / "timeline.json"
+    if tl.is_file() and tl.stat().st_mtime <= vt + 1:
+        data = read_json(tl, {}) or {}
+        from .hearing import line_offsets
+        moved = line_offsets(proj, data) if isinstance(data, dict) else {}   # where the mix plays each line
+        out: List[Cue] = []
+        for ln in (data.get("lines") if isinstance(data, dict) else None) or []:
+            if isinstance(ln, dict) and ln.get("text") and ln.get("start") is not None:
+                o = off - moved.get(str(ln.get("id")), 0.0)
+                a = float(ln.get("speech_start", ln["start"])) - o
+                b = float(ln.get("speech_end", ln.get("end", a))) - o
+                out.append((a, b, str(ln["text"])))
+        if out:
+            return out, "the voice timeline"
+    for f in (proj / "voice" / "vo.srt", proj / "vo.srt", proj / "captions.srt", proj / "final.srt"):
+        if f.is_file() and f.stat().st_mtime <= vt + 1:
+            try:
+                cues = qa_captions.parse(f)["cues"]
+            except Exception:  # noqa: BLE001
+                continue
+            return [(float(c["start"]) - off, float(c["end"]) - off, str(c["text"])) for c in cues], "the project's captions"
+    return [], ""
+
+
+def cue_lines(cues: Sequence[Cue]) -> str:
+    return "\n".join("[%7.2fs - %7.2fs] %s" % (a, b, " ".join(t.split())) for a, b, t in cues if t.strip())
+
+
+NO_NARRATION = ("(no narration transcript: no caption file or voice timeline belongs to this render. If it has a voice, "
+                "judge from the on-screen text and say so under DECLINED TO JUDGE)")
+
+
+def story_text(parts: Sequence[Tuple[float, float, str, Optional[str]]], cues: Sequence[Cue], source: str,
+               where: str = "this folder") -> str:
+    """The video in order, as a first-time viewer meets it: each part (start, end, name, frame path) with the
+    narration said during it (a line belongs to the part it starts in). For the critic's first-viewer pass."""
+    out = ["# The video in order, as a first-time viewer meets it",
+           "",
+           "Each part, the frame at its middle and the narration said during it (you cannot hear the video; this is "
+           "the voice). Frame paths are relative to %s. For the first-viewer pass: judge from this, the contact "
+           "sheet and the frames, before you read the brief." % where, ""]
+    spoken = [c for c in cues if c[2].strip()]
+    for i, (a, b, name, frame) in enumerate(parts):
+        last = i == len(parts) - 1
+        out.append("part %d  %.2f-%.2fs%s  frame: %s" % (i + 1, a, b, "  (%s)" % name if name else "",
+                                                         "`%s`" % frame if frame else "(see the contact sheet)"))
+        mine = [c for c in spoken if (a - 0.05 <= c[0] < b - 0.05) or (last and c[0] >= b - 0.05) or (i == 0 and c[0] < a)]
+        out += ["  " + ln for ln in cue_lines(mine).splitlines()] or ["  (no narration in this part)"]
+        out.append("")
+    out.append(("Narration from %s." % source) if spoken else NO_NARRATION)
+    return "\n".join(out).rstrip() + "\n"
+
+
 def _rounds(root: Path) -> List[int]:
     out = []
     for d in root.glob("round-*") if root.is_dir() else []:
@@ -393,6 +472,16 @@ def build(target: Optional[PathLike] = None, *, out: Optional[PathLike] = None, 
                               duration=dur, fps=fps)
     for p, (t, lab) in zip(sp, scene_times):
         scene_items.append({"path": str(p), "label": lab, "sub": "%.2fs" % t})
+    say("review-pack: narration and the parts in order")
+    cues, narr_source = narration(video, proj)
+    (pack / "transcript.txt").write_text((cue_lines(cues) or NO_NARRATION) + "\n", encoding="utf-8", newline="\n")
+    mids = {lab: p for p, (t, lab) in zip(sp, scene_times) if lab.startswith("scene ") and lab.endswith(" mid")}
+    parts = []
+    for i, (a, b) in enumerate(scenes):
+        nm = names.get(round(a, 3))
+        fr = mids.get("scene %d%s mid" % (i + 1, " (%s)" % nm if nm else ""))
+        parts.append((a, b, nm or "", _rel(str(fr), pack) if fr else None))
+    (pack / "story.txt").write_text(story_text(parts, cues, narr_source), encoding="utf-8", newline="\n")
     scenes_sheet = images.contact_sheet(scene_items, pack / "scenes.jpg", thumb=thumb,
                                         title="%s  scenes and transitions (%d cuts, from %s)" % (
                                             video.name, len(cuts), scenes_source)) \
@@ -440,6 +529,15 @@ def build(target: Optional[PathLike] = None, *, out: Optional[PathLike] = None, 
         say("review-pack: text crops skipped (%s)" % e)
 
     loud_png = loudness_png(pack / "qa", q, pack / "loudness.png", dur, video.name)
+    hear = None
+    try:
+        from . import hearing
+        say("review-pack: measuring the sound for the hearing pass")
+        hear = hearing.for_pack(video, proj, q, pack / "qa", cuts=[c for c in cuts if 0.1 < c < dur - 0.1],
+                                scenes=[(a, b, names.get(round(a, 3)) or "scene %d" % (i + 1)) for i, (a, b) in enumerate(scenes)],
+                                out_dir=pack, name="this video", title=video.name)
+    except Exception as e:  # noqa: BLE001 - the hearing material helps the critic; it must not stop the pack
+        say("review-pack: hearing measurements skipped (%s)" % e)
 
     say("review-pack: copying context")
     ctx = pack / "context"
@@ -448,7 +546,8 @@ def build(target: Optional[PathLike] = None, *, out: Optional[PathLike] = None, 
     # the packed video's own mix report (render writes <video>.work/audio/mix.report.json) comes first:
     # a job's work/ folder can hold another mix's report (a side mix, an earlier cut), and the critic
     # must judge the audio of the video it is watching
-    own_mix = video.with_suffix(".work") / "audio" / "mix.report.json"
+    from .hearing import own_mix_report
+    own_mix = own_mix_report(video) or (video.with_suffix(".work") / "audio" / "mix.report.json")
     if own_mix.is_file() and own_mix.stat().st_size < 2_000_000:
         shutil.copy2(own_mix, ctx / "mix.report.json")
         copied.append(str(ctx / "mix.report.json"))
@@ -492,7 +591,10 @@ def build(target: Optional[PathLike] = None, *, out: Optional[PathLike] = None, 
         "key_frames": key_frames, "scene_frames": [{"label": it["label"], "path": it["path"]} for it in scene_items],
         "text_crops": text_crops,
         "loudness_graph": loud_png, "thumbnail_preview": thumb_small, "context": copied,
-        "previous_findings": prev, "created": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "hearing": {k: hear[k] for k in ("text", "graph", "summary")} if hear else None,
+        "previous_findings": prev, "previous_ids": _previous_ids(root, pack),
+        "transcript": str(pack / "transcript.txt"), "story": str(pack / "story.txt"),
+        "narration_source": narr_source or None, "created": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "cut_strips": cut_sheet, "not_in_pack": other_deliverables(video, job),
         "missing_context": [] if (job or proj) else ["job", "project"],
     }
@@ -571,6 +673,40 @@ Measured by qa: {rhythm}
 """
 
 
+# Added to CRITIC.md instead of the launch checklist when the showreel tone is on (st.showreel: a showreel, a hype
+# reel or a "go all out" brief). The round-1 blind vote (2026-10-02) went to the denser, louder reel: restraint loses
+# this brief, so tame is a finding here.
+SHOWREEL_CHECKS = """
+## Showreel rubric (the showreel tone is on: judge these instead of restraint; each miss is a Should-fix unless marked)
+Measured by qa: {rhythm}
+The round-5 blind vote (2026-10-05) went to the reel that kept cutting to the last second (13-14 shots, no trick
+twice, the name landing late and moving); the takes that repeated fewer, longer ideas and held their name 2.5-3.5 s
+lost. Count these against the reel, each one a Should-fix:
+- Long holds: any shot over ~2 s, and an end card that holds still over ~1 s of a 15 s reel (qa's showreel_long_end).
+  The name lands on the last beats with about its reading time (~1.25 s) and keeps moving (a build, a sweep, a drift).
+- Repeats: two shots with the same technique, ground or layout (qa's showreel_repeats lists look-alike pairs; check
+  the sheet for the ones it misses, e.g. two particle shots in different colours). Two shots that show the same
+  trick are one shot.
+- Energy dips: any stretch over ~1 s before the end card where the reel sags (qa lists the dips; also a slow
+  ease-in, a settled chart, a quiet beat in the music).
+- Energy: from frame 0 the reel moves with intent; the cuts and the hits land on the music's beats (cuts.jpg and
+  the hearing numbers). A reel a stranger would call calm, tasteful or corporate is a Should-fix: it loses this
+  brief to a louder one, however clean it is.
+- Density and variety: 12-14 shots per 15 s (under 12 is qa's showreel_sparse) and at least 8 distinct kinds from
+  the menu: live data or a counter, words over a liquid shader, a 3D object, particles, kinetic type, a pattern
+  system, glitch or RGB split, a camera move or tunnel, a morph or match cut. Name the kinds you count.
+- Craft: every technique is executed well at full size: no banding in gradients and shaders, no aliased 3D edges,
+  no particles popping in or out, no stuttering camera, no broken or half-drawn frames (the cut strips). One cheap
+  shot spoils the reel (a Blocker when it is the opening or the last shot).
+- Surprise: at least two moments a viewer would not predict (a transition that turns one shot into the next, a
+  scale or a perspective jump, a type trick); if every shot is a stock effect, say which.
+- Ending: it lands: a hit on the music, the name or the one message readable (the hero line), then out. An ending
+  that just stops is a Should-fix.
+- Flash words (texture: one to three words that leave before they can be read) are allowed and are not readability
+  findings. The hero line is not texture: it must be readable at phone size for its full reading time.
+- Safety: no more than 3 bright flashes in any second (qa's flash_risk); a strobe over that is a Blocker.
+"""
+
 QUESTIONS = """Answer these eight questions for yourself first; they are what the findings weigh:
 1. Hook: at 1.5 s, does a stranger know what this is about and want to keep watching?
 2. Clarity: after the whole video, could they say what it is, who it is for and how to get it?
@@ -590,6 +726,20 @@ QUESTIONS = """Answer these eight questions for yourself first; they are what th
    job does it do (show the product, prove a claim, set up the next beat)? A shot that is only there because
    it looks good, or that only makes sense to the author, is a finding."""
 
+# The showreel tone swaps the clarity and story questions (a reel is judged as a reel, not as an explainer).
+SHOWREEL_QUESTIONS = QUESTIONS.replace(
+    "2. Clarity: after the whole video, could they say what it is, who it is for and how to get it?",
+    "2. Energy and density: would a stranger call it impressive, or tame? Count the shots, the distinct techniques,\n"
+    "   the long holds, the repeats and the dips.").replace(
+    "3. Readability: is any text too small, too short-lived, low-contrast or in a platform UI zone?",
+    "3. Readability: is the hero line (the name, the one message) big, high-contrast and held long enough to read?\n"
+    "   Flash words (one to three words of texture, gone in under a second) are allowed in a showreel.").replace(
+    "8. Story logic: go shot by shot through the scene list: what would a stranger think each shot is, and what\n"
+    "   job does it do (show the product, prove a claim, set up the next beat)? A shot that is only there because\n"
+    "   it looks good, or that only makes sense to the author, is a finding.",
+    "8. Surprise and ending: which moments would a viewer not predict, and does the ending land on the beat with the\n"
+    "   hero line held? In a showreel a shot may be there because it looks good: that is its job.")
+
 ABSOLUTE = """**would you post this under your own name?** Picture it on the target platform, watched once
 at full size by someone who does not know the maker. The bar is "a stranger would not call it cheap, broken or
 wrong", not "flawless": a video with should-fix and polish findings is usually still a yes (list them above).
@@ -603,9 +753,75 @@ SEVERITY = """Severity:
 - **Blocker**: an invented or wrong claim, a misspelled product or person name; black, frozen or garbage
   frames; wrong aspect or duration for the platform; clipped or missing voice; text cut off or outside the safe
   zone; a missing license credit.
-- **Should-fix**: a shot with no clear job or one a stranger would misread (a Blocker at the hook or payoff); text not readable at phone size or for as long as it is on screen; a title or text line whose parts sit on different baselines or differ in size or weight; music masking the voice;
-  a dead stretch over ~2s; off-brand colours; captions more than ~150 ms out of sync.
+- **Should-fix**: a part a first-time viewer cannot place (why it is here, how it connects to the opening; a
+  Blocker when the opening never says what the video is about); a shot with no clear job or one a stranger would
+  misread (a Blocker at the hook or payoff); text not readable at phone size or for as long as it is on screen; a title or text line whose parts sit on different baselines or differ in size or weight; music masking the voice;
+  a dead stretch over ~2s; a level jump at a cut the story does not call for; music cut off on the last frame;
+  off-brand colours; captions more than ~150 ms out of sync.
 - **Polish**: easing taste, 1-2 frame timing, colour nuance."""
+
+
+def _previous_ids(root: Path, pack: Path) -> List[Dict[str, Any]]:
+    """The blockers and should-fixes of the earlier rounds, with the ids the PREVIOUS lines name (st.job.findings)."""
+    job = root.parent
+    if root.name != "review" or not (job / "job.json").is_file():
+        return []
+    try:
+        from ..job import findings
+        g = findings.collect(job)
+    except Exception:  # noqa: BLE001 - the brief still lists the files
+        return []
+    return [{"id": f["id"], "severity": f["severity"], "text": f["text"], "status": f["status"]}
+            for f in g["findings"] if pack.resolve() not in Path(f["file"]).resolve().parents]
+
+
+FIRST_VIEWER = """## First-viewer pass (do it first, before you open the brief or `context/`)
+You have never seen the brief. Go through {story} in order: each part's middle frame and the narration said
+during it (you cannot hear the video, so that transcript is the voice), with the contact sheet for what happens
+between them. For each part answer one question: **do I know why this part is here, and how it connects to what
+the opening said the video is about?** Write one line per part under FIRST VIEWER: `- part 2 (8.00-21.50s)
+<frame path>: yes | no -- why`. Every "no" is also a Should-fix with a concrete fix (a one-line spoken bridge from
+the part before, the steps shown as a persistent roadmap with the current one lit, a cut). It is a Blocker when the
+opening (about the first 10 s) never says what the video is about or why it matters; a video that asks the viewer
+questions must say why before the first one. Only then read the context files."""
+
+
+HEARING = """## Hearing pass (after the picture; you cannot listen)
+You cannot hear this video. {files} measure what an ear would catch: each voice line's level over the music and
+its words per minute, pauses and near silence, the level on both sides of every cut, each effect's timing and
+level, how the music ends, the peaks. `transcript.txt` has the words with their times. Judge **only what those
+numbers and the transcript support**, quote the numbers in the finding, and never guess at what they cannot
+show (how the voice sounds, a mispronounced word, harsh s sounds, whether the music fits the mood): list those
+under DECLINED TO JUDGE. Write one line per check under HEARING (`- voice over music: ok -- every line 12-17 dB
+over the bed`, or `problem -- ...`); every problem is also a finding under the usual severities, with its time
+and `hearing.png`:
+1. Voice over the music: a line under {masked:g} dB over the bed is music masking the voice (Should-fix; a Blocker when
+   the music is louder than the words, or at the hook or the payoff). "estimate" values overstate the music a
+   little; say so when you rely on one.
+2. Pace: a line over ~{fast:g} words a minute is rushed (Should-fix when it carries the main message, else Polish);
+   a line that overlaps the next one, starts before the video or runs to its last frame is clipped (Blocker).
+3. Silence: a pause in the voice or near silence over ~{quiet:g} s mid-video that nothing on screen carries is a dead
+   stretch (Should-fix).
+4. Level at cuts: a jump over {jump:g} LU that the story does not call for (no impact, no drop, no section change
+   noted) is a Should-fix; 3-6 LU is Polish.
+5. Effects: one more than ~0.1 s off the cut or CUE it belongs to is late or early (Should-fix on a hit the
+   picture lands on, else Polish); one under the rest of the mix is not heard (Polish unless it carries a beat);
+   one far over the programme (loud) startles (Should-fix).
+6. Ending: sound still playing on the last frame is music cut off (Should-fix); music that stops more than
+   1 s before the picture without a reason is Polish.
+7. Peaks: clipping is a Blocker; a true peak over the ceiling is qa's finding to confirm."""
+
+def hearing_brief(files: str) -> str:
+    """The hearing pass section of a critic brief, with the thresholds qa uses (runtime/thresholds.json)."""
+    from .hearing import thresholds
+    th = thresholds()
+    return HEARING.format(files=files, masked=th["voice_over_bed_min_db"], fast=th["fast_wpm"],
+                          quiet=th["quiet_stretch_s"], jump=th["level_jump_lu"])
+
+
+NO_HEARING = """## Hearing pass
+The video has no measured audio track (qa says so): write `HEARING: no audio` and judge whether a silent video
+suits the platform and the brief."""
 
 
 def critic_brief(m: Dict[str, Any], q: Dict[str, Any], pack: Path) -> str:
@@ -627,14 +843,21 @@ def critic_brief(m: Dict[str, Any], q: Dict[str, Any], pack: Path) -> str:
         others += ("\n## Missing context\nNo job or project was found for this video, so there is no brief, storyboard, "
                    "check report or plan here. Judge as a reasonable viewer would, and say so under DECLINED TO JUDGE.\n")
     rh = q.get("rhythm") or {}
-    if rh.get("launch"):
+    reel = bool((q.get("showreel") or {}).get("on") or rh.get("showreel"))
+    if reel:
+        others += SHOWREEL_CHECKS.format(rhythm=rh.get("summary") or "(not measured)")
+    elif rh.get("launch"):
         others += LAUNCH_CHECKS.format(rhythm=rh.get("summary") or "(not measured)")
     prev = ""
     if m.get("previous_findings"):
+        ids = m.get("previous_ids") or []
+        idl = ("\nThe earlier blockers and should-fixes, by id (answer each one):\n" + "\n".join(
+            "- %s (%s; the maker says: %s): %s" % (f["id"], f["severity"], f["status"] if f["status"] != "open" else
+                                                  "nothing yet", f["text"][:160]) for f in ids) + "\n") if ids else ""
         prev = ("\n## This is round %d\nRead the previous findings first and judge only whether they were fixed, plus anything "
-                "the fixes broke, and answer each under PREVIOUS (`fixed: ...` or `not fixed: ...`, naming what it was "
-                "about, e.g. the captions). Do not reopen settled taste questions.\n%s\n" % (
-                    m["round"], "\n".join("- `%s`" % p for p in m["previous_findings"])))
+                "the fixes broke, and answer each under PREVIOUS (`fixed <id>: ...` or `not fixed <id>: ...`, naming what "
+                "it was about, e.g. the captions). Do not reopen settled taste questions.\n%s\n%s" % (
+                    m["round"], "\n".join("- `%s`" % p for p in m["previous_findings"]), idl))
     return """# Critic brief (round {round} of at most {maxr})
 
 You are a helper for one task: review a finished video from the evidence in this folder. Do not run the
@@ -651,7 +874,10 @@ Skill: {skill}
 - Scenes and transitions (scene middles, each cut at -0.1s / midpoint / +0.2s): `{scenes}`
 - Every frame around each cut (2 before to 4 after; double exposures and flashes hide here): `{cuts}`
 - Loudness over time: `{loud}`
+- {hearing_files}
 - Thumbnail at feed size: `{thumb}`
+- Narration, timed (you cannot hear it): `transcript.txt`
+- The parts in order, each with its middle frame and its narration: `story.txt`
 
 Key frames:
 {keys}
@@ -665,6 +891,10 @@ Context (the brief, plan, ledger and reports the video was made against):
 Automated findings to confirm or dismiss by looking at the frames:
 {qa_list}
 {others}{prev}
+{first_viewer}
+
+{hearing}
+
 ## How to judge
 Look at every image above before writing. When the brief is silent, judge by what a reasonable viewer on the
 target platform would expect (a vertical social cut is mostly watched muted, so missing captions matter).
@@ -672,8 +902,8 @@ Measure geometry (sizes, offsets, margins) in pixels on the full-size frames in 
 sheets. If the brief withholds something until a reveal (a name, a price), check every frame before the reveal.
 
 {judging}
-Rule: **every finding cites a timestamp and a frame path** from this folder (or a track name for audio). A finding
-without a location is dropped. Quote numbers (sizes, seconds, colours) in fixes. No scores: do not rate the
+Rule: **every finding cites a timestamp and a frame path** from this folder (audio findings: a timestamp and
+`hearing.png`). A finding without a location is dropped. Quote numbers (sizes, seconds, colours) in fixes. No scores: do not rate the
 video on a number scale; the verdict and the findings carry the judgment.
 
 Then the absolute verdict, {absolute}
@@ -682,6 +912,10 @@ Then the absolute verdict, {absolute}
 ```
 VERDICT: ship | ship after fixes | not ready  -- one line of reasoning
 WOULD I POST THIS: yes | no  -- one reason, judged on this video alone
+FIRST VIEWER (one line per part of story.txt; every "no" is also listed below):
+- part 1 (0.00-8.20s) frames/...jpg: yes | no  -- why
+HEARING (one line per check of the hearing pass; every problem is also listed below):
+- voice over music: ok | problem  -- the numbers from audio.txt
 WHAT WORKS (max 3, so it is kept):
 - ...
 BLOCKERS:
@@ -690,11 +924,11 @@ SHOULD-FIX:
 - ...
 POLISH:
 - ...
-DECLINED TO JUDGE (what you could not or chose not to assess, e.g. audio quality, brand fit without a brand kit):
+DECLINED TO JUDGE (what you could not or chose not to assess, e.g. how the voice sounds, brand fit without a brand kit):
 - ...
 BEST POSTER FRAME: t=..s because ...
-PREVIOUS (round 2+ only: one line per earlier blocker or should-fix):
-- fixed: <the finding>   |   not fixed: <the finding> -> what is still wrong
+PREVIOUS (round 2+ only: one line per earlier blocker or should-fix, by its id):
+- fixed r1-S2: <the finding>   |   not fixed r1-S2: <the finding> -> what is still wrong
 ```
 
 Limits: at most {maxr} critic rounds per video. A later round checks only the fixes. If blockers remain
@@ -704,4 +938,9 @@ after the last one, stop: the maker shows your findings to the user instead of l
            qa=_rel(q["report"], pack), sheet=_rel(m["sheet"], pack), scenes=_rel(m["scenes_sheet"], pack),
            loud=_rel(m["loudness_graph"], pack), thumb=_rel(m["thumbnail_preview"], pack), keys=key_list, ctx=ctx_list,
            qa_list=qa_list, prev=prev, cuts=_rel(m.get("cut_strips"), pack), others=others, text_list=text_list,
-           judging=QUESTIONS + "\n\n" + SEVERITY + "\n", absolute=ABSOLUTE)
+           judging=(SHOWREEL_QUESTIONS if reel else QUESTIONS) + "\n\n" + SEVERITY + "\n", absolute=ABSOLUTE,
+           first_viewer=FIRST_VIEWER.format(story="`story.txt`"),
+           hearing_files=("Sound, measured for the hearing pass (you cannot listen): `%s`, plotted in `%s`" % (
+               _rel(m["hearing"]["text"], pack), _rel(m["hearing"]["graph"], pack)) if m.get("hearing") else
+               "Sound, measured for the hearing pass: (none: the video has no measured audio track)"),
+           hearing=hearing_brief("`audio.txt` and `hearing.png`") if m.get("hearing") else NO_HEARING)

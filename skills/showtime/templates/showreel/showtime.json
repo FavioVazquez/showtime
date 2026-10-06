@@ -1,0 +1,11 @@
+{
+  "title": "Showreel",
+  "tone": "showreel",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "duration": 15.0,
+  "background": "#05060f",
+  "poster": 0,
+  "audio": "audio/mix.json"
+}

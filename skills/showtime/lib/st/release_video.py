@@ -556,30 +556,44 @@ def total_duration(p: Dict[str, Any]) -> float:
     return round(sum(sc["dur"] for sc in p["scenes"]), 2)
 
 
-def write_project(out: Path, notes: Dict[str, Any], p: Dict[str, Any], *, install: str = "", url: str = "",
-                  date: str = "", aspect: str = "16:9", fps: int = 30, force: bool = False) -> Dict[str, Any]:
-    sizes = {"16:9": (1920, 1080), "9:16": (1080, 1920), "1:1": (1080, 1080), "4:5": (1080, 1350)}
-    if aspect not in sizes:
-        raise ValueError("aspect must be one of %s" % ", ".join(sizes))
+SIZES = {"16:9": (1920, 1080), "9:16": (1080, 1920), "1:1": (1080, 1080), "4:5": (1080, 1350)}
+
+
+def project_config(p: Dict[str, Any], *, title: str, aspect: str = "16:9", fps: int = 30) -> Dict[str, Any]:
+    """showtime.json for a generated project (release-video and pr-video share it)."""
+    if aspect not in SIZES:
+        raise ValueError("aspect must be one of %s" % ", ".join(SIZES))
+    w, h = SIZES[aspect]
+    dur = total_duration(p)
+    return {"title": title, "width": w, "height": h, "fps": fps, "duration": dur, "background": "#0e1013",
+            "poster": 0, "audio": "audio/mix.json",
+            "subtitle": "What changed, from the release notes." if p["kind"] != "pr" else "What this pull request changes.",
+            "kicker": "Pull request" if p["kind"] == "pr" else "Release",
+            "startTitle": False,
+            "expect": {"duration": dur, "audio": True, "must_show": [p["name"]]}}
+
+
+def write_files(out: Path, *, page: str, cfg: Dict[str, Any], mix: Dict[str, Any], source_name: str,
+                source: Dict[str, Any], force: bool = False) -> None:
+    """index.html, showtime.json, audio/mix.json and the provenance file; FileExistsError on a non-empty folder."""
     out = Path(out)
     if out.exists() and any(out.iterdir()) and not force:
         raise FileExistsError(str(out))
     (out / "audio").mkdir(parents=True, exist_ok=True)
-    w, h = sizes[aspect]
-    dur = total_duration(p)
+    (out / "index.html").write_text(page, encoding="utf-8")
+    (out / "showtime.json").write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
+    (out / "audio" / "mix.json").write_text(json.dumps(mix, indent=2) + "\n", encoding="utf-8")
+    (out / source_name).write_text(json.dumps(source, indent=2) + "\n", encoding="utf-8")
+
+
+def write_project(out: Path, notes: Dict[str, Any], p: Dict[str, Any], *, install: str = "", url: str = "",
+                  date: str = "", aspect: str = "16:9", fps: int = 30, force: bool = False) -> Dict[str, Any]:
     ver = p["version"]
     title = ("%s %s" % (p["name"], ver if ver.startswith(("v", "#")) or not ver else "v" + ver)).strip()
-    cfg = {"title": title, "width": w, "height": h, "fps": fps, "duration": dur, "background": "#0e1013",
-           "poster": 0, "audio": "audio/mix.json",
-           "subtitle": "What changed, from the release notes." if p["kind"] != "pr" else "What this pull request changes.",
-           "kicker": "Pull request" if p["kind"] == "pr" else "Release",
-           "startTitle": False,
-           "expect": {"duration": dur, "audio": True, "must_show": [p["name"]]}}
-    (out / "index.html").write_text(build_page(p, notes, install=install, url=url, date=date), encoding="utf-8")
-    (out / "showtime.json").write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
-    (out / "audio" / "mix.json").write_text(json.dumps(build_mix(p), indent=2) + "\n", encoding="utf-8")
+    cfg = project_config(p, title=title, aspect=aspect, fps=fps)
     src = {"generator": "showtime release-video", "notes": notes, "plan": {k: v for k, v in p.items() if k != "scenes"},
            "scenes": [{"id": s["id"], "dur": s["dur"]} for s in p["scenes"]], "install": install, "url": url}
-    (out / "release.json").write_text(json.dumps(src, indent=2) + "\n", encoding="utf-8")
-    return {"project": str(out), "duration": dur, "scenes": len(p["scenes"]), "shown": p["shown"],
+    write_files(out, page=build_page(p, notes, install=install, url=url, date=date), cfg=cfg, mix=build_mix(p),
+                source_name="release.json", source=src, force=force)
+    return {"project": str(out), "duration": cfg["duration"], "scenes": len(p["scenes"]), "shown": p["shown"],
             "total": p["total"], "more": p["more"], "authors": notes.get("authors", []), "title": title}

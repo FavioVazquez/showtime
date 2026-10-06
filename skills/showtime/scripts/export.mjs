@@ -15,22 +15,28 @@ import { resolveAudioMode, buildEmbedAudio, scoreGain, hasMix } from './lib/expo
 import { showCard, fmtLen, openHint } from './lib/delight.mjs';
 import { writeExport, estimateSingle, notices, showtimeVersion, category, jsonBytes, playerBytes } from './lib/export/build.mjs';
 import { fitFootage } from './lib/export/fit.mjs';
+import { timeIssues, socraticDoc } from './lib/questions.mjs';
 
 const SPEC = {
   name: 'export',
-  usage: 'showtime export html <project> [-o out.html] [--audio auto|embed|score|none] [--folder] [--controls full|minimal|none] [--target file|artifact] [--lang CODE]',
+  usage: 'showtime export html <project> [-o out.html] [--audio auto|embed|score|none] [--folder] [--controls full|minimal|none] [--target file|artifact] [--lang CODE] [--no-questions]',
   summary: 'Export a project as an interactive HTML video that plays in any browser, offline, from one file.',
   description: [
     'The page is packed with everything it uses (runtime, scripts, styles, fonts, images, emoji, data,',
     'libraries) and plays in a small player: a start screen over the poster frame (title, subtitle and',
     'a Play button with the length, in the film\'s colours and title font, placed where the frame has no',
     'text), play/pause, scrubber with chapter ticks and a chapter menu, volume, loop,',
-    'fullscreen, deep links (#t=1:05, #chapter=2), "copy a link to this moment", and keys: space/k,',
+    'fullscreen, deep links (#t=1:05, #chapter=2, and #t=1:05-1:20: that part on a loop), "copy a link to',
+    'this moment" (or to a range picked with shift + drag on the scrubber), and keys: space/k,',
     'arrows -/+1 s (shift: one frame), j/l -/+5 s, 1-9 chapters, [ ] prev/next chapter, r restart,',
     'm mute, f fullscreen, c copy link, ? all keys.',
     'Frames are drawn by the same stage runtime as `showtime render`, so they match the MP4.',
     'On a phone held upright the picture sits full width on the film\'s own ground, with the title, the',
     'chapters and thumb-height controls under it.',
+    'Questions (showtime.json "questions"): the video stops at each one and asks it (a card with the',
+    'choices, A-C or 1-3, a right/wrong mark and the reply, then Continue); it goes on from the end of the',
+    'MP4\'s "pause and think" beat. socratic.json (the same questions, for pages that drive the player from',
+    'outside) is written next to the export. --no-questions exports a plain player.',
     'The file makes no network request. Default output: ./showtime-out/<title>-<timestamp>/<title>.html',
     '',
     'Audio: auto = the procedural score played live (streamed from the first second, tiny file) when',
@@ -53,6 +59,8 @@ const SPEC = {
     target: { help: 'file (default) or artifact: for a host that shows the page in a sandboxed frame (an HTML artifact): one file under 16 MB, no "copy link" or other file-address features (the player also detects such hosts by itself)', metavar: 'KIND' },
     'autoplay-muted': { type: 'boolean', help: 'start playing muted as soon as it loads (browsers allow that without a click)' },
     loop: { type: 'boolean', help: 'loop by default' },
+    'no-questions': { type: 'boolean', help: 'a plain player: do not stop at the showtime.json "questions" (the video still shows its own pause and think beats)' },
+    'auto-continue': { help: 'after a question is answered, go on by itself after S seconds (default: wait for Continue)', metavar: 'S' },
     poster: { help: 'time (s) of the frame shown behind the start screen, and packed as an image with --start poster (default: showtime.json "poster"); none for no poster', metavar: 'T' },
     start: { help: 'what shows before playing: card (default: the start screen over the poster frame drawn live) or poster (the same, with the frame also packed as an image shown while the page loads)', metavar: 'KIND' },
     title: { help: 'title of the page and the start screen (default: showtime.json "title")' },
@@ -83,6 +91,7 @@ const SPEC = {
     'showtime export html my-video --controls none --autoplay-muted --loop   # for embedding in a page',
     'showtime export html my-video --target artifact -o launch.html   # to publish as an HTML artifact',
     'showtime export html my-film --subtitle "Fix the cuts" --kicker "Studio how-to · 01"',
+    'showtime export html my-explainer --auto-continue 6    # questions go on 6 s after an answer',
     '# open at a moment: my-film.html#t=1:05  or  my-film.html#chapter=3',
   ],
 };
@@ -144,6 +153,12 @@ async function main() {
   const startKind = String(a.start || 'card').toLowerCase();
   if (!['card', 'poster'].includes(startKind)) throw new UserError(`--start must be card or poster (got ${a.start})`);
   const cardMode = startKind === 'card' && !a['autoplay-muted'];
+  // stop-and-ask questions: their words and voice cues are checked before anything is built
+  const qs = proj.questions || { list: [], issues: [], off: true };
+  const askQuestions = !qs.off && !a['no-questions'];
+  const autoContinue = a['auto-continue'] === undefined ? 0 : Number(a['auto-continue']);
+  if (!(autoContinue >= 0)) throw new UserError(`--auto-continue must be seconds >= 0 (got ${a['auto-continue']})`);
+  if (askQuestions) questionErrors(qs.issues, addWarn);
   resolveFF();
 
   // ---- output location (never overwrite)
@@ -196,6 +211,7 @@ async function main() {
     const t1 = Date.now();
     const pr = await probeProject({ url: server.url, page: proj.page, config: cfg, gpu: a.gpu, posterT, wantScore: wantAudio, posterImage });
     const D = pr.info.duration;
+    if (askQuestions) questionErrors(timeIssues(qs.list, D), addWarn);
     say(c.dim(`  played ${pr.samples} frames through in ${fmtDuration(Date.now() - t1)}; ${pr.requests.length} files requested`));
     for (const e of pr.errors.slice(0, 3)) addWarn(`page error: ${e}`);
     for (const u of pr.blocked.slice(0, 5)) addWarn(`the page requests ${u} from the internet; it cannot be packed (use a local copy)`);
@@ -301,6 +317,9 @@ async function main() {
     // only what the stage reads from showtime.json travels (no audio paths or other local details)
     const pubCfg = {};
     for (const k of ['width', 'height', 'fps', 'duration', 'background', 'title', 'poster', 'seed', 'chapters', 'subtitle', 'kicker']) if (cfg[k] !== undefined) pubCfg[k] = cfg[k];
+    // the page reads its questions (ST.questions) to draw its pause and think beats, as in the MP4,
+    // whether or not the player stops for them
+    if (Array.isArray(cfg.questions)) pubCfg.questions = cfg.questions;
     if (col.files.has('/showtime.json')) {
       const txt = JSON.stringify(pubCfg, null, 2);
       col.files.set('/showtime.json', { mime: 'application/json', bytes: Buffer.from(txt), text: txt, source: 'config' });
@@ -314,6 +333,8 @@ async function main() {
       seed: cfg.seed === undefined ? 1 : cfg.seed, config: pubCfg, chapters: pr.chapters, lang,
       poster: posterTime, audio: audioManifest, controls, autoplayMuted: !!a['autoplay-muted'], loop: !!a.loop,
       ...(target === 'artifact' ? { host: 'artifact' } : {}),
+      // the player asks them (with --controls none an embedding page asks them, from socratic.json)
+      ...(askQuestions && qs.list.length && controls !== 'none' ? { questions: playerQuestions(qs.list), autoContinue } : {}),
       start: startCard({ card: cardMode, title, look: pr.look, cfg, subtitle: a.subtitle, kicker: a.kicker }),
     };
     const write = () => writeExport({
@@ -330,6 +351,14 @@ async function main() {
         throw sizeError(res.bytes, maxMb, col.files, poster, audioPack, sizeHints, fitMode);
       }
     }
+    // socratic.json beside the export: the same questions for a page that drives the player from outside
+    let socratic = null;
+    if (askQuestions && qs.list.length) {
+      const want = path.join(path.dirname(res.output), 'socratic.json');
+      socratic = freshPath(want);
+      if (socratic !== want) addWarn(`${want} exists; writing ${path.basename(socratic)} instead`);
+      fs.writeFileSync(socratic, JSON.stringify(socraticDoc(title, qs.list), null, 2) + '\n');
+    }
     if (refit.length) {
       const kb = [...new Set(refit.map((r) => r.kbps))].join('/');
       addWarn(`embedded footage re-encoded for this export only (${refit.length} clip${refit.length > 1 ? 's' : ''} at ${kb} kb/s) to stay under ${maxMb} MB; the project's files are unchanged (--fit off to stop instead, --folder to keep full quality)`);
@@ -341,6 +370,7 @@ async function main() {
       audio: audioReport, poster: posterTime, chapters: pr.chapters.length, chapter_list: pr.chapters, files: res.files,
       start: manifest.start.card ? 'card' : 'poster', minified: res.minified, compressed: res.compressed, unused_parts: shrink.parts,
       totals: res.totals, largest: res.breakdown.slice(0, 8), footage_refit: refit, warnings, seconds: +((Date.now() - T0) / 1000).toFixed(1),
+      questions: askQuestions ? qs.list.map((q) => ({ id: q.id, t: q.t, resume: q.resume })) : [], socratic,
     };
     if (a.json) process.stdout.write(JSON.stringify(report, null, 2) + '\n');
     else {
@@ -348,6 +378,7 @@ async function main() {
       console.log(`${c.green('exported')} ${res.output}`);
       console.log(`  ${fmtBytes(res.bytes)}${folder ? ' (folder)' : ` of ${maxMb || 'unlimited'} MB`}, ${manifest.width}x${manifest.height} ${manifest.fps} fps ${D.toFixed(2)} s, ${aTxt}, ${pr.chapters.length} chapters, ${res.files} files packed`);
       console.log(`  open it in any browser (double-click); it makes no network request${folder ? '. Serve the folder, or open index.html' : ''}`);
+      if (socratic) console.log(`  ${qs.list.length} question${qs.list.length > 1 ? 's' : ''}: the video stops and asks${controls === 'none' ? ' (from the embedding page)' : ''}; ${path.basename(socratic)} beside it`);
       showCard({
         title: `${path.basename(res.output)} is ready`, file: res.output,
         facts: [fmtLen(D), `${manifest.width}x${manifest.height}`, fmtBytes(res.bytes)],
@@ -360,6 +391,20 @@ async function main() {
     if (!a['keep-work']) fs.rmSync(workDir, { recursive: true, force: true });
     else info(c.dim(`  work folder: ${workDir}`));
   }
+}
+
+/** Question issues: errors stop the export (the fix is in showtime.json), warnings are passed on. */
+function questionErrors(issues, addWarn) {
+  const errs = issues.filter((x) => x.severity === 'error');
+  for (const w of issues.filter((x) => x.severity !== 'error')) addWarn(w.message);
+  if (!errs.length) return;
+  throw new UserError(`showtime.json "questions": ${errs.map((x) => x.message).join('; ')}`,
+    `${errs[0].fix}; \`showtime check\` lists every question problem; --no-questions exports a plain player`);
+}
+
+/** What the player needs to ask a question (the pause and resume times, the words). */
+function playerQuestions(list) {
+  return list.map((q) => ({ id: q.id, t: q.t, resume: q.resume, prompt: q.prompt, choices: q.choices, answer: q.answer, reply: q.reply }));
 }
 
 /** The start screen: what it says (title, subtitle, kicker) and how it looks (the page's colours and fonts). */

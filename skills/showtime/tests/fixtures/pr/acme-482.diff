@@ -1,0 +1,72 @@
+diff --git a/config/.env.example b/config/.env.example
+new file mode 100644
+index 0000000..1111111
+--- /dev/null
++++ b/config/.env.example
+@@ -0,0 +1,3 @@
++# copy to .env
++ACME_TOKEN=test-0000-not-a-real-token-1234
++ACME_REGION=eu-west-1
+diff --git a/docs/export.md b/docs/export.md
+index 2222222..3333333 100644
+--- a/docs/export.md
++++ b/docs/export.md
+@@ -5,2 +5,4 @@
+ ## Size caps
+ 
++`acme export --max-mb 10` keeps the file under 10 MB.
++
+diff --git a/package-lock.json b/package-lock.json
+index 4444444..5555555 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -10,3 +10,3 @@
+     "node_modules/left-pad": {
+-      "version": "1.3.0",
++      "version": "1.3.1",
+       "resolved": "https://registry.npmjs.org/left-pad/-/left-pad-1.3.1.tgz",
+diff --git a/src/acme/client.py b/src/acme/client.py
+index 6666666..7777777 100644
+--- a/src/acme/client.py
++++ b/src/acme/client.py
+@@ -1,4 +1,7 @@
+ import os
+ 
++API_KEY = "sk-test-notarealkey0000000000"
++AWS_ACCESS_KEY_ID = "AKIAIOSFODNN7EXAMPLE"
++DEFAULT_REGION = "eu-west-1"
+ BASE_URL = "https://api.acme.dev"
+ TIMEOUT = 30
+diff --git a/src/acme/export.py b/src/acme/export.py
+index 8888888..9999999 100644
+--- a/src/acme/export.py
++++ b/src/acme/export.py
+@@ -40,9 +40,12 @@ def export(project, out, *, max_mb=None):
+ 	frames = render_frames(project)
+ 	size = estimate_size(frames)
+-	if max_mb and size > max_mb:
+-		raise ExportError("too big")
++	if max_mb and size > max_mb * 1_000_000:
++		bitrate = fit_bitrate(max_mb, frames.duration)
++		log("capping the export at %d kbps" % bitrate)
++		return encode(frames, out, bitrate=bitrate)
+ 	return encode(frames, out)
+ 
+ 
+ def fit_bitrate(max_mb, seconds):
+-	return int(max_mb * 8000 / seconds)
++	budget = max_mb * 8000 * 0.95
++	return int(budget / max(seconds, 0.1))
+diff --git a/tests/test_export.py b/tests/test_export.py
+index aaaaaaa..bbbbbbb 100644
+--- a/tests/test_export.py
++++ b/tests/test_export.py
+@@ -12,3 +12,8 @@ def test_export_basic(tmp_path):
+     out = export(PROJECT, tmp_path / "a.mp4")
+     assert out.exists()
+ 
++
++def test_export_respects_the_cap(tmp_path):
++    out = export(PROJECT, tmp_path / "b.mp4", max_mb=1)
++    assert out.stat().st_size < 1_000_000
++    assert fit_bitrate(1, 10) == 760

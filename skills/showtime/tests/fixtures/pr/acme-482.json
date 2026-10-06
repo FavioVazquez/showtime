@@ -1,0 +1,24 @@
+{
+  "additions": 20,
+  "author": {"id": "MDQ6VXNlcjE=", "is_bot": false, "login": "alice", "name": "Alice Example"},
+  "baseRefName": "main",
+  "body": "<!-- Thanks for contributing! Describe your change below. -->\r\n\r\n## Summary\r\n\r\nExports can now be capped to a size, so a video fits where it is going. The bitrate is computed from the duration instead of failing.\r\n\r\n- `acme export --max-mb N` picks a bitrate that lands under N MB\r\n- The cap leaves 5% headroom for the container\r\n\r\n## User-facing changes\r\n\r\n- `acme export --max-mb 10` makes a file you can attach to a GitHub PR\r\n\r\n## Test plan\r\n\r\n- [x] Added `test_export_respects_the_cap`\r\n- [ ] Tried it on a 2 GB project\r\n\r\nFixes #470\r\n",
+  "changedFiles": 6,
+  "commits": [
+    {"oid": "1111111111111111111111111111111111111111", "messageHeadline": "Cap export size"},
+    {"oid": "2222222222222222222222222222222222222222", "messageHeadline": "Test the cap"}
+  ],
+  "deletions": 4,
+  "files": [
+    {"path": "config/.env.example", "additions": 3, "deletions": 0},
+    {"path": "docs/export.md", "additions": 2, "deletions": 0},
+    {"path": "package-lock.json", "additions": 1, "deletions": 1},
+    {"path": "src/acme/client.py", "additions": 3, "deletions": 0},
+    {"path": "src/acme/export.py", "additions": 6, "deletions": 3},
+    {"path": "tests/test_export.py", "additions": 5, "deletions": 0}
+  ],
+  "headRefName": "alice/export-cap",
+  "number": 482,
+  "title": "Cap `acme export` at a size with --max-mb",
+  "url": "https://github.com/acme/tool/pull/482"
+}

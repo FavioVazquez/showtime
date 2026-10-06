@@ -943,6 +943,217 @@ def fmt(n):
     return "%.2f MB" % (n / MB)
 
 
+# Range links (#t=10-20): each case opens the export from disk and plays a scenario.
+RANGE_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8"><script src="/_st/stage.js"></script>
+<style>body{margin:0;background:#101418;color:#fff;font:700 60px sans-serif}#n{position:absolute;left:40px;top:40px}</style>
+</head><body><div id="n">0</div><script>ST.onSeek(function (t, f) { document.getElementById('n').textContent = 'frame ' + f; });</script>
+</body></html>
+"""
+RANGE_DRIVER = r"""
+import fs from 'node:fs';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+const SKILL = process.argv[2];
+const job = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
+const { launchBrowser } = await import(pathToFileURL(path.join(SKILL, 'scripts', 'lib', 'chrome.mjs')).href);
+const { browser } = await launchBrowser({ gpu: 'auto', headless: true, args: ['--proxy-server=http://127.0.0.1:9'] });
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const out = [];
+try {
+  for (const c of job.cases) {
+    const ctx = await browser.newContext({ viewport: { width: 960, height: 540 }, deviceScaleFactor: 1 });
+    const page = await ctx.newPage();
+    const r = { name: c.name, errors: [], requests: [], s: {} };
+    page.on('pageerror', (e) => r.errors.push(String(e.message || e).slice(0, 300)));
+    page.on('request', (q) => { const u = q.url(); if (!/^(data|blob|about|file):/.test(u)) r.requests.push(u); });
+    const P = (fn, arg) => page.evaluate(fn, arg);
+    const waitFor = async (fn, arg, ms = 20000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (await P(fn, arg)) return true; await sleep(30); } return false; };
+    const st = () => P(() => { const p = window.showtimePlayer, band = document.querySelector('.stp-range');
+      return { t: p.currentTime, paused: p.paused, ended: p.ended, range: p.range, loop: p.loop, question: p.question,
+        loopPressed: document.querySelector('.stp-loop').getAttribute('aria-pressed'),
+        band: band && !band.hidden ? { left: parseFloat(band.style.left), width: parseFloat(band.style.width) } : null,
+        from: (document.querySelector('.stp-from') || {}).textContent || '' }; });
+    try {
+      await page.goto(pathToFileURL(job.file).href + (c.hash || ''), { waitUntil: 'load', timeout: 60000 });
+      await P(() => window.showtimePlayer.ready);
+      await P(() => { window.__ev = []; const p = window.showtimePlayer; window.__maxT = 0;
+        for (const n of ['loop', 'question', 'answer', 'continue', 'range', 'rangeend', 'seek']) p.on(n, (d) => window.__ev.push([n, d && d.id ? d.id : (n === 'seek' ? +(+d).toFixed(3) : d), +p.currentTime.toFixed(3)]));
+        p.on('frame', () => { if (p.range && p.currentTime > window.__maxT) window.__maxT = p.currentTime; }); });
+      r.s.before = await st();
+      r.s.startTime = await P(() => window.showtimePlayer.startTime);
+      if (c.kind === 'loop') {
+        await page.click('.stp-go');
+        r.s.asked = await waitFor(() => window.showtimePlayer.question === 'q1');
+        r.s.atAsk = await st();
+        if (c.pass) await page.keyboard.press('k');                  // play through it: passed, asked again next loop
+        else { await page.keyboard.press('a'); await waitFor(() => !!document.querySelector('.stp-q-reply')); await page.keyboard.press('Enter'); }
+        r.s.looped = await waitFor(() => window.__ev.filter((e) => e[0] === 'loop').length >= 1);
+        if (c.pass) r.s.askedAgain = await waitFor(() => window.__ev.filter((e) => e[0] === 'question').length >= 2);
+        else await sleep(1500);
+        r.s.after = await st();
+        r.s.maxT = await P(() => window.__maxT);
+        // seeking outside the range leaves it, and the loop button goes back to how it was
+        await P(() => { window.showtimePlayer.pause(); window.showtimePlayer.currentTime = 7.5; });
+        r.s.outside = await st();
+      } else if (c.kind === 'stop') {
+        await page.click('.stp-go');
+        await waitFor(() => !window.showtimePlayer.paused);
+        await page.mouse.move(480, 500);
+        await page.click('.stp-loop');                                  // loop off: play stops at the end of the range
+        r.s.loopOff = await st();
+        r.s.stopped = await waitFor(() => window.showtimePlayer.paused, null, 15000);
+        r.s.atStop = await st();
+        await P(() => window.showtimePlayer.play());
+        await sleep(200);
+        r.s.again = await st();
+      } else if (c.kind === 'pick') {
+        await page.click('.stp-go');
+        await waitFor(() => !window.showtimePlayer.paused);
+        await page.keyboard.press('k');
+        await page.mouse.move(480, 300);
+        const b = await P(() => { const x = document.querySelector('.stp-scrub').getBoundingClientRect(); return [x.left, x.top + x.height / 2, x.width]; });
+        await page.keyboard.down('Shift');
+        await page.mouse.move(b[0] + 0.2 * b[2], b[1]);
+        await page.mouse.down();
+        await page.mouse.move(b[0] + 0.3 * b[2], b[1], { steps: 3 });
+        await page.mouse.move(b[0] + 0.4 * b[2], b[1], { steps: 3 });
+        await page.mouse.up();
+        await page.keyboard.up('Shift');
+        r.s.picked = await st();
+        r.s.link = await P(() => window.showtimePlayer.link());
+        await P(() => { window.__copied = null; Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: (t) => { window.__copied = t; return Promise.resolve(); } } }); });
+        await page.keyboard.press('c');
+        await sleep(100);
+        r.s.copied = await P(() => window.__copied);
+        r.s.toast = await P(() => document.querySelector('.stp-toast').textContent);
+        await page.keyboard.press('Escape');
+        r.s.cleared = await st();
+        // a link changed in the address bar while it plays; the API
+        await P(() => { location.hash = '#t=6-8'; });
+        await waitFor(() => !!window.showtimePlayer.range);
+        r.s.hashed = await st();
+        r.s.api = await P(() => { const p = window.showtimePlayer; const set = p.setRange(1, 2); return { set, link: p.link().hash, linkRange: p.linkRange(3, 4.25).hash, cleared: p.setRange(null), range: p.range }; });
+        r.s.help = await P(() => document.querySelector('.stp-help').textContent);
+      }
+      r.events = await P(() => window.__ev);
+    } catch (e) { r.fatal = String(e.message || e).slice(0, 500); }
+    out.push(r);
+    await ctx.close();
+  }
+} finally { await browser.close(); }
+fs.writeFileSync(job.result, JSON.stringify(out, null, 2));
+"""
+
+
+@needs_listen
+@unittest.skipIf(FAST, "needs a browser")
+class RangeLinkTest(unittest.TestCase):
+    """#t=2-5 (and #t=0:02-0:05): the player starts at 2 s, says so on the start card, shows the range on the
+    scrubber, loops back at 5 s (never shows a later frame), and still asks a question inside the range (again
+    on every loop until it is answered); with the loop button off it stops at the end of the range and plays it
+    again from its start; seeking outside leaves the range; shift + drag on the scrubber picks one, `c` copies
+    its link, Esc clears it; a hash changed while playing and the API (range, setRange, link, linkRange)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = Path(tempfile.mkdtemp(prefix="st-range-test-"))
+        proj = cls.tmp / "range"
+        proj.mkdir()
+        (proj / "showtime.json").write_text(json.dumps({
+            "title": "Range links", "width": 640, "height": 360, "fps": 30, "duration": 9, "background": "#101418",
+            "questions": [{"id": "q1", "at": 3.0, "think": 1.0, "prompt": "Which one?", "choices": ["This", "That"], "answer": 0}]}),
+            encoding="utf-8")
+        (proj / "index.html").write_text(RANGE_PAGE, encoding="utf-8")
+        cls.rep = export(proj, cls.tmp / "out" / "range.html", "--audio", "none")
+        job = cls.tmp / "job.json"
+        res = cls.tmp / "res.json"
+        f = cls.rep["output"]
+        job.write_text(json.dumps({"file": f, "result": str(res), "cases": [
+            {"name": "answered", "kind": "loop", "hash": "#t=2-5"},
+            {"name": "passed", "kind": "loop", "hash": "#t=0:02-0:05", "pass": True},
+            {"name": "stop", "kind": "stop", "hash": "#t=6-7.5"},
+            {"name": "pick", "kind": "pick"},
+        ]}), encoding="utf-8")
+        drv = cls.tmp / "range-driver.mjs"
+        drv.write_text(RANGE_DRIVER, encoding="utf-8")
+        node = shutil.which("node", path=ENV.get("PATH")) or "node"
+        cp = subprocess.run([node, str(drv), str(SKILL), str(job)], env=ENV, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            encoding="utf-8", errors="replace", timeout=300)
+        assert cp.returncode == 0 and res.exists(), "driver failed:\n%s\n%s" % (cp.stdout[-2000:], cp.stderr[-3000:])
+        cls.res = {r["name"]: r for r in json.loads(res.read_text(encoding="utf-8"))}
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(str(cls.tmp), ignore_errors=True)
+
+    def ok(self, name):
+        r = self.res[name]
+        self.assertNotIn("fatal", r, json.dumps(r, indent=1)[:3000])
+        self.assertEqual(r["errors"], [])
+        self.assertEqual(r["requests"], [])
+        return r["s"]
+
+    def test_range_loops_and_asks(self):
+        for name in ("answered", "passed"):
+            s = self.ok(name)
+            b = s["before"]
+            self.assertEqual(b["range"], {"a": 2, "b": 5}, name)
+            self.assertAlmostEqual(s["startTime"], 2.0, places=3)
+            self.assertEqual((b["loop"], b["loopPressed"]), (True, "true"))
+            self.assertIn("0:02 – 0:05", b["from"])                       # the start card says what plays
+            self.assertAlmostEqual(b["band"]["left"], 100 * 2 / 9, delta=0.1)
+            self.assertAlmostEqual(b["band"]["width"], 100 * 3 / 9, delta=0.1)
+            self.assertTrue(s["asked"], name)                               # the question inside the range asks
+            self.assertAlmostEqual(s["atAsk"]["t"], 3.0, places=3)
+            self.assertTrue(s["looped"], name)
+            self.assertLess(s["maxT"], 5.0 + 1e-6, "a frame after the range was shown")
+            self.assertEqual(s["after"]["range"], {"a": 2, "b": 5})
+            self.assertGreaterEqual(s["after"]["t"], 2.0 - 1e-6)
+            self.assertIsNone(s["outside"]["range"])                        # a seek outside leaves the range
+            self.assertFalse(s["outside"]["loop"])
+            loops = [e for e in self.res[name]["events"] if e[0] == "loop"]
+            self.assertTrue(loops)
+        asked = lambda n: [e for e in self.res[n]["events"] if e[0] == "question"]  # noqa: E731
+        self.assertEqual(len(asked("answered")), 1)                         # answered: not asked again
+        self.assertTrue(self.res["passed"]["s"]["askedAgain"])              # passed: asked again on the next loop
+
+    def test_loop_off_stops_at_the_end(self):
+        s = self.ok("stop")
+        self.assertEqual(s["before"]["range"], {"a": 6, "b": 7.5})
+        self.assertFalse(s["loopOff"]["loop"])
+        self.assertTrue(s["stopped"])
+        st = s["atStop"]
+        self.assertTrue(st["paused"])
+        self.assertFalse(st["ended"])
+        self.assertAlmostEqual(st["t"], 7.5 - 1 / 30, delta=0.002)          # the last frame of the range
+        self.assertEqual(st["range"], {"a": 6, "b": 7.5})
+        self.assertIn("rangeend", [e[0] for e in self.res["stop"]["events"]])
+        self.assertLess(abs(s["again"]["t"] - 6.0), 0.4)                     # play again: from the start of the range
+
+    def test_pick_copy_clear(self):
+        s = self.ok("pick")
+        p = s["picked"]["range"]
+        self.assertIsNotNone(p, s)
+        self.assertAlmostEqual(p["a"], 1.8, delta=0.1)
+        self.assertAlmostEqual(p["b"], 3.6, delta=0.1)
+        self.assertAlmostEqual(s["picked"]["t"], p["a"], delta=0.05)
+        self.assertTrue(s["picked"]["loop"])
+        self.assertRegex(s["link"]["hash"], r"^#t=\d+(\.\d)?-\d+(\.\d)?$")
+        self.assertTrue(s["copied"].endswith(s["link"]["hash"]), (s["copied"], s["link"]))
+        self.assertIn("0:01 – 0:03", s["toast"])
+        self.assertIsNone(s["cleared"]["range"])                             # Esc
+        self.assertEqual(s["hashed"]["range"], {"a": 6, "b": 8})
+        self.assertAlmostEqual(s["hashed"]["t"], 6.0, delta=0.4)
+        a = s["api"]
+        self.assertEqual(a["set"], {"a": 1, "b": 2})
+        self.assertEqual(a["link"], "#t=1-2")
+        self.assertEqual(a["linkRange"], "#t=3-4.3")
+        self.assertIsNone(a["cleared"])
+        self.assertIsNone(a["range"])
+        self.assertIn("Shift + drag", s["help"])
+        self.assertIn("#t=1:05-1:20", s["help"])
+
+
 class DeliverExportsTest(unittest.TestCase):
     """`showtime deliver exports` arguments (batch 2): a small master is never inflated toward a size cap,
     a bare --max-mb leaves the upload platforms alone (per-target caps with target:MB), x/linkedin keep a

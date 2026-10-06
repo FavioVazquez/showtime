@@ -136,6 +136,69 @@ def _lead_review(rv: Dict[str, Any], us: Dict[str, Any]) -> bool:
             and rv["self_reviewed"] < sum(1 for r in rv["rounds"] if r["findings_files"]))
 
 
+def _findings(job: Path) -> Optional[Dict[str, Any]]:
+    """The critic's blockers and should-fixes and what became of each (st.job.findings); None when no critic
+    answered. Texts and reasons are masked: a receipt is meant to be shared."""
+    try:
+        from . import findings
+        g = findings.collect(job)
+    except Exception:  # noqa: BLE001 - the receipt never fails over it
+        return None
+    if not g["applies"]:
+        return None
+    def row(f: Dict[str, Any]) -> Dict[str, Any]:
+        out = {"id": f["id"], "severity": f["severity"], "text": mask(findings.short(f, 160))}
+        if f["status"] != "open":
+            out["by"] = f["by"]
+            out["reason" if f["status"] == "waived" else "note"] = mask(f.get("note") or "")
+        return out
+    fs = g["findings"]
+    return {"raised": len(fs), "blockers": sum(1 for f in fs if f["severity"] == "blocker"),
+            "should_fix": sum(1 for f in fs if f["severity"] == "should-fix"),
+            "fixed": [row(f) for f in g["fixed"]], "waived": [row(f) for f in g["waived"]],
+            "open": [row(f) for f in g["open"]]}
+
+
+def _qa_report(data: Dict[str, Any]) -> Dict[str, Any]:
+    rp = (data.get("qa") or {}).get("report")
+    rep = read_json(Path(str(rp)), {}) if rp and Path(str(rp)).is_file() else {}
+    return rep if isinstance(rep, dict) else {}
+
+
+def _delivery(job: Path, data: Dict[str, Any]) -> Dict[str, Any]:
+    """The facts of the delivery card (references/modes.md section 5) that showtime knows: the files, length,
+    size, loudness and the qa verdict of the job's latest final. File names only, never a full path."""
+    out: Dict[str, Any] = {}
+    try:
+        vid, kind = ledger.latest_video(job, data)
+        view = ledger.outputs_view(job, data)
+    except Exception:  # noqa: BLE001
+        return out
+    if vid is None:
+        return out
+    out["final"] = vid.name
+    out["kind"] = kind
+    for k in ("poster", "share", "credits", "captions"):
+        if view.get(k):
+            out[k] = Path(view[k]).name
+    ex = job / "exports"
+    out["exports"] = sorted(f.name for f in ex.iterdir() if f.is_file() and not f.name.startswith("."))[:20]         if ex.is_dir() else []
+    qa = ledger.qa_of(data, vid)
+    rep = _qa_report(data)
+    if Path(str(rep.get("video") or "")).name != vid.name:
+        rep = {}                       # the job's last qa report is about another file: no numbers from it
+    pr, loud = rep.get("probe") or {}, rep.get("loudness") or {}
+    out["duration"] = pr.get("duration")
+    out["size"] = "%sx%s" % (pr["width"], pr["height"]) if pr.get("width") else None
+    out["fps"] = pr.get("fps")
+    out["lufs"] = loud.get("integrated_lufs")
+    out["true_peak"] = loud.get("true_peak_dbtp")
+    out["target_lufs"] = loud.get("target_lufs")
+    out["qa"] = qa.get("verdict") if qa.get("video") and Path(str(qa["video"])).name == vid.name else None
+    out["qa_fail"], out["qa_warn"] = (qa.get("fail"), qa.get("warn")) if out["qa"] else (None, None)
+    return out
+
+
 def _review_state(job: Path, data: Dict[str, Any]) -> Dict[str, Any]:
     """The review mode and critic-round state (st.job.review_state); {} when unreadable."""
     try:
@@ -260,6 +323,7 @@ def build(job: Path, transcript: Optional[str] = None, host: Optional[str] = Non
     rstate = _review_state(job, data)
     rv = dict(_review(job), status=rstate.get("status"), note=rstate.get("message"))
     rv["lead_review"] = _lead_review(rv, us)
+    rv["findings"] = _findings(job)
     rec: Dict[str, Any] = {
         "schema": SCHEMA, "job": job.name, "showtime": __version__, "generated": ledger.now_iso(),
         "request": req, "mode": data.get("mode"), "platform": data.get("platform"), "agent": agent,
@@ -277,6 +341,7 @@ def build(job: Path, transcript: Optional[str] = None, host: Optional[str] = Non
                "verdict": qa.get("verdict"), "fail": qa.get("fail"), "warn": qa.get("warn"),
                "file": Path(str(qa["video"])).name if qa.get("video") else None},
         "renders": _renders(data),
+        "delivery": _delivery(job, data),
         "images": {"total": sum(img.values()), "by_kind": img,
                    "note": "made by showtime for the agent to look at; whether each was opened is not known to showtime"},
         "time": {"start": data.get("created"), "end": ledger._mtime_iso(Path(ledger.last_output(job, data)[0]))
@@ -409,11 +474,28 @@ def to_markdown(rec: Dict[str, Any]) -> str:
         a("- Review rounds: 0")
     if rv.get("note") and rv.get("status") not in ("no final",):
         a("- Critic round: %s" % rv["note"])
+    fd = rv.get("findings")
+    if fd:
+        a("- Critic findings: %s and %s raised; %d fixed, %d waived, %d open" % (
+            _n(fd["blockers"], "blocker"), _n(fd["should_fix"], "should-fix", "should-fix"), len(fd["fixed"]),
+            len(fd["waived"]), len(fd["open"])))
+        L.extend("  - waived %s (%s): %s. Finding: %s" % (f["id"], f["severity"], f["reason"].rstrip("."), f["text"])
+                 for f in fd["waived"])
+        L.extend("  - open %s (%s): %s" % (f["id"], f["severity"], f["text"]) for f in fd["open"])
     if qa["runs"]:
         a("- qa runs: %d, latest %s%s" % (qa["runs"], qa["verdict"] or "?",
                                         " (%s fail, %s warn)" % (qa["fail"], qa["warn"]) if qa.get("fail") is not None else ""))
     else:
         a("- qa runs: 0")
+    a("")
+    a("## Delivery")
+    a("")
+    dv = rec.get("delivery") or {}
+    if dv.get("final"):
+        for ln in card_facts(rec):
+            a("- " + ln)
+    else:
+        a("- No final yet.")
     a("")
     a("## Renders")
     a("")
@@ -477,6 +559,78 @@ def to_markdown(rec: Dict[str, Any]) -> str:
     a("---")
     a("Generated by `showtime receipt` on %s. Format: references/receipt.md." % rec["generated"][:10])
     return "\n".join(L).rstrip() + "\n"
+
+
+# ------------------------------------------------------------------ the delivery card
+
+def _len(sec: Optional[float]) -> str:
+    if sec is None:
+        return "?"
+    m, x = divmod(float(sec), 60)
+    return "%d:%04.1f" % (m, x) if m else "%.1f s" % x
+
+
+def card_facts(rec: Dict[str, Any]) -> List[str]:
+    """The lines of the delivery card showtime can fill in (files, length, loudness, QA, review, findings,
+    cost), in the card's order (references/modes.md section 5)."""
+    dv, rv, us = rec.get("delivery") or {}, rec.get("review") or {}, rec.get("usage") or {}
+    files = [dv.get("final") or "?"] + [dv[k] for k in ("poster", "share", "credits", "captions") if dv.get(k)]
+    if dv.get("exports"):
+        files.append("exports/ (%s)" % ", ".join(dv["exports"][:6]) + (" ..." if len(dv["exports"]) > 6 else ""))
+    out = ["Files: " + ", ".join(files)]
+    out.append("Length: %s%s%s" % (_len(dv.get("duration")), ", %s" % dv["size"] if dv.get("size") else "",
+                                   ", %.3g fps" % dv["fps"] if dv.get("fps") else ""))
+    if dv.get("lufs") is not None:
+        out.append("Loudness: %.1f LUFS integrated, %.1f dBTP true peak%s" % (
+            dv["lufs"], dv.get("true_peak") or 0, " (target %g)" % dv["target_lufs"] if dv.get("target_lufs") is not None else ""))
+    else:
+        out.append("Loudness: not measured (run showtime qa on the final)")
+    out.append("QA: %s" % ("%s (%s fail, %s warn) on %s" % (dv["qa"], dv.get("qa_fail"), dv.get("qa_warn"), dv["final"])
+                          if dv.get("qa") else "not run on %s" % (dv.get("final") or "the final")))
+    mode = (rec.get("review_mode") or {}).get("mode")
+    note = rv.get("note") or ""
+    if not rv.get("packed"):
+        out.append("Review: %s" % ("no critic round ran (lean mode)" if mode == "lean" else note or "no critic round ran"))
+    else:
+        extra = []
+        if rv.get("self_reviewed"):
+            extra.append("%d a self-review" % rv["self_reviewed"])
+        if rv.get("lead_review"):
+            extra.append("not an independent critic")
+        out.append("Review: %s%s" % (note or "%d round(s)" % rv["packed"], " (%s)" % "; ".join(extra) if extra else ""))
+    fd = rv.get("findings")
+    if fd:
+        bits = ["%d open%s" % (len(fd["open"]), " (%s)" % ", ".join(f["id"] for f in fd["open"]) if fd["open"] else "")]
+        if fd["fixed"]:
+            bits.append("fixed %s" % ", ".join(f["id"] for f in fd["fixed"]))
+        if fd["waived"]:
+            bits.append("waived %s" % "; ".join("%s (%s)" % (f["id"], f["reason"]) for f in fd["waived"]))
+        out.append("Findings: " + "; ".join(bits))
+    else:
+        out.append("Findings: none raised (no critic answered)" if not rv.get("packed") else "Findings: none raised")
+    if us.get("status") == "reported":
+        tk = us.get("tokens") or {}
+        tot = tk.get("total") or sum(int(v or 0) for k, v in tk.items() if k != "total")
+        out.append("Cost: %s, %s tokens" % (usd_text(us), _tok(tot)))
+    else:
+        out.append("Cost: %s" % NOT_REPORTED)
+    return out
+
+
+def card(rec: Dict[str, Any]) -> str:
+    """The delivery card with every fact showtime knows filled in and the lines only the agent can write left
+    as prompts, Look: first among them (references/modes.md section 5)."""
+    dv = rec.get("delivery") or {}
+    fmt = ", ".join(x for x in (dv.get("size"), "%.3g fps" % dv["fps"] if dv.get("fps") else None) if x)
+    L = ["Done: <one line: what it is>%s" % (" (%s)" % fmt if fmt else "")]
+    facts = card_facts(rec)
+    L += ["  " + ln for ln in facts[:-1]]
+    L.append("  Look: <which frames or sheets you opened yourself, at what size, and what you saw in them>")
+    L.append("  " + facts[-1])                                   # Cost
+    L.append("Assumed: <every assumption that reached the video>")
+    L.append("Cheap to change: <...>   Costly: <...>")
+    L.append("Next, pick one:\n  1. <...> (about N min)\n  2. <...>\n  3. <...>")
+    return "\n".join(L) + "\n"
 
 
 # ------------------------------------------------------------------ write

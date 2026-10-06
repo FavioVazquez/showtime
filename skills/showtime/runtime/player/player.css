@@ -162,6 +162,10 @@ body { font: 500 14px/1.35 var(--stp-sys); -webkit-tap-highlight-color: transpar
 .stp-hover { position: absolute; left: 0; top: 0; bottom: 0; border-radius: inherit; background: rgb(255 255 255 / .3); display: none; }
 .stp-scrub:hover .stp-hover { display: block; }
 .stp-ticks i { position: absolute; top: -1px; bottom: -1px; width: 3px; margin-left: -1.5px; background: rgb(0 0 0 / .7); }
+/* a range (#t=10-20, or shift + drag): a band with square ends over the rail */
+.stp-range { position: absolute; top: -3px; bottom: -3px; border-radius: 2px; background: color-mix(in srgb, var(--stp-accent) 38%, transparent);
+  box-shadow: inset 2px 0 0 var(--stp-accent), inset -2px 0 0 var(--stp-accent); pointer-events: none; }
+.stp-range.is-picking { background: rgb(255 255 255 / .28); box-shadow: inset 2px 0 0 #fff, inset -2px 0 0 #fff; }
 .stp-knob { position: absolute; top: 5px; width: 14px; height: 14px; margin-left: -7px; border-radius: 50%; background: var(--stp-accent); box-shadow: 0 0 0 2px rgb(255 255 255 / .9), 0 1px 6px rgba(0,0,0,.4); transform: scale(0); transition: transform .12s; }
 .stp-scrub:hover .stp-knob, .stp-scrub.is-drag .stp-knob, .stp-scrub:focus-visible .stp-knob { transform: scale(1); }
 .stp-scrub:focus-visible .stp-knob { box-shadow: 0 0 0 3px var(--stp-focus); }
@@ -263,6 +267,47 @@ body { font: 500 14px/1.35 var(--stp-sys); -webkit-tap-highlight-color: transpar
 .stp.is-stacked .stp-chapter { display: none; }
 .stp.is-stacked.is-idle { cursor: auto; }
 .stp.is-stacked .stp-cover::before { display: none; }
+
+/* ---------------------------------------------------------------- stop-and-ask questions */
+/* over the picture: a card at its bottom, above the controls (the paused frame keeps its top);
+   on a phone held upright it sits in the details under the picture instead */
+.stp-q { position: absolute; z-index: 5; left: var(--stp-qx, 50%); bottom: var(--stp-qb, 96px); transform: translateX(-50%);
+  width: min(680px, calc(var(--stp-qw, 100vw) - 24px)); max-height: calc(100% - var(--stp-qb, 96px) - 12px); overflow-y: auto; overscroll-behavior: contain;
+  display: grid; gap: 12px; padding: 18px 20px; border-radius: 16px; background: var(--stp-glass); color: #fff;
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 14px 44px rgb(0 0 0 / .45), 0 0 0 1.5px var(--stp-accent);
+  font-family: var(--stp-sys); user-select: text; -webkit-user-select: text; }
+.stp-q[hidden] { display: none; }
+.stp-q-kicker { font: 700 12px/1.2 var(--stp-sys); letter-spacing: .14em; text-transform: uppercase; color: var(--stp-dim); }
+.stp-q-prompt { font: 650 clamp(17px, 2.2vw, 22px)/1.3 var(--stp-sys); text-wrap: balance; }
+.stp-q-choices { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); }
+.stp-q-choice { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 9px 12px; border-radius: 11px; text-align: left; cursor: pointer;
+  font: 600 16px/1.25 var(--stp-sys); color: inherit; background: rgb(255 255 255 / .06); border: 1.5px solid rgb(255 255 255 / .2); transition: border-color .15s, background .15s; }
+.stp-q-choice:hover:not(:disabled), .stp-q-choice:focus-visible { border-color: var(--stp-accent); background: rgb(255 255 255 / .12); }
+.stp-q-choice:disabled { cursor: default; opacity: .55; }
+.stp-q-key { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; font: 700 13px/1 var(--stp-sys); background: rgb(255 255 255 / .12); color: var(--stp-dim); }
+.stp-q-text { min-width: 0; overflow-wrap: anywhere; }
+.stp-q-choice.is-right, .stp-q-choice.is-wrong { opacity: 1; }
+.stp-q-choice.is-right { border-color: #5fd3a0; background: rgb(95 211 160 / .16); box-shadow: inset 0 0 0 1px #5fd3a0; }
+.stp-q-choice.is-wrong { border-color: #ff8a6b; background: rgb(255 138 107 / .14); box-shadow: inset 0 0 0 1px #ff8a6b; }
+.stp-q-choice.is-right::after { content: "\2713"; margin-left: auto; padding-left: 8px; color: #5fd3a0; font-weight: 800; }
+.stp-q-choice.is-wrong::after { content: "\2717"; margin-left: auto; padding-left: 8px; color: #ff8a6b; font-weight: 800; }
+.stp-q-hint { font-size: 13px; color: var(--stp-dim); }
+.stp-q-reply { font-size: 15px; line-height: 1.45; }
+.stp-q-reply.is-right strong { color: #5fd3a0; }
+.stp-q-reply.is-wrong strong { color: #ff8a6b; }
+.stp-q-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; }
+.stp-q-go { min-height: 44px; padding: 0 20px; border: 0; border-radius: 999px; cursor: pointer; font: 700 15px/1 var(--stp-sys); background: var(--stp-accent); color: var(--stp-on-accent); }
+.stp-q-score, .stp-q-auto { font: 600 13px/1.3 var(--stp-sys); color: var(--stp-dim); font-variant-numeric: tabular-nums; }
+.stp-qmarks i { position: absolute; top: 50%; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; border-radius: 50%; background: var(--stp-bg); box-shadow: 0 0 0 2px var(--stp-accent); pointer-events: none; }
+.stp-qmarks i.is-right { background: #5fd3a0; box-shadow: 0 0 0 2px #5fd3a0; }
+.stp-qmarks i.is-wrong { background: #ff8a6b; box-shadow: 0 0 0 2px #ff8a6b; }
+/* a phone held upright: in the details under the picture, in the film's own colours */
+.stp.is-stacked .stp-q { position: static; transform: none; width: auto; max-height: none; overflow: visible; order: -1; padding: 16px; box-shadow: 0 0 0 1.5px var(--stp-accent);
+  background: var(--stp-panel2); color: var(--stp-ink); backdrop-filter: none; -webkit-backdrop-filter: none; --stp-dim: var(--stp-muted); }
+.stp.is-stacked .stp-q-choice { background: color-mix(in srgb, var(--stp-ink) 5%, transparent); border-color: var(--stp-line); }
+.stp.is-stacked .stp-q-key { background: color-mix(in srgb, var(--stp-ink) 10%, transparent); }
+.stp.is-stacked.is-asking .stp-ihead, .stp.is-stacked.is-asking .stp-chlist, .stp.is-stacked.is-asking .stp-rotate { display: none; }
+@media (max-height: 460px) { .stp-q { padding: 12px 14px; gap: 8px; } .stp-q-prompt { font-size: 16px; } .stp-q-choice { min-height: 40px; padding: 6px 10px; font-size: 15px; } }
 
 @media (hover: none) { .stp-vol { display: none; } }
 @media (pointer: coarse) {

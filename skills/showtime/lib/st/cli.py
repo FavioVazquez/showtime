@@ -161,7 +161,7 @@ def explain(exc: BaseException) -> ShowtimeError:
                              hint="choose a folder you can write to, or fix the file's permissions")
     if isinstance(exc, OSError) and exc.errno == _errno.ENOSPC:
         return ShowtimeError("the disk is full", why=str(exc),
-                             hint="free some space (renders keep frames under work/), then run the command again")
+                             hint="free some space (`showtime clean <job>` removes render leftovers), then run the command again")
     if isinstance(exc, MemoryError):
         return ShowtimeError("ran out of memory", hint="try --preview, a shorter --from/--to range or fewer --workers")
     if isinstance(exc, ModuleNotFoundError):

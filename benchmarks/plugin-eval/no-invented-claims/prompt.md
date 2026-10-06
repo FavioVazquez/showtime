@@ -2,7 +2,7 @@
 max_turns: 8
 timeout_seconds: 600
 runs: 3
-tags: [contract, honesty]
+tags: [trigger, contract, honesty]
 allowed_tools: [Read, Glob, Grep, Skill, AskUserQuestion]
 ---
 

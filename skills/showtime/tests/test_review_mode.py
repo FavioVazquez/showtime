@@ -12,6 +12,13 @@
   * `showtime qa <job>` prints "WARN review pending" in quality mode without touching the verdict or the exit
     code, nothing in lean, "review done" after a verdict; `deliver exports` and `job note --stage deliver` warn
   * receipts record the review mode and the critic round
+  * the findings gate (st.job.findings, 0.4.0): finding ids and fixed/waived lines are parsed; an open blocker or
+    should-fix makes `job note --stage deliver` refuse (any review mode, once a critic answered), a fix or a
+    waiver with its reason lets it pass, waivers reach the receipt; a job no critic answered is unaffected;
+    pairwise findings about the losing version do not count (qa, status, SHOWTIME.md and the gate agree; no
+    caption-only rule); a later critic's "not fixed" reopens one; a qa FAIL as
+    the delivered final's latest verdict refuses too (WARN or a re-run that passes clears it; --output final= is judged)
+    and `deliver exports` / `deliver poster --bake` write their files but record the delivery only through that gate
   * `showtime new --mode lean` writes showtime.json "review_mode" and the job's mode
   * MCP: new_project takes mode; plugin settings keep a `showtime config` mode and follow the plugin option
 
@@ -86,6 +93,21 @@ class Base(unittest.TestCase):
     def job(self, *extra, env=None) -> Path:
         cp = self.st("job", "init", "clip", "--no-check", *extra, env=env)
         return Path(cp.stdout.strip().splitlines()[-1])
+
+    def critic(self, job: Path, n: int = 1, text: str = None, video=None) -> Path:
+        d = job / "review" / ("round-%d" % n)
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "manifest.json").write_text(json.dumps({"round": n, "video": str(video or "")}), encoding="utf-8")
+        (d / "FINDINGS.md").write_text(FINDINGS if text is None else text, encoding="utf-8")
+        return d
+
+    def qa(self, video: Path, verdict: str) -> None:
+        rep = video.parent / "work" / "qa" / video.stem / "qa.json"
+        rep.parent.mkdir(parents=True, exist_ok=True)
+        fs = [{"severity": "FAIL", "rule": "black_frames", "message": "black at 1.0 s", "t": 1.0}] if verdict == "FAIL" else []
+        rep.write_text(json.dumps({"verdict": verdict, "findings": fs}), encoding="utf-8")
+        ledger.record_qa(video, {"verdict": verdict, "summary": {"fail": len(fs), "warn": 0}, "probe": {},
+                                 "loudness": {}, "findings": fs, "report": str(rep)})
 
     def final(self, job: Path, name: str = "final.mp4") -> Path:
         """A stand-in final (the review rule reads files and the ledger, never the pixels)."""
@@ -278,6 +300,12 @@ class TestReviewState(Base):
         (r2 / "verdict.json").write_text(json.dumps({"improved": True, "best": str(f3), "would_post": {"answer": "yes"}}),
                                          encoding="utf-8")
         s = review_state.state(j)
+        # round 1's blocker is still unanswered: delivery waits for `fixed r1-B1` or a waiver (st.job.findings)
+        self.assertEqual((s["status"], s["pending"]), ("findings open", True))
+        self.assertIn("r1-B1", s["message"])
+        self.assertIn("review-respond %s --fixed r1-B1" % j.name, s["next"])
+        (r1 / "RESPONSE.md").write_text("- fixed r1-B1: the hook frame is re-rendered\n", encoding="utf-8")
+        s = review_state.state(j)
         self.assertEqual((s["status"], s["pending"]), ("done", False))
         self.assertIn("new version wins", s["message"])
         self.assertIsNone(review_state.pending_line(s))
@@ -352,43 +380,46 @@ class TestReviewState(Base):
         self.assertFalse(review_state.state(m)["pending"])
 
     def test_caption_should_fix_needs_an_answer(self):
-        cs = review_state.caption_should_fixes
         text = ("VERDICT: ship after fixes -- captions\nWOULD I POST THIS: yes -- after the fix\nBLOCKERS:\n- none\n"
                 "SHOULD-FIX:\n- t=4.00s frames/t0004.000s.jpg captions sit in two stepped boxes -> one plate\n"
                 "- t=9.00s frames/t0009.000s.jpg the hook holds 3 s -> cut to 1.5 s\nPOLISH:\n- subtitles font -> Inter\n")
-        self.assertEqual(len(cs(text)), 1)                                   # polish is not held
-        self.assertTrue(review_state.resolves_captions("- fixed: the captions are one plate now"))
-        self.assertTrue(review_state.resolves_captions("won't fix: the captions box style is the brand's"))
-        self.assertFalse(review_state.resolves_captions("- not fixed: captions still stepped"))
-        self.assertFalse(review_state.resolves_captions("won't fix: the hook"))       # names no captions
+        self.assertFalse(hasattr(review_state, "open_caption_fixes"))       # 0.4.0: no caption-only rule left
         j = self.job()
         f = self.final(j)
         r1 = self.round(j, 1, text, video=f)
         s = review_state.state(j)
-        self.assertEqual((s["status"], s["pending"]), ("caption fix open", True))
+        # 0.4.0: every should-fix gates (st.job.findings), the caption one among them
+        self.assertEqual((s["status"], s["pending"]), ("findings open", True))
         self.assertIn("stepped boxes", s["message"])
-        self.assertIn("RESPONSE.md", s["next"])
+        self.assertIn("review-respond", s["next"])
+        (r1 / "RESPONSE.md").write_text("- fixed r1-S2: the hook is cut to 1.5 s\n", encoding="utf-8")
+        self.assertEqual(review_state.state(j)["findings"]["open"], ["r1-S1"])
         # a later round that does not answer it keeps it open; "not fixed" is no answer
         g = self.final(j, "final-2.mp4")
-        r2 = self.round(j, 2, "VERDICT: ship -- ok\nWOULD I POST THIS: yes -- ok\nPREVIOUS:\n- not fixed: captions\n",
+        r2 = self.round(j, 2, "VERDICT: ship -- ok\nWOULD I POST THIS: yes -- ok\nPREVIOUS:\n- not fixed r1-S1: captions\n",
                         video=g)
-        self.assertEqual(review_state.state(j)["status"], "caption fix open")
+        self.assertEqual(review_state.state(j)["status"], "findings open")
         (r2 / "FINDINGS.md").write_text("VERDICT: ship -- ok\nWOULD I POST THIS: yes -- ok\nPREVIOUS:\n"
-                                        "- fixed: captions in one plate\n", encoding="utf-8")
+                                        "- fixed r1-S1: captions in one plate\n", encoding="utf-8")
         self.assertEqual(review_state.state(j)["status"], "done")
-        # the maker's explanation also closes it
+        # an answer by words alone ("won't fix: ..." naming the captions) no longer closes a finding: it needs its id
         (r2 / "FINDINGS.md").write_text("VERDICT: ship -- ok\nWOULD I POST THIS: yes -- ok\n", encoding="utf-8")
-        self.assertEqual(review_state.state(j)["status"], "caption fix open")
-        (r1 / "RESPONSE.md").write_text("won't fix: the stepped caption boxes are the client's house style\n",
-                                        encoding="utf-8")
-        self.assertEqual(review_state.state(j)["status"], "done")
+        self.assertEqual(review_state.state(j)["status"], "findings open")
+        with open(str(r1 / "RESPONSE.md"), "a", encoding="utf-8") as fh:
+            fh.write("won't fix: the stepped caption boxes are the client's house style\n")
+        self.assertEqual(review_state.state(j)["status"], "findings open")
+        with open(str(r1 / "RESPONSE.md"), "a", encoding="utf-8") as fh:
+            fh.write("- waived r1-S1: the stepped caption boxes are the client's house style\n")
+        s = review_state.state(j)
+        self.assertEqual(s["status"], "done")
+        self.assertEqual(s["findings"]["waived"], ["r1-S1"])
         # lean: a loud WARN, never pending
         m = self.job("--mode", "lean")
         fm = self.final(m)
         self.round(m, 1, text, video=fm)
         s = review_state.state(m)
         self.assertFalse(s["pending"])
-        self.assertIn("caption should-fix", review_state.pending_line(s))
+        self.assertIn("2 critic findings open", review_state.pending_line(s))
 
     def test_lean_is_never_pending(self):
         j = self.job("--mode", "lean")
@@ -424,6 +455,195 @@ class TestReviewState(Base):
         rec = receipt.build(k)
         self.assertEqual((rec["review_mode"]["mode"], rec["review_mode"]["critic_round"]), ("lean", "lean"))
         self.assertIn("lean review", receipt.to_markdown(rec))
+
+
+# ------------------------------------------------------------------ the findings gate (0.4.0)
+
+FINDINGS = ("VERDICT: ship after fixes -- two things\nWOULD I POST THIS: yes -- after the fixes\n"
+            "FIRST VIEWER (one line per part):\n- part 1 (0.00-8.00s) frames/a.jpg: yes -- states the claim\n"
+            "- part 2 (8.00-20.00s) frames/b.jpg: no -- why this question?\n"
+            "BLOCKERS:\n- t=0.00s frames/t0000.000s.jpg the opening never says what the video is about -> a 10 s cold open\n"
+            "SHOULD-FIX:\n- none\n- t=8.00s frames/t0008.000s.jpg part 2 starts without a bridge -> one spoken line\n"
+            "POLISH:\n- t=3.00s frames/t0003.000s.jpg easing\nBEST POSTER FRAME: t=0.5s\n")
+
+
+class TestFindingsGate(Base):
+    def test_parse_ids_and_statements(self):
+        from st.job import findings as F
+        got = F.parse(FINDINGS, "r1")
+        self.assertEqual([(f["id"], f["severity"]) for f in got], [("r1-B1", "blocker"), ("r1-S1", "should-fix")])
+        self.assertIn("without a bridge", got[1]["text"])          # "none" is no finding; FIRST VIEWER and polish do not gate
+        inline = F.parse("BLOCKERS: t=1s frames/a.jpg black frame\nSHOULD-FIX (none)\nVERDICT: ship\n", "r2")
+        self.assertEqual([f["id"] for f in inline], ["r2-B1"])
+        pair = F.parse("SHOULD-FIX:\n- [X] t=1s ../X/frames/a.jpg small\n- t=2s ../Y/frames/b.jpg soft\n", "r2o1")
+        self.assertEqual([(f["id"], f["video"]) for f in pair], [("r2o1-S1", "X"), ("r2o1-S2", "Y")])
+        st = F.statements("- fixed r1-S1, R1-b1: re-cut  (finding: x)\n**waived (r2o1-S2)**: brand weight\n"
+                          "- not fixed r1-S1 -> still abrupt\nwaived r1-S3:\nwon't fix r1-B2: the user said so\n"
+                          "fixed: captions (no id)\n", "maker")
+        self.assertEqual([(x["ids"], x["status"], x["note"]) for x in st], [
+            (["r1-S1", "r1-B1"], "fixed", "re-cut"), (["r2o1-S2"], "waived", "brand weight"),
+            (["r1-S1"], "open", "still abrupt"), (["r1-B2"], "waived", "the user said so")])
+        self.assertEqual(F.statements("- waived r1-S1: the critic cannot waive\n", "critic"), [])
+        self.assertEqual(F.norm_id(" r3O2-s10 "), "r3o2-S10")
+
+    def test_open_finding_blocks_deliver(self):
+        j = self.job()
+        f = self.final(j)
+        self.critic(j, video=f)
+        cp = self.st("job", "note", str(j), "--stage", "deliver", "--verified", "qa PASS", check=False)
+        self.assertEqual(cp.returncode, 1)
+        self.assertIn("cannot be marked delivered: 2 critic findings", cp.stderr)
+        self.assertIn("r1-B1", cp.stderr)
+        self.assertIn("opening never says", cp.stderr)
+        self.assertIn("review-respond %s --fixed r1-B1" % j.name, cp.stderr)
+        self.assertIn("--waive r1-B1", cp.stderr)
+        self.assertNotEqual((ledger.load(j)["stages"] or [{}])[-1].get("name"), "deliver")   # nothing was recorded
+        s = review_state.state(j)
+        self.assertEqual((s["status"], s["pending"]), ("findings open", True))
+        self.assertEqual(s["findings"]["open"], ["r1-B1", "r1-S1"])
+        # a lean job is held too once a critic answered (publish-bound, or asked)
+        k = self.job("--mode", "lean")
+        self.critic(k, video=self.final(k))
+        self.assertEqual(self.st("job", "note", str(k), "--stage", "deliver", check=False).returncode, 1)
+        self.assertIn("2 critic findings open", review_state.pending_line(review_state.state(k)))
+        # a later critic's "not fixed" opens a fix the maker claimed
+        (j / "review" / "round-1" / "RESPONSE.md").write_text("- fixed r1-B1: cold open added\n- fixed r1-S1: bridge\n",
+                                                              encoding="utf-8")
+        self.assertEqual(review_state.state(j)["status"], "done")
+        self.critic(j, 2, "VERDICT: ship -- ok\nWOULD I POST THIS: yes -- ok\nPREVIOUS:\n- fixed r1-B1: yes\n"
+                          "- not fixed r1-S1: part 2 still starts cold\n", video=self.final(j, "final-2.mp4"))
+        s = review_state.state(j)
+        self.assertEqual((s["status"], s["findings"]["open"]), ("findings open", ["r1-S1"]))
+
+    def test_respond_and_waiver_pass(self):
+        j = self.job()
+        f = self.final(j)
+        r1 = self.critic(j, video=f)
+        lst = self.st("review-respond", str(j)).stdout
+        self.assertIn("r1-B1     blocker    OPEN", lst)
+        self.assertIn("delivery: held by 2 open findings", lst)
+        bad = self.st("review-respond", str(j), "--waive", "r1-S9", "x", check=False)
+        self.assertEqual(bad.returncode, 1)
+        self.assertIn("names no blocker or should-fix", bad.stderr)
+        self.assertEqual(self.st("review-respond", str(j), "--waive", "r1-S1", "  ", check=False).returncode, 1)
+        cp = self.st("review-respond", str(j), "--fixed", "r1-B1", "a 10 s cold open states the claim",
+                     "--waive", "r1-s1", "the user wants the hard cut into part 2")
+        self.assertIn("delivery: clear (1 fixed, 1 waived)", cp.stdout)
+        resp = (r1 / "RESPONSE.md").read_text(encoding="utf-8")
+        self.assertIn("- fixed r1-B1: a 10 s cold open states the claim", resp)
+        self.assertIn("- waived r1-S1: the user wants the hard cut into part 2", resp)
+        cp = self.st("job", "note", str(j), "--stage", "deliver", "--verified", "qa PASS")
+        self.assertIn("Look: <", cp.stderr)                       # the delivery card's shape, ready to fill in
+        self.assertIn("Findings: 0 open; fixed r1-B1; waived r1-S1 (the user wants the hard cut into part 2)", cp.stderr)
+        self.assertEqual(ledger.load(j)["stages"][-1]["name"], "deliver")
+        rec = json.loads((j / "receipt.json").read_text(encoding="utf-8"))
+        fd = rec["review"]["findings"]
+        self.assertEqual((fd["raised"], fd["blockers"], fd["should_fix"]), (2, 1, 1))
+        self.assertEqual([(w["id"], w["reason"]) for w in fd["waived"]], [("r1-S1", "the user wants the hard cut into part 2")])
+        self.assertEqual(rec["delivery"]["final"], "final.mp4")
+        md = (j / "receipt.md").read_text(encoding="utf-8")
+        self.assertIn("Critic findings: 1 blocker and 1 should-fix raised; 1 fixed, 1 waived, 0 open", md)
+        self.assertIn("waived r1-S1 (should-fix): the user wants the hard cut into part 2", md)
+        card = self.st("receipt", str(j), "--card").stdout
+        for line in ("Files: final.mp4", "Length:", "Loudness:", "QA:", "Review:", "Findings:", "Look:", "Cost:", "Next"):
+            self.assertIn(line, card)
+
+    def test_qa_fail_blocks_deliver(self):
+        j = self.job("--mode", "lean")
+        f = self.final(j)
+        self.qa(f, "FAIL")
+        cp = self.st("job", "note", str(j), "--stage", "deliver", "--verified", "qa PASS", check=False)
+        self.assertEqual(cp.returncode, 1)
+        self.assertIn("cannot be marked delivered: the latest qa of final.mp4 is FAIL (1 failing check: black_frames)",
+                      cp.stderr)
+        self.assertIn(str(j / "work" / "qa" / "final" / "qa.json"), cp.stderr)
+        self.assertIn("then showtime qa %s" % j.name, cp.stderr)
+        self.assertNotEqual((ledger.load(j)["stages"] or [{}])[-1].get("name"), "deliver")   # nothing was recorded
+        self.assertEqual(self.st("job", "note", str(j), "--stage", "deliver", "--status", "failed").returncode, 0)
+        # a final recorded by the same note is the one judged: a WARN there delivers
+        f2 = j / "final-2.mp4"
+        f2.write_bytes(b"\0" * 64)
+        self.qa(f2, "WARN")
+        self.st("job", "note", str(j), "--stage", "deliver", "--output", "final=%s" % f2)
+        self.assertEqual(ledger.load(j)["stages"][-1]["name"], "deliver")
+        self.assertEqual(self.st("job", "note", str(j), "--stage", "deliver", "--output", "final=%s" % f,
+                                 check=False).returncode, 1)
+        # a re-run qa that passes (or warns) on the same file clears it; a final qa never checked is not held
+        k = self.job("--mode", "lean")
+        g = self.final(k)
+        self.qa(g, "FAIL")
+        self.qa(g, "WARN")
+        self.st("job", "note", str(k), "--stage", "deliver")
+        self.assertEqual(ledger.load(k)["stages"][-1]["name"], "deliver")
+
+    def test_no_critic_keeps_old_behaviour(self):
+        k = self.job("--mode", "lean")
+        self.final(k)
+        cp = self.st("job", "note", str(k), "--stage", "deliver")
+        self.assertNotIn("cannot be marked delivered", cp.stderr)
+        self.assertIn("Findings: none raised", cp.stderr)
+        self.assertIsNone(json.loads((k / "receipt.json").read_text(encoding="utf-8"))["review"]["findings"])
+        self.assertIn("nothing gates the delivery", self.st("review-respond", str(k)).stdout)
+        q = self.job()
+        self.final(q)
+        cp = self.st("job", "note", str(q), "--stage", "deliver")              # quality, no critic: still a warning
+        self.assertIn("WARN  review pending", cp.stderr)
+        self.assertNotIn("findings", review_state.state(q))
+
+    def test_pairwise_counts_the_best_version_only(self):
+        j = self.job()
+        fa = self.final(j)
+        fb = self.final(j, "final-2.mp4")
+        r = j / "review" / "round-1"
+        text = ("PREFERENCE: X\nVERDICT X: ship\nVERDICT Y: ship\nWOULD I POST X: yes -- ok\nWOULD I POST Y: yes -- ok\n"
+                "SHOULD-FIX:\n- [X] t=1.00s ../X/frames/a.jpg title small -> bigger\n"
+                "- [Y] t=2.00s ../Y/frames/b.jpg soft footage -> sharper\n")
+        for o in (1, 2):
+            (r / ("order-%d" % o)).mkdir(parents=True)
+            (r / ("order-%d" % o) / "FINDINGS.md").write_text(text, encoding="utf-8")
+        (j / "review" / ".pairwise-keys").mkdir(parents=True)
+        (j / "review" / ".pairwise-keys" / "round-1.json").write_text(json.dumps(
+            {"new": {"label": "X", "video": str(fb)}, "old": {"label": "Y", "video": str(fa)}}), encoding="utf-8")
+        from st.job import findings as F
+        self.assertEqual([f["id"] for f in F.collect(j)["open"]], ["r1o1-S1", "r1o2-S1"])     # undecided: the new one
+        (r / "verdict.json").write_text(json.dumps({"improved": False, "winner": "old", "best": str(fa),
+                                                    "would_post": {"answer": "yes"}}), encoding="utf-8")
+        self.assertEqual([f["id"] for f in F.collect(j)["open"]], ["r1o1-S2", "r1o2-S2"])     # the old one stayed best
+        self.assertEqual(review_state.state(j)["status"], "findings open")
+
+    def test_pairwise_loser_findings_never_hold_the_review(self):
+        # dogfood (0.4.0 release video): a caption should-fix about the version that lost kept qa/status
+        # "review pending" through the 0.3.x caption rule until a word-matched `won't fix:` line was written
+        j = self.job()
+        fa = self.final(j)
+        fb = self.final(j, "final-2.mp4")
+        r = j / "review" / "round-1"
+        text = ("PREFERENCE: X\nVERDICT X: ship\nVERDICT Y: ship after fixes\nWOULD I POST X: yes -- ok\n"
+                "WOULD I POST Y: no -- captions\nBLOCKERS:\n- [Y] t=3.00s ../Y/frames/c.jpg subtitles cover the logo\n"
+                "SHOULD-FIX:\n- [X] t=1.00s ../X/frames/a.jpg title small -> bigger\n"
+                "- [Y] t=2.00s ../Y/frames/b.jpg captions sit in two stepped boxes -> one plate\n")
+        for o in (1, 2):
+            (r / ("order-%d" % o)).mkdir(parents=True)
+            (r / ("order-%d" % o) / "FINDINGS.md").write_text(text, encoding="utf-8")
+        (j / "review" / ".pairwise-keys").mkdir(parents=True)
+        (j / "review" / ".pairwise-keys" / "round-1.json").write_text(json.dumps(
+            {"new": {"label": "X", "video": str(fb)}, "old": {"label": "Y", "video": str(fa)}}), encoding="utf-8")
+        (r / "verdict.json").write_text(json.dumps({"improved": True, "winner": "new", "best": str(fb),
+                                                    "would_post": {"answer": "yes"}}), encoding="utf-8")
+        s = review_state.state(j)
+        self.assertEqual((s["status"], s["findings"]["open"]), ("findings open", ["r1o1-S1", "r1o2-S1"]))
+        self.assertNotIn("caption", s["message"])
+        self.st("review-respond", str(j), "--fixed", "r1o1-S1", "title at 64 px", "--fixed", "r1o2-S1", "same fix")
+        s = review_state.state(j)
+        self.assertEqual((s["status"], s["pending"]), ("done", False), s.get("message"))
+        self.assertNotIn("caption_fixes_open", s)
+        self.assertIsNone(review_state.pending_line(s))
+        # status, SHOWTIME.md and job note --stage deliver agree: nothing about the losing version holds it
+        self.assertNotIn("review pending", self.st("status", str(j)).stdout)
+        cp = self.st("job", "note", str(j), "--stage", "deliver", "--verified", "qa PASS")
+        self.assertNotIn("review pending", cp.stderr)
+        self.assertNotIn("review pending", (j / "SHOWTIME.md").read_text(encoding="utf-8"))
+        self.assertEqual(ledger.load(j)["stages"][-1]["name"], "deliver")
 
 
 # ------------------------------------------------------------------ `showtime new --mode`
@@ -501,6 +721,44 @@ class TestQaLine(Base):
         self.assertEqual(cp.returncode, 0, cp.stderr[-2000:])
         self.assertIn("review pending", cp.stderr)
         self.assertIn("exported before the critic round", cp.stderr)
+        self.assertEqual(ledger.load(j)["stages"][-1]["name"], "deliver")      # nothing gates: marked delivered
+
+    def test_exports_and_bake_mark_delivered_only_through_the_gate(self):
+        j = self.job_with_final("--mode", "lean")
+        f = j / "final.mp4"
+        self.qa(f, "FAIL")
+        cp = self.st("deliver", "exports", str(j), "--targets", "chat", "--preview", check=False)
+        self.assertEqual(cp.returncode, 0, cp.stderr[-2000:])                   # the export itself succeeded
+        self.assertTrue(any((j / "exports").iterdir()))
+        self.assertIn("files written, but job %s is not marked delivered: the latest qa of final.mp4 is FAIL" % j.name,
+                      cp.stderr)
+        self.assertIn("then showtime qa %s" % j.name, cp.stderr)
+        self.assertNotEqual(ledger.load(j)["stages"][-1]["name"], "deliver")
+        self.assertIn("fix the FAIL findings", ledger.suggest_next(j, ledger.load(j)))
+        rep = json.loads(self.st("deliver", "exports", str(j), "--targets", "chat", "--preview", "--json").stdout)
+        self.assertFalse(rep["delivered"])
+        self.assertIn("FAIL", rep["held"]["reason"])
+        # poster --bake writes the new final and points the job at it, but the FAIL of its source holds the delivery
+        cp = self.st("deliver", "poster", str(j), "--bake", "--at", "1", check=False)
+        self.assertEqual(cp.returncode, 0, cp.stderr[-2000:])
+        baked = j / "final.poster.mp4"
+        self.assertTrue(baked.is_file())
+        self.assertEqual(Path(ledger.load(j)["outputs"]["final"]).name, baked.name)
+        self.assertIn("not marked delivered: the latest qa of final.mp4 is FAIL", cp.stderr)
+        self.assertNotEqual(ledger.load(j)["stages"][-1]["name"], "deliver")
+        # once the baked final passes (WARN), an open critic finding still holds, named once with its command
+        self.qa(baked, "WARN")
+        self.critic(j, video=baked)
+        cp = self.st("deliver", "exports", str(j), "--targets", "chat", "--preview", check=False)
+        self.assertEqual(cp.returncode, 0, cp.stderr[-2000:])
+        self.assertIn("not marked delivered: 2 critic findings open (r1-B1, r1-S1)", cp.stderr)
+        self.assertIn("review-respond %s --fixed r1-B1" % j.name, cp.stderr)
+        self.assertNotIn("exported with critic findings open", cp.stderr)
+        self.assertNotEqual(ledger.load(j)["stages"][-1]["name"], "deliver")
+        self.st("review-respond", str(j), "--fixed", "r1-B1", "cold open added", "--waive", "r1-S1", "user's call")
+        cp = self.st("deliver", "exports", str(j), "--targets", "chat", "--preview")
+        self.assertNotIn("not marked delivered", cp.stderr)
+        self.assertEqual(ledger.load(j)["stages"][-1]["name"], "deliver")
 
 
 # ------------------------------------------------------------------ doctor and MCP

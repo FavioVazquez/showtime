@@ -35,6 +35,8 @@ function of T**. The same `T` must always give the same pixels, whatever frame w
   `g.filter = 'blur(...)'` is slow at 1080p, use it for a few elements only (§11)
 - First motion by 0.1-0.3 s, hero on screen by 0.5 s, never open on a black frame, leave `fadeIn` at 0 (§2, §3)
 - Entrances decelerate; exits accelerate and run 20-30 % faster; no overshooting springs on blocks of text (§3)
+- Stop-and-ask questions (showtime.json `"questions"`): `F.questionBeat(T, id)` draws the MP4's pause and
+  think beat; `Film.questions` has the resolved times (§12)
 - Walkthroughs: name UI parts once with `F.rects`, then `F.cursorPath`, `F.clickZoom`, `F.camera` +
   `F.withCamera`, `F.fold` for UI state; draw step titles, keycaps and captions after `withCamera` (§8)
 - Charts (`F.bars`, `F.lineChart`): one insight per state, the headline states the takeaway, hold 2-3 s (§7)
@@ -46,18 +48,18 @@ function of T**. The same `T` must always give the same pixels, whatever frame w
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| 1. Minimal film | 62-86 |
-| 2. Film.start(options) | 88-113 |
-| 3. Time: progress, windows, keyframes | 115-161 |
-| 4. Scenes and transitions | 163-187 |
-| 5. Text | 189-227 |
-| 6. Shapes, UI pieces and diagrams | 229-257 |
-| 7. Particles, charts, frames and images | 259-286 |
-| 8. Camera and tutorials | 288-353 |
-| 9. Fonts, images and cross-platform rules | 355-367 |
-| 10. Looks and file size | 369-386 |
-| 11. The pure-function-of-T rules (and the pitfalls they prevent) | 388-411 |
-| 12. Recipes | 413-465 |
+| 1. Minimal film | 64-88 |
+| 2. Film.start(options) | 90-115 |
+| 3. Time: progress, windows, keyframes | 117-163 |
+| 4. Scenes and transitions | 165-189 |
+| 5. Text | 191-231 |
+| 6. Shapes, UI pieces and diagrams | 233-261 |
+| 7. Particles, charts, frames and images | 263-290 |
+| 8. Camera and tutorials | 292-357 |
+| 9. Fonts, images and cross-platform rules | 359-371 |
+| 10. Looks and file size | 373-390 |
+| 11. The pure-function-of-T rules (and the pitfalls they prevent) | 392-415 |
+| 12. Recipes | 417-484 |
 
 ## 1. Minimal film
 
@@ -214,6 +216,8 @@ line; per-character reveals suit only 1-2 word hero titles. Minimum sizes at 108
 not copy. Draw it inside `F.decor(() => ...)` or pass `{decor: true}` to one `F.text` call, and
 `showtime check` reports its size, contrast and overlaps as notes instead of warnings (the canvas twin of the
 DOM's `data-st-decor`). Headlines, captions, numbers and anything the viewer must read are never decor.
+In the showreel tone, `{flash: true}` marks a flash word (1-3 words of texture that may leave before its reading
+time; the DOM's `data-st-flash`; `pacing.md` §1).
 
 **Symbols:** the bundled fonts contain no arrows, `⌘`, `⇧`, `⌥`, `⌃`, `↵`, `⌫`, `⇥` or `✓`. Anything that
 falls back to a system font looks different on macOS, Windows and Linux, so `F.text` warns when it sees
@@ -456,6 +460,21 @@ the shader needs two. Add a second `<canvas>` sized like the film's, register
 `ST.onSeek` handler inside the window draw the outgoing scene into the second canvas (render the film
 once with a flag that holds the outgoing scene, copy it with `drawImage`), then let the film draw the
 normal frame. Both canvases are pure functions of T, so preview, snap, check and render agree.
+
+A stop-and-ask question (showtime.json `"questions"`, `html-export.md` § Questions): the MP4 shows its
+"pause and think" beat, which the HTML export replaces with a question card. `F.questionBeat(T, 'q1')`
+draws it: the prompt and choices from the asking line's start (`from`), a countdown ring from the
+question's `t` for `think` seconds, then the right choice marked and its reply. Options: `x`, `y`
+(centre of the block), `width`, `size`, `choiceSize`, `label` (`'Pause and think'`; the video's
+language, `''` for none), `from`, `hold` (fade out that long after the reveal; 0 = stay), `reveal`,
+`reply`. It returns `{phase: '' | 'ask' | 'think' | 'reveal', left, q}`, so the rest of the frame can
+step back while it asks. `Film.questions` lists the questions with their times resolved (voice cues
+included); a film that draws its own beat reads `t`, `resume` and `from` there, never hard-coded seconds.
+
+```js
+var qb = F.questionBeat(T, 'q1', { label: 'Pause and think' });
+if (qb.phase === '') drawDiagram(T);          // the diagram returns once the question is gone
+```
 
 Debugging: open the project with `showtime preview <dir>` and scrub. `showtime snap <dir> --at 2,4.5`
 saves stills, and `showtime check <dir>` runs the pre-render QA. `Film.render(t)` redraws a frame from the

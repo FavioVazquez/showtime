@@ -63,9 +63,9 @@ def handshake(cmd):
 
 
 def list_tools():
-    """tools/list from the repository's MCP server (with each tool's annotations)."""
+    """tools/list from the repository's MCP server, every tool (with each tool's annotations)."""
     p = subprocess.Popen([NODE, str(SKILL / "mcp" / "server.mjs")], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                         stderr=subprocess.PIPE, encoding="utf-8", env=ENV)
+                         stderr=subprocess.PIPE, encoding="utf-8", env=dict(ENV, SHOWTIME_MCP_TOOLS="all"))
     try:
         for m in ({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
                       "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "test", "version": "1"}}},

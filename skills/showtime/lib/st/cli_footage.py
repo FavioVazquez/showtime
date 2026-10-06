@@ -69,8 +69,9 @@ def _register_transcribe(sub) -> None:
                               "  showtime transcribe demo.mp4 --prompt \"showtime, Kokoro, ffmpeg\"  # names/jargon\n"
                               "  showtime transcribe talk.mp4 --from 12:30 --to 18:00  # only that part (times stay on the file's clock)")
     p.add_argument("media", nargs="+", help="video/audio files or folders")
-    p.add_argument("--model", "-m", default="auto", help="auto (default: parakeet), parakeet-v2, turbo, small, small.en, "
-                                                        "medium, crisper, or a whisper model folder")
+    p.add_argument("--model", "-m", default="auto", help="auto (Parakeet v3 for its 25 languages, Whisper for others), "
+                                                        "parakeet, parakeet-v2, parakeet-v3, turbo, small, small.en, "
+                                                        "base.en, medium, crisper, or a whisper model folder (default: auto)")
     p.add_argument("--language", "-l", help="language code (en, es, fr...); default: detect (or English for .en models)")
     p.add_argument("--speakers", "-s", help="diarize: number of speakers, or 'auto' (default: off, all S0)")
     ev = p.add_mutually_exclusive_group()

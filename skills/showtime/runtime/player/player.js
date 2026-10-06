@@ -13,7 +13,8 @@
  *     at once and seeks land anywhere without waiting for the whole score;
  *   - draws the chrome: a start screen over the poster frame (title in the film's own font, Play + length),
  *     play/pause, scrubber with chapter ticks and a chapter menu, time, volume, loop, fullscreen,
- *     "copy a link to this moment", deep links (#t=12.5, #chapter=2) and a keyboard map (? shows it).
+ *     "copy a link to this moment" (or to a range picked with shift + drag), deep links (#t=12.5, #chapter=2,
+ *     and ranges #t=10-20 that loop) and a keyboard map (? shows it).
  *
  * Public API for pages that embed the file: window.showtimePlayer (see references/html-export.md).
  */
@@ -104,50 +105,60 @@
       startsAt: 'Starts at {t}', chapterN: 'Chapter {n}', rotate: 'Turn your phone sideways for full screen', tapSound: 'Tap for sound',
       linkCopied: 'Link to {t} copied', copiedHash: 'Copied {h}: add it to this file’s address', linkHere: 'Link to this moment: {u}',
       noSound: 'No sound: this browser cannot play the soundtrack ({c}). The picture plays silently.', cannotStart: 'This video could not start: {m}',
-      keyboard: 'Keyboard', linksFoot: 'Links: add #t=1:05 or #chapter=2 to the address',
+      keyboard: 'Keyboard', linksFoot: 'Links: add #t=1:05, #t=1:05-1:20 (that part, on a loop) or #chapter=2 to the address',
+      rangeFrom: 'Plays {a} – {b} on a loop', rangeSet: 'Looping {a} – {b} · Esc clears', rangeOff: 'The whole video again',
+      qOf: 'Question {n} of {m}', qPick: 'Pick an answer to go on', qRight: 'Right.', qWrong: 'Not quite.', qGo: 'Continue', qAuto: 'Going on in {s} s', qScore: '{r} of {n} right', qKeys: 'Answer the question · Enter: continue',
       keys: ['Play · pause', 'Back · forward 1 s', 'One frame (also , and .)', 'Back · forward 5 s', 'Jump to chapter 1 – 9 (no chapters: 10 – 90 %)',
         'Previous · next chapter (also Page Up / Down)', 'Start · End: last frame', 'Restart from the beginning', 'Mute · ↑ / ↓ volume',
-        'Full screen', 'Copy a link to this moment', 'Show · hide these keys'] },
+        'Full screen', 'Copy a link to this moment (or to the part you picked)', 'On the bar: pick a part to loop and link (Esc clears)', 'Show · hide these keys'] },
     es: { play: 'Reproducir', replay: 'Volver a ver', playK: 'Reproducir (k)', pauseK: 'Pausa (k)', muteM: 'Silenciar (m)', unmuteM: 'Activar sonido (m)',
       seek: 'Posición', volume: 'Volumen', linkC: 'Copiar un enlace a este momento (c)', loop: 'Repetir', keysQ: 'Atajos de teclado (?)',
       fsF: 'Pantalla completa (f)', shortcuts: 'Atajos de teclado', chapters: 'Capítulos', nChapters: '{n} capítulos', soundOn: 'Con sonido',
       startsAt: 'Empieza en {t}', chapterN: 'Capítulo {n}', rotate: 'Gira el teléfono para verlo a pantalla completa', tapSound: 'Toca para activar el sonido',
       linkCopied: 'Enlace a {t} copiado', copiedHash: 'Copiado {h}: añádelo a la dirección de este archivo', linkHere: 'Enlace a este momento: {u}',
       noSound: 'Sin sonido: este navegador no puede reproducir el audio ({c}). La imagen se reproduce sin sonido.', cannotStart: 'Este vídeo no pudo empezar: {m}',
-      keyboard: 'Teclado', linksFoot: 'Enlaces: añade #t=1:05 o #chapter=2 a la dirección',
+      keyboard: 'Teclado', linksFoot: 'Enlaces: añade #t=1:05, #t=1:05-1:20 (ese tramo, en bucle) o #chapter=2 a la dirección',
+      rangeFrom: 'Reproduce {a} – {b} en bucle', rangeSet: 'En bucle: {a} – {b} · Esc lo quita', rangeOff: 'De nuevo el vídeo completo',
+      qOf: 'Pregunta {n} de {m}', qPick: 'Elige una respuesta para seguir', qRight: 'Correcto.', qWrong: 'No exactamente.', qGo: 'Continuar', qAuto: 'Sigue en {s} s', qScore: '{r} de {n} correctas', qKeys: 'Responder la pregunta · Intro: continuar',
       keys: ['Reproducir · pausa', 'Atrás · adelante 1 s', 'Un fotograma (también , y .)', 'Atrás · adelante 5 s', 'Ir al capítulo 1 – 9 (sin capítulos: 10 – 90 %)',
         'Capítulo anterior · siguiente (también Re Pág / Av Pág)', 'Inicio · Fin: último fotograma', 'Empezar desde el principio', 'Silenciar · ↑ / ↓ volumen',
-        'Pantalla completa', 'Copiar un enlace a este momento', 'Mostrar · ocultar estas teclas'] },
+        'Pantalla completa', 'Copiar un enlace a este momento (o al tramo elegido)', 'En la barra: elige un tramo para repetirlo y enlazarlo (Esc lo quita)', 'Mostrar · ocultar estas teclas'] },
     fr: { play: 'Lire', replay: 'Revoir', playK: 'Lire (k)', pauseK: 'Pause (k)', muteM: 'Couper le son (m)', unmuteM: 'Rétablir le son (m)',
       seek: 'Position', volume: 'Volume', linkC: 'Copier un lien vers ce moment (c)', loop: 'Boucle', keysQ: 'Raccourcis clavier (?)',
       fsF: 'Plein écran (f)', shortcuts: 'Raccourcis clavier', chapters: 'Chapitres', nChapters: '{n} chapitres', soundOn: 'Avec son',
       startsAt: 'Commence à {t}', chapterN: 'Chapitre {n}', rotate: 'Tournez votre téléphone pour le plein écran', tapSound: 'Touchez pour le son',
       linkCopied: 'Lien vers {t} copié', copiedHash: '{h} copié : ajoutez-le à l’adresse de ce fichier', linkHere: 'Lien vers ce moment : {u}',
       noSound: 'Pas de son : ce navigateur ne peut pas lire la bande-son ({c}). L’image est lue sans son.', cannotStart: 'Cette vidéo n’a pas pu démarrer : {m}',
-      keyboard: 'Clavier', linksFoot: 'Liens : ajoutez #t=1:05 ou #chapter=2 à l’adresse',
+      keyboard: 'Clavier', linksFoot: 'Liens : ajoutez #t=1:05, #t=1:05-1:20 (ce passage, en boucle) ou #chapter=2 à l’adresse',
+      rangeFrom: 'Lit {a} – {b} en boucle', rangeSet: 'En boucle : {a} – {b} · Échap pour annuler', rangeOff: 'Retour à la vidéo entière',
+      qOf: 'Question {n} sur {m}', qPick: 'Choisissez une réponse pour continuer', qRight: 'Exact.', qWrong: 'Pas tout à fait.', qGo: 'Continuer', qAuto: 'Reprise dans {s} s', qScore: '{r} sur {n} justes', qKeys: 'Répondre à la question · Entrée : continuer',
       keys: ['Lecture · pause', 'Reculer · avancer de 1 s', 'Une image (aussi , et .)', 'Reculer · avancer de 5 s', 'Aller au chapitre 1 – 9 (sans chapitres : 10 – 90 %)',
         'Chapitre précédent · suivant (aussi Page préc. / suiv.)', 'Début · Fin : dernière image', 'Recommencer depuis le début', 'Couper le son · ↑ / ↓ volume',
-        'Plein écran', 'Copier un lien vers ce moment', 'Afficher · masquer ces touches'] },
+        'Plein écran', 'Copier un lien vers ce moment (ou vers le passage choisi)', 'Sur la barre : choisir un passage à lire en boucle et à partager (Échap l’annule)', 'Afficher · masquer ces touches'] },
     pt: { play: 'Reproduzir', replay: 'Ver de novo', playK: 'Reproduzir (k)', pauseK: 'Pausar (k)', muteM: 'Silenciar (m)', unmuteM: 'Ativar som (m)',
       seek: 'Posição', volume: 'Volume', linkC: 'Copiar um link para este momento (c)', loop: 'Repetir', keysQ: 'Atalhos de teclado (?)',
       fsF: 'Tela cheia (f)', shortcuts: 'Atalhos de teclado', chapters: 'Capítulos', nChapters: '{n} capítulos', soundOn: 'Com som',
       startsAt: 'Começa em {t}', chapterN: 'Capítulo {n}', rotate: 'Gire o celular para ver em tela cheia', tapSound: 'Toque para ativar o som',
       linkCopied: 'Link para {t} copiado', copiedHash: '{h} copiado: adicione-o ao endereço deste arquivo', linkHere: 'Link para este momento: {u}',
       noSound: 'Sem som: este navegador não consegue reproduzir o áudio ({c}). A imagem é reproduzida sem som.', cannotStart: 'Não foi possível iniciar este vídeo: {m}',
-      keyboard: 'Teclado', linksFoot: 'Links: adicione #t=1:05 ou #chapter=2 ao endereço',
+      keyboard: 'Teclado', linksFoot: 'Links: adicione #t=1:05, #t=1:05-1:20 (esse trecho, em repetição) ou #chapter=2 ao endereço',
+      rangeFrom: 'Reproduz {a} – {b} em repetição', rangeSet: 'Repetindo {a} – {b} · Esc para limpar', rangeOff: 'De volta ao vídeo inteiro',
+      qOf: 'Pergunta {n} de {m}', qPick: 'Escolha uma resposta para continuar', qRight: 'Certo.', qWrong: 'Não exatamente.', qGo: 'Continuar', qAuto: 'Continua em {s} s', qScore: '{r} de {n} certas', qKeys: 'Responder à pergunta · Enter: continuar',
       keys: ['Reproduzir · pausar', 'Voltar · avançar 1 s', 'Um quadro (também , e .)', 'Voltar · avançar 5 s', 'Ir para o capítulo 1 – 9 (sem capítulos: 10 – 90 %)',
         'Capítulo anterior · próximo (também Page Up / Down)', 'Início · Fim: último quadro', 'Recomeçar do início', 'Silenciar · ↑ / ↓ volume',
-        'Tela cheia', 'Copiar um link para este momento', 'Mostrar · ocultar estas teclas'] },
+        'Tela cheia', 'Copiar um link para este momento (ou para o trecho escolhido)', 'Na barra: escolha um trecho para repetir e compartilhar (Esc limpa)', 'Mostrar · ocultar estas teclas'] },
     de: { play: 'Abspielen', replay: 'Noch einmal', playK: 'Abspielen (k)', pauseK: 'Pause (k)', muteM: 'Stumm (m)', unmuteM: 'Ton an (m)',
       seek: 'Position', volume: 'Lautstärke', linkC: 'Link zu dieser Stelle kopieren (c)', loop: 'Schleife', keysQ: 'Tastenkürzel (?)',
       fsF: 'Vollbild (f)', shortcuts: 'Tastenkürzel', chapters: 'Kapitel', nChapters: '{n} Kapitel', soundOn: 'Mit Ton',
       startsAt: 'Beginnt bei {t}', chapterN: 'Kapitel {n}', rotate: 'Telefon für Vollbild quer halten', tapSound: 'Tippen für Ton',
       linkCopied: 'Link zu {t} kopiert', copiedHash: '{h} kopiert: an die Adresse dieser Datei anhängen', linkHere: 'Link zu dieser Stelle: {u}',
       noSound: 'Kein Ton: Dieser Browser kann die Tonspur nicht abspielen ({c}). Das Bild läuft ohne Ton.', cannotStart: 'Dieses Video konnte nicht starten: {m}',
-      keyboard: 'Tastatur', linksFoot: 'Links: #t=1:05 oder #chapter=2 an die Adresse anhängen',
+      keyboard: 'Tastatur', linksFoot: 'Links: #t=1:05, #t=1:05-1:20 (dieser Abschnitt in Schleife) oder #chapter=2 an die Adresse anhängen',
+      rangeFrom: 'Spielt {a} – {b} in Schleife', rangeSet: 'Schleife {a} – {b} · Esc hebt sie auf', rangeOff: 'Wieder das ganze Video',
+      qOf: 'Frage {n} von {m}', qPick: 'Wähle eine Antwort, um weiterzumachen', qRight: 'Richtig.', qWrong: 'Nicht ganz.', qGo: 'Weiter', qAuto: 'Weiter in {s} s', qScore: '{r} von {n} richtig', qKeys: 'Frage beantworten · Enter: weiter',
       keys: ['Abspielen · Pause', 'Zurück · vor 1 s', 'Ein Bild (auch , und .)', 'Zurück · vor 5 s', 'Zu Kapitel 1 – 9 springen (ohne Kapitel: 10 – 90 %)',
         'Vorheriges · nächstes Kapitel (auch Bild ↑ / ↓)', 'Anfang · Ende: letztes Bild', 'Von vorn beginnen', 'Stumm · ↑ / ↓ Lautstärke',
-        'Vollbild', 'Link zu dieser Stelle kopieren', 'Diese Tasten zeigen · ausblenden'] },
+        'Vollbild', 'Link zu dieser Stelle kopieren (oder zum gewählten Abschnitt)', 'Auf der Leiste: einen Abschnitt für Schleife und Link wählen (Esc hebt ihn auf)', 'Diese Tasten zeigen · ausblenden'] },
   };
   var LANG = String(M.lang || D.documentElement.getAttribute('lang') || 'en').toLowerCase().split('-')[0];
   var WD = WORDS[LANG] || WORDS.en;
@@ -226,7 +237,7 @@
   bar.className = 'stp-bar';
   bar.innerHTML =
     '<div class="stp-scrub" role="slider" tabindex="0" aria-label="' + esc(tr('seek')) + '" aria-valuemin="0" aria-valuemax="' + (Number(M.duration) || 0) + '" aria-valuenow="0">' +
-      '<div class="stp-rail"><div class="stp-buf"></div><div class="stp-hover"></div><div class="stp-fill"></div><div class="stp-ticks"></div></div>' +
+      '<div class="stp-rail"><div class="stp-buf"></div><div class="stp-hover"></div><div class="stp-fill"></div><div class="stp-range" hidden></div><div class="stp-ticks"></div></div>' +
       '<div class="stp-knob"></div><div class="stp-tip" hidden></div></div>' +
     '<div class="stp-row">' +
       '<button type="button" class="stp-btn stp-play" aria-label="' + esc(tr('playK')) + '">' + ICON.play + ICON.pause + '</button>' +
@@ -247,7 +258,7 @@
   root.appendChild(help);
   var bigBtn = $('.stp-big', cover), msgEl = $('.stp-msg', cover), goBtn = $('.stp-go', st), sbox = $('.stp-sbox', st), textBoxes = null, posterLuma = null;
   var scrub = $('.stp-scrub', bar), fillEl = $('.stp-fill', bar), hoverEl = $('.stp-hover', bar), knob = $('.stp-knob', bar), bufEl = $('.stp-buf', bar);
-  var tip = $('.stp-tip', bar), ticksEl = $('.stp-ticks', bar), timeEl = $('.stp-time', bar), chapEl = $('.stp-chapter', bar), chMenu = $('.stp-chmenu', bar);
+  var rangeEl = $('.stp-range', bar), tip = $('.stp-tip', bar), ticksEl = $('.stp-ticks', bar), timeEl = $('.stp-time', bar), chapEl = $('.stp-chapter', bar), chMenu = $('.stp-chmenu', bar);
   var playBtn = $('.stp-play', bar), muteBtn = $('.stp-mute', bar), volEl = $('.stp-vol', bar), loopBtn = $('.stp-loop', bar), fsBtn = $('.stp-fs', bar);
   var linkBtn = $('.stp-link', bar), keysBtn = $('.stp-keys', bar), chList = $('.stp-chlist', info), ihead = $('.stp-ihead', info);
   var fsOK = !!(D.fullscreenEnabled || D.webkitFullscreenEnabled);
@@ -375,9 +386,14 @@
       root.setAttribute('data-layout', m);
       cls('is-stacked', m === 'stacked');
       placeStart();
+      qPlace();
     }
     if (m === 'overlay') {
       bar.style.left = x + 'px'; bar.style.width = w + 'px'; bar.style.bottom = Math.max(0, vh - y - h) + 'px';
+      // a question card floats over the bottom of the picture, above the controls
+      root.style.setProperty('--stp-qb', (Math.max(0, vh - y - h) + (controls === 'none' ? 0 : (bar.offsetHeight || 92)) + 8) + 'px');
+      root.style.setProperty('--stp-qx', (x + w / 2) + 'px');
+      root.style.setProperty('--stp-qw', w + 'px');
     } else { bar.style.left = ''; bar.style.width = ''; bar.style.bottom = ''; }
     var sc = w / M.width;
     if (sc > 0) frame.style.transform = 'scale(' + sc + ')';
@@ -394,6 +410,19 @@
     ticksEl.innerHTML = chapters.filter(function (c) { return c.t > 0.05; }).map(function (c) {
       return '<i style="left:' + (100 * c.t / DUR).toFixed(3) + '%"></i>';
     }).join('');
+    if (QST) qMarks();
+    drawRange();
+  }
+  /** The range on the scrubber (a band from its start to its end); sel: a range being picked. */
+  function drawRange(sel) {
+    var r = sel || RANGE;
+    if (!rangeEl) return;
+    rangeEl.hidden = !r || !(DUR > 0);
+    if (rangeEl.hidden) return;
+    rangeEl.style.left = (100 * r.a / DUR).toFixed(3) + '%';
+    rangeEl.style.width = (100 * (r.b - r.a) / DUR).toFixed(3) + '%';
+    rangeEl.classList.toggle('is-picking', !!sel);
+    scrub.setAttribute('aria-description', fmt(r.a) + ' – ' + fmt(r.b));
   }
   function chapterIndex(t) {
     var cur = -1;
@@ -411,7 +440,7 @@
     Array.prototype.forEach.call(chMenu.querySelectorAll('button'), function (b, i) { b.querySelector('.l').textContent = chapterName(i); });
   }
 
-  // ------------------------------------------------------------------ deep links (#t=12.5, #t=1:05, #chapter=2 or =name)
+  // ------------------------------------------------------------------ deep links (#t=12.5, #t=1:05, #t=10-20, #chapter=2 or =name)
   function parseTime(v) {
     v = String(v || '').trim();
     var m;
@@ -429,26 +458,41 @@
     for (var j = 0; j < chapters.length; j++) if (want && slug(chapters[j].label).indexOf(want) === 0) return j;
     return -1;
   }
-  /** Time a #fragment asks for (null if none). */
-  function linkTime(hash) {
+  /**
+   * What a #fragment asks for: {t, range} (null if nothing). #t=10-20 (also 1:05-1:20, or 10,20 as in media
+   * fragments) is a range {a, b}: it starts at a and loops back at b; a range shorter than two frames is a time.
+   */
+  function linkTarget(hash) {
     var q = String(hash || '').replace(/^#/, '');
     if (!q) return null;
-    var out = null;
+    var out = null, range = null, end = Math.max(0, M.duration - 1 / (M.fps || 30));
     q.split('&').forEach(function (kv) {
-      var p = kv.split('='), k = decodeURIComponent(p[0] || '').toLowerCase(), v = p.slice(1).join('=');
-      if (k === 't' || k === 'time' || k === 'at') { var t = parseTime(decodeURIComponent(v)); if (t !== null) out = t; }
-      else if (k === 'chapter' || k === 'ch' || k === 'c') { var i = findChapter(v); if (i >= 0) out = chapters[i].t; }
+      var p = kv.split('='), k = decodeURIComponent(p[0] || '').toLowerCase(), v = decodeURIComponent(p.slice(1).join('='));
+      if (k === 't' || k === 'time' || k === 'at') {
+        var m = /^([^,-]+)[-,]([^,-]+)$/.exec(v.trim());
+        var a = m ? parseTime(m[1]) : parseTime(v), b = m ? parseTime(m[2]) : null;
+        if (a === null) return;
+        out = a; range = null;
+        if (b !== null) {
+          a = clamp(a, 0, end); b = clamp(b, 0, M.duration);
+          if (b - a >= 2 / (M.fps || 30)) range = { a: a, b: b };
+        }
+      } else if (k === 'chapter' || k === 'ch' || k === 'c') { var i = findChapter(v); if (i >= 0) { out = chapters[i].t; range = null; } }
     });
-    return out === null ? null : clamp(out, 0, Math.max(0, M.duration - 1 / (M.fps || 30)));
+    return out === null ? null : { t: clamp(out, 0, end), range: range };
   }
+  /** Time a #fragment asks for (null if none): a range's start. */
+  function linkTime(hash) { var x = linkTarget(hash); return x ? x.t : null; }
   function currentHash() { try { return W.location.hash || ''; } catch (e) { return ''; } }
   var startAt = linkTime(currentHash());
-  function linkHere(t) {
-    var h = '#t=' + (Math.round(t * 10) / 10);
+  var RANGE = (linkTarget(currentHash()) || {}).range || null, loopBefore = null;
+  function secs(t) { return String(Math.round(t * 10) / 10); }
+  function linkHere(t, r) {
+    var h = r ? '#t=' + secs(r.a) + '-' + secs(r.b) : '#t=' + secs(t);
     var href = '';
     try { href = String(W.location.href || ''); } catch (e) { href = ''; }
     var base = /^(https?|file):/i.test(href) ? href.split('#')[0] : '';
-    return { url: base + h, hash: h, full: !!base };
+    return { url: base + h, hash: h, full: !!base, range: r ? { a: r.a, b: r.b } : null };
   }
   function copyText(text) {
     var fallback = function () {
@@ -469,9 +513,10 @@
     return fallback();
   }
   function copyLink() {
-    var l = linkHere(S.t);
+    var l = linkHere(S.t, RANGE);
+    var what = RANGE ? fmt(RANGE.a) + ' – ' + fmt(RANGE.b) : fmt(S.t);
     copyText(l.url).then(function (ok) {
-      if (ok && l.full) toast(tr('linkCopied', { t: fmt(S.t) }));
+      if (ok && l.full) toast(tr('linkCopied', { t: what }));
       else if (ok) toast(tr('copiedHash', { h: l.hash }));
       else toast(tr('linkHere', { u: l.url }), 6000);
     });
@@ -487,6 +532,23 @@
   };
   var fps = M.fps, DUR = M.duration;
   var lastFrameT = Math.max(0, (Math.round(DUR * fps) - 1) / fps);
+  // A range (#t=10-20, or shift + drag on the scrubber) plays from its start and loops back at its end: the
+  // loop button turns on with it (turned off, play stops at the end). Seeking outside the range leaves it.
+  function setRange(r, quiet) {
+    if (r && !(r.b - r.a >= 2 / fps)) r = null;
+    if (r && !RANGE) loopBefore = S.loop;
+    if (!r && RANGE && loopBefore !== null) { S.loop = loopBefore; loopBefore = null; }
+    RANGE = r ? { a: clamp(r.a, 0, lastFrameT), b: clamp(r.b, 0, DUR) } : null;
+    if (RANGE) S.loop = true;
+    loopBtn.setAttribute('aria-pressed', String(S.loop));
+    if (!RANGE) scrub.removeAttribute('aria-description');
+    drawRange();
+    if (!quiet) toast(RANGE ? tr('rangeSet', { a: fmt(RANGE.a), b: fmt(RANGE.b) }) : tr('rangeOff'), 2000);
+    emit('range', RANGE ? { a: RANGE.a, b: RANGE.b } : null);
+  }
+  function inRange(t) { return !!RANGE && t >= RANGE.a - 0.5 / fps && t <= RANGE.b + 0.5 / fps; }
+  /** The last frame inside the range (where play stops when the loop is off). */
+  function rangeLast() { return Math.max(RANGE.a, Math.min(lastFrameT, Math.ceil(RANGE.b * fps - 1e-6) / fps - 1 / fps)); }
   drawTicks();
   drawChapterList();
   layout();
@@ -903,8 +965,13 @@
   }
   function tick() {
     if (S.playing) {
-      var t = clockNow();
-      if (t >= DUR - 0.5 / fps) {
+      var t = clockNow(), q = QS.length ? qCrossed(S.t, t) : null;
+      if (q && RANGE && q.t >= RANGE.b - 0.5 / fps) q = null;   // a question after the range never asks
+      if (q) qAsk(q);
+      else if (RANGE && S.t < RANGE.b && t >= RANGE.b - 0.5 / fps) {
+        if (S.loop) { seekTo(RANGE.a); emit('loop'); }
+        else { pause(); S.t = rangeLast(); anchorWall(S.t); S.lastFrame = -1; push(); renderUI(); emit('rangeend'); }
+      } else if (t >= DUR - 0.5 / fps) {
         if (S.loop) { seekTo(0); emit('loop'); }
         else { S.t = lastFrameT; pause(); S.ended = true; renderUI(); emit('ended'); }
       } else S.t = Math.max(0, S.t, t); // never backwards while playing (seeks set S.t themselves)
@@ -917,14 +984,24 @@
   // ------------------------------------------------------------------ transport
   function play() {
     if (!S.ready) { S.wantPlay = true; cls('is-loading', true); return; }
+    if (qOpen) {
+      // play while a question is open: answered, it is Continue; unanswered, the video plays on
+      // through its own pause and think beat and the question counts as passed
+      if (QST[qOpen.id].choice !== null) { qContinue(); return; }
+      QST[qOpen.id].passed = true;
+      qClose();
+    }
     if (!S.started) {
       S.started = true;
       var t0 = startAt !== null ? startAt : 0;
+      if (RANGE && !inRange(t0)) setRange(null, true);   // a chapter picked before the first play: not the range
       S.t = clamp(t0, 0, lastFrameT);
       S.lastFrame = -1;
       push();
+      if (QS.length) qSeeked(S.t);   // a deep link past a question passes it
     }
-    if (S.ended || S.t >= lastFrameT) { S.t = 0; S.ended = false; }
+    if (RANGE && (S.t >= rangeLast() - 1e-6 || S.t < RANGE.a - 0.5 / fps)) { S.t = RANGE.a; S.ended = false; S.lastFrame = -1; push(); if (QS.length) qSeeked(S.t); }
+    else if (S.ended || S.t >= lastFrameT) { S.t = 0; S.ended = false; if (QS.length) { qReset(); qMarks(); } }
     S.playing = true;
     anchorWall(S.t);
     if (SND) SND.play(S.t);
@@ -951,16 +1028,18 @@
   function toggle() { if (S.playing) pause(); else play(); }
   function seekTo(t) {
     if (!S.started) S.started = true;
+    if (RANGE && !inRange(clamp(t, 0, lastFrameT))) setRange(null, true);
     S.t = clamp(t, 0, lastFrameT);
     if (S.ended && S.t < lastFrameT) S.ended = false;
     anchorWall(S.t);
     if (SND) SND.seek(S.t);
     push();
     renderUI();
+    if (QS.length) qSeeked(S.t);
     emit('seek', S.t);
   }
   function step(frames) { if (S.playing) pause(); seekTo((Math.floor(S.t * fps + 1e-9) + frames) / fps); }
-  function restart() { seekTo(0); if (!S.playing) play(); emit('restart'); }
+  function restart() { if (QS.length) qReset(); seekTo(0); if (!S.playing) play(); emit('restart'); }
   function gotoChapter(i) {
     if (!chapters[i]) return false;
     seekTo(chapters[i].t);
@@ -1035,7 +1114,8 @@
     if (M.audio && M.audio.mode && M.audio.mode !== 'none') meta.push(tr('soundOn'));
     $('.stp-smeta', sbox).textContent = meta.join(' · ');
     var from = '';
-    if (startAt !== null && startAt > 0.05) {
+    if (RANGE) from = tr('rangeFrom', { a: fmt(RANGE.a), b: fmt(RANGE.b) });
+    else if (startAt !== null && startAt > 0.05) {
       var ci = chapterIndex(startAt);
       from = tr('startsAt', { t: fmt(startAt) }) + (ci >= 0 && chapters[ci].label && Math.abs(chapters[ci].t - startAt) < 0.05 ? ' · ' + chapterName(ci) : '');
     }
@@ -1157,7 +1237,8 @@
     ['R', 'Restart from the beginning'],
     ['M', 'Mute · ↑ / ↓ volume'],
     ['F', 'Full screen'],
-    ['C', 'Copy a link to this moment'],
+    ['C', 'Copy a link to this moment (or to the part you picked)'],
+    ['Shift + drag', 'On the bar: pick a part to loop and link (Esc clears)'],
     ['?', 'Show · hide these keys'],
   ];
   help.innerHTML = '<div class="stp-help-box"><b>' + esc(tr('keyboard')) + '</b><table>' + KEYS.map(function (k, i) {
@@ -1177,6 +1258,196 @@
       Array.prototype.forEach.call(chMenu.querySelectorAll('button'), function (b, i) { b.classList.toggle('is-cur', i === ci); });
     }
   }
+
+  // ------------------------------------------------------------------ questions
+  // Stop-and-ask questions (showtime.json "questions"): at a question's time the video pauses on that
+  // frame and a card asks it; a pick marks right or wrong and shows the reply, and Continue plays on
+  // from `resume` (the end of the MP4's "pause and think" beat). Seeking past a question passes it;
+  // seeking back before it asks it again (unless it was answered); a restart or replay asks them all.
+  // On a phone held upright the card sits under the picture, so the paused frame stays in view.
+  var QS = (Array.isArray(M.questions) ? M.questions : []).filter(function (q) {
+    return q && isFinite(q.t) && isFinite(q.resume) && Array.isArray(q.choices) && q.choices.length > 1;
+  }).sort(function (a, b) { return a.t - b.t; });
+  var QST = {}, qOpen = null, qAutoTimer = null;
+  var qcard = D.createElement('div');
+  qcard.className = 'stp-q'; qcard.hidden = true;
+  qcard.setAttribute('role', 'dialog'); qcard.setAttribute('aria-live', 'polite');
+  if (QS.length) {
+    root.classList.add('has-questions');
+    root.appendChild(qcard);
+    if (KEYS.length && help.querySelector('table')) {
+      var maxN = Math.max.apply(null, QS.map(function (q) { return q.choices.length; }));
+      var qrow = D.createElement('tr');
+      qrow.innerHTML = '<th><kbd>A</kbd> – <kbd>' + String.fromCharCode(64 + maxN) + '</kbd> / <kbd>1</kbd> – <kbd>' + maxN + '</kbd></th><td></td>';
+      qrow.lastChild.textContent = tr('qKeys');
+      help.querySelector('table').appendChild(qrow);
+    }
+  }
+  function qReset() { QS.forEach(function (q) { QST[q.id] = { choice: null, passed: false }; }); }
+  qReset();
+  function qFrame(t) { return Math.min(lastFrameT, Math.round(t * fps) / fps); }
+  /** The first question still to ask between the last shown time and t (a late frame still catches it). */
+  function qCrossed(from, t) {
+    for (var i = 0; i < QS.length; i++) {
+      var q = QS[i], s = QST[q.id];
+      if (s.choice === null && !s.passed && from <= q.t + 0.001 && t >= q.t - 0.02) return q;
+    }
+    return null;
+  }
+  /** After a seek to t: questions after t are asked again, the ones at or before it are passed. */
+  function qSeeked(t) {
+    if (qOpen) qClose();
+    QS.forEach(function (q) {
+      var s = QST[q.id];
+      if (q.t > t + 0.05) s.passed = false;
+      else if (s.choice === null) s.passed = true;
+    });
+    qMarks();
+  }
+  function qEl(tag, cls, text) {
+    var e = D.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+  // a choice's text; a path or URL may break after each slash before CSS breaks it mid-word
+  function qText(c) {
+    var e = qEl('span', 'stp-q-text'), parts = String(c).split('/');
+    parts.forEach(function (p, j) {
+      if (j < parts.length - 1) p += '/';
+      e.appendChild(D.createTextNode(p));
+      if (j < parts.length - 1 && parts[j + 1]) e.appendChild(D.createElement('wbr'));
+    });
+    return e;
+  }
+  function qScore() {
+    var right = 0, done = 0;
+    QS.forEach(function (q) { var c = QST[q.id].choice; if (c !== null) { done++; if (c === q.answer) right++; } });
+    return { right: right, done: done };
+  }
+  /** Stop on the question's own frame (a late catch goes back to it) and ask. */
+  function qAsk(q) {
+    pause();
+    S.t = qFrame(q.t);
+    anchorWall(S.t);
+    if (SND) SND.seek(S.t);
+    S.lastFrame = -1; push(); renderUI();
+    qOpen = q;
+    qcard.innerHTML = '';
+    qcard.appendChild(qEl('div', 'stp-q-kicker', tr('qOf', { n: QS.indexOf(q) + 1, m: QS.length })));
+    qcard.appendChild(qEl('div', 'stp-q-prompt', q.prompt));
+    var list = qEl('div', 'stp-q-choices');
+    q.choices.forEach(function (c, i) {
+      var b = qEl('button', 'stp-q-choice');
+      b.type = 'button';
+      b.appendChild(qEl('span', 'stp-q-key', String.fromCharCode(65 + i)));
+      b.appendChild(qText(c));
+      b.addEventListener('click', function (e) { e.stopPropagation(); qAnswer(i); });
+      list.appendChild(b);
+    });
+    qcard.appendChild(list);
+    qcard.appendChild(qEl('div', 'stp-q-hint', tr('qPick')));
+    qcard.setAttribute('aria-label', q.prompt);
+    qcard.hidden = false;
+    cls('is-asking', true);
+    qPlace();
+    if (mode === 'stacked') { info.scrollTop = 0; if (qcard.scrollIntoView) qcard.scrollIntoView({ block: 'nearest' }); }
+    var first = list.querySelector('button');
+    if (first && first.focus) first.focus({ preventScroll: true });
+    emit('question', { id: q.id, index: QS.indexOf(q), t: q.t });
+  }
+  function qAnswer(i) {
+    var q = qOpen;
+    if (!q || QST[q.id].choice !== null || !(i >= 0 && i < q.choices.length)) return;
+    var right = i === q.answer;
+    QST[q.id].choice = i;
+    Array.prototype.forEach.call(qcard.querySelectorAll('.stp-q-choice'), function (b, j) {
+      b.disabled = true;
+      if (j === q.answer) b.classList.add('is-right');
+      else if (j === i) b.classList.add('is-wrong');
+    });
+    var fb = qEl('div', 'stp-q-reply ' + (right ? 'is-right' : 'is-wrong'));
+    fb.appendChild(qEl('strong', null, right ? tr('qRight') : tr('qWrong')));
+    var reply = (q.reply && q.reply[i]) || '';
+    if (reply) fb.appendChild(D.createTextNode(' ' + reply));
+    var hint = qcard.querySelector('.stp-q-hint');
+    if (hint) qcard.replaceChild(fb, hint); else qcard.appendChild(fb);
+    var row = qEl('div', 'stp-q-row');
+    var go = qEl('button', 'stp-q-go', tr('qGo'));
+    go.type = 'button';
+    go.addEventListener('click', function (e) { e.stopPropagation(); qContinue(); });
+    row.appendChild(go);
+    var sc = qScore();
+    row.appendChild(qEl('span', 'stp-q-score', tr('qScore', { r: sc.right, n: sc.done })));
+    qcard.appendChild(row);
+    if (go.focus) go.focus({ preventScroll: true });
+    qMarks();
+    emit('answer', { id: q.id, choice: i, right: right });
+    var auto = Number(M.autoContinue) || 0;
+    if (auto > 0) {
+      var until = now() + auto * 1000, note = qEl('span', 'stp-q-auto');
+      row.appendChild(note);
+      var step = function () {
+        if (qOpen !== q) return;
+        var left = Math.ceil((until - now()) / 1000);
+        if (left <= 0) { qContinue(); return; }
+        note.textContent = tr('qAuto', { s: left });
+        qAutoTimer = setTimeout(step, 250);
+      };
+      step();
+    }
+  }
+  function qClose() {
+    clearTimeout(qAutoTimer);
+    qOpen = null;
+    qcard.hidden = true;
+    cls('is-asking', false);
+  }
+  /** Continue: play on from the end of the pause and think beat. */
+  function qContinue() {
+    var q = qOpen;
+    if (!q) return;
+    qClose();
+    QST[q.id].passed = true;
+    var to = q.resume;
+    if (RANGE && to >= RANGE.b - 0.5 / fps) {
+      if (!S.loop) { seekTo(rangeLast()); emit('continue', { id: q.id, t: S.t }); emit('rangeend'); return; }
+      to = RANGE.a;
+    }
+    seekTo(to);
+    emit('continue', { id: q.id, t: to });
+    if (S.t < lastFrameT) play();
+  }
+  /** Keys while a question is open: A-I or 1-9 answer it, Enter or Space go on. -> handled */
+  function qKey(k) {
+    var q = qOpen;
+    if (!q) return false;
+    if (QST[q.id].choice === null) {
+      var i = /^[1-9]$/.test(k) ? +k - 1 : /^[a-i]$/i.test(k) ? k.toUpperCase().charCodeAt(0) - 65 : -1;
+      if (i >= 0 && i < q.choices.length) { qAnswer(i); return true; }
+      return false;
+    }
+    if (k === 'Enter' || k === ' ') { qContinue(); return true; }
+    return false;
+  }
+  /** The card floats over the bottom of the picture, or sits under it on a phone held upright. */
+  function qPlace() {
+    if (!QS || !QS.length) return;   // (layout() runs once before this section has set up)
+    if (mode === 'stacked') { if (qcard.parentNode !== info) info.insertBefore(qcard, info.firstChild); }
+    else if (qcard.parentNode !== root) root.appendChild(qcard);
+  }
+  /** Question marks on the scrubber (answered ones in their colour). */
+  function qMarks() {
+    if (!QS.length || !(DUR > 0)) return;
+    var rail = $('.stp-rail', bar), box = $('.stp-qmarks', rail);
+    if (!box) { box = qEl('div', 'stp-qmarks'); rail.appendChild(box); }
+    box.innerHTML = QS.map(function (q) {
+      var c = QST[q.id].choice, st = c === null ? '' : c === q.answer ? ' is-right' : ' is-wrong';
+      return '<i class="' + st.trim() + '" style="left:' + (100 * q.t / DUR).toFixed(3) + '%"></i>';
+    }).join('');
+  }
+  qcard.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
+  qcard.addEventListener('click', function (e) { e.stopPropagation(); });
 
   // ------------------------------------------------------------------ controls behaviour
   var idleTimer = null;
@@ -1203,6 +1474,7 @@
   volEl.addEventListener('input', function () { setVolume(volEl.value); });
   loopBtn.addEventListener('click', function (e) { e.stopPropagation(); S.loop = !S.loop; loopBtn.setAttribute('aria-pressed', String(S.loop)); });
   loopBtn.setAttribute('aria-pressed', String(S.loop));
+  if (RANGE) { var linked = RANGE; RANGE = null; setRange(linked, true); }   // a #t=a-b link: the loop button shows it
   fsBtn.addEventListener('click', function (e) { e.stopPropagation(); toggleFullscreen(); });
   linkBtn.addEventListener('click', function (e) { e.stopPropagation(); copyLink(); });
   keysBtn.addEventListener('click', function (e) { e.stopPropagation(); toggleHelp(); });
@@ -1222,6 +1494,7 @@
   root.addEventListener('pointerdown', function (e) {
     if (e.button && e.button !== 0) return;
     if (!chMenu.hidden) { toggleChapters(false); return; }
+    if (qOpen) { showControls(); return; }   // the picture is inert while a question waits
     if (e.pointerType === 'touch' && S.started && root.classList.contains('is-idle')) { showControls(); return; }
     if (!S.started && !S.ready) { S.wantPlay = true; cls('is-loading', true); unlockAudio(); return; }
     var t = now();
@@ -1236,12 +1509,19 @@
   // scrubber
   function scrubP(e) { var r = scrub.getBoundingClientRect(); return clamp((e.clientX - r.left) / r.width, 0, 1); }
   var dragWasPlaying = false;
+  var pick = null;   // shift + drag on the scrubber: {from, to, moved}
   scrub.addEventListener('pointerdown', function (e) {
     e.stopPropagation();
     if (!S.ready) return;
     try { scrub.setPointerCapture(e.pointerId); } catch (x) { /* ignore */ }
     scrub.classList.add('is-drag');
     dragWasPlaying = S.playing;
+    if (e.shiftKey) {
+      var t0 = scrubP(e) * DUR;
+      pick = { from: t0, to: t0, moved: false, x: e.clientX, at: S.started ? S.t : (startAt || 0) };
+      return;
+    }
+    pick = null;
     if (S.playing) pause();
     seekTo(scrubP(e) * DUR);
   });
@@ -1249,15 +1529,35 @@
     var p = scrubP(e), t = p * DUR;
     hoverEl.style.width = (p * 100) + '%';
     var ch = chapterAt(t);
-    tip.textContent = fmt(t) + (ch ? '  ·  ' + ch : '');
+    tip.textContent = (pick ? fmt(Math.min(pick.from, t)) + ' – ' + fmt(Math.max(pick.from, t)) : fmt(t)) + (ch && !pick ? '  ·  ' + ch : '');
     tip.hidden = false;
     var r = scrub.getBoundingClientRect(), half = tip.offsetWidth / 2;
     tip.style.left = clamp(p * r.width, half, r.width - half) + 'px';
-    if (scrub.classList.contains('is-drag')) seekTo(t);
+    if (!scrub.classList.contains('is-drag')) return;
+    if (pick) {
+      pick.to = t;
+      if (Math.abs(e.clientX - pick.x) > 4) pick.moved = true;
+      if (pick.moved) drawRange({ a: Math.min(pick.from, t), b: Math.max(pick.from, t) });
+      return;
+    }
+    seekTo(t);
   });
   function endDrag() {
     if (!scrub.classList.contains('is-drag')) return;
     scrub.classList.remove('is-drag');
+    if (pick) {
+      // dragged: that part; a shift + click: from the playhead to the click
+      var a = pick.moved ? Math.min(pick.from, pick.to) : Math.min(pick.at, pick.from);
+      var b = pick.moved ? Math.max(pick.from, pick.to) : Math.max(pick.at, pick.from);
+      pick = null;
+      if (b - a >= Math.max(0.25, 2 / fps)) {
+        setRange(null, true);
+        seekTo(a);
+        setRange({ a: a, b: b });
+        if (dragWasPlaying && !S.playing) play();
+      } else drawRange();
+      return;
+    }
     if (dragWasPlaying) play();
   }
   scrub.addEventListener('pointerup', endDrag);
@@ -1272,7 +1572,8 @@
     if (tg === 'INPUT' && e.target !== volEl) return;
     if (e.target === volEl && /^(Arrow|Home|End|Page)/.test(e.key)) return; // the volume slider's own keys
     var k = e.key, handled = true, lower = String(k).length === 1 ? k.toLowerCase() : k;
-    if (k === 'Escape') { if (!help.hidden) toggleHelp(false); else if (!chMenu.hidden) toggleChapters(false); else handled = false; }
+    if (qOpen && !e.shiftKey && help.hidden && qKey(k)) { if (e.preventDefault) e.preventDefault(); return; }
+    if (k === 'Escape') { if (!help.hidden) toggleHelp(false); else if (!chMenu.hidden) toggleChapters(false); else if (RANGE) setRange(null); else handled = false; }
     else if (k === '?') toggleHelp();
     else if (!help.hidden && k !== 'f' && k !== 'F') { toggleHelp(false); }
     else if (lower === 'f') { if (fsOK) toggleFullscreen(); }
@@ -1308,10 +1609,13 @@
   }
   W.addEventListener('keydown', onKey);
   W.addEventListener('hashchange', function () {
-    var t = linkTime(currentHash());
-    if (t === null) return;
-    if (!S.started) { startAt = t; fillStart(); return; }
-    seekTo(t);
+    var x = linkTarget(currentHash());
+    if (x === null) return;
+    var t = x.t;
+    if (!x.range && RANGE) setRange(null, true);
+    if (!S.started) { startAt = t; if (x.range) setRange(x.range, true); fillStart(); return; }
+    if (x.range) { setRange(null, true); seekTo(t); setRange(x.range, true); }
+    else seekTo(t);
   });
 
   // ------------------------------------------------------------------ audio preparation
@@ -1463,6 +1767,8 @@
   unpack().then(function (zfiles) { frame.srcdoc = stageDoc(zfiles); })
     .catch(function (e) { fail(String(e && e.message || e)); });
   W.requestAnimationFrame(tick);
+  // background tabs stop requestAnimationFrame but not the sound: a timer still stops at every question
+  if (QS.length) setInterval(function () { if (S.playing && !qOpen) { var q = qCrossed(S.t, clockNow()); if (q) qAsk(q); } }, 120);
 
   // ------------------------------------------------------------------ public API
   var API = {
@@ -1483,6 +1789,18 @@
     get loop() { return S.loop; },
     set loop(v) { S.loop = !!v; loopBtn.setAttribute('aria-pressed', String(S.loop)); },
     get chapters() { return chapters.slice(); },
+    /** Stop-and-ask questions: [{id, t, resume, prompt, choices, answer, reply, choice (null until answered), passed}]. */
+    get questions() {
+      return QS.map(function (q) {
+        var s = QST[q.id];
+        return { id: q.id, t: q.t, resume: q.resume, prompt: q.prompt, choices: q.choices.slice(), answer: q.answer, reply: (q.reply || []).slice(), choice: s.choice, passed: s.passed };
+      });
+    },
+    /** The id of the question being asked now, or null. */
+    get question() { return qOpen ? qOpen.id : null; },
+    /** Answer the open question with choice i (0-based); continueQuestion() plays on from the end of its beat. */
+    answer: function (i) { qAnswer(+i); },
+    continueQuestion: function () { qContinue(); },
     get chapter() { var i = chapterIndex(S.t); return i >= 0 ? { index: i, t: chapters[i].t, label: chapters[i].label } : null; },
     /** The sound: the <audio> element, or for a live score {kind: 'score', currentTime, paused, duration, level(t0, t1), rendered()}. */
     get audio() { return SND ? SND.facade : null; },
@@ -1494,8 +1812,22 @@
     restart: restart,
     chapterAt: function (t) { var i = chapterIndex(t === undefined ? S.t : t); return i; },
     goToChapter: function (i) { return gotoChapter(i); },
-    /** Link to a moment: {url, hash, full (false when this page has no address of its own)}. */
-    link: function (t) { return linkHere(t === undefined ? S.t : t); },
+    /** Link to a moment: {url, hash, full (false when this page has no address of its own)}; with no time
+     *  while a range is set, the link to that range (#t=a-b). */
+    link: function (t) { return t === undefined && RANGE ? linkHere(S.t, RANGE) : linkHere(t === undefined ? S.t : t); },
+    /** Link to a range: #t=a-b. */
+    linkRange: function (a, b) { return linkHere(+a || 0, { a: +a || 0, b: +b || 0 }); },
+    /** The range being looped ({a, b} in seconds), or null. */
+    get range() { return RANGE ? { a: RANGE.a, b: RANGE.b } : null; },
+    /** Loop a range (seeks to its start), or setRange(null) for the whole video again. */
+    setRange: function (a, b) {
+      if (a === null || a === undefined) { setRange(null, true); return null; }
+      a = +a || 0; b = +b || 0;
+      setRange(null, true);
+      seekTo(Math.min(a, b));
+      setRange({ a: Math.min(a, b), b: Math.max(a, b) }, true);
+      return RANGE ? { a: RANGE.a, b: RANGE.b } : null;
+    },
     copyLink: copyLink,
     /** Seek and resolve once that frame is drawn. */
     seek: function (t) {

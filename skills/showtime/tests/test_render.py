@@ -220,8 +220,18 @@ class RenderTests(unittest.TestCase):
         self.assertIn("mix", rep["audio"]["sources"])
         self.assertAlmostEqual(rep["audio"]["lufs"], -14.0, delta=1.0)
         self.assertLessEqual(rep["audio"]["true_peak"], -0.9)
-        # frames were deleted after success, intermediates kept
-        self.assertFalse((mp4.parent / "work" / "frames").exists())
+        # after success the work folder keeps only what later commands read: render.json (beside the video
+        # here), logs, the AAC master, the mix report and the narration stem; frames, the silent video copy and
+        # the WAV stems are gone
+        work = mp4.parent / "work"
+        self.assertFalse((work / "frames").exists())
+        self.assertFalse((work / "video.mp4").exists(), "the silent video copy is removed")
+        self.assertTrue((work / "logs" / "render.log").is_file())
+        self.assertTrue((work / "audio" / "master.m4a").is_file())
+        self.assertTrue((work / "audio" / "mix.report.json").is_file())
+        wavs = [p.name for p in (work / "audio").glob("*.wav") if not p.name.endswith(".voice.wav")]
+        self.assertEqual(wavs, [], "WAV stems are removed")
+        self.assertIn("removed", (work / "logs" / "render.log").read_text(encoding="utf-8"))
         RESULTS["template_1280x720"] = {"frames": 120, "capture_fps": rep["fps_capture"], "overall_fps": rep["fps_overall"],
                                         "workers": rep["workers"], "wall_s": round(wall, 1)}
 
@@ -876,6 +886,44 @@ Film.start({ look: 'paper', fonts: ['650 1em "Inter Variable"'], scenes: functio
         # the render's scratch folder stays out of studio/ (studio/media holds only media)
         self.assertFalse((job / "studio" / "media" / "animatic.work").exists())
         self.assertTrue(log.is_relative_to(job / "work" / "renders"), log)
+
+    def test_16b_keep_work_and_interrupted_render(self):
+        """--keep-work keeps the whole work folder; an interrupted render removes its frames (--keep-frames
+        keeps them) and leaves its log."""
+        proj = self.tmp / "tidy"
+        write(proj / "showtime.json", json.dumps({"width": 320, "height": 180, "fps": 30, "duration": 0.5}))
+        write(proj / "index.html", "<!doctype html><html><head><script src=\"/_st/stage.js\"></script></head>"
+              "<body style=\"background:#246\"><script>ST.onSeek((t) => { document.body.style.background = "
+              "t > 0.25 ? '#642' : '#246'; });</script></body></html>")
+        job = Path(json.loads(showtime("job", "init", "tidy", "--base", self.tmp / "tidyjobs", "--json").stdout)["job"])
+        showtime("render", proj, "--job", job, "--preview", "--poster", "none", "--no-audio", "--keep-work")
+        self.assertTrue((job / "preview.work" / "video.mp4").is_file(), "--keep-work keeps the silent video")
+        self.assertFalse((job / "preview.work" / "frames").exists())
+        if os.name == "nt":
+            return                        # no SIGINT to send to a child process on Windows
+        import signal
+        # interrupted: a long render, stopped once frames are on disk
+        write(proj / "showtime.json", json.dumps({"width": 320, "height": 180, "fps": 30, "duration": 120}))
+        for keep in (False, True):
+            out = self.tmp / ("stopped-%d" % keep) / "stopped.mp4"
+            args = [shutil.which("node") or "node", str(SKILL / "scripts" / "render.mjs"), str(proj), "-o", str(out),
+                    "--workers", "1", "--no-audio", "--poster", "none"] + (["--keep-frames"] if keep else [])
+            errf = self.tmp / ("stopped-%d.err" % keep)
+            with open(str(errf), "wb") as fh:
+                p = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=fh, env=ENV)
+                frames = out.parent / "stopped.work" / "frames"
+                t_end = time.time() + 240
+                while time.time() < t_end and p.poll() is None and not (frames.is_dir() and len(os.listdir(frames)) >= 10):
+                    time.sleep(0.2)
+                self.assertIsNone(p.poll(), "the render ended before it could be interrupted")
+                p.send_signal(signal.SIGINT)
+                p.wait(timeout=60)
+            err = errf.read_text(encoding="utf-8", errors="replace")
+            self.assertEqual(p.returncode, 130, err[-800:])
+            self.assertIn("interrupted", err)
+            self.assertEqual(frames.is_dir() and any(frames.iterdir()), keep, err[-800:])
+            self.assertTrue((out.parent / "stopped.work" / "logs" / "render.log").is_file())
+            self.assertFalse(out.exists())
 
     def test_17_poster_flash_render_block_and_rerender_info(self):
         """A poster that does not look like the opening is written as poster.jpg but not baked into

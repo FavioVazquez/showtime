@@ -14,15 +14,15 @@
 
   /* ---------- a lit ground in every scene (key light top left, warm pool low right, faint grid) */
   .scene { background:
-      radial-gradient(75% 38% at 12% 10%, color-mix(in oklab, var(--accent-2) 34%, transparent), transparent 70%),
-      radial-gradient(90% 45% at 92% 78%, color-mix(in oklab, var(--accent) 38%, transparent), transparent 70%),
+      radial-gradient(75% 38% at 12% 10%, color-mix(in oklab, var(--accent-2) calc(34% * var(--ground-glow, 1)), transparent), transparent 70%),
+      radial-gradient(90% 45% at 92% 78%, color-mix(in oklab, var(--accent) calc(38% * var(--ground-glow, 1)), transparent), transparent 70%),
       var(--bg); }
-  .scene::before { content: ''; position: absolute; inset: 0; pointer-events: none;
+  .scene::before { content: ''; position: absolute; inset: 0; pointer-events: none; opacity: min(1, var(--ground-grid, 1));
     background-image: linear-gradient(to right, color-mix(in oklab, var(--fg) 6%, transparent) 1px, transparent 1px), linear-gradient(to bottom, color-mix(in oklab, var(--fg) 6%, transparent) 1px, transparent 1px);
     background-size: 9cqw 9cqw; -webkit-mask-image: radial-gradient(80% 50% at 40% 35%, black, transparent 75%); mask-image: radial-gradient(80% 50% at 40% 35%, black, transparent 75%); }
 
   /* ---------- 1. hook: the claim, huge, readable by 0.3 s */
-  .top { position: absolute; left: 6cqw; right: 15cqw; top: 13cqh; display: flex; flex-direction: column; gap: 2.6cqh; }
+  .top { position: absolute; left: 7cqw; right: 15cqw; top: 14.5cqh; display: flex; flex-direction: column; gap: 2.6cqh; }
   .hook-title { font-size: 16cqw; line-height: 0.92; letter-spacing: -0.045em; }
   .hook-title em { font-style: normal; color: var(--accent); }
   .hook-sub { font: 500 5.4cqw/1.25 var(--font-body); color: var(--muted); margin: 0; max-width: 20em; }
@@ -49,7 +49,7 @@
   .panel .checks .st-step-box { width: 6.4cqw; height: 6.4cqw; }
 
   /* ---------- 3. close: logo, one call to action, held; the captions finish the sentence below */
-  .close [data-st="end-card"] { --logo-size: 13cqw; }
+  .close [data-st="end-card"] { --logo-size: 13cqw; inset: 0 15cqw 0 6cqw; }   /* centred in the safe box: the side rail covers the right */
   .close .st-ec-stack { transform: translateY(-15cqh); gap: 3cqw; }
   .close .st-ec-stack .st-ec-cta { font-size: 5.6cqw; padding: 2.4cqw 6cqw; }
   .close .st-ec-stack .st-ec-url { font-size: 4.2cqw; color: var(--fg); }

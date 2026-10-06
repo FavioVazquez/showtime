@@ -4,6 +4,7 @@ Four parts, all named in references/qa.md ("phone check"):
 
   type size     the smallest text as it lands on a phone (points at 390 pt wide)      from `showtime check`
   reading time  every text on screen long enough to read, at a speed per language      from `showtime check`
+                (showreel tone: flash words may leave early; the hero line may not, no_hero_line)
   UI zones      nothing readable under platform UI (9:16 rails, control strip, edges)  from `showtime check`
   captions      line length, reading speed, flashes and placement of caption sidecars  measured here, on the files
 
@@ -28,6 +29,8 @@ PART_FIX = {
     "reading": "hold it longer, shorten it, or mark it data-caption when the voice reads it; then showtime check",
     "zone": "move it inside the platform's safe box (references/platforms.md, vertical safe zones); then showtime check",
 }
+# showreel tone (st.showreel): flash words may leave early, but one line (the name, the one message) is read
+HERO_FIX = "hold the hero line (the name, the one message) its full reading time, usually on the end card; then showtime check"
 
 
 def _clock(t: Optional[float]) -> str:
@@ -71,6 +74,8 @@ def _describe(it: Dict[str, Any]) -> str:
     if part == "size":
         return ("type: %s texts under the minimum%s" % (it["count"], at)) if it.get("count") else 'type %s pt "%s"%s' % (it.get("pt", "?"), q, at)
     if part == "reading":
+        if it.get("code") == "no_hero_line":
+            return "no hero line held its reading time (only flash words)%s" % at
         return 'reading "%s" %ss of %ss%s' % (q, it.get("held", "?"), it.get("need", "?"), at)
     what = {"control_strip": "under the player controls", "edge_margin": "at the frame edge"}.get(it.get("code"), "under platform UI")
     return '%s "%s"%s' % (what, q, at)
@@ -101,7 +106,8 @@ def evaluate(F: Any, vpath: Path, proj: Optional[Path], W: int, H: int, cap_file
         for it in ph.get("items") or []:
             part = it.get("part")
             items.append(it)
-            F.add(PART_RULE.get(part, "phone_zone"), "WARN", it.get("message", ""), t=it.get("t"), fix=PART_FIX.get(part, ""),
+            fix = HERO_FIX if it.get("code") == "no_hero_line" else PART_FIX.get(part, "")
+            F.add(PART_RULE.get(part, "phone_zone"), "WARN", it.get("message", ""), t=it.get("t"), fix=fix,
                   source="showtime check")
         if not chk.get("reading", True):
             notes.append("reading time was not checked (showtime check ran with --no-timeline)")
@@ -132,8 +138,9 @@ def evaluate(F: Any, vpath: Path, proj: Optional[Path], W: int, H: int, cap_file
                         if sm else ("minimum %s pt for %s" % (ph.get("min_pt"), ph.get("aspect"))))
             rd = ph.get("reading") or {}
             if (ph.get("checked") or {}).get("reading", True):
-                good.append("every text held to its reading time at %g characters/s%s (%s)" % (
-                    rd.get("cps") or 0, (" or %g words/s" % rd["wps"]) if rd.get("wps") else "", ph.get("lang")))
+                good.append("every text held to its reading time at %g characters/s%s (%s)%s" % (
+                    rd.get("cps") or 0, (" or %g words/s" % rd["wps"]) if rd.get("wps") else "", ph.get("lang"),
+                    (" except %d flash word(s) (showreel tone)" % ph["flash_exempt"]) if ph.get("flash_exempt") else ""))
             good.append("nothing under platform UI")
         if cap_line:
             good.append(cap_line)

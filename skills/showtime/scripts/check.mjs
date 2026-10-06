@@ -13,6 +13,9 @@ import { textSnapshot, hideText, fontInfo } from './lib/audit.mjs';
 import { phoneConfig, createPhone, readNeed, readingRate, ptOf, phoneLine } from './lib/phone.mjs';
 import { brandFindings } from './lib/brandcheck.mjs';
 import { uncovered, loadedFaces, glyphFix } from './lib/glyphs.mjs';
+import { timeIssues } from './lib/questions.mjs';
+import { resolveShowreel, showreelConfig, flashVerdict, flashNote } from './lib/showreel.mjs';
+import { enclosingJob, readJSON } from './lib/studio/paths.mjs';
 
 const PROBES = ['black', 'frozen', 'nondeterministic', 'error'];
 
@@ -46,6 +49,8 @@ const TINY = Number(TH.tiny_text_frac) || 0.022;
 // The phone check (scripts/lib/phone.mjs, references/qa.md): reading speed per language, smallest type in points at
 // phone width per aspect, and the zones; one summary in report.phone, one line in qa.
 const PH = phoneConfig(TH);
+// The showreel tone (scripts/lib/showreel.mjs): flash words may leave before their reading time; the hero line may not.
+const SR = showreelConfig(TH);
 // SVG labels (chart values, axes, map names) side by side closer than this many em are crowded
 const LABEL_GAP = Number.isFinite(Number(TH.label_gap_em)) ? Number(TH.label_gap_em) : 0.15;
 const MOVING_NOTE = ' (mid-animation: the chart is still growing or morphing; its settled frame is judged on its own)';
@@ -79,6 +84,12 @@ const SPEC = {
     'repeat follows the job\'s style reference (`showtime reference --job`), which is intended.',
     'beat_words: three or more 1-2 word texts shown one after another (a word per beat) are read as one line at',
     'the words/s rate instead of each being held to the one-text minimum (a note, not short_text).',
+    'Showreel tone (showtime.json "tone": "showreel", the job\'s tone, or a brief that says showreel, demo reel or go all',
+    'out): a flash word marked data-st-flash (canvas: {flash: true}), at most 3 words and 24 characters and on screen',
+    '0.2 s or more, may leave before its reading time (a flash_text note, not short_text); no_hero_line warns when',
+    'every text is a flash word. Size, contrast, overlaps and zones are judged as always; outside the tone the mark changes nothing.',
+    'Questions (showtime.json "questions"): unique ids, 2-9 choices, an answer index in range, voice cues that',
+    'name a narration line, every pause and think beat inside the video and none overlapping (question_* errors).',
     'Writes report.json (including every on-screen text with its times, used by `showtime qa` must_show)',
     'and a contact sheet to <project>/work/check/. Exit code 1 when errors are found (with --strict, also',
     'for warnings).',
@@ -162,6 +173,7 @@ async function main() {
   const cleanup = async () => { await b.browser.close().catch(() => {}); await server.close().catch(() => {}); };
   let sess, lab, sess2;
   let phone = null, floorPx = TINY * 1080, ranTimeline = false;   // the phone check's collector; smallest readable size in frame px
+  let reel = { on: false, source: 'default', detail: '' };          // the showreel tone (showtime.json tone, the job's tone or its brief)
   const report = { project: proj.dir, page: proj.page, ok: false, findings, timings: {}, samples: [] };
   const texts = new Map(); // normalized text -> {text, first, last, source, caption}
   const seenText = (txt, tt, source, caption) => {
@@ -187,15 +199,34 @@ async function main() {
     const overlayPage = !!(proj.config && proj.config.overlay) ||
       await sess.page.evaluate(() => !!document.querySelector('html[data-overlay], body[data-overlay]')).catch(() => false);
     report.info = inf;
+    // stop-and-ask questions (showtime.json "questions"): ids, choices, answers, voice cues, and beats
+    // inside the video and apart from one another
+    if (proj.questions && !proj.questions.off) {
+      const ql = proj.questions.list;
+      for (const x of [...proj.questions.issues, ...timeIssues(ql, inf.duration)]) {
+        const q = x.id ? ql.find((y) => y.id === x.id) : null;
+        add(x.severity, x.code, x.message, { fix: x.fix, ...(x.id ? { question: x.id } : {}), ...(q ? { t: q.t } : {}) });
+      }
+      report.questions = ql.map((q) => ({ id: q.id, at: q.at, t: q.t, think: q.think, resume: q.resume }));
+    }
     report.timings.ready = Date.now() - t;
     step(`loaded in ${fmtDuration(report.timings.ready)}: ${inf.width}x${inf.height} @ ${inf.fps} fps, ${inf.duration.toFixed(2)}s (${inf.durationSource}), ${inf.clips} clip(s)`);
     // brand first: a launch film in the product's look, or the job says why not
     for (const f of await brandFindings({ projectDir: proj.dir, config: proj.config, page: sess.page }).catch(() => [])) add(f.severity, f.code, f.message, f.fix ? { fix: f.fix } : {});
-    lab = await openLab(b.browser, server.url);
+    // `showtime new --from-storyboard`: shots that still show the storyboard's brief instead of their picture
+    const briefs = await sess.page.evaluate(() => [...new Set([...document.querySelectorAll('[data-storyboard-brief]')]
+      .map((e) => (e.closest('[data-storyboard-shot]') || e.closest('[id]') || {}).id || '?'))]).catch(() => []);
+    if (briefs.length) add('warning', 'storyboard_brief', `${briefs.length} shot(s) still show their storyboard brief instead of a picture: ${briefs.slice(0, 8).join(', ')}${briefs.length > 8 ? ', ...' : ''}`,
+      { fix: 'build each shot in its <section> from its brief (storyboard.json has every row), then delete the [data-storyboard-brief] elements' });
+    lab =await openLab(b.browser, server.url);
     const D = inf.duration, fps = inf.fps, W = inf.width, H = inf.height;
     // language of the on-screen text (sets the reading speed): showtime.json "lang", else <html lang>, else en
     const pageLang = await sess.page.evaluate(() => document.documentElement.getAttribute('lang') || '').catch(() => '');
     phone = createPhone({ W, H, lang: (proj.config && proj.config.lang) || pageLang || 'en', cfg: PH });
+    const jobDir = enclosingJob(proj.dir);
+    reel = resolveShowreel(proj.config, jobDir ? readJSON(path.join(jobDir, 'job.json'), {}) : {});
+    report.showreel = reel;
+    if (reel.on) step(`showreel tone (${reel.source === 'brief' ? `the brief says "${reel.detail}"` : reel.source === 'job' ? "the job's tone" : 'showtime.json tone'}): flash words (data-st-flash) may leave before their reading time`);
     // the older floor (2.2% of the frame height) or the phone minimum, whichever is larger
     floorPx = Math.max(TINY * H, phone.min.px);
     const tinyMsg = (what, px, st) => `${what} is ${Math.round(px)}px on screen (${ptOf(px, W, PH).toFixed(1)} pt on a ${PH.phone_width_pt} pt wide phone) at ${fmtTime(st)}: readable text needs >= ${Math.ceil(floorPx)}px (${phone.min.pt} pt at phone width for ${phone.min.aspect}, and at least ${(TINY * 100).toFixed(1)}% of the frame height)`;
@@ -841,6 +872,7 @@ async function main() {
       const blocksById = new Map();
       const cvis = new Map(); // canvas text -> [[t0,t1],...]
       const cdecor = new Set(); // canvas texts drawn as decor (F.decor): exempt from short_text
+      const cflash = new Set(); // canvas texts drawn as flash words ({flash: true}): texture in the showreel tone
       const okGrid = [];
       const activeClips = []; // per sample: clips ([data-start]) showing
       const textShown = [];   // per sample: any readable text (DOM or canvas)
@@ -889,6 +921,7 @@ async function main() {
             now.add(k);
             anyText = true;
             if (tx.decor) cdecor.add(k);
+            if (tx.flash) cflash.add(k);
             if (!tx.decor) sizeSeen(`canvas:${k}`, k, (tx.size || 0) * ky, gt, { source: 'canvas', caption: onPlate(tx) });
             if (onPlate(tx)) { seenText(k, gt, 'canvas', true); continue; }
             seenText(k, gt, 'canvas', false);
@@ -920,6 +953,9 @@ async function main() {
       const rateNote = ` at ${rate.cps} characters/s${rate.wps ? ` or ${rate.wps} words/s` : ''} (${phone.lang})`;
       const beatRun = beatRunBlocks(vis, blocksById, stepS, rate);
       const beatNoted = new Set();
+      // showreel tone: flash words exempted below, and whether any text (the hero line) was held its full reading time
+      const flashed = [];
+      let heroHeld = false;
       for (const [bid, runs] of vis) {
         const blk = blocksById.get(bid);
         // UI-mockup detail (data-st-decor, and everything inside it) is not copy the viewer must read
@@ -943,9 +979,11 @@ async function main() {
         }
         if (best + stepS * 0.5 < need && !reachesEnd) {
           const r0 = runs.find(([s, e]) => e - s + stepS === best) || runs[0];
-          add('warning', 'short_text', `"${snip(blk.text)}" is readable for only ~${best.toFixed(1)}s (from ${fmtTime(r0[0])}); ${blk.len} characters need ~${need.toFixed(1)}s${rateNote}`,
+          const fv = flashVerdict({ text: blk.text, flash: blk.flash, held: best, on: reel.on, cfg: SR, slack: stepS * 0.5 });
+          if (fv.exempt) { flashed.push({ text: snip(blk.text, 24), held: +best.toFixed(2), need: +need.toFixed(2), t: r0[0] }); continue; }
+          add('warning', 'short_text', `"${snip(blk.text)}" is readable for only ~${best.toFixed(1)}s (from ${fmtTime(r0[0])}); ${blk.len} characters need ~${need.toFixed(1)}s${rateNote}${flashNote(fv.reason, SR)}`,
             { t: r0[0], selector: blk.sel, held: +best.toFixed(2), need: +need.toFixed(2), fix: 'hold it longer, shorten it, or mark it data-caption if it is read along with the voice' });
-        }
+        } else if (!blk.flash) heroHeld = true;
       }
       // canvas readability: skip counters (digits change every frame) and typewriter prefixes
       const ckeys = [...cvis.keys()];
@@ -961,8 +999,19 @@ async function main() {
         const reachesEnd = runs.some(([, e]) => e >= lastT - 1e-6);
         if (best + stepS * 0.5 < need && !reachesEnd) {
           const r0 = runs.find(([s, e]) => e - s + stepS === best) || runs[0];
-          add('warning', 'short_text', `canvas text "${snip(k)}" is readable for only ~${best.toFixed(1)}s (from ${fmtTime(r0[0])}); ${k.length} characters need ~${need.toFixed(1)}s${rateNote}`,
+          const fv = flashVerdict({ text: k, flash: cflash.has(k), held: best, on: reel.on, cfg: SR, slack: stepS * 0.5 });
+          if (fv.exempt) { flashed.push({ text: snip(k, 24), held: +best.toFixed(2), need: +need.toFixed(2), t: r0[0], source: 'canvas' }); continue; }
+          add('warning', 'short_text', `canvas text "${snip(k)}" is readable for only ~${best.toFixed(1)}s (from ${fmtTime(r0[0])}); ${k.length} characters need ~${need.toFixed(1)}s${rateNote}${flashNote(fv.reason, SR).replace('data-st-flash', '{flash: true}')}`,
             { t: r0[0], source: 'canvas', held: +best.toFixed(2), need: +need.toFixed(2), fix: 'hold it longer or shorten it' });
+        } else if (!cflash.has(k)) heroHeld = true;
+      }
+      // showreel tone: flash words are texture, but the hero line (the name, the one message) is still read
+      if (flashed.length) {
+        report.showreel = { ...reel, flash: flashed };
+        add('info', 'flash_text', `${flashed.length} flash word(s) left before their reading time (showreel tone: texture, not message): ${flashed.slice(0, 6).map((f) => `"${f.text}" ${f.held}s at ${fmtTime(f.t)}`).join(', ')}${flashed.length > 6 ? ', ...' : ''}`, { t: flashed[0].t });
+        if (!heroHeld) {
+          add('warning', 'no_hero_line', `every text in this showreel is a flash word: no line is held its reading time, so nothing says whose reel it is (flash words exempted: ${flashed.length})`,
+            { t: flashed[0].t, fix: 'hold the hero line (the name, the one message) its full reading time, usually on the end card; flash words stay texture' });
         }
       }
       // motion / blank frames
@@ -1174,6 +1223,25 @@ async function main() {
         }
       } catch { /* a probe only */ }
     }
+    // the first frame of every hard cut: the stage shows a scene from its first frame, but a page that
+    // draws it from its own clock (canvas or WebGL drawn in onSeek "while active", tested against a time
+    // typed again in the script, or one written a hair after the frame) draws it one frame later. That
+    // frame is then blank or half drawn in the render, and the sample frames above never land on it.
+    if (lab && !overlayPage) {
+      t = Date.now();
+      try {
+        sess2 = await openStage(b.browser, { url: server.url, page: proj.page, config: proj.config, size });
+        report.cuts = await cutFrames({ sess: sess2, lab, fps, W, lastT, txWin });
+        const late = report.cuts.filter((x) => x.late);
+        if (late.length) {
+          add('error', 'late_first_frame', `the first frame after ${late.length === 1 ? 'a cut' : late.length + ' cuts'} is drawn a frame late: ${late.slice(0, 6).map((c) => `${c.scene} at ${fmtTime(c.t)}`).join(', ')}${late.length > 6 ? ` (+${late.length - 6} more)` : ''}. The stage shows each scene from that frame, but the page draws it only from the next one, so the render shows that frame blank (or with whatever the canvas held before) while snap and check can look right`,
+            { t: late[0].t, times: late.map((c) => c.t), fix: 'decide what a scene draws from the stage\'s own clip windows: ST.clips() is frame-exact (on screen while t >= start && t < end); do not compare t with scene times typed again in the script or read from data-start yourself' });
+        }
+      } catch (e) {
+        add('info', 'cut_probe_failed', `the first frames after the cuts were not probed: ${String(e.message || e).split('\n')[0]}`);
+      } finally { if (sess2) { await sess2.close(); sess2 = null; } }
+      report.timings.cuts = Date.now() - t;
+    }
     const log = sess.log;
     for (const e of log.errors.slice(0, 5)) add('error', 'page_error', `page error: ${e.message}`, { fix: 'open `showtime preview` and fix the script error' });
     if (log.errors.length > 5) add('error', 'page_error', `${log.errors.length - 5} more page errors`);
@@ -1330,7 +1398,7 @@ async function main() {
       add('info', 'small_text', `${smalls.length} small labels, ${Math.min(...px)}-${Math.max(...px)}px (e.g. ${eg}); text under ~${Math.round(Math.min(report.info?.width || 1920, report.info?.height || 1080) * 0.033)}px is hard to read on phones`,
         { t: Math.min(...smalls.map((f) => f.t ?? 0)), count: smalls.length, items: smalls.map((f) => ({ t: f.t, text: f.text, px: f.px, selector: f.selector })) });
     }
-    if (phone) report.phone = phone.summarize(findings, { timelineRan: ranTimeline });
+    if (phone) report.phone = phone.summarize(findings, { timelineRan: ranTimeline, flashExempt: ((report.showreel || {}).flash || []).length });
     report.texts = [...texts.values()].sort((x, y) => x.first - y.first).slice(0, 500)
       .map((x) => ({ ...x, first: +x.first.toFixed(3), last: +x.last.toFixed(3) }));
     if (report.film && typeof report.film === 'object') report.film.texts = report.texts.filter((x) => x.source === 'canvas').length;
@@ -1480,6 +1548,45 @@ async function canvasBoxStats([b64, items]) {
     if (rs.length < n * 0.15) return { bg: [mid(ar), mid(ag), mid(ab)], textFrac: near / n, blended: true };
     return { bg: [mid(rs), mid(gs), mid(bs)], textFrac: near / n };
   });
+}
+
+/**
+ * The first frame of every hard cut (a top-level clip that starts without a transition), on a page
+ * fresh from load and walked in time order as a render does: the frame as a render first reaches it
+ * (a scene's canvas holds what it held before the cut, usually nothing), then the same frame again
+ * after the frame after it. A page that draws the scene on its first frame gives the same picture both
+ * times; one that draws it a frame late shows the canvas's old content first. Compared at 64x36 grey.
+ * -> [{frame, t, scene, d, late}]   d: mean difference 0-255
+ */
+async function cutFrames({ sess, lab, fps, W, lastT, txWin }) {
+  const tops = await sess.page.evaluate(() => {
+    const all = [...document.querySelectorAll('[data-start]')];
+    const cl = window.ST.clips();
+    if (cl.length !== all.length) return [];
+    return all.map((el, i) => ({ el, c: cl[i] })).filter(({ el, c }) => c && Number.isFinite(c.start) && !(el.parentElement && el.parentElement.closest('[data-start]')))
+      .map(({ el, c }) => ({ start: c.start, scene: el.id ? '#' + el.id : (c.name || el.tagName.toLowerCase()) }));
+  });
+  const lastF = Math.round(lastT * fps);
+  // a transition into the scene blends both scenes on its first frames: not a hard cut
+  const near = (f) => txWin.some((w) => (f + 2) / fps > w.start - 1e-6 && (f - 1) / fps < w.start + w.dur + 1e-6);
+  const cuts = [...new Map(tops.map((c) => [Math.ceil(c.start * fps - 1e-6), c.scene])).entries()]
+    .filter(([f]) => f > 0 && f + 1 <= lastF && !near(f)).sort((x, y) => x[0] - y[0]).slice(0, 60);
+  const shot = () => sess.shot({ format: 'png', scale: Math.min(1, 192 / W) });
+  const out = [];
+  for (const [f, scene] of cuts) {
+    await sess.seek((f - 1) / fps);
+    await sess.seek(f / fps);
+    const first = await shot();
+    await sess.seek((f + 1) / fps);
+    await sess.seek(f / fps);
+    const again = await shot();
+    const [s0, s1] = await lab.signatures([first, again], 64, 36);
+    let sum = 0;
+    for (let i = 0; i < s0.length; i++) sum += Math.abs(s0[i] - s1[i]);
+    const d = sum / s0.length;
+    out.push({ frame: f, t: f / fps, scene, d: +d.toFixed(2), late: d >= 1.5 });
+  }
+  return out;
 }
 
 /**

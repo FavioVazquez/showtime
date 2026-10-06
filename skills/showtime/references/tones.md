@@ -17,11 +17,16 @@ Easing names are CSS-style: `expo-out` = cubic-bezier(0.16,1,0.3,1), `std-out` =
   blur-dissolve at section changes; launches `upbeat-tech`, explainers and data a calm underscore) (§1)
 - No tone given: dev tool -> technical or default; consumer app -> playful; luxury, hardware -> polished or
   minimal; people's stories -> documentary; big launch, trailer, event -> cinematic (§2)
-- Avoid the tone and look your last five videos used unless asked (`showtime history`) (§2)
+- Avoid the tone and look your last five videos used unless asked (`showtime history`); `showtime new` already
+  starts page templates in a look signature away from them (`color.md` §9) (§2)
 - `playful` sound only when the user or the product asks for it: under anything serious it reads as a kids'
   game (§1)
 - `polished`: no whooshes, claps, bells or plucked leads, no overshoot; `chaotic`: flash frames ≤2 per video,
   and legibility still wins (§1)
+- Showreel, hype reel, "go all out", "show off": `showreel` (12-14 shots per 15 s cut on the beat, no technique
+  twice, flash words as texture, the name landing on the last beats, about 1 s of end card). The brief's words set it (`showtime job init` and
+  `showtime new` say so); `showtime new showreel` or `--tone showreel` sets it by hand. Check, qa and the critic
+  then judge density and energy, not restraint (§1, §2)
 - Blends take pacing and sound from the first word and the look from the second; on conflicts the readability
   rules in `pacing.md` win (§3)
 - Every tone: one primary transition for 60–70% of cuts plus at most 1–2 accent types; one sound family in the
@@ -30,10 +35,10 @@ Easing names are CSS-style: `expo-out` = cubic-bezier(0.16,1,0.3,1), `std-out` =
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| 1. Presets | 38-139 |
-| 2. Choosing a preset (when the user gave no tone) | 141-154 |
-| 3. Freeform direction → knobs | 156-175 |
-| 4. Invariants across every tone | 177-182 |
+| 1. Presets | 43-175 |
+| 2. Choosing a preset (when the user gave no tone) | 177-191 |
+| 3. Freeform direction → knobs | 193-214 |
+| 4. Invariants across every tone | 216-221 |
 
 ## 1. Presets
 
@@ -80,6 +85,37 @@ Easing names are CSS-style: `expo-out` = cubic-bezier(0.16,1,0.3,1), `std-out` =
 - Transitions: hard cuts, flash frames (≤2 per video), zoom-throughs, glitch bursts under 0.2 s.
 - Sound: 130–160 BPM, dense sfx on beats, bass hits, record scratches. Respect the flash limits in `pacing.md`.
 - Color: clashing high-saturation pairs, inverted frames, halftone and grain. Legibility still wins.
+
+**showreel**: go all out. A motion designer's reel, a hype reel, "show what you can do". Restraint loses this
+brief: blind votes (2026-10-02, and the 2026-10-05 rematch) went to the reel that kept cutting to the last second
+(13-14 shots in 15 s, a new kind of shot every time, the name landing late and short) over takes that repeated
+fewer, longer ideas and held their name for 3-4 s.
+- Pacing: 12-14 shots per 15 s, a shot every 1.5-2.5 beats at 110-130 BPM (0.75-1.75 s; one data or 3D shot may
+  take 3-4 beats). The energy never dips for more than about 1 s until the end.
+- Ending: for reels of 20 s or less the name lands on the last beats with its reading time and no more (about
+  1.25 s: it builds in, holds at most 1 s, and keeps moving, a sweep or a drift, to the last frame). Spend the
+  seconds a calm film gives its end card on one or two more shots.
+- Variety: no technique twice, and at least 8 distinct kinds from this menu: live data or a counter rolling to a
+  number; words over a liquid shader; a 3D object; particles; kinetic type; a pattern system; glitch or RGB split;
+  a camera move or tunnel; a morph or a match cut. More kinds: a halftone or dot field, a generative line drawing,
+  type as a mask, an outline stack. Two shots with the same ground and layout read as one trick twice.
+- Hook landed at frame 0. Fast motion reads smoother at 60 fps (`showtime new showreel <dir> --fps 60`, twice the
+  render time).
+- Type: flash words (1-3 words on screen 0.25-0.6 s, marked `data-st-flash`) are texture; one hero line (the
+  name, the one message) is held its full reading time, usually on the end card. Kinetic, glitch, outline-stack type.
+- Motion: a shader ground, a particle burst on the drop, a 3D object turn, camera moves (dolly, fly-through,
+  push); punch-ins and zoom-throughs are allowed here. Every move still eases.
+- Transitions: hard cuts on the beat are the primary; 1-2 matches or zoom-throughs where one shot turns into the
+  next (the surprise). Flashes stay within the safety limit (≤3 a second, `pacing.md` §5).
+- Sound: a driving bed at 115-130 BPM with a build and a drop on a big hit, one hit per cut, risers into the drop
+  and the end card, a sub drop and a sting on the name; -14 LUFS.
+- Color: high contrast, each shot may own its palette (a chrome ground, a hot field, a cream type card), neon accents.
+- Checks: showtime.json `"tone": "showreel"` (`showtime new showreel`, `--tone showreel`, or the brief's words:
+  "showreel", "demo reel", "hype reel", "go all out", "show off"). `check` lets marked flash words go before
+  their reading time (`flash_text`), never the hero line (`no_hero_line`); qa wants at least 12 shots per 15 s
+  (`showreel_sparse`), an end card still for at most 10% of the reel (`showreel_long_end`) and no two shots
+  alike (`showreel_repeats`) instead of the launch grammar; the critic counts long holds, repeats and energy dips
+  against the reel. Recipes: `motion-craft.md` §11; a working 14-shot reel: `showtime new showreel`.
 
 **cinematic**: epic, emotional, big scale.
 - Pacing: 4–5 scenes, 3–6 s. Build tension slowly, then land hard on the reveal.
@@ -149,6 +185,7 @@ Easing names are CSS-style: `expo-out` = cubic-bezier(0.16,1,0.3,1), `std-out` =
 | Mobile app store listing, feature tour | app-store |
 | Nonprofit, research, story of people | documentary |
 | Big launch, trailer, event | cinematic |
+| A showreel, hype reel, "go all out", "show off", "show what you can do" | showreel (the brief's words set it) |
 | A reference video to match | the tone `showtime reference` suggests from its pace and sound |
 
 Avoid the tone and look your last five videos used unless asked (`showtime history`, `reference.md`).
@@ -168,15 +205,17 @@ Translate the user's words into concrete changes and say which ones you made.
 | "warmer", "more human" | Warm neutrals, softer corners, acoustic instruments, a real face or hands if footage exists |
 | "techier" | Mono accents, grid, terminal visuals, synth bed, precise hard cuts |
 | "like a movie trailer" | cinematic preset, letterbox, dip-to-black act breaks, name lands last |
+| "go all out", "show off", "make it a showreel" | showreel preset: 12-14 shots per 15 s on the beat, no technique twice, flash words, the name landing on the last beats |
 | "less corporate" | Kill stock-style gradients and centered layouts; use the product's own quirky copy |
 
 Blends: "deadpan but cinematic" means take **pacing and sound** from the first word and **look** from
 the second. If two instructions conflict (e.g. "chaotic but readable"), readability rules in
-`pacing.md` still win. Keep the chaos in motion and sound, not in how long text is held.
+`pacing.md` still win. Keep the chaos in motion and sound, not in how long text is held. The one exception is
+the showreel preset's flash words (marked, 1-3 words, texture); its hero line follows the rules.
 
 ## 4. Invariants across every tone
 
-- Hook and readability rules from `story.md` and `pacing.md` apply to all tones.
+- Hook and readability rules from `story.md` and `pacing.md` apply to all tones (showreel: marked flash words excepted).
 - One primary transition covers 60–70% of cuts, plus at most 1–2 accent types.
 - One sound family per video: the same whoosh, the same click, all in the music's key.
 - A parody tone may use a "cheap" effect on purpose, once or twice, never by default.

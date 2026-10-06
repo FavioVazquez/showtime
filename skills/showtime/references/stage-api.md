@@ -40,11 +40,11 @@ a determinism, timing or seek problem.
 | Minimal page | 56-91 |
 | Configuration | 93-109 |
 | Clips: data-start / data-dur | 111-151 |
-| API: Library helpers (built-in adapters), <video> in a page | 153-224 |
-| Determinism: what the render mode does and what to avoid | 226-257 |
-| Readiness | 259-264 |
-| Preview mode | 266-278 |
-| Scene transitions with shaders (layer protocol) | 280-286 |
+| API: Library helpers (built-in adapters), <video> in a page | 153-237 |
+| Determinism: what the render mode does and what to avoid | 239-270 |
+| Readiness | 272-277 |
+| Preview mode | 279-291 |
+| Scene transitions with shaders (layer protocol) | 293-299 |
 
 ## The one rule
 
@@ -166,8 +166,9 @@ plus the line's delay in the scene.
 | `ST.config(obj)` | set/merge config (see above); returns the effective config |
 | `ST.mode` | `'render'` (renderer, check, snap), `'preview'` (inside the player or a plain browser), `'player'` |
 | `ST.t`, `ST.frame`, `ST.cfg` | current time, frame, config |
+| `ST.questions` | showtime.json `"questions"` with times resolved (voice cues included): `[{id, t, think, resume, from, prompt, choices, answer, reply}]`, for a page that draws its own pause and think beat (`html-export.md` § Questions); `await ST.configReady()` first in a preview |
 | `ST.info()` | size, fps, duration (and where it came from), frame count, clip count, handler names |
-| `ST.clips()` | resolved clip windows `[{name, id, start, end}]` |
+| `ST.clips()` | resolved clip windows `[{name, id, start, end}]`, frame-exact: a clip is on screen exactly while `t >= start && t < end` (a time written within 1 ms of a frame, like 1.9667 at 60 fps, is reported as that frame's time, as the stage shows it); `end` is `null` for a clip that runs to the end of the video. Gate canvas drawing on these, not on times typed again in the script |
 | `ST.diag()` | what the runtime noticed: timer callbacks during playback, CSS transitions, video problems, handler errors |
 | `ST.seek(t)`, `ST.ready()` | used by the renderer and the player. **Never call them from scene code.** |
 
@@ -205,11 +206,23 @@ Every `<video>` is paused, muted and seeked to the middle of the right source fr
 fps if it differs from the video's), `data-st="off"` (leave it alone). Its clock is its own
 `data-start`, else the nearest clip's.
 
-A `<canvas data-st-video="ID">` styled like `<video id="ID">` (same box, same `object-fit`) gets that
-video's frame drawn on it in renders, and the video is hidden; in the preview it stays empty. Use it
-for a video that is the whole picture: on a busy or slow machine Chrome can put a paused video's
-seeked frame on screen after the capture (the frame before, or nothing for the first one), while a
-canvas is captured with the rest of the page. `showtime adopt` writes its pages this way.
+Renders (and `check`, `snap`, studio frames) draw every `<video>` on a canvas: on a busy or slow
+machine Chrome can put a paused video's seeked frame on screen after the capture (the frame before,
+or nothing for the first one), while a canvas is captured with the rest of the page. The canvas goes
+right after the video and gets the video's computed style every frame (size, position, flex/grid
+place, `object-fit`, transforms, opacity, filters, border-radius, masks, z-index, visibility), so it
+lays out and paints where the video did; the video steps out of the flow, hidden, and its boxes
+(`getBoundingClientRect`, `offsetWidth`...) report the canvas's. Transparent (alpha) clips stay
+transparent; a clip up to Chrome's largest canvas (268 M pixels) is drawn at full size, a bigger one
+stays a plain video. Nothing to write for it; the preview plays the plain `<video>`. Two things
+differ: an extra element after each video shifts `:nth-child` / `:last-child` / `video + x`
+selectors (use classes or `:nth-of-type`), and the video's own CSS transitions are off in renders
+(they finish at once there anyway). `data-st-video="native"` on a `<video>` keeps it a plain video
+in renders too (an edge case the canvas gets wrong).
+
+A `<canvas data-st-video="ID">` of your own, styled like `<video id="ID">`, takes the frame of
+`<video id="ID">` instead (the video is hidden; in the preview the canvas stays empty).
+`showtime adopt` writes its pages this way.
 
 - Use **VP9/WebM** (or AV1) for footage inside pages: Chromium builds without proprietary codecs
   (Playwright's Chromium, some Linux packages) cannot decode H.264. Convert with

@@ -35,7 +35,8 @@ def register(sub: argparse._SubParsersAction) -> None:
                 "  showtime receipt                         # the current or newest job\n"
                 "  showtime receipt launch-teaser --transcript ~/.claude/projects/<project>/<session>.jsonl\n"
                 "  showtime receipt --whole-session --transcript rollout.jsonl --host codex\n"
-                "  showtime receipt --print                 # show it, write nothing"))
+                "  showtime receipt --print                 # show it, write nothing\n"
+                "  showtime receipt my-job --card           # the delivery card's facts, ready for the Look: line"))
     p.add_argument("job", nargs="?", help="job folder or name (default: the current or newest job)")
     p.add_argument("--transcript", metavar="FILE", help="the current session's log (Claude Code .jsonl, a Codex rollout, "
                    "or Devin's sessions.db)")
@@ -44,6 +45,10 @@ def register(sub: argparse._SubParsersAction) -> None:
                    help="count the whole session, not only the time from the job's start to its last update")
     p.add_argument("--no-share", action="store_true", help="do not touch share.txt")
     p.add_argument("--print", dest="print_only", action="store_true", help="print the receipt, write nothing")
+    p.add_argument("--card", action="store_true",
+                   help="print the delivery card with the facts showtime knows filled in (files, length, loudness, qa, "
+                        "review, findings, cost) and the lines only you can write (Look:, Assumed:, Next) as prompts; "
+                        "writes nothing (references/modes.md section 5)")
     p.add_argument("--hook", action="store_true", help=argparse.SUPPRESS)   # the Stop hook: JSON on stdin, no output
     p.add_argument("--json", action="store_true", help="print receipt.json instead of the file paths")
     p.set_defaults(func=cmd_receipt)
@@ -84,6 +89,9 @@ def cmd_receipt(args: argparse.Namespace) -> int:
         return _hook()
     from .job import ledger, receipt
     job = ledger.resolve(args.job)
+    if args.card:
+        sys.stdout.write(receipt.card(receipt.build(job, args.transcript, args.host, args.whole_session)))
+        return 0
     if args.print_only:
         rec = receipt.build(job, args.transcript, args.host, args.whole_session)
         if args.json:

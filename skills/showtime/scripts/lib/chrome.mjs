@@ -174,10 +174,11 @@ async function playwright() {
  * @param {'system'|'playwright'} [o.prefer='system']
  * @param {string[]} [o.args]          extra flags
  * @param {number} [o.timeout=60000]
+ * @param {boolean} [o.ownSignals=false]  the caller handles SIGINT/SIGTERM and closes the browser itself
  * @returns {Promise<{browser, executablePath, kind, flags, version}>}
  */
 export async function launchBrowser(o = {}) {
-  const { gpu = 'auto', headless = true, prefer = 'system', args = [], timeout = 60000 } = o;
+  const { gpu = 'auto', headless = true, prefer = 'system', args = [], timeout = 60000, ownSignals = false } = o;
   const { chromium } = await playwright();
   const flags = [...chromeFlags(gpu), ...args];
   const bundledCandidates = () => {
@@ -209,6 +210,9 @@ export async function launchBrowser(o = {}) {
           // Chrome). The headless shell and system browsers are launched by path.
           ...(cand.path ? { executablePath: cand.path } : { channel: 'chromium' }),
           args: flags,
+          // ownSignals: the caller handles Ctrl-C and SIGTERM (render removes its frames first); Playwright's own
+          // handlers would close the browser and exit at once
+          ...(ownSignals ? { handleSIGINT: false, handleSIGTERM: false } : {}),
           timeout,
         });
         const version = browser.version();

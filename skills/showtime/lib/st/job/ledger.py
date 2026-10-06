@@ -1155,6 +1155,34 @@ def qa_of(data: Dict[str, Any], video: Optional[Path]) -> Dict[str, Any]:
     return rec if isinstance(rec, dict) and rec.get("verdict") else qa
 
 
+def qa_own(data: Dict[str, Any], video: Path) -> Optional[Dict[str, Any]]:
+    """The latest qa record of this very file (None when qa never ran on it; never the job's verdict on another)."""
+    vr = str(Path(video).resolve())
+    qa = data.get("qa") or {}
+    if qa.get("video") and str(Path(str(qa["video"])).resolve()) == vr and qa.get("verdict"):
+        return qa
+    rec = (data.get("qa_files") or {}).get(vr) if isinstance(data.get("qa_files"), dict) else None
+    return rec if isinstance(rec, dict) and rec.get("verdict") else None
+
+
+def qa_gate_error(job: Path, data: Dict[str, Any], final: Path) -> Optional[Dict[str, str]]:
+    """{reason, report, fix} when the final being delivered failed its latest qa (the deliver gate), else None.
+
+    WARN passes, and so does a final qa never checked (a job with no video qa can run on, or recorded before
+    its qa, stays deliverable as before); only a FAIL that is the file's latest verdict refuses."""
+    rec = qa_own(data, final)
+    if not rec or rec.get("verdict") != "FAIL":
+        return None
+    rules = _qa_rules(rec.get("report"), "FAIL")
+    n = rec.get("fail")
+    reason = "the latest qa of %s is FAIL (%s%s)" % (
+        final.name, "%s failing check%s" % (n, "" if n == 1 else "s") if n is not None else "failing checks",
+        ": " + ", ".join(rules) if rules else "")
+    return {"reason": reason, "report": str(rec.get("report") or ""),
+            "fix": "fix the FAIL findings, re-render, then showtime qa %s (a PASS or WARN on the file you deliver "
+                   "clears this)" % job.name}
+
+
 # ------------------------------------------------------------------ views
 
 def last_output(job: Path, data: Dict[str, Any]) -> Optional[Tuple[str, str]]:

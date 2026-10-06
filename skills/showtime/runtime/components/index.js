@@ -24,6 +24,7 @@ export { LogoReveal, EndCard } from './end-card.js';
 export { FeatureGrid } from './feature-grid.js';
 export { ChatThread, Notifications } from './bubbles.js';
 export { Steps } from './steps.js';
+export { QuestionBeat } from './question-beat.js';
 export { KenBurns } from './ken-burns.js';
 export { Camera } from './camera.js';
 export { Fit } from './fit.js';

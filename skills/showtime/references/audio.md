@@ -29,7 +29,8 @@ Everything runs locally. Every command has `--help` with examples, and most acce
 - Compose: every section marker lands on a downbeat, the file is exactly `--dur`, and the logo goes
   on `end_hit` (take it from `mix.report.json`, not the cache); try 2 or 3 `--seed`s (§2, §5)
 - Read `mix.report.json` before you listen: `voice_to_music_db` aim 10–20; an sfx `above_bed_db` under 0 dB is
-  probably masked; read the warnings (§5)
+  probably masked; read the warnings. After the render `showtime qa` measures the voice over the music line by
+  line from the narration stem, plus silences, jumps at cuts and a cut-off ending (§6)
 - CC-BY items must be credited: `showtime render` writes `credits.txt` and a Credits block in `share.txt`
   (paste into the description); `--license cc0` avoids the question; a music `file` with no license match
   warns (§4, §5)
@@ -42,13 +43,13 @@ Everything runs locally. Every command has `--help` with examples, and most acce
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| 1. The five-minute path | 53-67 |
-| 2. Music | 69-124 |
-| 3. Sound effects | 126-142 |
-| 4. Library | 144-191 |
-| 5. The mix spec (audio/mix.json): Credits | 193-291 |
-| 6. Analysis and delivery | 293-309 |
-| 7. Platform notes | 311-321 |
+| 1. The five-minute path | 54-68 |
+| 2. Music | 70-125 |
+| 3. Sound effects | 127-143 |
+| 4. Library | 145-192 |
+| 5. The mix spec (audio/mix.json): Credits | 194-298 |
+| 6. Analysis and delivery | 300-325 |
+| 7. Platform notes | 327-337 |
 
 ## 1. The five-minute path
 
@@ -255,6 +256,12 @@ showtime audio lib index ~/Sounds/MyPack --name mypack --license "vendor-license
   too quiet": a short sfx cannot lift a whole section, and renaming a section changes the arrangement.
 - **`sections`:** optional names for the report. They default to the composed track's sections, or
   5 s windows.
+- **`questions`:** `true` or `{"duck_db": 12, "tick": false, "tick_gain_db": -4}` at the top level. For
+  every stop-and-ask question in showtime.json (`html-export.md` § Questions) it lowers each music and
+  ambience track by `duck_db` through the question's pause and think beat (0.25 s in, 0.4 s out), and
+  with `"tick": true` adds a soft clock tick on each second of the countdown. The times come from the
+  questions (voice cues resolved), so the duck follows a re-voice. A score drawn in code (`ST.score`) is
+  not in the mix: lower it yourself over `ST.questions`.
 - **`master`:**
   - `lufs` (default -14) and `true_peak` (default -1).
   - `engine` is `st` (exact, the default), `loudnorm` (ffmpeg two-pass) or `none`.
@@ -304,6 +311,15 @@ Smart Content ID claims YouTube videos whose description lacks the credit. By ha
 - **`audio meter file [--windows 1] [--ffmpeg]`** gives integrated, short-term max, momentary max,
   LRA, true peak (8x oversampled), sample peak, RMS, clipped runs and DC. `--ffmpeg` cross-checks
   with ffmpeg's ebur128.
+- **The hearing checks of `showtime qa`** run on the delivered file. Render keeps the mix's narration stem
+  (`work/audio/mix.voice.wav`, or `<video>.work/audio/` with `-o`) and its `mix.report.json`; qa lines the stem
+  up with the file's audio and scales it, so the voice and everything else are measured apart after the master
+  and the AAC encode. WARNs: `voice_masked` (a line under 8 dB over the music: deepen the duck, `carve`, or
+  `gain_points` under that line), `quiet_stretch` (near silence over 2 s mid-video: carry it with the bed),
+  `level_jump` (over 6 LU at a cut: even it with `section_gain`/`gain_points`, or make it a designed drop on a
+  section change), `abrupt_end` (the bed still playing on the last frame: `fade_out` or end on `end_hit`).
+  Thresholds: `runtime/thresholds.json` `hearing`. `review-pack` writes all of it for the critic as `audio.txt`
+  and `hearing.png`, with each effect's timing against its cut or CUE (`review.md` §1).
 - **`audio master in -o out [--target youtube|podcast|broadcast|...] [--preset mix|music|voice|none]`**
   normalises to within 0.05 LU with true peak at or below the ceiling. Master to WAV and encode once
   at the end: AAC and MP3 add up to about 0.5 dB of overshoot.

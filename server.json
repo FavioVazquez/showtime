@@ -3,7 +3,7 @@
   "name": "io.github.FavioVazquez/showtime",
   "title": "showtime",
   "description": "Local video studio for your coding agent: scenes, voice, music and captions, on your machine.",
-  "version": "0.3.5",
+  "version": "0.4.0",
   "websiteUrl": "https://faviovazquez.github.io/showtime/",
   "repository": {
     "url": "https://github.com/FavioVazquez/showtime",
@@ -26,7 +26,7 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@faviovazquez/showtime-mcp",
-      "version": "0.3.5",
+      "version": "0.4.0",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"
@@ -42,6 +42,12 @@
           "name": "SHOWTIME_HOME",
           "description": "Where showtime keeps its tools, models and caches (default: ~/.showtime).",
           "format": "filepath",
+          "isRequired": false
+        },
+        {
+          "name": "SHOWTIME_MCP_TOOLS",
+          "description": "all lists every tool (voice, music, transcription ...); default: the ten core tools.",
+          "format": "string",
           "isRequired": false
         }
       ]

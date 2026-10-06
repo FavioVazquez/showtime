@@ -164,6 +164,15 @@ class JobTests(unittest.TestCase):
         (job / "work" / "audio" / "mix.wav").write_bytes(b"x" * 5000)
         (job / "work" / "logs" / "render.log").write_text("ok\n", encoding="utf-8")
         (job / "work" / "my-notes.txt").write_text("mine", encoding="utf-8")
+        # what renders before 0.4.0 left in <stem>.work/ (and studio media in work/renders/): the silent video
+        # copy and the WAV stems; render.json and the logs stay until --all
+        for w in (job / "final.work", job / "work" / "renders" / "animatic.work"):
+            (w / "audio").mkdir(parents=True)
+            (w / "logs").mkdir()
+            (w / "video.mp4").write_bytes(b"x" * 9000)
+            (w / "audio" / "master.wav").write_bytes(b"x" * 4000)
+            (w / "render.json").write_text("{}", encoding="utf-8")
+            (w / "logs" / "render.log").write_text("ok\n", encoding="utf-8")
         (job / "final.mp4").write_bytes(b"video")
         (job / "exports" / "final.reels.mp4").write_bytes(b"video")
         (job / "render.json").write_text(json.dumps({"output": str(job / "final.mp4")}), encoding="utf-8")
@@ -181,6 +190,11 @@ class JobTests(unittest.TestCase):
         showtime("clean", job, "--yes")
         self.assertFalse((job / "work" / "audio").exists())
         self.assertTrue((job / "work" / "logs" / "render.log").is_file())
+        for w in (job / "final.work", job / "work" / "renders" / "animatic.work"):
+            self.assertFalse((w / "video.mp4").exists(), w)
+            self.assertFalse((w / "audio").exists(), w)
+            self.assertTrue((w / "render.json").is_file(), w)
+            self.assertTrue((w / "logs" / "render.log").is_file(), w)
         showtime("clean", job, "--all", "--yes")
         self.assertFalse((job / "work" / "logs").exists())
         for keep in ("final.mp4", "render.json", "exports/final.reels.mp4", "work/my-notes.txt"):

@@ -227,11 +227,23 @@ def cmd_poster(args: argparse.Namespace) -> int:
         ev = "poster at %.2fs" % report["time"] if report.get("time") is not None else "poster from an image"
         if args.bake:
             ev += " baked into %s" % out.name
-        job = _record(video, outs, stage="deliver" if (args.bake or args.cover) else None, event=ev, baked=baked)
+        held = None
+        if args.bake or args.cover:
+            from .cli_job import deliver_block
+            gjob = ledger.enclosing_job(video)
+            # the deliver stage is recorded only when job note --stage deliver would record it (the files are kept)
+            held = deliver_block(gjob, files=[out, video]) if gjob is not None else None
+        job = _record(video, outs, stage="deliver" if (args.bake or args.cover) and not held else None, event=ev,
+                      baked=baked)
         if job is not None:
             report["job"] = str(job)
             if args.bake or args.cover:
                 log("job %s: latest %s -> %s" % (job.name, kind, out.name))
+            if held:
+                from .cli_job import deliver_held_line
+                report["delivered"] = False
+                report["held"] = {"reason": held["reason"], "fix": held["fix"]}
+                sys.stderr.write(deliver_held_line(job, held) + "\n")
     if args.json:
         print_json(report)
     else:
@@ -277,15 +289,22 @@ def cmd_exports(args: argparse.Namespace) -> int:
                          loudnorm=not args.no_loudnorm, trim=args.trim, preview=args.preview,
                          pad_color=pad, max_mb=args.max_mb, start=args.start, end=args.end,
                          width=args.width, fps=args.fps, lufs=lufs, lufs_source=lsrc)
+    held = None
     if job is not None and (job / "job.json").is_file():
+        from .cli_job import deliver_block
+        # the deliver stage is recorded only when job note --stage deliver would record it (the exports are kept)
+        held = deliver_block(job, files=[video])
         try:
             from .job import ledger
-            ledger.note(job, stage="deliver", event="exports of %s: %s" % (
-                video.name, ", ".join(r["target"] for r in rep["exports"])))
+            ledger.note(job, stage=None if held else "deliver", event="exports of %s: %s%s" % (
+                video.name, ", ".join(r["target"] for r in rep["exports"]), " (not marked delivered)" if held else ""))
             from .job import receipt
-            receipt.refresh(job)
+            receipt.refresh(job, share=not held)   # the share.txt line waits for the delivery
         except Exception:  # noqa: BLE001
             pass
+        if held:
+            rep["delivered"] = False
+            rep["held"] = {"reason": held["reason"], "fix": held["fix"]}
     from .cli_job import _review_of
     review = _review_of(job, video)
     if review is not None:
@@ -310,10 +329,21 @@ def cmd_exports(args: argparse.Namespace) -> int:
             for n in r.get("notes") or []:
                 print("          note: %s" % n)
         _exports_card(rep)
-    if review and review.get("pending"):
+    if held:
+        from .cli_job import deliver_held_line
+        sys.stderr.write(deliver_held_line(job, held) + "\n")
+    if review and (review.get("pending") or review.get("warn")) \
+            and not (held and held["gate"] == "findings"):   # the held line already names the open findings
         from .job import review_state
-        # stderr: the export itself is fine; the job's quality-mode critic round is still open
-        sys.stderr.write(review_state.pending_line(review) + "  (exported before the critic round)\n")
+        # stderr: the export itself is fine; the job's critic round, or a finding of it, is still open
+        line = review_state.pending_line(review)
+        if line:
+            sys.stderr.write(line + ("  (exported with critic findings open; job note --stage deliver waits for them)"
+                                     if (review.get("findings") or {}).get("open") else
+                                     "  (exported before the critic round)") + "\n")
+    if job is not None:
+        from .cli_job import _notes_warning
+        _notes_warning(job)          # the person's open notes on the video (showtime review): a warning only
     return 0
 
 

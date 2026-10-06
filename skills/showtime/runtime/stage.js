@@ -901,7 +901,9 @@
       injectStyle();
       watchClips();
       await race(docLoaded(), 30000, 'page load event').catch(function (e) { reportError('ready', e); });
-      await race(preloadFonts(), 20000, 'fonts').catch(function (e) { reportError('ready', e); });
+      // 60 s like the author gates below: a look signature's faces on a cold, busy 4-core runner (Windows on Arm,
+      // check's several pages at once) took over 20 s, which failed check while the render of the same page passed
+      await race(preloadFonts(), 60000, 'fonts').catch(function (e) { reportError('ready', e); });
       emojify();
       await decodeImages();
       await videosLoaded();

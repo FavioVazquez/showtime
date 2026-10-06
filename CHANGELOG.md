@@ -5,7 +5,7 @@ All notable changes to showtime. Each entry says what changed and why, so this f
 `skills/showtime/lib/st/__init__.py` and `python3 scripts/check_release.py` keeps the plugin manifests, the registry files and
 `setup/package.json` in sync with it.
 
-## Unreleased (0.4.0)
+## 0.4.0 (2026-10-05)
 
 - **Videos that stop and ask.** showtime.json `"questions"` lists stop-and-ask questions: `{id, at, prompt, choices,
   answer, reply, think}`. `at` is seconds or a voice cue (the id of a narration line, `"ask"`, `"ask.start"`,

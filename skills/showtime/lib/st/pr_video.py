@@ -17,6 +17,7 @@ import math
 import os
 import re
 import time
+import urllib.parse
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -295,7 +296,7 @@ def normalize_meta(d: Dict[str, Any]) -> Dict[str, Any]:
     """`gh pr view --json ...` output or a REST `pulls/N` object -> one shape."""
     author = d.get("author") or d.get("user") or {}
     url = d.get("url") or d.get("html_url") or ""
-    if "api.github.com" in url:
+    if (urllib.parse.urlparse(url).hostname or "").lower() == "api.github.com":   # a REST object's API url
         url = d.get("html_url") or ""
     repo, number = parse_pr_ref(url)
     files = []

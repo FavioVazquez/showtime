@@ -35,7 +35,7 @@
   function videoSource() {
     var v = D.createElement('video');
     v.preload = 'auto'; v.playsInline = true; v.setAttribute('playsinline', ''); v.setAttribute('aria-hidden', 'true');
-    v.src = CFG.src;
+    v.src = '/video/' + encodeURIComponent(String(CFG.media || ''));   // the server's own route, never a URL from the page
     stage.insertBefore(v, layer);
     var s = {
       kind: 'video', el: v,
@@ -61,7 +61,7 @@
   function exportSource() {
     var f = D.createElement('iframe');
     f.title = 'video'; f.setAttribute('tabindex', '-1'); f.setAttribute('aria-hidden', 'true');
-    f.src = CFG.src;
+    f.src = '/export/' + encodeURIComponent(String(CFG.media || ''));   // the server's own route, never a URL from the page
     stage.insertBefore(f, layer);
     var P = null;
     var s = {

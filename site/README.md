@@ -86,9 +86,9 @@ Do these once, in order, when the repository goes public.
    `https://github.com/FavioVazquez/showtime-examples/releases/download/<that tag>/`; if the tag changes,
    regenerate them (`python3 scripts/publish_media.py --links`).
 3. **Launch film.** `python3 scripts/publish_media.py --upload` (in showtime-examples) publishes the films in `examples/_launch/`
-   (16:9, 1:1, 9:16 and the HTML video) and `examples/_showreel/` (the 0.3.0 showreel and its HTML video)
-   with the rest of the media. The landing page loops the showreel's silent teaser
-   (`examples/_showreel/teaser-16x9.mp4` and `.webm`, in git) over its still (`teaser-16x9.jpg`), and its
+   (16:9, 1:1, 9:16 and the HTML video), `examples/_showreel/` (the 0.3.0 showreel and its HTML video) and
+   `examples/_showreel041/` (the 0.4.1 showreel) with the rest of the media. The landing page loops the 0.4.1
+   showreel's silent teaser (`examples/_showreel041/teaser-16x9.mp4` and `.webm`, in git) over its still (`teaser-16x9.jpg`), and its
    one button, "Watch the film", plays `showreel-16x9.mp4` with sound (downloaded from the release at deploy
    time); `hero` in `config.json` names these files. The 0.2.0 launch film plays at the top of the gallery
    (`gallery.html#launch-film`) and the crew film on the crew page (`crew.html#film`). Viewers who ask for

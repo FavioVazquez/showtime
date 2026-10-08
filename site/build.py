@@ -555,7 +555,7 @@ def shell(site: Site, page: str, title: str, body: str, active: str = "", desc: 
 <footer class="site"><div class="wrap">
 <span><span class="word">showtime</span>&nbsp; {version}, MIT licensed. A local video studio for your coding agent.</span>
 <nav aria-label="Footer"><a href="{gallery}">Examples</a><a href="{crew}">Crew</a><a href="{docs}">Docs</a>{exrepo}</nav>
-<span>No trackers, no cookies. Fonts are served from this site. Film music by Scott Buckley, CC BY 4.0: \u201cBorn Of The Sky\u201d (the 0.3.0 showreel), \u201cWith These Hands\u201d (the launch film), \u201cArtemis\u201d (the crew film).</span>
+<span>No trackers, no cookies. Fonts are served from this site. Film music by Scott Buckley, CC BY 4.0: \u201cSupernova\u201d (the 0.4.1 showreel), \u201cWith These Hands\u201d (the launch film), \u201cArtemis\u201d (the crew film).</span>
 </div></footer>
 <script src="{js}"></script>
 </body>

@@ -11,14 +11,15 @@
   "marketplace": "FavioVazquez/showtime",
   "description": "A local video studio for your coding agent. Describe a video. Your agent directs. Your machine renders. No cloud AI services, no API keys, no uploads.",
   "hero": {
-    "folder": "examples/_showreel",
+    "folder": "examples/_showreel041",
     "film": "showreel-16x9.mp4",
     "_film": "A release asset (examples/MEDIA.json); the workflow downloads it. The hero band loops the silent teaser in that folder (teaser-16x9.webm and .mp4) and the button plays this film with sound.",
-    "poster": "examples/_showreel/teaser-16x9.jpg",
+    "poster": "examples/_showreel041/teaser-16x9.jpg",
     "_poster": "The hero band's still: shown until the teaser plays, and alone when the viewer asks for reduced motion.",
-    "length": "0:50",
-    "label": "The showtime 0.3.0 showreel",
-    "credit": "The 0.3.0 showreel, rendered by showtime on one machine; every shot names the feature it uses. Music: \u201cBorn Of The Sky\u201d by Scott Buckley, <a href=\"https://creativecommons.org/licenses/by/4.0/\">CC BY 4.0</a>. CO2 data: NOAA GML / Scripps.",
+    "length": "0:55",
+    "label": "The showtime 0.4.1 showreel",
+    "credit": "The 0.4.1 showreel: seven real showtime films, then the features behind them on the beat, rendered by showtime on a CPU with no GPU. Music: \u201cSupernova\u201d by Scott Buckley, <a href=\"https://creativecommons.org/licenses/by/4.0/\">CC BY 4.0</a>. Footage: NASA (public domain). Event data: IceCube Collaboration.",
+    "_showreel": "The 0.3.0 showreel stays in examples/_showreel (its links keep working).",
     "_launch": "The 0.2.0 launch film (examples/_launch) plays at the top of the gallery, gallery.html#launch-film."
   }
 }

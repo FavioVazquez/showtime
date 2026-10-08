@@ -119,8 +119,11 @@ class StillsFromAVideo(Tmp):
 
     def test_the_source_and_the_video_frame(self):
         self.assertPatches(self.src, "source PNG")
+        # the frame as showtime pulls a PNG still (ff.still_args): ffmpeg's default conversion out of 4:2:0 is
+        # not exact and differs by CPU (its plain C path, used on arm64 builds, reads each patch 2-3 levels darker
+        # than x86's SIMD path; with exact rounding both match)
         png = self.tmp / "frame-out.png"
-        ff.run_ffmpeg(["-ss", "0.5", "-i", self.video, "-frames:v", "1", png])
+        ff.run_ffmpeg(["-ss", "0.5", "-i", self.video, "-frames:v", "1"] + ff.still_args(png) + [png])
         self.assertPatches(png, "video frame as PNG")
 
     def test_deliver_poster_jpeg(self):

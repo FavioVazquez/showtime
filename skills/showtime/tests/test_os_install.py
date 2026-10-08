@@ -200,6 +200,16 @@ class TestForceVenv(Tmp):
         self.assertIn("a running showtime process uses it", detail)
         self.assertIn("MCP server", detail)
 
+    def test_a_venv_python_that_cannot_start_is_recreated_not_a_crash(self):
+        # a half-deleted venv, or (Windows) a python.exe that is not a runnable binary: WinError 216
+        su = setup_mod()
+        home = self.tmp / "home"
+        args = su.parse_args(["--home", str(home)])
+        inst = su.Installer(args)
+        inst.vpy.parent.mkdir(parents=True)
+        inst.vpy.write_bytes(b"MZ")           # not executable on POSIX, not a valid image on Windows
+        self.assertIsNone(inst._venv_says("print(1)"))
+
     def test_launchers_run_setup_outside_the_venv(self):
         cmd = (SKILL / "bin" / "showtime.cmd").read_text(encoding="utf-8")
         self.assertLess(cmd.index('if /i "%~1"=="setup" goto findpy'), cmd.index('goto venv'))

@@ -1116,6 +1116,15 @@ class Installer:
         h.update(("|".join(sorted(extra)) + "|" + python_request(self.key)).encode())
         return h.hexdigest()[:16]
 
+    def _venv_says(self, code: str) -> Optional[str]:
+        """What the venv's python prints for `code`, or None when it cannot run: a half-deleted venv, or a
+        python.exe for another architecture (WinError 216) is a venv to recreate, not a setup crash."""
+        try:
+            cp = run([str(self.vpy), "-c", code], timeout=300)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        return cp.stdout.strip() if cp.returncode == 0 else None
+
     def step_python(self) -> Tuple[str, str]:
         uv = self.find_uv()
         if not uv:
@@ -1123,15 +1132,11 @@ class Installer:
         venv = self.home / "venv"
         env = dict(self.env_common)
         env.setdefault("UV_PYTHON_DOWNLOADS", "automatic")
-        pyv = None
-        if self.vpy.exists():
-            cp = run([str(self.vpy), "-c", "import sys; print('%d.%d' % sys.version_info[:2])"])
-            pyv = cp.stdout.strip() if cp.returncode == 0 else None
-        why = "--force" if self.args.force else ("python %s" % pyv if pyv != PY_VERSION else "")
+        pyv = self._venv_says("import sys; print('%d.%d' % sys.version_info[:2])") if self.vpy.exists() else None
+        why = "--force" if self.args.force else ("python %s" % (pyv or "unknown") if pyv != PY_VERSION else "")
         want_plat = VENV_PLATFORM.get(self.key)
         if not why and want_plat:
-            cp = run([str(self.vpy), "-c", "import sysconfig; print(sysconfig.get_platform())"])
-            have = cp.stdout.strip()
+            have = self._venv_says("import sysconfig; print(sysconfig.get_platform())")
             if have != want_plat:
                 why = "%s Python, %s needed" % (have or "unknown", want_plat)
         trash = self.home / "cache" / "trash"

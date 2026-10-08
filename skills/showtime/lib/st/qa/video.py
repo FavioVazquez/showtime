@@ -977,12 +977,22 @@ def _check_hearing(F: Findings, vpath: Path, loud: Dict[str, Any], dur: float, p
             hearing.check_readback(F, rb)
         return
     h["readback"] = rb
+    if isinstance(h.get("speaker"), dict):
+        h["speaker"]["showtime_mix"] = mp is not None or _score_bed(vpath)
     hearing.check(F, h)
     hearing.check_readback(F, rb)
     h["summary"] = hearing.summary(h)
     h["mix_report"] = str(mp) if mp else None
     rep["hearing"] = h
     loud.setdefault("_curves", {})["blocks"] = blk
+
+
+def _score_bed(vpath: Path) -> bool:
+    """The render played an ST.score bed (render.json audio.sources), so showtime made its soundtrack."""
+    from . import review
+    rj = review.render_report(vpath)
+    au = rj.get("audio") if isinstance(rj, dict) else None
+    return isinstance(au, dict) and "score" in (au.get("sources") or [])
 
 
 def _readback(vpath: Path, proj: Optional[Path], say: Any) -> Optional[Dict[str, Any]]:

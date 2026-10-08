@@ -723,6 +723,23 @@ def _overlay_graph(ctx: Ctx, first_input: int) -> Tuple[List[str], List[str], st
                          % (cur, n, o["start"], o["start"] + o["duration"], n))
             cur = "[vo%d]" % n
             continue
+        if o.get("reel_frames"):
+            # a card of the card reel: its frames by number, on the output's frames by number. Seeking by time
+            # (-ss offset, then setpts start/TB) could skip the card's first reel frame or truncate its start a
+            # frame early, so its last frame went missing (a behind card's speaker on a bare plate for a frame)
+            from . import behind as BH
+            from .cutout import seek_for_frame
+            at, nf = o["reel_frames"]
+            f0 = int(round(o["start"] * float(ctx.fps)))
+            args += ["-ss", "%.6f" % seek_for_frame(at, ctx.fps), "-t", "%.6f" % float(Fraction(nf + 1) / ctx.fps),
+                     "-i", str(o["file"])]
+            parts.append("[%d:v]format=rgba,scale=%d:%d,trim=end_frame=%d,settb=expr=%s,setpts=N+%d[ov%d]"
+                         % (k, W, H, nf, BH.fps_tb(ctx.fps), f0, n))
+            parts.append("%s[ov%d]overlay=x=0:y=0:eof_action=pass:enable='between(n,%d,%d)'[vo%d]"
+                         % (cur, n, f0, f0 + nf - 1, n))
+            cur = "[vo%d]" % n
+            k += 1
+            continue
         if o["image"]:
             args += ["-loop", "1", "-framerate", fps, "-t", "%.6f" % o["duration"], "-i", str(o["file"])]
         else:
@@ -914,7 +931,9 @@ def render(edl_path, out=None, *, preview: bool = False, overwrite: bool = False
         info("replacing %s (--overwrite)" % out.name)
     ensure_dir(out.parent)
     shared = ensure_dir(base_dir / "work" / edl_path.stem)
-    work = ensure_dir(shared / out.stem)
+    # per-output intermediates; a clip is named like its EDL (01-<title>.json -> 01-<title>.mp4), and the name twice
+    # put its temp files past Windows' 260-character path limit when long paths are off (LibsndfileError)
+    work = ensure_dir(shared / (out.stem if out.stem != edl_path.stem else "render"))
     # captions and cards need transcripts: fail early, before any encode
     transcripts = E.load_transcripts(edl, required=bool(captions and edl["captions"]) or bool(edl.get("cards")))
     cards: List[Dict[str, Any]] = []

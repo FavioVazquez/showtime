@@ -46,12 +46,12 @@ Everything runs locally. Kokoro is the default engine. It gives exact word timin
 | Word budgets | 124-135 |
 | Script → timeline → scenes (timing-driven editing) | 137-190 |
 | Captions from TTS timings | 192-198 |
-| Pronunciation fixes | 200-238 |
-| Aligning a recorded voice (or another engine's output) | 240-255 |
-| Mastering | 257-273 |
-| Engines and licensing | 275-285 |
-| Performance (measured on a 6-core Intel i5-8500, CPU only, load ~3) | 287-302 |
-| Platform notes and troubleshooting | 304-317 |
+| Pronunciation fixes | 200-242 |
+| Aligning a recorded voice (or another engine's output) | 244-259 |
+| Mastering | 261-277 |
+| Engines and licensing | 279-289 |
+| Performance (measured on a 6-core Intel i5-8500, CPU only, load ~3) | 291-306 |
+| Platform notes and troubleshooting | 308-321 |
 
 ## Commands
 
@@ -229,13 +229,17 @@ read-back: 1 word heard differently in 7 lines ("Open A I" as "OpenI")
         fix: the voice reads a lone "A" as the article ("uh") and swallows it: write the name as one word (OpenAI) ...
 ```
 
-What to do with a WARN:
-- Run `showtime voice ipa "Word"` to see what the voice is told. Fix the word with a lexicon `say` or `ipa` entry, or write it the way the voice reads it right, then rerun `voice script` until the read-back passes. Do not ship a line it flags.
-- Do not spell names letter by letter with a lone "A" ("Open A I"): espeak reads it as the article and the voice swallows it. Write the name as one word ("OpenAI"), or give it a lexicon entry.
-- `readback.json` (next to `vo.wav`) has each line's script and heard text, and for each flagged word what the voice was told (`said`) and what was heard (`heard_sounds`). The recognizer can also miss a rare name the voice said right. When `heard_sounds` is what you meant, say so in the delivery note and move on.
-- qa checks the same thing on the project's `voice/vo.wav` (the `readback` item, § Hearing in qa.md), and review-pack puts the table into the critic's `audio.txt`.
+The recognizer can also respell a rare name the voice said right (Parakeet writes "JSO" for a good "JSON"). So a line with a flagged word is heard once more by a second recognizer when one is installed (Whisper small.en for English; it never downloads one). The note after the word says what it heard: `Whisper small.en hears it as written` (the voice is likely right) or `also hears "JSO"`.
 
-It runs for the 25 languages of the local recognizer (Parakeet v3, English and Spanish included) and is skipped, with a note, when the recognizer is not installed (`showtime setup --fetch parakeet-tdt-0.6b-v3-int8`, about 490 MB; it never downloads on its own). `--no-readback` or `SHOWTIME_READBACK=0` turns it off.
+What to do with a WARN:
+- Do not ship a line it flags until someone listened to it. The clip is `lines/NN-id.wav`.
+- If it sounds wrong, run `showtime voice ipa "Word"` to see what the voice is told. Fix the word with a lexicon `say` or `ipa` entry, or write it the way the voice reads it right, then rerun `voice script` until the read-back passes.
+- If it sounds right, clear the word in the project's `showtime.json`: `"readback": {"ok": ["JSON"]}`. `voice script`, `voice say` and qa then list it as cleared, not as a WARN. Clear only words someone listened to.
+- Do not spell names letter by letter with a lone "A" ("Open A I"): espeak reads it as the article and the voice swallows it. Write the name as one word ("OpenAI"), or give it a lexicon entry.
+- `readback.json` (next to `vo.wav`) has each line's script and heard text, and for each flagged word what the voice was told (`said`), what was heard (`heard_sounds`) and the second recognizer's verdict (`confirmed`, `second`).
+- qa checks the same thing on the project's `voice/vo.wav` (the `readback` item, § Hearing in qa.md), and review-pack puts the table into the critic's `audio.txt`. qa FAILs a word only when it is a name in the title, the brand or the project lexicon and the second recognizer also heard it differently; otherwise it is a WARN.
+
+It runs for the 25 languages of the local recognizer (Parakeet v3, English and Spanish included) when that recognizer is installed: it arrives with the first transcription, or `showtime setup --fetch parakeet-tdt-0.6b-v3-int8` (about 490 MB; the read-back never downloads it on its own). Without it the read-back is skipped with a note. `--no-readback` or `SHOWTIME_READBACK=0` turns it off, for example when a flag is wrong and you cannot clear the word in `showtime.json`.
 
 ## Aligning a recorded voice (or another engine's output)
 

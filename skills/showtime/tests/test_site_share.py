@@ -189,14 +189,17 @@ class ExampleLinks(unittest.TestCase):
             self.assertTrue(links, f)
             self.assertEqual([u for u in links if not u.startswith(want)], [], f)
 
-    def test_rebuild_steps_keep_the_template_look(self):
+    def test_rebuild_steps_pin_the_look(self):
+        # a rebuild starts in the look the example was made in: the template's own (--look template, the examples
+        # made before look signatures) or the signature it used (--look tidewater); without --look, `new` picks one
         lines = []
         for f in sorted(EXAMPLES.glob("[0-9][0-9]-*/README.md")):
             for ln in f.read_text(encoding="utf-8").splitlines():
                 if re.match(r"^showtime new (dom|launch|short|data) <", ln):
                     lines.append((f.parent.name, ln))
         self.assertGreaterEqual(len(lines), 12)
-        self.assertEqual([x for x in lines if "--look template" not in x[1]], [])
+        self.assertEqual([x for x in lines if not re.search(r"--look [a-z][a-z0-9-]*", x[1])], [])
+        self.assertGreaterEqual(sum(1 for x in lines if "--look template" in x[1]), 12)
 
 
 if __name__ == "__main__":

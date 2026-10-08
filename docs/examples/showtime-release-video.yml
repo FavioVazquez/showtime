@@ -34,7 +34,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - id: video
-        uses: FavioVazquez/showtime/.github/actions/showtime-video@v0.4.0
+        uses: FavioVazquez/showtime/.github/actions/showtime-video@v0.4.1
         with:
           mode: release
           # a published release: its tag, name and description come from the event; by hand: these
@@ -69,7 +69,7 @@ jobs:
 #       runs-on: ubuntu-24.04
 #       timeout-minutes: 30
 #       steps:
-#         - uses: FavioVazquez/showtime/.github/actions/showtime-video@v0.4.0
+#         - uses: FavioVazquez/showtime/.github/actions/showtime-video@v0.4.1
 #           with:
 #             upload: artifact
 #
@@ -78,7 +78,7 @@ jobs:
 # showtime.json), rendered on every push to main that changes it:
 #
 #         - uses: actions/checkout@v7
-#         - uses: FavioVazquez/showtime/.github/actions/showtime-video@v0.4.0
+#         - uses: FavioVazquez/showtime/.github/actions/showtime-video@v0.4.1
 #           with:
 #             mode: project
 #             project: videos/launch
@@ -91,7 +91,7 @@ jobs:
 #
 #         - uses: actions/checkout@v7
 #         - run: npm install -g @your-agent/cli
-#         - uses: FavioVazquez/showtime/.github/actions/showtime-video@v0.4.0
+#         - uses: FavioVazquez/showtime/.github/actions/showtime-video@v0.4.1
 #           env:
 #             YOUR_AGENT_API_KEY: ${{ secrets.YOUR_AGENT_API_KEY }}
 #           with:

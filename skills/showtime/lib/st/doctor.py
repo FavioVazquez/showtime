@@ -369,6 +369,13 @@ class Doctor:
         if not vpy.exists():
             self.add("python venv", FAIL, "%s missing" % vpy, "run `showtime setup`")
             return
+        vc_missing = plat.missing_vc_runtime(vpy) if plat.IS_WINDOWS else []
+        if vc_missing:
+            # before the imports: onnxruntime's "DLL load failed" says nothing about the cause
+            self.add("vc++ runtime", FAIL, "Microsoft Visual C++ 2015-2022 x64 runtime not found (%s do not load)"
+                     % ", ".join(vc_missing), plat.vc_runtime_fix(vc_missing))
+        elif plat.IS_WINDOWS:
+            self.add("vc++ runtime", PASS, "Microsoft Visual C++ 2015-2022 runtime (%s)" % ", ".join(plat.VC_DLLS))
         mods = REQUIRED_MODULES + OPTIONAL_MODULES + (MAC_MODULES if plat.IS_MAC else [])
         extras = set((self.state.get("installed") or {}).get("extras", []))
         if "supertonic" in extras:
@@ -407,8 +414,10 @@ class Doctor:
                          if res.get(m, {}).get("ok") and m in ("numpy", "onnxruntime", "ctranslate2", "faster_whisper",
                                                                "kokoro_onnx", "sherpa_onnx", "cv2", "librosa"))
         if bad_req:
+            errs = " ".join(str(res.get(m, {}).get("error", "")) for m in bad_req)
+            dll = plat.vc_runtime_fix(vc_missing) if vc_missing and "DLL load failed" in errs else plat.explain_dll_error(errs)
             self.add("python packages", FAIL, "; ".join("%s (%s)" % (m, res.get(m, {}).get("error", "?")) for m in bad_req),
-                     "run `showtime setup --force`")
+                     dll or "run `showtime setup --force`")
         else:
             self.add("python packages", PASS, "%d required imports OK in %.1fs (%s)" % (
                 len(REQUIRED_MODULES), time.time() - t0, vers), versions={m: res[m].get("version") for m in res
@@ -489,6 +498,10 @@ class Doctor:
         else:
             self.add("ffmpeg features", PASS, "libx264, libass (subtitles/ass), drawtext, loudnorm, ebur128, xfade, "
                                               "zscale, vid.stab, arnndn, rubberband")
+        if caps.get("too_old"):
+            self.add("ffmpeg version", WARN, "%s is too old for showtime (%s): footage splices, rotated phone video "
+                     "and some audio steps fail with it" % (info.version, ", ".join(caps["too_old"])),
+                     ff.TOO_OLD_FIX + " (ffmpeg %d.%d or newer works)" % ff.MIN_VERSION)
         if self.args.quick:
             return
         t0 = time.time()

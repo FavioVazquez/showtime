@@ -1,0 +1,41 @@
+name: Feature idea
+description: Something showtime should do. Read .out-of-scope/ in the repository first.
+title: "[feature] "
+labels: ["type: feature", "status: triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        An idea that is still loose fits the Ideas discussions better: https://github.com/FavioVazquez/showtime/discussions/categories/ideas
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to make, and what gets in the way?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help
+      description: The command, option or behaviour you have in mind, if you have one.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Rendering and looks
+        - Voice
+        - Music and sound
+        - Footage editing
+        - Export and delivery
+        - Checks and review
+        - Install and agents
+        - Docs
+        - Not sure
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Fits showtime
+      options:
+        - label: It works locally, with no API keys, no uploads and no required GPU (see .out-of-scope/).
+          required: true

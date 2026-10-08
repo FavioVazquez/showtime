@@ -81,5 +81,5 @@ French final render 2 min 15 s, on a 6-core Intel Mac.
 
 [Example 03](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/03-explainer-heat-pump-es) (the heat pump explainer in Spanish) and
 [example 13](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/13-wikipedia-waggle-dance) (English and French).
-<!-- example: 26 -->
-The full workflow is [localize.md](../../skills/showtime/references/workflows/localize.md).
+[Example 26](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/26-nobel-chemistry-en-es) is a 2:30 explainer and its Spanish version: every string,
+a Spanish voice and captions, the same numbers. The full workflow is [localize.md](../../skills/showtime/references/workflows/localize.md).

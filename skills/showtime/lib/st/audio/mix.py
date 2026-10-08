@@ -36,6 +36,9 @@ Track fields
   at, align  place the source's hit|start|end|peak at `at` (hit is measured or given as `hit`)
   loop       true: loop (bar-aligned when a beat grid is known) to fill the window
   fit        true: loop or trim musically to exactly fill the window (music)
+  ending     with fit, how a trimmed track ends (as `audio fit --ending`): "auto" (default: on a
+             downbeat, with a short decay), "song" (the track's own last bars spliced in at a downbeat,
+             so it ends on its cadence and final hit) or "fade"; an ending implies fit
   fade_in, fade_out, pan (-1..1)
   duck       {"under": kinds or track ids, "depth_db": 12, "attack": 0.08, "release": 0.5,
               "hold": 0.3, "lookahead": 0.12, "carve": 0..1}; the key can be any tracks (voice, a
@@ -706,6 +709,9 @@ def source_offset(tr: dict, idx: int, meta: dict) -> Tuple[float, Optional[str]]
     return _num(v, "offset", idx, 0.0, 0.0), None
 
 
+ENDINGS = ("auto", "song", "fade")    # a fitted track's ending (fit.fit, audio fit --ending)
+
+
 def place(tr: dict, idx: int, src: Source, kind: str, N: int, mix_dur: float) -> Tuple[np.ndarray, Dict]:
     x = src.audio
     meta = src.meta
@@ -741,7 +747,13 @@ def place(tr: dict, idx: int, src: Source, kind: str, N: int, mix_dur: float) ->
     dur = _num(tr.get("dur"), "dur", idx, None, 0.0)
     if dur is not None and end is None:
         end = start + dur
-    want_fill = bool(tr.get("loop") or tr.get("fit"))
+    ending = tr.get("ending")
+    if ending is not None:
+        ending = str(ending).strip().lower()
+        if ending not in ENDINGS:
+            raise ShowtimeError('track %d: "ending" must be %s' % (idx, ", ".join('"%s"' % e for e in ENDINGS)),
+                                hint='"ending": "song" keeps the track\'s own last bars (as audio fit --ending song)')
+    want_fill = bool(tr.get("loop") or tr.get("fit") or ending)
     if end is None:
         end = mix_dur if want_fill else min(mix_dur, start + src_dur)
     win = max(0.0, end - start)
@@ -750,7 +762,8 @@ def place(tr: dict, idx: int, src: Source, kind: str, N: int, mix_dur: float) ->
     if want_fill:
         from . import fit as fitmod
         # the grid must match the audio after `offset` (it used to be the file's own, off by the offset)
-        y, finfo = fitmod.fit(x, win, fitmod.shift_beats(meta.get("beats"), offset or 0.0), fade_out=tr.get("fade_out"))
+        y, finfo = fitmod.fit(x, win, fitmod.shift_beats(meta.get("beats"), offset or 0.0), fade_out=tr.get("fade_out"),
+                              ending=ending or "auto")
         info["fit"] = finfo
     else:
         y = x[: int(round(win * SR))]
@@ -1006,7 +1019,7 @@ SPEAKER_HP_HZ = 40.0
 SPEAKER_SHELF_HZ = 160.0         # the bass of a bed (kick, bass line) sits at 60-250 Hz; a phone plays from ~300
 SPEAKER_MAX_CUT_DB = 12.0
 SPEAKER_SUB_SFX_LU = 15.0   # an effect whose loudest moment is this far over its own loudest above 300 Hz (a boom,
-                            # a sub drop, a cinematic impact): measured 17-30 LU, a whoosh or riser 0-4, a thock 11
+                            # a sub drop, a cinematic impact): measured 17-30 LU, a whoosh or riser 0-4, a thock 9-11
 
 
 def _sos_hp(fc: float, fs: int = SR) -> np.ndarray:
@@ -1083,7 +1096,7 @@ def _sub_only(per_track: List[Dict], tracks: List[dict], sub_ids: List[str]) -> 
 
 def _sub_note(alone: List[Dict]) -> str:
     return ("%s %s: %s louder in full than above 300 Hz, so a phone or laptop speaker hardly plays %s. Layer a mid "
-            "transient on the same hit (metal-hit, glitch or static-burst at -8 to -12 dB with \"layer\": \"<id>\"), "
+            "transient on the same hit (static-burst, glitch or tick at -8 to -12 dB with \"layer\": \"<id>\"), "
             "or land it on the bed's crash" % (
                 "effect" if len(alone) == 1 else "effects",
                 ", ".join("%s (%s%s)" % (a["id"], a["name"], " at %.2fs" % a["t"] if a["t"] is not None else "")

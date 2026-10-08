@@ -85,6 +85,20 @@ class TestRepoHygiene(unittest.TestCase):
             self.assertTrue((REPO / name).is_file(), name + " is missing")
         self.assertTrue(list((REPO / ".out-of-scope").glob("*.md")), ".out-of-scope/ has no entries")
 
+    def test_template_sample_urls_are_reserved_names(self):
+        """A template's sample URL (data-url) shows on screen in every video made from it: it must be a reserved
+        name (RFC 2606 / 6761: .example, .test, .invalid, example.com), never a domain someone can own
+        (northwind.app was registered)."""
+        import re
+        bad = []
+        for page in sorted((SKILL / "templates").rglob("*.html")):
+            for url in re.findall(r'data-url="([^"]*)"', page.read_text(encoding="utf-8")):
+                host = re.sub(r"^[a-z]+://", "", url).split("/")[0].split(":")[0].lower()
+                if not (re.search(r"\.(example|test|invalid|localhost)$", host)
+                        or host in ("localhost", "example.com", "example.org", "example.net")):
+                    bad.append("%s: %s" % (page.relative_to(SKILL), url))
+        self.assertEqual(bad, [])
+
     def test_gitattributes_line_endings(self):
         text = (REPO / ".gitattributes").read_text(encoding="utf-8")
         for pat, eol in (("*.sh", "lf"), ("*.py", "lf"), ("*.mjs", "lf"), ("*.md", "lf"),

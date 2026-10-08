@@ -45,15 +45,15 @@ slow, fails, or looks different from the preview; or when you need the exact fla
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| The loop | 58-94 |
-| showtime render <project> | 96-227 |
-| showtime check <project> | 229-288 |
-| showtime snap <project / video> | 290-311 |
-| showtime preview <project> | 313-330 |
-| showtime retime <project> -d <seconds> | 332-381 |
-| Speed | 383-452 |
-| Troubleshooting | 454-468 |
-| Platforms | 470-485 |
+| The loop | 58-95 |
+| showtime render <project> | 97-229 |
+| showtime check <project> | 231-290 |
+| showtime snap <project / video> | 292-313 |
+| showtime preview <project> | 315-332 |
+| showtime retime <project> -d <seconds> | 334-387 |
+| Speed | 389-471 |
+| Troubleshooting | 473-487 |
+| Platforms | 489-504 |
 
 ## The loop
 
@@ -90,7 +90,8 @@ poster as in a full render), recorded as `spliced: 12-18 from final.mp4` and cou
 render. When the old render was encoded with other settings or another ffmpeg, the whole video is encoded once
 instead (old frames decoded, new ones from the capture). With no such render, after a size, fps or length
 change, with `--preview`, `--alpha` or `--size`, or without `--job`, the result is a span clip:
-`<job>/work/span-12-18.mp4` (without a job, `span-12-18.mp4` in a new folder). It is only those seconds: look at
+`<job>/work/span-12-18.mp4` (without a job, `span-12-18.mp4` in a new folder; `-o clip.mp4` without `--job` writes it
+there, in a job folder too, and never splices it; with `--job` the fix is spliced and `-o` is ignored). It is only those seconds: look at
 it (`showtime look <file>`), never deliver it; `qa <job>`, `look <job>` and the ledger skip span clips.
 
 ## `showtime render <project>`
@@ -160,9 +161,10 @@ What happens:
    the capture.
 4. Audio, prepared while frames are captured: `ST.score` rendered offline in its own page, plus
    the showtime.json `audio` (a mix spec goes to `showtime audio mix`; if that module is missing,
-   a built-in mixer handles file tracks with start/offset/gain/fades/loop). The mix is made to be heard
+   a built-in mixer handles file tracks with start/offset/gain/fades/loop). A mix spec is made to be heard
    on a phone speaker: a 40 Hz high-pass on everything but the voice and, on a bass-heavy bed, a low
-   shelf before the loudness normalisation (`audio.md` § Heard on a phone). `"master": {"speaker_safe":
+   shelf before the loudness normalisation (`audio.md` § Heard on a phone); an `ST.score` bed and the
+   built-in mixer are not filtered (turn a score's bass and kick down instead). `"master": {"speaker_safe":
    false}` in showtime.json or the mix turns it off, for a video meant for headphones. Everything is cut to
    the rendered range, padded/trimmed to the exact video length, brought to the loudness target
    (plain gain when the peaks allow it, else gain into an oversampled limiter with at most 6 dB of
@@ -344,7 +346,11 @@ add `"fit": true` to its track. Never retime one scene by hand and leave the res
 
 A scene stretched more than 1.5x gets a warning: it now holds still after its last animation (check
 flags holds of 2.5 s or more), so give it another beat or motion; canvas cue tables warn too, since
-everything runs slower. Retimed transitions never shrink below 0.35 s.
+everything runs slower. Retimed transitions never shrink below 0.35 s. A scene marked
+`data-stretch="spread"` spreads instead when it gets longer: its component start times (`data-at`,
+`data-exit-at`, `"at"` in JSON times) and the poster in it scale with it, lengths stay, so the beats
+move apart at the same speed (the dom template's hero does this; its CSS delays follow through its
+`data-design-dur` script).
 
 `--from-voice <timeline.json>` (from `showtime voice script`; the `voice/` folder works too) sets
 the scene lengths from the narration instead of one length for all:
@@ -407,6 +413,19 @@ A 5 s span of a finished 150 s explainer took 56.6 s the first time and 22.4 s t
 The showreel and launch frames were byte for byte the same as 0.4.0's; the DOM page differed by GPU
 antialiasing noise in 12 of 450 frames (at most 7 levels on a few hundred pixels), as two 0.4.0 runs of it do.
 
+The same three projects on a 64-core Linux machine with no GPU (2026-10-07, 1080p30, best of 2 interleaved runs,
+0.4.0 against 0.4.1):
+
+| Workload (showreel 15 s / DOM page 15 s / launch film 30 s) | 0.4.0 | 0.4.1 |
+|---|---|---|
+| automatic settings (0.4.0: 3 workers; 0.4.1: 8) | 25.3 / 31.8 / 42.0 s | 21.9 / 16.4 / 17.6 s |
+| 8 workers each | 22.5 / 20.2 / 22.8 s | 20.4 / 16.4 / 17.5 s |
+| 16 workers each | 27.4 / 18.7 / 18.2 s | 25.7 / 15.1 / 13.1 s |
+| encode left after the capture (automatic) | 2.2 / 2.0 / 4.5 s | 0.3 / 0.2 / 0.5 s |
+
+The launch film rendered 2.4x faster and the DOM page 1.9x, mostly from the worker count fitted to the machine
+and the encode during the capture; SSIM against the 0.4.0 file was 0.997-0.998 (`veryfast` against `medium`).
+
 Rules of thumb:
 
 - A final render takes about 1-2x the video length at 1080p on a mid-range laptop. `showtime check`
@@ -433,8 +452,8 @@ Rules of thumb:
   full size. `--preview --fps 12` captures 40 % of the frames: the fastest whole-video first look
   (layout, story, timing of cuts; not motion). For stills use `showtime snap` (seconds) and
   `showtime preview` (real time).
-- The shutter blur (`data-st-blur`) costs only on the frames it draws (a snap: 4-7 frames). Measured on the
-  build box (64 cores, no GPU: Chrome 154 rasterizing with SwiftShader, 1 worker, 1920x1080, 8 copies, median
+- The shutter blur (`data-st-blur`) costs only on the frames it draws (a snap: 4-7 frames). Measured on our
+  test machine (64 cores, no GPU: Chrome 154 rasterizing with SwiftShader, 1 worker, 1920x1080, 8 copies, median
   of 3 renders while other jobs ran, load 7-40): a frame took 7.9 ms more with one blurred 150 px word, 13.9
   ms with three and 26.7 ms with six (33-37 ms without); a card with a gradient and a shadow 10.7, 28.1 and
   48.7 ms more. About 3 ms of each element is script (posing, copying, comparing styles), the rest is drawing

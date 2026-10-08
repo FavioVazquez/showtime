@@ -830,6 +830,35 @@ class TestRetimeVoiceAndData(TempDirCase):
         self.assertIn("poster", cp.stdout + cp.stderr)
         self.assertNotRegex(cp.stdout + cp.stderr, r"poster ([\d.]+) -> \1\b")
 
+    def test_spread_scene_moves_its_beats_apart(self):
+        """A scene marked data-stretch="spread" spreads its component start times when it gets longer (data-at,
+        data-exit-at, "at" in JSON times) and keeps the lengths (data-fit, "dur"); poster times in it spread too and
+        the stretch warning leaves it out. A plain scene still keeps its offsets (the dom template's hero held still
+        for 5.4 s at --duration 24)."""
+        from st import cli_core
+        html = ('<section id="hero" data-start="0" data-dur="4" data-stretch="spread">\n'
+                '  <h1 data-st="kinetic-type" data-at="0.5" data-exit-at="2">Hi</h1>\n'
+                '  <p data-st="typewriter" data-at="2.5" data-fit="1.3">typed</p>\n'
+                '  <div data-zoom=\'[{"at":3,"scale":1.3,"dur":0.75}]\'></div></section>\n'
+                '<section id="b" data-start="#hero" data-dur="4"><p data-st="kinetic-type" data-at="0.5">Two</p></section>\n')
+        out, smap, info, _w = cli_core._retime_html(html, 8.0, 16.0)
+        self.assertIn('data-at="1" data-exit-at="4"', out)
+        self.assertIn('data-at="5" data-fit="1.3"', out)                                 # the typing keeps its speed
+        self.assertIn('"at":6,"scale":1.3,"dur":0.75', out.replace("&quot;", '"'))
+        self.assertIn('id="b" data-start="#hero" data-dur="8"><p data-st="kinetic-type" data-at="0.5">', out)
+        self.assertAlmostEqual(smap(1.9), 3.8)                                            # a poster in the hero
+        self.assertAlmostEqual(smap(4.5), 8.5)                                            # one in a plain scene
+        self.assertEqual([s.get("spread") for s in info["scenes"]], [True, None])
+        notes = cli_core._stretch_notes(info["scenes"])
+        self.assertTrue(notes and "b x2.0" in notes[0] and "hero" not in notes[0], notes)
+        # shorter: spread or not, everything scales as before
+        out2, _s, _i, _w = cli_core._retime_html(html, 8.0, 4.0)
+        self.assertIn('data-at="0.25" data-exit-at="1"', out2)
+        self.assertIn('data-at="1.25" data-fit="0.65"', out2)
+        # the dom template's hero is a spread scene
+        self.assertIn('id="hero" data-start="0" data-dur="6.8" data-design-dur="6.8" data-stretch="spread"',
+                      (SKILL / "templates" / "dom" / "index.html").read_text(encoding="utf-8"))
+
     def test_thresholds_shared_with_check(self):
         from st import cli_core
         th = json.loads((SKILL / "runtime" / "thresholds.json").read_text(encoding="utf-8"))
@@ -1045,6 +1074,28 @@ class TestAudioPeakGuard(TempDirCase):
         self.assertTrue(p["has_video"] and p["has_audio"])
         self.assertAlmostEqual(p["duration"], 1.0, delta=0.1)
         self.assertEqual(ff.ensure_true_peak(out, 0.0)["attempts"], [])   # already under: untouched
+        # 0.1 dB over the ceiling (an export copy at -0.9 against -1 dBTP) is over: repaired, not let through
+        now = ff.audio_levels(out)["true_peak_dbtp"]
+        rep = ff.ensure_true_peak(out, now - 0.1)
+        self.assertTrue(rep["attempts"] and rep["fixed"], rep)
+        self.assertLessEqual(rep["after"], now - 0.1)
+
+    def test_true_peak_repair_not_measured_is_not_fixed(self):
+        """A re-encode whose true peak cannot be read is not counted as fixed (it used to be)."""
+        f = self.tmp / "x.mp4"
+        f.write_bytes(b"x")
+        reads = iter([{"true_peak_dbtp": 0.4}, {"true_peak_dbtp": None}])
+        orig = ff.audio_levels, ff.run_ffmpeg
+        ff.audio_levels = lambda p: next(reads)
+        ff.run_ffmpeg = lambda args, **kw: Path(args[-1]).write_bytes(b"y")
+        try:
+            rep = ff.ensure_true_peak(f, -1.0)
+        finally:
+            ff.audio_levels, ff.run_ffmpeg = orig
+        self.assertEqual(len(rep["attempts"]), 1)
+        self.assertFalse(rep["fixed"], rep)
+        self.assertTrue(rep["unmeasured"], rep)
+        self.assertIsNone(rep["after"])
 
 
 class TestUX(TempDirCase):

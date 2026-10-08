@@ -16,7 +16,8 @@ showtime export html <project>                  # the same page as a shareable w
 `adopt` copies the folder into `<project>/src/`, so the original files are never changed. It skips
 `node_modules`, virtualenvs, `.git`, frame dumps and videos the page does not load. Around the copy it writes
 `index.html`, `showtime.json` and `adopt.json`, the last one recording what it found and where each value
-came from. After that the project behaves like any showtime project: `check`, `snap`, `render` (including
+came from. Paths in both files (the source, the check report) are relative to the project folder, so a
+project you copy or share names no path on your machine, and `--refresh` finds the source by them. After that the project behaves like any showtime project: `check`, `snap`, `render` (including
 `--from/--to`), `preview`, `qa`, `captions`, the `audio/mix.json` audio track, `export html` and
 `review-pack`. With no `-o`, a new job is created (`showtime-out/<name>-<ts>/project`); `--job <job>`
 adds the project to an existing one.
@@ -37,12 +38,12 @@ adds the project to an existing one.
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| Contracts it recognises | 47-61 |
-| What adopt checks | 63-86 |
-| Python scripts | 88-102 |
-| Sound | 104-110 |
-| From Claude Design | 112-139 |
-| Limits | 141-147 |
+| Contracts it recognises | 48-62 |
+| What adopt checks | 64-87 |
+| Python scripts | 89-103 |
+| Sound | 105-111 |
+| From Claude Design | 113-140 |
+| Limits | 142-148 |
 
 ## Contracts it recognises
 

@@ -64,8 +64,8 @@ doubles the render time. Each blurred word adds about 8 ms to the frames it blur
 
 ## The example
 
-<!-- example: 30 -->
-[The looks demo](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/_looks) shows all seven looks in one 18 s page;
+[Example 30](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/30-showreel-four-shapes) renders the showreel template as it ships at 16:9, 9:16, 1:1 and
+4:5, its flash words under the shutter blur. [The looks demo](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/_looks) shows all seven looks in one 18 s page;
 [the blur demo](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/_blur) shows four snaps with and without the shutter blur. The tone's rules are
 in [tones.md](../../skills/showtime/references/tones.md); the looks in
 [components.md, section 7](../../skills/showtime/references/components.md).

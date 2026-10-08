@@ -24,7 +24,8 @@ showtime pr-video https://github.com/acme/tool/pull/482 --out pr-482
    the description before anything is written, and the output says how many.
 3. It writes `<out>/project`: a hook (repo, number, title, author), the description's own lines, the files changed
    with their +/- counts and the tests touched, one or two real hunks, and a closing card with the PR's URL.
-   Every word on screen comes from the PR or a flag.
+   Every word on screen comes from the PR or a flag. A description with a list shows each item by its bold lead
+   (or its first sentence), and "+ N more" counts the items left out.
 4. It checks and renders the project, then makes the copy under 10 MB (`deliver exports --targets github`).
 5. It prints two Markdown lines to paste into the PR description. You drag `pr-482.github.mp4` onto the comment
    line and GitHub uploads it. showtime uploads nothing.
@@ -72,6 +73,6 @@ It does not show the diff; `showtime pr-video` does.
 
 ## The example
 
-<!-- example: 29 -->
-[Example 15](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/15-oss-release-black) is a release video an agent made from real diffs, the longer
+[Example 29](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/29-pr-video-showtime) is `showtime pr-video` on showtime's own PR #7: 40 s in 41 s on a
+64-core machine, a 9.4 MB copy and the Markdown to paste. [Example 15](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/15-oss-release-black) is a release video an agent made from real diffs, the longer
 way round.

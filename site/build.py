@@ -336,7 +336,11 @@ class Site:
         if dst not in self.copied:
             p = self.out / dst
             p.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src, p)
+            if is_html and src.name == "index.html" and (src.parent / "assets" / "vfs.js").is_file():
+                # a folder export (export html --folder): index.html loads assets/ beside it, so copy the folder
+                shutil.copytree(str(src.parent), str(p.parent), dirs_exist_ok=True)
+            else:
+                shutil.copy2(src, p)
             self.copied[dst] = repo_rel
         return dst, fallback
 
@@ -581,11 +585,16 @@ def art(site: Site, page: str, name: str, alt: str, narrow: bool = True, max_wid
 
 # ----------------------------------------------------------------------------------------------- examples
 
+EX_ID = r"(\d\d|[a-z][a-z0-9-]*)"   # a numbered example (ex-07), or a named demo card (ex-looks: examples/_looks)
+ALSO_RE = r'Also in this group: <a href="#ex-%s"' % EX_ID
+
+
 def parse_examples() -> Tuple[List[Tuple[str, str]], List[dict]]:
-    """Cards from examples/README.md (the single source of the gallery): groups, then examples."""
+    """Cards from examples/README.md (the single source of the gallery): groups, then examples. A card's id is its
+    number, or a name for a demo folder (examples/_looks); demos sort after the numbered examples."""
     txt = (EXAMPLES / "README.md").read_text(encoding="utf-8")
     groups, exs, cur = [], {}, None
-    order = []
+    order, also = [], []     # also: (card, group) from "Also in this group" lines, applied once every card is read
     for block in re.split(r"(?=^## |<a id=\"ex-)", txt, flags=re.M):
         m = re.match(r"^## (.+)$", block, re.M)
         if block.startswith("## ") and m:
@@ -595,16 +604,15 @@ def parse_examples() -> Tuple[List[Tuple[str, str]], List[dict]]:
                 continue
             cur = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
             groups.append((cur, name))
-            for n in re.findall(r'Also in this group: <a href="#ex-(\d\d)"', block):
-                exs[n]["tags"].append(cur)
+            also += [(n, cur) for n in re.findall(ALSO_RE, block)]
             continue
-        m = re.match(r'<a id="ex-(\d\d)"></a>', block)
+        m = re.match(r'<a id="ex-%s"></a>' % EX_ID, block)
         if not m or not cur:
             continue
         n = m.group(1)
         folder = re.search(r'<a href="([^"/]+)/"><img', block).group(1)
         alt = html.unescape(re.search(r'<img src="[^"]+" width="100%" alt="([^"]*)"', block).group(1))
-        meta = html.unescape(re.search(r"<sub>\d\d · (.+?)</sub><br>", block).group(1))
+        meta = html.unescape(re.search(r"<sub>(?:\d\d|Demo) · (.+?)</sub><br>", block).group(1))
         title = html.unescape(re.search(r'<b><a href="[^"]+/">(.+?)</a></b>', block).group(1))
         prompt = html.unescape(re.search(r"<i>“(.*?)”</i>", block, re.S).group(1))
         what = html.unescape(re.search(r"WHAT IT SHOWS</sub><br>(.*?)</p>", block, re.S).group(1))
@@ -617,9 +625,16 @@ def parse_examples() -> Tuple[List[Tuple[str, str]], List[dict]]:
              "watch": watch, "html": hv, "tags": tags}
         exs[n] = e
         order.append(n)
-    for n in re.findall(r'Also in this group: <a href="#ex-(\d\d)"', txt):
-        pass
+        also += [(a, cur) for a in re.findall(ALSO_RE, block)]   # a line under this card, still in its group
+    for n, g in also:
+        if n in exs and g not in exs[n]["tags"]:
+            exs[n]["tags"].append(g)
     return groups, [exs[n] for n in sorted(order)]
+
+
+def ex_label(e: dict) -> str:
+    """How a card is named in crumbs and search: its number (07), or Demo for a named demo card."""
+    return e["num"] if e["num"].isdigit() else "Demo"
 
 
 RELEASE_LINK = re.compile(r"^(?:\{\{RELEASE_URL\}\}|https://github\.com/[^/]+/[^/]+/releases/download/[^/]+)/(.+)$")
@@ -772,15 +787,18 @@ def build_example_pages(site: Site, exs) -> None:
             hl, hfb = site.media(ex_path(h), folder)
             name = h.split("/")[-1]
             if hl:
-                embeds.append('<h2 id="html-video" style="margin-top:0">The HTML video</h2><p><code>%s</code> is the single-file export, '
+                folder_export = name == "index.html" and (src_path(ex_path(h)).parent / "assets" / "vfs.js").is_file()
+                what = ("<code>%s/</code> is the folder export (<code>index.html</code> and <code>assets/</code>)" % esc(h.split("/")[-2])
+                        if folder_export else "<code>%s</code> is the single-file export" % esc(name))
+                embeds.append('<h2 id="html-video" style="margin-top:0">The HTML video</h2><p>%s, '
                               'playing right here. Click it, then press <kbd>?</kbd> for the keys, or <a href="%s">open it on its own</a>.</p>'
                               '<div class="htmlvid"><iframe src="%s" title="HTML video: %s" loading="lazy" allow="fullscreen"></iframe></div>'
-                              % (esc(name), rel(page, hl), rel(page, hl), esc(e["title"])))
+                              % (what, rel(page, hl), rel(page, hl), esc(e["title"])))
                 break
         head = ('<div class="wrap"><div class="ex-head"><div class="crumbs"><a href="%s">Examples</a> / %s</div>'
                 '<p class="spec">%s</p><h1 class="title">%s</h1><p class="ask">\u201c%s\u201d</p></div>'
                 '<div class="players">%s</div></div>'
-                % (rel(page, "gallery.html"), esc(e["num"]), esc(e["meta"]), esc(e["title"]), esc(e["prompt"]), "".join(players)))
+                % (rel(page, "gallery.html"), esc(ex_label(e)), esc(e["meta"]), esc(e["title"]), esc(e["prompt"]), "".join(players)))
         more = ""
         if site.repo:
             more = '<p class="edit"><a href="%s">The project files on GitHub</a></p>' % esc(site.gh("examples/" + folder, True))
@@ -788,7 +806,7 @@ def build_example_pages(site: Site, exs) -> None:
             "".join(embeds), body_html, more)
         write(site, page, shell(site, page, e["title"], body, "gallery", what_sentence(e)))
         site.h2_expect[page] = ("examples/%s/README.md" % folder, md_h2_count(text) + len(embeds))
-        site.search.append(search_entry(site, "Example %s: %s" % (e["num"], e["title"]), page, text, heads,
+        site.search.append(search_entry(site, ("Example %s: %s" if e["num"].isdigit() else "%s: %s") % (ex_label(e), e["title"]), page, text, heads,
                                         lead=e["prompt"] + "\n" + e["what"]))
 
 
@@ -1166,8 +1184,8 @@ calls the video done.</p></div>
 {pipeline}
 <div class="split" id="works-with"><div><h3>Install it in your agent</h3>
 <p>You need <a href="https://docs.astral.sh/uv/">uv</a> and <a href="https://nodejs.org">Node.js</a> 24 or 22 LTS (20 or newer works).
-The first request checks what is missing and tells you the size and time, about 0.6 to 0.8 GB into <code>~/.showtime</code> and 2 to 6
-minutes, then runs setup once you say yes. Bigger pieces, like Whisper for transcripts, come the first time a video needs them.</p>
+The first request checks what is missing and tells you the size and time, about 0.5 to 0.75 GB to download (1.4 to 1.8 GB in
+<code>~/.showtime</code> once installed) and 2 to 6 minutes, then runs setup once you say yes. Bigger pieces, like Whisper for transcripts, come the first time a video needs them.</p>
 <p>Every request gets its own folder with <code>final.mp4</code>, a poster, captions, exports and share copy. Nothing is overwritten.</p>
 <p><a class="link-arrow" href="docs/agents.html">Exact steps for Claude Code, Codex, Cursor, Devin, OpenCode and more <span>→</span></a></p></div>
 <div class="copy install"><pre><code># Claude Code
@@ -1285,9 +1303,9 @@ def tag_html_videos(site: Site, exs: List[dict]) -> List[str]:
         e = by_folder.get(folder)
         board = "studio-board" in dst
         if e:
-            desc = describe("%s made with showtime, example %s. %s" % (
+            desc = describe("%s made with showtime, %s. %s" % (
                 "The studio board of a video job, one HTML file," if board else "An interactive HTML video",
-                e["num"], what_sentence(e)))
+                ("example " + e["num"]) if e["num"].isdigit() else "a demo", what_sentence(e)))
         else:
             desc = describe(html.unescape(own.group(1))) if own else "An interactive HTML video made with showtime."
         # the poster beside the page's source (a series episode has its own), else the example's

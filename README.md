@@ -73,8 +73,9 @@ Make a 20-second launch video for this repo, with a voice-over and upbeat music.
 ```
 
 The first time, your agent checks what is missing, tells you the download size and time (about
-0.6 to 0.8 GB into `~/.showtime`, depending on your system, usually 2 to 6 minutes; nothing outside that
-folder changes) and runs setup once you say yes. Bigger pieces (the transcription model, Manim, music
+0.5 to 0.75 GB to download and 1.4 to 1.8 GB in `~/.showtime` once installed, depending on your system,
+usually 2 to 6 minutes; outside that folder only uv's and npm's download caches change) and runs setup once
+you say yes. Bigger pieces (the transcription model, Manim, music
 tracks) come the first time a video needs them, announced with their size. After that, a request in Claude
 Code looks like this:
 
@@ -110,7 +111,8 @@ a feature):
 - **Claude Design to MP4.** `showtime adopt <export.zip>` turns a Claude Design animation into a 1080p video with its
   fonts copied in, ready for music, a voice and captions.
 - **Faster, on any machine.** The encoder runs during the capture and an unchanged soundtrack is reused, so a 1 s
-  fix takes 13-21 s instead of 31-54 s; without a GPU the browser count follows your cores ([FAQ](docs/faq.md)).
+  fix takes 13-21 s instead of 31-54 s on a busy 6-core Intel Mac; without a GPU the browser count follows your cores, and a 30 s launch film
+  renders in 17.6 s instead of 42.0 s on a 64-core machine with no GPU ([FAQ](docs/faq.md)).
 
 On the [behaviour scoreboard](#behaviour-scoreboard), which anyone can rerun, an agent scored 35/42 with showtime and
 25/42 without.
@@ -324,8 +326,8 @@ setup:
 is the same server from npm ([@faviovazquez/showtime-mcp](https://www.npmjs.com/package/@faviovazquez/showtime-mcp),
 also listed in the [MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.FavioVazquez/showtime)
 as `io.github.FavioVazquez/showtime` and on [Smithery](https://smithery.ai/servers/favio-vazquezp/showtime)), and
-[`showtime-0.4.0.mcpb`](https://github.com/FavioVazquez/showtime/releases/download/v0.4.0/showtime-0.4.0.mcpb) from
-the v0.4.0 release opens in Claude Desktop with a double click. Setup still runs once on your machine: the
+[`showtime-0.4.1.mcpb`](https://github.com/FavioVazquez/showtime/releases/download/v0.4.1/showtime-0.4.1.mcpb) from
+the v0.4.1 release opens in Claude Desktop with a double click. Setup still runs once on your machine: the
 models and tools never travel inside a package. Long tools answer with a task id after about 20 seconds when a
 client stops calls early; the `status` tool reports progress and the result. Besides the tools that mirror the commands,
 `guide` reads a reference by the piece and `receipt` writes a job's receipt (tokens and cost are "not reported by this
@@ -347,7 +349,7 @@ command line: `adopt`, `footage cutout`, `edit cards`, `edit moments`, `edit cli
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/readme/marquee-dark.svg">
     <source media="(prefers-color-scheme: light)" srcset="assets/readme/marquee-light.svg">
-    <img alt="Now showing: 23 examples, every frame rendered by showtime." src="assets/readme/marquee-light.svg" width="100%">
+    <img alt="Now showing: 32 videos, every frame rendered by showtime." src="assets/readme/marquee-light.svg" width="100%">
   </picture>
 </p>
 
@@ -382,6 +384,10 @@ changed. Click a preview to open the example. Each one has a card with its promp
 <td width="50%" valign="top"><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/13-wikipedia-waggle-dance"><img src="assets/readme/gallery/13-wikipedia-waggle-dance.webp" width="400" alt="A diagram of the waggle dance: the angle to the sun outside becomes the angle to vertical on the comb."></a><br><b><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/13-wikipedia-waggle-dance">A Wikipedia article, explained</a></b> · 60 s, English + French<br><sub>The honey bee waggle dance, with real research footage. Also as HTML videos. (CC BY-SA, like its source.)</sub></td>
 <td width="50%" valign="top"><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/22-manim-circle-area"><img src="assets/readme/gallery/22-manim-circle-area.webp" width="400" alt="A circle made of rings unrolls into a triangle, a Manim animation."></a><br><b><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/22-manim-circle-area">Why a circle's area is πr²</a></b> · 70 s + Shorts cut<br><sub>A narrated Manim proof with real animated equations.</sub></td>
 </tr>
+<tr>
+<td width="50%" valign="top"><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/25-nobel-physics-ice-telescope"><img src="assets/readme/gallery/25-nobel-physics-ice-telescope.webp" width="400" alt="A pause-and-think card: what are the odds a neutrino hits anything in a kilometre of ice? Three choices and a countdown."></a><br><b><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/25-nobel-physics-ice-telescope">An explainer that stops and asks</a></b> · 2:38, narrated<br><sub>The 2026 Nobel Prize in Physics: three questions that stop the <a href="https://github.com/FavioVazquez/showtime-examples/blob/main/examples/25-nobel-physics-ice-telescope/interactive/index.html">HTML video</a> until you answer.</sub></td>
+<td width="50%" valign="top"><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/26-nobel-chemistry-en-es"><img src="assets/readme/gallery/26-nobel-chemistry-en-es.webp" width="400" alt="A flask of orange and teal dots tips toward orange under a catalyst stamp: 48 to 22, tipped."></a><br><b><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/26-nobel-chemistry-en-es">Nobel Chemistry, in English and Spanish</a></b> · 2:30 + 2:34<br><sub>A lab-notebook explainer of the 2026 Nobel Prize in Chemistry, then every word of it in Spanish.</sub></td>
+</tr>
 </table>
 
 #### Product and brand
@@ -395,15 +401,21 @@ changed. Click a preview to open the example. Each one has a card with its promp
 <td width="50%" valign="top"><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/17-product-promo-teapot"><img src="assets/readme/gallery/17-product-promo-teapot.webp" width="400" alt="A silver teapot on black with rising steam."></a><br><b><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/17-product-promo-teapot">Product promo, 1:1</a></b> · 20 s + 6 s bumper<br><sub>A museum's CC0 photos of a Christopher Dresser teapot, only facts from the record. Also an <a href="https://github.com/FavioVazquez/showtime-examples/blob/main/examples/17-product-promo-teapot/dresser-teapot.html">HTML video</a>.</sub></td>
 <td width="50%" valign="top"><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/20-curtain-call-pack"><img src="assets/readme/gallery/20-curtain-call-pack.webp" width="400" alt="Red velvet curtains part on a spotlit stage: the showtime logo sting."></a><br><b><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/20-curtain-call-pack">Brand motion pack</a></b> · sting, lower thirds, stingers<br><sub>A 3D logo sting in three layouts, lower thirds with alpha for an editor, made in studio mode. Also as <a href="https://github.com/FavioVazquez/showtime-examples/blob/main/examples/20-curtain-call-pack/html/curtain-call-sting-player.html">HTML</a>.</sub></td>
 </tr>
+<tr>
+<td width="50%" valign="top"><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/28-claude-design-to-mp4"><img src="assets/readme/gallery/28-claude-design-to-mp4.webp" width="400" alt="An amber counter at 1,234 over four growing bars, a design adopted from Claude Design."></a><br><b><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/28-claude-design-to-mp4">Claude Design to MP4</a></b> · 12 s + a 20 s loop<br><sub>Two exported designs adopted as they are, sharp at 1080p, each on a music bed that ends on a phrase.</sub></td>
+</tr>
 </table>
 
 #### Footage and audio
 
 <table>
 <tr>
-<td width="33%" valign="top"><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/06-footage-edit-nasa"><img src="assets/readme/gallery/06-footage-edit-nasa.webp" width="260" alt="A vertical interview with an astronaut and bold word-by-word captions."></a><br><b><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/06-footage-edit-nasa">Interview, tightened</a></b> · 72 s, 9:16 + 16:9<br><sub>A public-domain NASA interview cut by transcript, face-tracked to vertical, graded and captioned.</sub></td>
-<td width="33%" valign="top"><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/16-podcast-audiogram"><img src="assets/readme/gallery/16-podcast-audiogram.webp" width="260" alt="A vertical podcast audiogram with the speaker's name, a waveform and captions."></a><br><b><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/16-podcast-audiogram">Podcast audiogram</a></b> · 45 s, 9:16<br><sub>A NASA podcast clip for Reels, TikTok and Shorts, with speaker names and captions.</sub></td>
-<td width="33%" valign="top"><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/23-talking-head-cards-nasa"><img src="assets/readme/gallery/23-talking-head-cards-nasa.webp" width="260" alt="A NASA scientist on the right, a side panel on the left: From 22,000 miles up, Half of Earth in one view."></a><br><b><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/23-talking-head-cards-nasa">Talking head, dressed</a></b> · 55 s, 16:9 + 9:16<br><sub>Cards that appear as the words are said: name tag, list, data callout, side panel, pull-quote, caption emphasis.</sub></td>
+<td width="50%" valign="top"><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/06-footage-edit-nasa"><img src="assets/readme/gallery/06-footage-edit-nasa.webp" width="400" alt="A vertical interview with an astronaut and bold word-by-word captions."></a><br><b><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/06-footage-edit-nasa">Interview, tightened</a></b> · 72 s, 9:16 + 16:9<br><sub>A public-domain NASA interview cut by transcript, face-tracked to vertical, graded and captioned.</sub></td>
+<td width="50%" valign="top"><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/16-podcast-audiogram"><img src="assets/readme/gallery/16-podcast-audiogram.webp" width="400" alt="A vertical podcast audiogram with the speaker's name, a waveform and captions."></a><br><b><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/16-podcast-audiogram">Podcast audiogram</a></b> · 45 s, 9:16<br><sub>A NASA podcast clip for Reels, TikTok and Shorts, with speaker names and captions.</sub></td>
+</tr>
+<tr>
+<td width="50%" valign="top"><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/23-talking-head-cards-nasa"><img src="assets/readme/gallery/23-talking-head-cards-nasa.webp" width="400" alt="A NASA scientist on the right, a side panel on the left: From 22,000 miles up, Half of Earth in one view."></a><br><b><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/23-talking-head-cards-nasa">Talking head, dressed</a></b> · 55 s, 16:9 + 9:16<br><sub>Cards that appear as the words are said: name tag, list, data callout, side panel, pull-quote, caption emphasis.</sub></td>
+<td width="50%" valign="top"><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/24-highlights-apollo17-panel"><img src="assets/readme/gallery/24-highlights-apollo17-panel.webp" width="400" alt="A vertical clip of an Artemis flight controller, with bold captions: a spaceship."></a><br><b><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/24-highlights-apollo17-panel">A long panel, its best moments</a></b> · 3 clips, 9:16<br><sub>A 58-minute NASA panel ranked by <code>edit moments</code>; three vertical clips with captions, each through qa.</sub></td>
 </tr>
 </table>
 
@@ -436,6 +448,19 @@ changed. Click a preview to open the example. Each one has a card with its promp
 </tr>
 </table>
 
+#### Looks and motion
+
+<table>
+<tr>
+<td width="50%" valign="top"><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/30-showreel-four-shapes"><img src="assets/readme/gallery/30-showreel-four-shapes.webp" width="400" alt="The flash word TYPE. smeared by the shutter blur as it whips in, on a cyan ground."></a><br><b><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/30-showreel-four-shapes">The showreel template in four shapes</a></b> · 4 × 15 s<br><sub><code>showtime new showreel</code> as it ships, rendered in four shapes with no edits.</sub></td>
+<td width="50%" valign="top"><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/32-twelve-looks"><img src="assets/readme/gallery/32-twelve-looks.webp" width="400" alt="The same launch film in two look signatures: nocturne&#x27;s ink blue, then paperback&#x27;s warm paper, a label naming each."></a><br><b><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/32-twelve-looks">Twelve looks, one project</a></b> · 24 s loop<br><sub>One <code>dom</code> project in all twelve look signatures, the look changing every 2 s.</sub></td>
+</tr>
+<tr>
+<td width="50%" valign="top"><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/_looks"><img src="assets/readme/gallery/_looks.webp" width="400" alt="Metaballs gathering into one coral blob next to the word Metaballs."></a><br><b><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/_looks">Seven looks, no GPU</a></b> · 18 s demo<br><sub>The seven WebGL looks, one scene each, drawn in showtime's own WebGL on the CPU.</sub></td>
+<td width="50%" valign="top"><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/_blur"><img src="assets/readme/gallery/_blur.webp" width="400" alt="A card reading PUNCH. lands on a lime ground after a scale punch."></a><br><b><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/_blur">Shutter blur on fast moves</a></b> · 7.5 s demo<br><sub><code>data-st-blur</code> on the word that moves: smeared while it is fast, sharp when it lands.</sub></td>
+</tr>
+</table>
+
 #### For developers
 
 <table>
@@ -443,15 +468,19 @@ changed. Click a preview to open the example. Each one has a card with its promp
 <td width="50%" valign="top"><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/15-oss-release-black"><img src="assets/readme/gallery/15-oss-release-black.webp" width="400" alt="A code diff: redundant parentheses on the left of an assignment are removed."></a></td>
 <td width="50%" valign="top"><b><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/15-oss-release-black">Open-source release video</a></b> · 35 s, no voice<br><sub>What changes in people's code with Black 26.1.0's 2026 stable style: real before-and-after diffs, the install line and the changelog. Point showtime at a repo, a pull request or a changelog and it makes the same kind of video. (An unofficial summary, made as an example.)</sub></td>
 </tr>
+<tr>
+<td width="50%" valign="top"><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/29-pr-video-showtime"><img src="assets/readme/gallery/29-pr-video-showtime.webp" width="400" alt="68 files changed, +1138 -159: a file tree with green and red bars, from showtime&#x27;s pull request #7."></a></td>
+<td width="50%" valign="top"><b><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/29-pr-video-showtime">A pull request becomes a video</a></b> · 40 s, one command<br><sub><code>showtime pr-video 7</code> on showtime's own pull request: the PR's title and words, the files it changed with their +/- counts, a real hunk and its URL, secrets masked, a copy under GitHub's 10 MB attachment limit and the Markdown to paste.</sub></td>
+</tr>
 </table>
 
 Two more kinds of developer video have a workflow but no example in this gallery yet: a **repo explainer** (what the
 code does, a map of it, one request traced through real files and lines, every claim tied to a file and a commit) and
 a **paper explainer** (claims tied to pages, figures shown only when their license allows, Manim for the math). Say
 "explain this repo" or give your agent a paper's PDF or arXiv link. For a pull request, `showtime pr-video <N>` reads
-it (with gh, or from GitHub's API for a public one) and renders a video under 10 MB to drag into its description. For
-release notes and pull requests with no agent at all, `showtime release-video` and the
-[GitHub Action](docs/github-action.md) make a short film in CI.
+it (with gh, or from GitHub's API for a public one) and renders a video under 10 MB to drag into its description
+([example 29](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/29-pr-video-showtime)). For release notes and pull requests with no agent at all,
+`showtime release-video` and the [GitHub Action](docs/github-action.md) make a short film in CI.
 
 
 <p align="center"><sub>All 22 examples, with their projects and full-quality videos, live in <a href="https://github.com/FavioVazquez/showtime-examples"><b>showtime-examples</b></a>.</sub></p>
@@ -463,7 +492,7 @@ release notes and pull requests with no agent at all, `showtime release-video` a
 > `showtime export html`. On GitHub, download the file to play it.
 
 <details>
-<summary><b>The 23 prompts behind the examples</b>: copy one into your agent</summary>
+<summary><b>The 32 prompts behind the examples</b>: copy one into your agent</summary>
 
 | # | Prompt |
 |---|---|
@@ -490,6 +519,15 @@ release notes and pull requests with no agent at all, `showtime release-video` a
 | [21](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/21-tutorial-studio-board) | Record a 75-second narrated tutorial showing how to use the showtime studio board: open it, compare concepts, react, pick one, and send feedback. And a vertical cut for Shorts. |
 | [22](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/22-manim-circle-area) | Make a narrated 70-second math explainer showing why the area of a circle is pi r squared, with real animated equations. |
 | [23](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/23-talking-head-cards-nasa) | Dress up this NASA interview with Sarah Jones about the GOLD mission: name tag, a data callout, a pull-quote, a list or chapter, a side panel and captions with emphasis; a 16:9 and a 9:16 cut. |
+| [24](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/24-highlights-apollo17-panel) | Find the best 30-60 s moments of this 58-minute NASA panel (Apollo 17 legends and Artemis leaders) and make three vertical clips with captions |
+| [25](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/25-nobel-physics-ice-telescope) | Physics 2026 explainer for nobel-2026-lab: a telescope made of ice, ~2 min, three stop-and-ask questions, interactive export, 60 s vertical cut; publish today |
+| [26](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/26-nobel-chemistry-en-es) | Full Chemistry 2026 explainer (~2:10, 16:9) for the nobel-2026-lab: Frank's recipe, Kagan's bend, Soai's copier, the 2003 staircase, the coin flip, our mirror-race toy, caveats, medicines. NOT socratic: no questions to the viewer. American voice (af_bella; not the British female). Paperback lab-notebook look, CC0 bed, showtime credited (corner mark, end card, closing line). Must look great; post soon. |
+| [28](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/28-claude-design-to-mp4) | Make 'Showtime Test (12s, 16 9)-html.zip' an MP4, with a music bed. |
+| [29](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/29-pr-video-showtime) | Turn showtime's pull request #7 into a short video I can paste into its description. |
+| [30](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/30-showreel-four-shapes) | Render the showreel template as it ships, with no edits, at 16:9, 9:16, 1:1 and 4:5. |
+| [32](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/32-twelve-looks) | Show one project in each of the twelve look signatures: a contact sheet of all twelve, and a 24-second loop that changes look every 2 seconds. |
+| [_looks](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/_looks) | Show the seven WebGL looks in one short page, one scene each, rendered without a GPU. |
+| [_blur](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/_blur) | Show the shutter blur on four snaps: a whip, a slam, a scale punch, and the same whip without and with it. |
 
 </details>
 
@@ -852,7 +890,8 @@ detectors on it, so a near-black scene or a barely visible change is reported be
   without a GPU), renders the same frames with any number of browsers, and has a designed fallback where WebGL is
   missing ([components § 7](skills/showtime/references/components.md), [the demo](https://github.com/FavioVazquez/showtime-examples/blob/main/examples/_looks/README.md)).
 - **Shutter blur.** `data-st-blur` smears an element the way a camera shutter would, only on the frames it moves fast;
-  it lands sharp ([stage-api](skills/showtime/references/stage-api.md), [the demo](https://github.com/FavioVazquez/showtime-examples/blob/main/examples/_blur/README.md)).
+  it lands sharp ([stage-api](skills/showtime/references/stage-api.md), [the demo](https://github.com/FavioVazquez/showtime-examples/blob/main/examples/_blur/README.md), the flash
+  words of [example 30](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/30-showreel-four-shapes)).
 
 **Footage**
 
@@ -870,9 +909,10 @@ detectors on it, so a near-black scene or a barely visible change is reported be
 
 - **Claude Design to MP4.** `showtime adopt <export.zip>`: the artboard fills a 1080p frame with sharp text, its
   Google Fonts are copied in with their licences, and a looping design renders exactly one loop
-  ([adopt](skills/showtime/references/adopt.md)).
+  ([adopt](skills/showtime/references/adopt.md), [example 28](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/28-claude-design-to-mp4)).
 - **Link previews.** `showtime export html --share-url <address>` (or `"share"` in showtime.json) adds the tags that
-  show a title, a description and the poster when the link is pasted; `--folder` exports are ready for GitHub Pages.
+  show a title, a description and the poster when the link is pasted; `--folder` exports are ready for GitHub Pages
+  ([example 25](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/25-nobel-physics-ice-telescope)'s HTML video).
 
 **Review and resume**
 
@@ -881,7 +921,8 @@ detectors on it, so a near-black scene or a barely visible change is reported be
 - **Since you last looked.** `showtime status <job>` lists the files you edited by hand, your unread notes and open
   findings, so your agent keeps your changes.
 - **The voice-over is heard back**: showtime transcribes it on your machine and flags a name, an acronym or a number
-  said wrong, with the fix to try; qa and the critic see it too.
+  said wrong, with the fix to try; qa and the critic see it too. It runs when the local recognizer is installed: it
+  arrives with the first transcription, or `showtime setup --fetch parakeet-tdt-0.6b-v3-int8`.
 - **check catches more**: a fading text is judged at its clearest frame, `caption_zone` warns about anything where
   the captions go, a WebGPU page is tried again without WebGPU, and each look's cost is estimated.
 
@@ -890,7 +931,9 @@ detectors on it, so a near-black scene or a barely visible change is reported be
 - The encoder runs while the frames are captured, a finished browser takes over half of the largest part left, and
   an unchanged soundtrack is reused: on a busy 6-core Intel Mac a 1 s fix went from 31-54 s to 13-21 s.
 - Without a GPU, the number of browsers follows the cores (one per 8 CPU threads, at least 3 from 6 threads up, at
-  most 8), and waits stretch on a slow page instead of failing. [Do I need a GPU?](docs/faq.md#do-i-need-a-gpu)
+  most 8), and waits stretch on a slow page instead of failing: on a 64-core Linux machine with no GPU a 30 s launch
+  film went from 42.0 s to 17.6 s and a 15 s DOM page from 31.8 s to 16.4 s.
+  [Do I need a GPU?](docs/faq.md#do-i-need-a-gpu)
 
 The full list is in the [changelog](CHANGELOG.md).
 
@@ -905,7 +948,8 @@ The full list is in the [changelog](CHANGELOG.md).
 
 - **Videos that stop and ask.** List questions in showtime.json and the HTML export pauses on that frame, asks, marks
   the answer, replies and plays on; the MP4 gets a "pause and think" beat with a countdown and the answer. A question
-  can sit on a narration line, so a re-voice moves it with the line ([guide](skills/showtime/references/html-export.md)).
+  can sit on a narration line, so a re-voice moves it with the line ([guide](skills/showtime/references/html-export.md),
+  [example 25](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/25-nobel-physics-ice-telescope)).
 - **Notes on the finished video.** `showtime review open <job>` serves a local page that plays the latest render:
   pause, click a spot or drag a box on the frame, type a note. Your agent reads them with `showtime review notes`,
   fixes, and replies on the same note.
@@ -915,12 +959,13 @@ The full list is in the [changelog](CHANGELOG.md).
 
 - **`showtime pr-video <N | URL>`**: a pull request becomes a short video for its own description in one command,
   with a copy under GitHub's 10 MB attachment limit. A public PR works without a GitHub login, and values that look
-  like secrets never reach the video.
+  like secrets never reach the video ([example 29](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/29-pr-video-showtime)).
 - **A storyboard from another skill becomes a project**: `showtime new <template> <dir> --from-storyboard FILE`
-  reads a Markdown table (Shot | Length | Visual | Narration, in any order, English or Chinese headers).
+  reads a Markdown table (Shot | Length | Visual | Narration, in any order, English or Chinese headers;
+  [examples 25 and 26](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/26-nobel-chemistry-en-es)).
 - **Go all out: the showreel tone.** A "showreel" or "go all out" brief turns it on: 12-14 shots in 15 s, no
   technique twice, flash words allowed, the name landing late and short; `qa` judges density, the ending and repeats.
-  The `showreel` template renders at 16:9, 9:16, 1:1 and 4:5 with no edits.
+  The `showreel` template renders at 16:9, 9:16, 1:1 and 4:5 with no edits ([example 30](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/30-showreel-four-shapes)).
 
 **A stricter quality gate**
 
@@ -935,7 +980,8 @@ The full list is in the [changelog](CHANGELOG.md).
 **Better-looking by default**
 
 - **Twelve look signatures.** `showtime new` dresses the page templates in one of twelve curated looks (palette at
-  the contrast rules, a type pair, a motion feel), picked away from your recent videos (`--look <id>` to choose).
+  the contrast rules, a type pair, a motion feel), picked away from your recent videos (`--look <id>` to choose;
+  [example 32](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/32-twelve-looks) shows one project in all twelve).
 - **No blank or late first frames** after a cut or in a `<video>`: every video is drawn on a canvas in renders, and
   `check` warns `late_first_frame`.
 
@@ -1050,7 +1096,7 @@ by this agent". The full list is in the [changelog](CHANGELOG.md).
   random per-session key from the printed link; before, any web page open in your browser could read a
   project's files over `127.0.0.1`.
 - **Footage edits that hear the ums.** The default transcription is now Parakeet-TDT 0.6B v3 (25 languages
-  including English and Spanish; fetched on first use, 465 MB; Whisper stays for other languages and with
+  including English and Spanish; fetched on first use, about 490 MB; Whisper stays for other languages and with
   `--model`). It keeps "um" and "uh" as words, and a scan after it hears the hesitations no word covers. On a public,
   human-labelled podcast set (20 episodes, 495 labelled fillers) it found 81% of them at 83% precision against the
   labels, where 0.1.0's default found 11% at 78%; on the benchmark interview it cuts all five known "uh" (the
@@ -1105,10 +1151,12 @@ nightly. Expect rough edges on anything marked not yet run, and please open an i
 | [Node.js](https://nodejs.org) 24 or 22 LTS (20+) | installer | installer or winget | fnm or NodeSource |
 
 Chrome, Edge or Chromium is found automatically; if none is installed, setup downloads Chrome's headless
-shell (about 100 MB). Disk: the default install is about 770 MB on Linux x64 (700 MB on Linux arm64) and 560 to 610 MB on
-macOS and Windows, with a browser already installed and about 100 MB more without one, instead of 2.9 GB in 0.1; `showtime setup --plan` prints yours,
-component by component. What a video needs only sometimes arrives the first time it is used, with its size
-announced: the transcription model (Parakeet, 465 MB, once),
+shell (100 to 120 MB to download). Disk: the default install downloads about 0.73 GB on Linux x64 (0.67 GB on Linux
+arm64) and 0.53 to 0.59 GB on macOS and Windows, and once unpacked it takes about 1.4 GB on macOS and Windows and 1.7
+to 1.8 GB on Linux (Python packages 0.65 to 0.9 GB, Node packages 0.34 GB, ffmpeg 0.13 to 0.33 GB, models 0.22 GB),
+with a browser already installed; the headless shell adds 0.2 to 0.3 GB, and a system ffmpeg 6.0 or newer saves
+the ffmpeg part. `showtime setup --estimate` prints yours, `showtime setup --plan` lists every download. What a video needs only sometimes arrives the first time it is used, with its size
+announced: the transcription model (Parakeet, about 490 MB, once),
 Manim (60 MB), the audio library's starter part (41 MB), a music track or a sound pack (each a few MB to a few
 dozen). `showtime setup --full` fetches all of it now, for a machine that will be offline (about 5.1 to 5.7 GB,
 mostly the 1.6 GB Whisper large-v3-turbo model and 0.9 GB of the music catalog; Scott Buckley asks for no bulk
@@ -1170,7 +1218,9 @@ git clone https://github.com/FavioVazquez/showtime
 ```
 
 Setup also writes `~/.showtime/bin/showtime` (Windows: `showtime.cmd`), a command that keeps working when a
-plugin update moves the skill folder, and prints how to put it on your `PATH` (it never changes `PATH` itself).
+plugin update moves the skill folder, and prints how to put it on your `PATH` (it never changes `PATH` itself). On
+Windows that is one PowerShell line adding `%USERPROFILE%\.showtime\bin` to your user `PATH`: run it once, then
+open a new terminal (or restart your agent) to type just `showtime`.
 Without it, `skills/showtime/bin/showtime` is the entry point (the skill's folder, not the plugin's top folder). On
 Windows that runs `showtime.cmd` (from cmd or PowerShell); call `showtime.ps1` directly only where the PowerShell
 execution policy allows scripts.
@@ -1350,7 +1400,6 @@ language, a CPU limit) and the render progress monitor.
 For people: [ten task guides](docs/guides/README.md) (what to say to your agent, what it runs, what you get, how
 long it takes), [What's new](docs/whats-new.md) (each release in one sentence a feature) and the [FAQ](docs/faq.md)
 (GPUs, cost, agents, privacy, licences, disk, time, platforms, languages).
-<!-- TODO(tour lane): link the tour here when it lands -->
 
 The [documentation map](docs/README.md) is the way in: every guide, grouped by what you are making, from
 workflows (launch, explainer, tutorial, social, data, footage, trailer) to story and craft, sound and

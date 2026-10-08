@@ -165,6 +165,15 @@ function blend(fg, a, bg) { return fg.map((v, i) => Math.round(v * a + bg[i] * (
 const hex = (c3) => '#' + c3.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('');
 const snip = (s, n = 40) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
 
+/** "fluted-glass 25.8 ms, metaballs 14.2 ms per frame without a GPU (budget 50 ms)" from report.looks, or ''. */
+export function looksLine(looks) {
+  const items = (looks && looks.items) || [];
+  if (!items.length) return '';
+  const one = (lk) => `${lk.look}${items.filter((x) => x.look === lk.look).length > 1 && lk.sel ? ` ${lk.sel}` : ''} ` +
+    (lk.gl && Number.isFinite(Number(lk.ms)) ? `${Number(lk.ms)} ms${Number(lk.ms) > looks.budget_ms ? ' (over)' : ''}` : 'fallback (no WebGL)');
+  return `${items.map(one).join(', ')} per frame without a GPU (budget ${looks.budget_ms} ms)`;
+}
+
 async function main() {
   const a = parseCli(SPEC);
   const T0 = Date.now();
@@ -1333,7 +1342,7 @@ async function main() {
         }
       } catch { /* a probe only */ }
     }
-    // WebGPU: showtime never needs a GPU (the build box has none), and without one a WebGPU page gets no
+    // WebGPU: showtime never needs a GPU (the test machine has none), and without one a WebGPU page gets no
     // adapter and draws nothing (a flat ground; the render only warns). A page that asks for WebGPU is
     // loaded again with WebGPU gone, as on such a machine: when no WebGL or 2D canvas of the page draws
     // in its place, that is an error; when one does, a warning (frames differ with and without a GPU).
@@ -1374,7 +1383,7 @@ async function main() {
     }
     // WebGL looks (fluted-glass, tilt-shift, liquid-metal, mesh-gradient, god-rays, marble, metaballs;
     // runtime/effects/gl.js): each one records its size, its passes and what they cost per frame without a GPU
-    // (the build box's SwiftShader timings). Over the budget is a warning with the knob that brings it back; a look
+    // (the test machine's SwiftShader timings). Over the budget is a warning with the knob that brings it back; a look
     // that drew its fallback (no WebGL here) is a warning too.
     try {
       const looks = await sess.page.evaluate(() => (window.__stLooks || []).map((x) => JSON.parse(JSON.stringify(x)))).catch(() => []);
@@ -1510,7 +1519,16 @@ async function main() {
           const kf = an.effect.getKeyframes ? an.effect.getKeyframes() : [];
           if (!kf.length || kf[0].opacity === undefined || !(parseFloat(kf[0].opacity) < 0.05)) continue;   // an entrance from invisible
           if (!(tg.textContent || '').trim() && !tg.querySelector('img, svg, video, canvas')) continue;
-          const f = Math.round((startOf(tg) + (Number(an.effect.getTiming().delay) || 0) / 1000) * fps);
+          // the entrance starts where the opacity leaves 0: the last invisible keyframe before the first visible
+          // one (keyframes that hold 0 until 40 % enter at 40 % of the duration, not at the animation's start)
+          let hold = 0;
+          for (const k of kf) {
+            if (k.opacity === undefined) continue;
+            if (parseFloat(k.opacity) >= 0.05) break;
+            hold = Number(k.computedOffset ?? k.offset) || 0;
+          }
+          const dur = Number(an.effect.getComputedTiming().duration) || 0;
+          const f = Math.round((startOf(tg) + ((Number(an.effect.getTiming().delay) || 0) + hold * dur) / 1000) * fps);
           const par = tg.parentElement;
           if (!groups.has(par)) groups.set(par, new Map());
           const byF = groups.get(par);
@@ -1660,6 +1678,8 @@ async function main() {
       if (report.sheet) tail.push(`  sheet   ${report.sheet}`);
       tail.push(`  report  ${file}`);
       if (report.estimate) tail.push(`  estimate: a full render takes about ${fmtDuration(report.estimate.seconds * 1000)} here (${report.estimate.frames} frames, ~${report.estimate.msPerFrame} ms/frame, ${report.estimate.workers} workers${report.estimate.note ? `; ${report.estimate.note}` : ''})`);
+      const looksTxt = looksLine(report.looks);
+      if (looksTxt) tail.push(`  looks   ${looksTxt}`);
       if (report.pace && report.pace.factor > 1) tail.push(`  waits: x${report.pace.factor} for this page's pace (frames ${report.pace.frame_ms ?? '-'} ms apart while it got ready, seeks ${report.pace.seek_ms ?? '-'} ms); render scales its waits the same way`);
       const textFile = path.join(outDir, 'report.txt');
       try { fs.writeFileSync(textFile, [...fileLines, ...tail, ''].join('\n').replace(/\x1b\[[0-9;]*m/g, '')); } catch { /* the summary still prints */ }
@@ -1694,6 +1714,7 @@ async function main() {
         out.push(`  look    showtime look ${/\s/.test(rel) ? JSON.stringify(rel) : rel}   (one small image of the key frames; sheet.jpg is for reviewers)`);
         out.push(`  report  ${textFile} (full), report.json`);
         if (report.estimate) out.push(`  estimate: full render ~${fmtDuration(report.estimate.seconds * 1000)}`);
+        if (looksTxt) out.push(`  looks   ${looksTxt}`);
         for (const l of out) console.log(l);
       }
       if (report.phone && !quiet) console.log(`  ${report.phone.ok ? c.green('PASS') : c.yellow('WARN')}  ${phoneLine(report.phone)}`);

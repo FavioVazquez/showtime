@@ -110,8 +110,8 @@ ready. It gives numbers to aim for and how to verify them with `showtime audio m
   - Make the riser 1–2 bars long: at 120 bpm a bar is 2 s.
   - A phone speaker plays nothing under ~300 Hz, and `sub-drop`, `boom`, `impact`, `punch`, `reverse-hit` and
     `heartbeat` are 17-30 LU louder in full than above 300 Hz (measured, `speaker_gap_lu` in the report). On a
-    phone such a hit alone is close to nothing: land a mid transient on the same hit (`metal-hit`, `glitch` or
-    `static-burst` at -8 to -12 dB, `"layer": "<id>"`), or put it on a composed bed's crash. The riser stops on
+    phone such a hit alone is close to nothing: land a mid transient on the same hit (`static-burst`, `glitch` or
+    `tick` at -8 to -12 dB, `"layer": "<id>"`), or put it on a composed bed's crash. The riser stops on
     the hit, so it does not count; the mix notes a sub hit that lands alone (`sub_alone`).
 - **Transitions:** a transition sound starts at the transition start. A success chime plays when
   the result is fully visible, not when it starts to appear.

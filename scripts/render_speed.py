@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Render speed, before and after: the same projects rendered by two showtime versions, interleaved, best of N.
 
-    python scripts/render_speed.py --out ~/rs                                  # integ/0.4.1 vs this checkout
+    python scripts/render_speed.py --out ~/rs                                  # v0.4.0 vs this checkout
     python scripts/render_speed.py --out ~/rs --before v0.4.0 --after HEAD --reps 2
     python scripts/render_speed.py --out ~/rs --gpu off --workers auto,3,8,16  # a machine without a GPU
     python scripts/render_speed.py --out ~/rs --variants seq,medium,prewarm,noflag --templates showreel
@@ -170,7 +170,7 @@ def render(skill: Path, proj: Path, out: Path, args: List[str], env_extra: Dict[
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--out", required=True, help="results folder (renders go to OUT/renders, deleted unless --keep)")
-    ap.add_argument("--before", default="integ/0.4.1", help="git ref or skill folder (default integ/0.4.1)")
+    ap.add_argument("--before", default="v0.4.0", help="git ref or skill folder (default v0.4.0, the previous release)")
     ap.add_argument("--after", default=str(REPO / "skills" / "showtime"), help="git ref or skill folder (default: this checkout)")
     ap.add_argument("--templates", default="showreel,dom,launch")
     ap.add_argument("--projects", help="folder with one project per template name (default: showtime new)")

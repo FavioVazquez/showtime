@@ -861,6 +861,33 @@ class ExportTest(unittest.TestCase):
         self.assertNotEqual(cp.returncode, 0)
         self.assertIn("inside the job folder", cp.stderr)
 
+    def test_job_argument(self):
+        """`export html <job>` exports the job's project/ (as qa and review take a job), into the job folder; with
+        `--folder out` the word after --folder is the output folder (was: "expected one project"). A job without a
+        project/ says so and never suggests starting a new project."""
+        job = TMP / "job-arg"
+        (job / "project").mkdir(parents=True, exist_ok=True)
+        (job / "job.json").write_text(json.dumps({"schema": "showtime.job/1", "slug": "job-arg"}), encoding="utf-8")
+        for f in Path(self.fixture).iterdir():
+            dst = job / "project" / f.name
+            if f.is_dir():
+                shutil.copytree(str(f), str(dst), dirs_exist_ok=True)
+            else:
+                shutil.copy2(str(f), str(dst))
+        out = TMP / "job-arg-out"
+        rep = json.loads(showtime("export", "html", job, "--folder", out, "--audio", "none", "--json", "-q").stdout)
+        self.assertEqual(Path(rep["output"]).resolve().parent, out.resolve(), rep["output"])
+        self.assertTrue((out / "index.html").is_file())
+        rep = json.loads(showtime("export", "html", job, "--audio", "none", "--json", "-q").stdout)
+        self.assertEqual(Path(rep["output"]).resolve().parent, job.resolve(), "default output: inside the job")
+        bare = TMP / "job-no-project"
+        bare.mkdir(exist_ok=True)
+        (bare / "job.json").write_text(json.dumps({"schema": "showtime.job/1", "slug": "job-no-project"}), encoding="utf-8")
+        cp = showtime("export", "html", bare, check=False)
+        self.assertNotEqual(cp.returncode, 0)
+        self.assertIn("has no project/index.html", cp.stderr)
+        self.assertNotIn("showtime new", cp.stderr)
+
     def test_audio_file(self):
         """--audio-file embeds exactly the given sound (a shipped MP4's soundtrack) instead of the score and
         the mix: one command for a project whose voice WAVs are gone."""
@@ -1152,6 +1179,135 @@ class RangeLinkTest(unittest.TestCase):
         self.assertIsNone(a["range"])
         self.assertIn("Shift + drag", s["help"])
         self.assertIn("#t=1:05-1:20", s["help"])
+
+
+NO_RANGE_DRIVER = r"""
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+const { launchBrowser } = await import(pathToFileURL(path.join(process.argv[2], 'scripts', 'lib', 'chrome.mjs')).href);
+const { browser } = await launchBrowser({ gpu: 'auto', headless: true });
+try {
+  const page = await (await browser.newContext({ viewport: { width: 640, height: 360 } })).newPage();
+  const refused = process.argv[4] === 'refused';
+  if (refused) {
+    // the first whole-file read of the soundtrack fails (a network error); later ones go through
+    await page.addInitScript(() => {
+      const f = window.fetch.bind(window);
+      window.__reads = 0;
+      window.fetch = (u, o) => {
+        if (String(u).includes('/media/') && ++window.__reads === 1) return Promise.reject(new Error('refused once'));
+        return f(u, o);
+      };
+    });
+  }
+  await page.goto(process.argv[3], { waitUntil: 'load' });
+  await page.evaluate(() => window.showtimePlayer.ready);
+  if (refused) {
+    // the element can only seek inside its first second (what a server without Range requests leaves it)
+    await page.evaluate(() => Object.defineProperty(window.showtimePlayer.audio, 'seekable',
+      { get: () => ({ length: 1, start: () => 0, end: () => 1 }) }));
+  }
+  await page.mouse.click(320, 180);
+  await page.waitForTimeout(200);
+  const st = () => page.evaluate(() => { const p = window.showtimePlayer, A = p.audio;
+    return { t: p.currentTime, a: A.currentTime, apaused: A.paused, src: String(A.src).split(':')[0], reads: window.__reads }; });
+  await page.evaluate(() => { window.showtimePlayer.currentTime = 30; });
+  const out = { at300: await page.waitForTimeout(300).then(st) };
+  if (refused) {
+    // the first whole-file read fails (the server refuses it once): the next seek reads it again and the
+    // sound comes back in sync
+    await page.waitForTimeout(1700);
+    out.first = await st();
+    await page.evaluate(() => { window.showtimePlayer.currentTime = 45; });
+    await page.waitForTimeout(5000);
+    out.second = await st();
+  } else {
+    await page.waitForTimeout(3700);
+    out.at4000 = await st();
+  }
+  console.log(JSON.stringify(out));
+} finally { await browser.close(); }
+"""
+
+
+@unittest.skipIf(FAST, "needs a browser")
+class NoRangeSeekTest(unittest.TestCase):
+    """A --folder export served without HTTP Range requests (python -m http.server), slowly: a seek right after the
+    start used to leave the clock stuck at the seek target while the soundtrack played on from 0 (the element
+    cannot seek past what it has downloaded). Now the picture plays on by the wall clock, the soundtrack is read
+    whole into a blob and comes back in sync at the film's time."""
+
+    def serve_and_play(self, tmp, mode=""):
+        class Slow(http.server.SimpleHTTPRequestHandler):     # no Range support, 0.6 MB/s for the media
+            def log_message(self, *a):
+                pass
+
+            def copyfile(self, src, dst):
+                slow = "/media/" in self.path
+                while True:
+                    b = src.read(32768)
+                    if not b:
+                        break
+                    try:
+                        dst.write(b)
+                    except OSError:
+                        return
+                    if slow:
+                        time.sleep(0.05)
+        srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Slow, directory=str(tmp / "www")))
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            drv = tmp / "norange.mjs"
+            drv.write_text(NO_RANGE_DRIVER, encoding="utf-8")
+            node = shutil.which("node", path=ENV.get("PATH")) or "node"
+            cp = subprocess.run([node, str(drv), str(SKILL), "http://127.0.0.1:%d/site/index.html" % srv.server_address[1],
+                                 mode], env=ENV, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8",
+                                timeout=180)
+        finally:
+            srv.shutdown()
+            srv.server_close()
+        self.assertEqual(cp.returncode, 0, cp.stderr[-2000:])
+        return json.loads(cp.stdout.strip().splitlines()[-1])
+
+    def make_site(self, tmp):
+        proj = tmp / "long"
+        (proj / "audio").mkdir(parents=True)
+        ff.run_ffmpeg(["-f", "lavfi", "-i", "anoisesrc=d=60:c=pink:a=0.2:r=48000", "-ac", "2", str(proj / "audio" / "bed.wav")])
+        (proj / "showtime.json").write_text(json.dumps({"title": "No range", "width": 640, "height": 360, "fps": 30,
+                                                        "duration": 60, "audio": "audio/bed.wav"}), encoding="utf-8")
+        (proj / "index.html").write_text('<!doctype html><html><head><script src="/_st/stage.js"></script></head>'
+                                          '<body style="margin:0;background:#123"></body></html>', encoding="utf-8")
+        export(proj, tmp / "www" / "site", "--folder")
+
+    def test_failed_whole_read_does_not_silence_later_seeks(self):
+        tmp = Path(tempfile.mkdtemp(prefix="st-norange-fail-"))
+        try:
+            self.make_site(tmp)
+            r = self.serve_and_play(tmp, mode="refused")
+            self.assertGreater(r["first"]["t"], 31.0, r)            # the picture plays on by the wall clock
+            self.assertTrue(r["first"]["apaused"], r)               # the sound waits: it cannot get there
+            # the seek after the failed read reads it again (it used to wait on the failed one for good, the
+            # soundtrack detached and paused for the rest of the session)
+            self.assertEqual(r["second"]["reads"], 2, r)
+            self.assertEqual(r["second"]["src"], "blob", r)
+            self.assertFalse(r["second"]["apaused"], "the soundtrack stayed detached after a failed read: %s" % r)
+            self.assertLess(abs(r["second"]["a"] - r["second"]["t"]), 0.3, r)
+        finally:
+            shutil.rmtree(str(tmp), ignore_errors=True)
+
+    def test_seek_without_range_requests(self):
+        tmp = Path(tempfile.mkdtemp(prefix="st-norange-"))
+        try:
+            self.make_site(tmp)
+            r = self.serve_and_play(tmp)
+            self.assertGreater(r["at300"]["t"], 30.05, "the clock stopped at the seek target: %s" % r)
+            self.assertGreater(r["at4000"]["t"], 33.0, r)
+            # either the element can seek by now (the early read filled the cache) or the blob was swapped in
+            self.assertIn(r["at4000"]["src"], ("http", "blob"), r)
+            self.assertFalse(r["at4000"]["apaused"], r)
+            self.assertLess(abs(r["at4000"]["a"] - r["at4000"]["t"]), 0.3, "the sound is back in sync: %s" % r)
+        finally:
+            shutil.rmtree(str(tmp), ignore_errors=True)
 
 
 class DeliverExportsTest(unittest.TestCase):

@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Ask a question
+    url: https://github.com/FavioVazquez/showtime/discussions/categories/q-a
+    about: How do I...? Is this possible? Ask in Q&A.
+  - name: Show a video you made
+    url: https://github.com/FavioVazquez/showtime/discussions/categories/show-and-tell
+    about: Share it in Show and tell.
+  - name: Docs
+    url: https://faviovazquez.github.io/showtime/
+    about: Guides, the FAQ and the full reference.
+  - name: Report a security problem
+    url: https://github.com/FavioVazquez/showtime/security/advisories/new
+    about: Privately, never in a public issue (see SECURITY.md).

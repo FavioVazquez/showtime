@@ -46,6 +46,9 @@ Measured on a 64-core Linux machine with no GPU (Chrome drawing in software):
 | WebGL showreel (scaled up from 15 s) | about 2.2 min | about 2.0 min (4) |
 | DOM page (scaled up from 15 s) | about 3.3 min | about 1.9 min (16) |
 
+At their real lengths with the automatic settings (8 workers there), 0.4.1 rendered a 30 s launch film in 17.6 s
+(0.4.0: 42.0 s), a 15 s DOM page in 16.4 s (31.8 s) and a 15 s WebGL showreel in 21.9 s (25.3 s).
+
 On a 6-core Intel Mac with its GPU, the same three ran at about 2.3-3.3 min for 90 s. With the GPU turned off,
 the WebGL showreel there took about 22 minutes for 90 s (about 0.5 s a frame): **a 4-8 core machine without a
 GPU looks like that, not like the 64-core numbers.** DOM pages without WebGL suffer much less (about 5-8 min

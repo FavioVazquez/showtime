@@ -70,4 +70,5 @@ Other aspects: the reel is laid out for 16:9 and recomposes itself for tall and 
 --size 9:16` (or 1:1, 4:5) needs no edits and `showtime check . --size 9:16` passes. Type scales by the frame's
 shorter side; on a tall frame the shot tags and the centred words sit inside the vertical safe box (clear of the
 platform UI), the name wraps to two lines, the tile grid turns 4x8, two more type bands fill the height, the chart
-stacks the counter over the bars, and the 3D camera pulls back. Keep those rules when you swap a shot.
+stacks the counter over the bars (in square frames too, with a smaller ring: `chartLayout(W, H)` in reel.js), and
+the 3D camera pulls back. Keep those rules when you swap a shot.

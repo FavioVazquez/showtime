@@ -568,10 +568,12 @@ class RenderTests(unittest.TestCase):
         showtime("new", "dom", proj, "--size", "640x360", "--duration", 20)
         cfg = json.loads((proj / "showtime.json").read_text(encoding="utf-8"))
         self.assertEqual(cfg["duration"], 20)
-        # the poster is the hook frame (claim + product teaser, before the camera move); a longer hero keeps
-        # the offset from its start (the hero now runs 0-9.067 s), so it stays inside the hook
-        self.assertGreater(cfg["poster"], 1.0)
-        self.assertLess(cfg["poster"], 2.3)
+        # the poster is the hook frame (claim + product teaser, before the camera move); the hero (now 0-9.067 s)
+        # is a data-stretch="spread" scene, so the poster spreads with its beats (1.9 s x 9.067/6.8) and stays
+        # before the headline's exit (2.2 s spread the same way)
+        k = 9.067 / 6.8
+        self.assertAlmostEqual(cfg["poster"], 1.9 * k, places=2)
+        self.assertLess(cfg["poster"], 2.2 * k)
         mix = json.loads((proj / "audio" / "mix.json").read_text(encoding="utf-8"))
         secs = mix["tracks"][0]["compose"]["sections"]
         self.assertTrue(secs.endswith("16:outro"), secs)           # the outro starts with the retimed close scene

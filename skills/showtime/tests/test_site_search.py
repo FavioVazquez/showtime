@@ -31,6 +31,15 @@ spec = importlib.util.spec_from_file_location("site_build", SITE / "build.py")
 build = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(build)
 
+# a real build reads the gallery: examples/ in the development checkout, or a clone of the examples repository next
+# to this one (site/config.json "examples_dir"); the public plugin repository has neither, and the build test skips
+try:
+    build.find_examples()
+    NO_EXAMPLES = ""
+except SystemExit:
+    NO_EXAMPLES = "needs the examples folder (examples/ here, or a clone of %s at %s)" % (
+        build.CONFIG.get("examples_repo", "the examples repository"), build.CONFIG.get("examples_dir", "../"))
+
 
 def norm_query(q: str) -> str:
     """app.js norm(), with the character class read from app.js itself."""
@@ -113,6 +122,7 @@ class Sections(unittest.TestCase):
 class RealBuild(unittest.TestCase):
     """The whole site, without videos: the build's own check passes and long pages are searchable to the end."""
 
+    @unittest.skipIf(bool(NO_EXAMPLES), NO_EXAMPLES)
     def test_build(self):
         out = Path(tempfile.mkdtemp(prefix="st-site-out-"))
         try:

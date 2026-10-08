@@ -102,6 +102,16 @@ function readText(f) { try { return fs.readFileSync(f, 'utf8'); } catch { return
 function readJSON(f) { try { return JSON.parse(fs.readFileSync(f, 'utf8').replace(/^\uFEFF/, '')); } catch { return null; } }
 function writeJSON(f, o) { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, JSON.stringify(o, null, 2) + '\n'); }
 const posix = (p) => p.split(path.sep).join('/');
+/** A path as written into the project's own files (adopt.json, showtime.json): relative to the project folder,
+ * with forward slashes, so a project copied or shared names no machine path; absolute only when there is no
+ * relative way (another drive). fromProject() reads both forms back. */
+const toProject = (dest, p) => {
+  if (!p) return p;
+  const r = path.relative(dest, path.resolve(p));
+  return r === '' ? '.' : path.isAbsolute(r) ? p : posix(r);
+};
+// an absolute path (written by 0.4.0 and earlier) stays as it is: split on '/', its leading '' would drop the root
+const fromProject = (dest, p) => (!p ? p : path.isAbsolute(String(p)) ? String(p) : path.resolve(dest, ...String(p).split('/')));
 const rel = (p) => { const r = path.relative(process.cwd(), p); return r && !r.startsWith('..') && !path.isAbsolute(r) ? r : p; };
 const sha = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
 const even = (n) => Math.max(2, Math.round(n / 2) * 2);
@@ -196,7 +206,7 @@ async function main() {
     }
     prev = existing.adopt;
     dest = path.dirname(cfgAt);
-    src = prev.source;
+    src = fromProject(dest, prev.source);          // relative to the project (absolute before 0.4.1)
     if (!fs.existsSync(src)) throw new UserError(`the source of this project is gone: ${src}`, 'adopt the new location instead: showtime adopt <folder> -o <new project>');
     for (const k of ['mode', 'seek', 'fn', 'unit', 'ready', 'duration', 'fps', 'size', 'python', 'workers', 'timeout']) {
       if (a[k] === undefined && prev.options && prev.options[k] !== undefined) a[k] = String(prev.options[k]);
@@ -204,7 +214,7 @@ async function main() {
     if (!a['allow-license'] && prev.options && prev.options.allow_license) a['allow-license'] = true;
     if (!a.page && prev.entry && prev.kind !== 'python' && prev.kind !== 'capture') a.page = prev.entry;
     if (!a.script && prev.entry && (prev.kind === 'python' || prev.kind === 'capture')) a.script = prev.entry;
-    if (!a.root && prev.root && !prev.zip) a.root = prev.root;
+    if (!a.root && prev.root && !prev.zip) a.root = fromProject(dest, prev.root);
   } else if (existing && !a.refresh && fs.statSync(src).isDirectory() &&
              (fs.existsSync(path.join(src, 'index.html')) && /\/_st\/stage\.js|ST\.onSeek|Film\./.test(readText(path.join(src, 'index.html'))))) {
     throw new UserError(`${rel(src)} is already a showtime project`, `use it directly: showtime check ${rel(src)}`);
@@ -293,8 +303,9 @@ async function main() {
   // showtime.json: keep whatever the user added (audio, poster, captions), refresh what adopt owns
   const cfgPath = path.join(dest, 'showtime.json');
   const cfg = readJSON(cfgPath) || {};
+  const source = zip || (src === root ? root : path.resolve(src));
   const adoptBlock = {
-    source: zip || (src === root ? root : path.resolve(src)), root: zip ? posix(path.relative(dest, root)) || '.' : root, entry,
+    source: toProject(dest, source), root: toProject(dest, root), entry,
     kind: res.kind, contract: res.contract, adopted: new Date().toISOString(), options: res.options,
     ...(zip ? { zip: true } : {}), ...(res.made ? { made: res.made } : {}),
   };
@@ -320,14 +331,18 @@ async function main() {
 
   const report = {
     ok: !findings.errors.length && (!check || check.errors === 0) && (!det || det.verdict !== 'differs'),
-    project: dest, job, source: adoptBlock.source, entry, kind: res.kind, contract: res.contract,
+    project: dest, job, source, entry, kind: res.kind, contract: res.contract,
     ...(res.made ? { made: res.made, design: res.design } : {}),
     width: res.width, height: res.height, fps: res.fps, duration: res.duration, loop: res.loop || null, sources: res.sources,
     fonts: res.fonts || [],
     audio: res.audioFiles || [], determinism: det, check, findings: findings.items, copied: { files: copied.files, bytes: copied.bytes, skipped: copied.skipped },
     seconds: Math.round((Date.now() - t0) / 100) / 10,
   };
-  writeJSON(path.join(dest, 'adopt.json'), report);
+  // on disk, paths relative to the project (as in showtime.json); the printed report keeps them absolute
+  writeJSON(path.join(dest, 'adopt.json'), {
+    ...report, project: '.', job: toProject(dest, job), source: toProject(dest, source),
+    ...(check ? { check: { ...check, report: toProject(dest, check.report), sheet: toProject(dest, check.sheet) } } : {}),
+  });
   if (job) await noteJob(job, dest, report);
   printSummary(report, a);
   if (findings.errors.length || (check && check.errors) || (det && det.verdict === 'differs')) return 1;

@@ -668,7 +668,10 @@ class Adopt(unittest.TestCase):
         self.assertTrue(red and abs(red[0] - 840) <= 4 and abs(red[-1] - 1016) <= 4, (red[:1], red[-1:]))
         showtime("adopt", out, "--refresh", "--no-check")
         rep = json.loads((out / "adopt.json").read_text())
-        self.assertEqual((rep["source"], rep["duration"]), (str(z), 4))
+        # paths in the project's files are relative to the project, and --refresh still finds the zip by them
+        self.assertEqual((rep["source"], rep["project"], rep["duration"]), ("../" + z.name, ".", 4))
+        cfg = json.loads((out / "showtime.json").read_text())
+        self.assertEqual((cfg["adopt"]["source"], cfg["adopt"]["root"]), ("../" + z.name, "src"))
 
     def design_box(self, name, w, h, *extra):
         """The design-dc fixture as a w x h artboard with a green box in its bottom-right corner, adopted
@@ -718,7 +721,8 @@ class Adopt(unittest.TestCase):
         self.assertEqual(rep["made"], "Claude Design export")
         # check measures the zoomed artboard in one unit: the text inside a box that overflows it is not "clipped"
         self.assertEqual(rep["check"]["errors"], 0, rep["check"])
-        report = json.loads(Path(rep["check"]["report"]).read_text())
+        self.assertEqual(rep["check"]["report"], "work/check/report.json")    # relative to the project
+        report = json.loads((out / rep["check"]["report"]).read_text())
         self.assertNotIn("text_clipped", [f.get("code") for f in report.get("findings", [])])
         self.assertEqual((rep["width"], rep["height"], rep["duration"]), (1080, 1920, 4))
         self.assertIn("one loop is 4 s", rep["sources"]["duration"])
@@ -735,7 +739,17 @@ class Adopt(unittest.TestCase):
         out = TMP / "editable-out"
         showtime("adopt", src, "-o", out, "--no-check")
         page = src / "video.html"
+        cfg = json.loads((out / "showtime.json").read_text())
+        self.assertEqual((cfg["adopt"]["source"], cfg["adopt"]["root"]), ("../editable", "../editable"))
+        for f in ("adopt.json", "showtime.json"):
+            self.assertNotIn(str(TMP), (out / f).read_text(), f + " names a machine path")
         page.write_text(page.read_text().replace("const DURATION = 4;", "const DURATION = 5;"))
+        # the project moves with its source (a job folder copied elsewhere): --refresh still finds the original
+        moved = TMP / "moved"
+        moved.mkdir()
+        shutil.move(str(src), str(moved / "editable"))
+        shutil.move(str(out), str(moved / "editable-out"))
+        src, out = moved / "editable", moved / "editable-out"
         showtime("adopt", out, "--refresh", "--no-check")
         rep = json.loads((out / "adopt.json").read_text())
         self.assertEqual(rep["duration"], 5)
@@ -743,6 +757,23 @@ class Adopt(unittest.TestCase):
         cp = showtime("adopt", out, check=False)
         self.assertEqual(cp.returncode, 1)
         self.assertIn("--refresh", cp.stderr)
+
+    def test_refresh_a_project_adopted_before_0_4_1(self):
+        """0.4.0 and earlier wrote adopt.source and adopt.root as absolute paths: --refresh still finds them."""
+        src = TMP / "old-abs"
+        shutil.copytree(FIX / "html-seek", src)
+        out = TMP / "old-abs-out"
+        showtime("adopt", src, "-o", out, "--no-check")
+        cfg = json.loads((out / "showtime.json").read_text())
+        cfg["adopt"]["source"] = cfg["adopt"]["root"] = str(src.resolve())
+        (out / "showtime.json").write_text(json.dumps(cfg, indent=2))
+        page = src / "video.html"
+        page.write_text(page.read_text().replace("const DURATION = 4;", "const DURATION = 6;"))
+        cp = showtime("adopt", out, "--refresh", "--no-check", check=False)
+        self.assertEqual(cp.returncode, 0, cp.stderr[-1500:])
+        self.assertNotIn("is gone", cp.stderr)
+        self.assertEqual(json.loads((out / "adopt.json").read_text())["duration"], 6)
+        self.assertIn("DURATION = 6", (out / "src" / "video.html").read_text())
 
 
 if __name__ == "__main__":

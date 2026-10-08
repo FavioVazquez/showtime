@@ -57,9 +57,9 @@ Run `showtime motion` for the live list.
 | 4. Data: chart, world-map | 220-271 |
 | 5. Product and UI: browser-frame / device-frame, cursor and keystrokes, code-block, ... | 273-335 |
 | 6. Camera, stills, closers, texture | 337-378 |
-| 7. Looks (WebGL): fluted-glass, tilt-shift, liquid-metal, mesh-gradient, god-rays, marble, metaballs | 380-545 |
-| 8. Themes (runtime/themes) | 547-560 |
-| 9. Writing your own component | 562-581 |
+| 7. Looks (WebGL): fluted-glass, tilt-shift, liquid-metal, mesh-gradient, god-rays, marble, metaballs | 380-549 |
+| 8. Themes (runtime/themes) | 551-564 |
+| 9. Writing your own component | 566-585 |
 
 ## 1. Setup (two lines) and the time model
 
@@ -397,7 +397,7 @@ with its render: the `_looks` demo in the showtime repository's examples folder.
   CSS blur behind a mask (tilt-shift), a 2D chrome sphere (liquid-metal), a still CSS field (mesh-gradient), a
   still CSS glow behind the sharp shape (god-rays), its first frame worked out once in JS (marble), and flat
   blobs traced on a 2D canvas, which still move (metaballs); `showtime check` says so (`look_fallback`).
-- **Cost without a GPU**: the extra ms a 1080p frame takes on the build box (a 64-core machine, SwiftShader;
+- **Cost without a GPU**: the extra ms a 1080p frame takes on our test machine (64 cores, SwiftShader;
   each frame a seek and a JPEG screenshot, as render takes it, against the same scene without the look), with
   one browser and per browser with 8 rendering at once (render's choice there):
 
@@ -422,6 +422,10 @@ with its render: the `_looks` demo in the showtime repository's examples folder.
   page: `check` warns (`look_contexts`) above 8 looks on screen at once and fails above 14; past 12 at once
   the oldest give theirs back and show a still copy of their frame. A context the browser takes back anyway
   is `look_lost`.
+- **With a GPU.** A GPU can hand the screenshot a WebGL canvas it has not finished drawing (the frame then shows
+  the look a few frames back), so in a render on a GPU each look reads its frame back into a 2D canvas the page
+  shows; `check` lists it as `present: "readback"`. It adds about 10 ms to a 1080p frame of a full-frame look
+  (measured on a Mac with a GPU), far less than the look costs without a GPU.
 
 **fluted-glass**: a pane of reeded glass over an image, or over slow glows in the theme's colours when there is
 no image. Each flute shows a squeezed copy of a wider strip of the picture, with a chromatic split, a highlight

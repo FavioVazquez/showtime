@@ -50,9 +50,9 @@ Everything runs locally. Every command has `--help` with examples, and most acce
 | 2. Music | 73-128 |
 | 3. Sound effects | 130-146 |
 | 4. Library | 148-196 |
-| 5. The mix spec (audio/mix.json): Heard on a phone, Credits | 198-336 |
-| 6. Analysis and delivery | 338-364 |
-| 7. Platform notes | 366-376 |
+| 5. The mix spec (audio/mix.json): Heard on a phone, Credits | 198-340 |
+| 6. Analysis and delivery | 342-368 |
+| 7. Platform notes | 370-380 |
 
 ## 1. The five-minute path
 
@@ -230,6 +230,8 @@ showtime audio lib index ~/Sounds/MyPack --name mypack --license "vendor-license
     track overrides the measured hit (seconds from the file start).
 - **Length:** `loop: true` or `fit: true` fills the window. Music loops on bar lines when a beat grid
   is known (a `.beats.json` sidecar, a composed track, or a library item), and ends musically.
+  `"ending": "song"` keeps the track's own ending (its last bars spliced in at a downbeat, as
+  `audio fit --ending song`); `"fade"` fades out instead.
 - **Shape:** `fade_in` and `fade_out`, plus `pan` from -1 to 1. Every clip edge gets at least 3–5 ms
   of fade, so there are no clicks.
 - **Ducking:** `duck: {"under": "voice" | ["voice", "sfx"] | [track ids], "depth_db": 12, "attack": 0.08,
@@ -285,7 +287,8 @@ mix. Measured on 7 Oct 2026: the posted films sit 0.7-8.2 LU under the mix (voic
 showreel with 75 % of its weighted energy at 80-160 Hz sat 13.6 LU under, so on a phone it played about 9 dB
 quieter than the voice-led films at the same -14 LUFS.
 
-The speaker-safe step of `showtime audio mix` (and so of `showtime render`), on by default:
+The speaker-safe step of `showtime audio mix` (and so of `showtime render` with a showtime.json `"audio"` mix spec; not
+an `ST.score` bed or render's built-in fallback mixer), on by default:
 1. A 2-pole high-pass at 40 Hz on the music, ambience and effects: nothing a speaker plays, only headroom.
 2. When the mix is still more than 10 LU under above 300 Hz, a low shelf at 160 Hz on the bed and on the
    sub-heavy effects, as deep as it takes to reach 8 LU (at most -12 dB), before the loudness
@@ -303,7 +306,8 @@ its mid parts. `mix.report.json` `speaker` has the numbers (`gap_300_lu_before`,
 in full over its loudest above 300 Hz). An effect over 15 LU (`boom`, `impact`, `sub-drop`, `punch`,
 `reverse-hit`, `heartbeat`: 17-30 LU) is sub-heavy; one that lands with no mid sound on its hit (another
 effect within 60 ms, a `layer`, or the crash of a composed bed) is listed as `sub_alone` with a note:
-layer a mid transient on the same hit (`metal-hit`, `glitch` or `static-burst` at -8 to -12 dB). A riser
+layer a mid transient on the same hit (`static-burst`, `glitch` or `tick` at -8 to -12 dB: 0-3 LU, so a phone plays
+them; not a pitched hit such as `metal-hit`, which reads as a bell, nor `thock`, 9-10 LU). A riser
 ends on the hit, so it does not count.
 
 `mix.report.json` contains:

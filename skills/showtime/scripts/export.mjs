@@ -20,7 +20,7 @@ import { resolveShare, shareMeta, genericTitle, genericChapters } from './lib/ex
 
 const SPEC = {
   name: 'export',
-  usage: 'showtime export html <project> [-o out.html] [--audio auto|embed|score|none] [--folder] [--controls full|minimal|none] [--target file|artifact] [--lang CODE] [--no-questions] [--auto-continue S]',
+  usage: 'showtime export html <project|job> [-o out.html] [--audio auto|embed|score|none] [--folder] [--controls full|minimal|none] [--target file|artifact] [--lang CODE] [--no-questions] [--auto-continue S]',
   summary: 'Export a project as an interactive HTML video that plays in any browser, offline, from one file.',
   description: [
     'The page is packed with everything it uses (runtime, scripts, styles, fonts, images, emoji, data,',
@@ -39,6 +39,8 @@ const SPEC = {
     'MP4\'s "pause and think" beat. socratic.json (the same questions, for pages that drive the player from',
     'outside) is written next to the export. --no-questions exports a plain player.',
     'The file makes no network request. Default output: ./showtime-out/<title>-<timestamp>/<title>.html',
+    'A job (folder or name, as qa takes it) exports its project/ folder into the job folder;',
+    '`<job> --folder out` writes the folder version to ./out/.',
     '',
     'Audio: auto = the procedural score played live (streamed from the first second, tiny file) when',
     'that is all the sound, otherwise',
@@ -94,6 +96,8 @@ const SPEC = {
     'showtime export html my-video                         # -> showtime-out/<title>-<ts>/<title>.html',
     'showtime export html my-video -o launch.html          # one file, plays offline in any browser',
     'showtime export html my-video --job launch -o embed.html   # into the job folder, with that name',
+    'showtime export html launch                            # a job: its project/, into the job folder',
+    'showtime export html launch --folder out               # a job as a folder: ./out/index.html + assets/',
     'showtime export html my-film --audio score            # procedural score rendered live: tiny file',
     'showtime export html my-film --audio-file final.mp4   # the shipped video\'s soundtrack, nothing rebuilt',
     'showtime export html my-video --bitrate 64k --max-mb 8',
@@ -109,6 +113,26 @@ const SPEC = {
 };
 
 const MB = 1000 * 1000;   // decimal MB, like fmtBytes and platform limits
+
+/**
+ * A job argument -> { job, project } (its project/ folder), or null for a project folder or page. A job without
+ * a project/ folder is an error that says so (never "start a new project": the job has one somewhere else).
+ */
+export function jobProject(arg, page) {
+  const has = (d) => fs.existsSync(path.join(d, page || 'index.html'));
+  const abs = path.resolve(String(arg));
+  if (fs.existsSync(abs) && (fs.statSync(abs).isFile() || has(abs))) return null;
+  let job = null;
+  try { job = resolveJobDir(arg); } catch (e) { if (!fs.existsSync(abs)) throw new UserError(e.message, e.hint); }
+  if (!job || !fs.existsSync(job) || !fs.statSync(job).isDirectory()) return null;
+  const project = path.join(job, 'project');
+  if (has(project)) return { job, project };
+  if (fs.existsSync(path.join(job, 'job.json')) || fs.existsSync(path.join(job, 'render.json'))) {
+    throw new UserError(`the job ${job} has no project/${page || 'index.html'} to export`,
+      'pass the project folder the job was rendered from: showtime export html <project-folder> (render.json "project" names it)');
+  }
+  return null;
+}
 
 /** --lang, showtime.json "lang"/"language", <html lang>, narration.md front matter (lang: es), else "en". */
 export function projectLang(flag, cfg, pageHtml, dir) {
@@ -141,13 +165,17 @@ async function main() {
   else if (pos.length && fs.existsSync(pos[0])) { /* `showtime export <project>` means html */ }
   else if (pos.length && /^(mp4|mov|webm|gif|video)$/i.test(pos[0])) throw new UserError(`"${pos[0]}" is not an export format here`, 'video files come from `showtime render <project>`, platform versions from `showtime deliver exports <video>`');
   else throw new UserError(pos.length ? `unknown export format "${pos[0]}"` : 'missing the export format', 'showtime export html <project>');
-  if (pos.length > 1) throw new UserError(`expected one project, got: ${pos.join(' ')}`, 'showtime export html <project-folder>');
+  // `<job> --folder out`: --folder takes no value, so the word after it is the output folder
+  if (pos.length === 2 && a.folder && a.output === undefined) a.output = pos.pop();
+  if (pos.length > 1) throw new UserError(`expected one project, got: ${pos.join(' ')}`, 'showtime export html <project-folder|job> [--folder -o OUT]');
   const quiet = !!a.quiet;
   const say = (m) => { if (!quiet) info(m); };
   const warnings = [];
   const addWarn = (m) => { if (!warnings.includes(m)) { warnings.push(m); warn(m); } };
 
-  const proj = resolveProject(pos[0] || '.', { page: a.page });
+  // a job (as qa and review take it) exports its project/ folder, into the job folder by default
+  const fromJob = jobProject(pos[0] || '.', a.page);
+  const proj = resolveProject(fromJob ? fromJob.project : (pos[0] || '.'), { page: a.page });
   { const w = staleKitWarning(proj.dir); if (w) addWarn(w); }
   const cfg = { ...proj.config };
   const folder = !!a.folder;
@@ -207,7 +235,7 @@ async function main() {
     }
     if (out !== want) addWarn(`${want} exists; writing ${path.basename(out)} instead (exports never overwrite)`);
   } else {
-    const dir = a.job ? resolveJobDir(a.job) : jobDir(proj.slug, a['out-dir']);
+    const dir = a.job ? resolveJobDir(a.job) : (fromJob && !a['out-dir'] ? fromJob.job : jobDir(proj.slug, a['out-dir']));
     if (!dir || !fs.existsSync(dir)) throw new UserError(`no job named "${a.job}"`, 'list jobs with `showtime job list`');
     out = freshPath(path.join(dir, folder ? `${proj.slug}-html` : `${proj.slug}.html`));
   }
@@ -322,7 +350,11 @@ async function main() {
     const fit = async (over) => {
       if (fitMode === 'off') return false;
       const r = await fitFootage(col.files, { over, workDir: path.join(workDir, 'fit'), say: (m) => say(c.dim(`  fit: ${m}`)) });
-      refit.push(...r.items);
+      // one entry per clip: a later pass re-encodes the same clip again (its original size, its last encode)
+      for (const it of r.items) {
+        const i = refit.findIndex((x) => x.path === it.path);
+        if (i >= 0) refit[i] = it; else refit.push(it);
+      }
       if (!r.items.length && r.reason) addWarn(`could not fit the footage under ${maxMb} MB: ${r.reason}`);
       return r.items.length > 0;
     };
@@ -410,7 +442,7 @@ async function main() {
       const aTxt = audioReport.mode === 'embed' ? `embedded ${audioReport.codec.toUpperCase()} ${audioReport.bitrate}` : audioReport.mode === 'score' ? 'live score' : 'no sound';
       console.log(`${c.green('exported')} ${res.output}`);
       console.log(`  ${fmtBytes(res.bytes)}${folder ? ' (folder)' : ` of ${maxMb || 'unlimited'} MB`}, ${manifest.width}x${manifest.height} ${manifest.fps} fps ${D.toFixed(2)} s, ${aTxt}, ${pr.chapters.length} chapters, ${res.files} files packed`);
-      console.log(`  open it in any browser (double-click); it makes no network request${folder ? '. Serve the folder, or open index.html' : ''}`);
+      console.log(`  open it in any browser (double-click); it makes no network request${folder ? '. Serve the folder from a host with byte ranges (GitHub Pages, most web hosts), or open index.html' : ''}`);
       if (socratic) console.log(`  ${qs.list.length} question${qs.list.length > 1 ? 's' : ''}: the video stops and asks${controls === 'none' ? ' (from the embedding page)' : ''}; ${path.basename(socratic)} beside it`);
       showCard({
         title: `${path.basename(res.output)} is ready`, file: res.output,

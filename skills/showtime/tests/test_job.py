@@ -141,11 +141,14 @@ class JobTests(unittest.TestCase):
         self.assertIsNone(ledger.windows_path_warning(deep, "x", windows=False))
         if os.name != "nt":
             self.assertIsNone(ledger.windows_path_warning(Path("/" + "d" * 300), "x"))
-        # job init records it in the ledger's warnings (here with Windows simulated and a deep base)
+        # job init records it in the ledger's warnings (here with Windows simulated and a deep base). The folder
+        # really made is short: a Windows machine with long paths off (LongPathsEnabled=0) cannot create a
+        # 260-character one, so the check sees the job's name under a deep simulated base instead.
         real = ledger.windows_path_warning
-        base = self.tmp / ("deep-" + "b" * 200)
-        with mock.patch.object(ledger, "windows_path_warning", lambda j, s: real(j, s, windows=True)):
-            d, data = ledger.init("long-path-test", base=base)
+        deep_base = PureWindowsPath("D:\\" + "\\".join(["b" * 40] * 5))
+        with mock.patch.object(ledger, "windows_path_warning",
+                               lambda j, s: real(deep_base / Path(j).name, s, windows=True)):
+            d, data = ledger.init("long-path-test", base=self.tmp / "deep")
         self.assertTrue(any("260-character" in x for x in data["warnings"]), data["warnings"])
         cp = showtime("job", "init", "short", "--no-check", "--json", "--base", self.tmp / "shallow")
         self.assertNotIn("path_warning", json.loads(cp.stdout))

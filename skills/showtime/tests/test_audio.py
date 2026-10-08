@@ -472,6 +472,18 @@ class AudioTests(unittest.TestCase):
         self.assertEqual(b["ending"], "song")
         self.assertEqual(wav_frames(self.tmp / "fb.wav"), 13 * 48000)
         self.assertLess(b["end_hit"], 13.0)
+        # a mix track keeps the song's ending too ("ending": "song" reaches fit; an ending implies fit)
+        spec = {"duration": 13.0, "master": {"engine": "none"},
+                "tracks": [{"id": "bed", "kind": "music", "file": str(long), "ending": "song"}]}
+        (self.tmp / "mix-song.json").write_text(json.dumps(spec), encoding="utf-8")
+        m = js("audio", "mix", self.tmp / "mix-song.json", "-o", self.tmp / "mix-song.wav", "--json")
+        self.assertEqual(m["tracks"][0]["fit"]["ending"], "song", m["tracks"][0].get("fit"))
+        self.assertEqual(m["tracks"][0]["fit"]["ending_from"], b["ending_from"])
+        spec["tracks"][0]["ending"] = "outro"
+        (self.tmp / "mix-song.json").write_text(json.dumps(spec), encoding="utf-8")
+        bad = st("audio", "mix", self.tmp / "mix-song.json", "-o", self.tmp / "mix-bad.wav", check=False)
+        self.assertNotEqual(bad.returncode, 0)
+        self.assertIn('"ending" must be', bad.stdout + bad.stderr)
         # compose: a marker inside the ring-out is reported; the SoundFont used is recorded
         r = js("audio", "compose", "--style", "epic-trailer", "--dur", "12", "--sections", "0:intro,5:drop,11.5:outro",
                "--no-stems", "-o", self.tmp / "notes.wav", "--json")

@@ -359,6 +359,38 @@ class NewProjectTests(unittest.TestCase):
         for kind in ("chart(", "morph(", "spiro(", "halftone(", "burst(", "tunnel(", "ST.three(", "mix-blend-mode: multiply"):
             self.assertIn(kind, html)
 
+    def test_chart_counter_stays_in_square_and_tall_frames(self):
+        """reel.js chart(): in a square frame (and 4:5, 9:16) the counter takes the tall layout, and its clip box and
+        ring stay inside the frame through the shot's camera push (example 30's 1:1 ran off the right edge with
+        `tall = H > W`); the ring stays above the label. The counter's cell is measureText('0') * 1.04 in the page:
+        0.56 em here, a little wider than Anton's digits."""
+        mod = self.tmp / "reel.mjs"                      # reel.js is a browser module: node imports it as .mjs
+        shutil.copy(str(SKILL / "templates" / "showreel" / "reel.js"), str(mod))
+        html = (SKILL / "templates" / "showreel" / "index.html").read_text(encoding="utf-8")
+        import re
+        dur = float(re.search(r'id="data"[^>]*data-dur="([\d.]+)"', html).group(1))
+        sizes = [[1080, 1080], [1080, 1350], [1080, 1920], [1920, 1080]]
+        lays = node_json("console.log(JSON.stringify(%s.map(([w, h]) => R.chartLayout(w, h))))" % json.dumps(sizes),
+                         mod=mod)
+        z = 1 + 0.06 * dur                               # the push at the shot's last frame, round (W/2, 0.55 H)
+        for (w, h), lay in zip(sizes, lays):
+            push = lambda x, y: (w / 2 + (x - w / 2) * z, 0.55 * h + (y - 0.55 * h) * z)
+            self.assertEqual(lay["tall"], h >= w, (w, h))
+            if not lay["tall"]:
+                continue
+            size, cell = lay["size"], lay["size"] * 0.56 * 1.04
+            left = lay["cx"] - cell * 3 / 2                  # three digits (900)
+            ring_y, r = lay["cy"] - size * 0.42, size * 0.95
+            boxes = {"counter": (left - cell * 0.2, lay["cy"] - size * 0.95, left + cell * 3.2, lay["cy"] + size * 0.05),
+                     "ring": (lay["cx"] - r, ring_y - r, lay["cx"] + r, ring_y + r)}
+            for name, (ax, ay, bx, by) in boxes.items():
+                (ax, ay), (bx, by) = push(ax, ay), push(bx, by)
+                self.assertTrue(0 <= ax and bx <= w and 0 <= ay and by <= h,
+                                "%s box %s outside %dx%d" % (name, [round(v) for v in (ax, ay, bx, by)], w, h))
+            label_top = lay["labelY"] - min(w, h) * 0.05 * 0.8
+            self.assertLess(ring_y + r, label_top, (w, h))
+            self.assertLess(lay["labelY"], lay["top"], (w, h))
+
     def test_brief_words_set_the_tone(self):
         cp = showtime("job", "init", "reel-job", "--request", ROUND1, "--base", self.tmp, "--no-check")
         self.assertIn('tone: showreel tone (the brief says "showreel")', cp.stderr + cp.stdout)

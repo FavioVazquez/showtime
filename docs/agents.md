@@ -34,8 +34,9 @@ Tested on Linux x64 (Ubuntu 24.04) on 2026-09-28.
 
 ## Before any of them: setup, once, in a normal terminal
 
-showtime renders on your machine, so it needs its tools and models in `~/.showtime`: about 770 MB on Linux
-x64, 560 to 610 MB on macOS and Windows (`showtime setup --plan` prints your exact list; bigger pieces such as
+showtime renders on your machine, so it needs its tools and models in `~/.showtime`: about 0.73 GB to download
+on Linux x64 and 0.53 to 0.59 GB on macOS and Windows, 1.4 to 1.8 GB once installed (`showtime setup --estimate`
+prints yours and `showtime setup --plan` every download; bigger pieces such as
 Whisper for transcripts arrive the first time a video needs them, with their size announced, and
 `showtime setup --full` fetches them all now). Agent sandboxes often block that download, so run setup
 yourself once:
@@ -307,7 +308,7 @@ Any client that starts local (stdio) servers can use showtime's MCP server on it
 ([@faviovazquez/showtime-mcp](https://www.npmjs.com/package/@faviovazquez/showtime-mcp), also in the MCP Registry as
 `io.github.FavioVazquez/showtime`),
 `{"command": "npx", "args": ["-y", "@faviovazquez/showtime-mcp"]}` (see
-[`packages/npm/README.md`](../packages/npm/README.md)), and [`showtime-0.4.0.mcpb`](https://github.com/FavioVazquez/showtime/releases/download/v0.4.0/showtime-0.4.0.mcpb) from the v0.4.0 release, which
+[`packages/npm/README.md`](../packages/npm/README.md)), and [`showtime-0.4.1.mcpb`](https://github.com/FavioVazquez/showtime/releases/download/v0.4.1/showtime-0.4.1.mcpb) from the v0.4.1 release, which
 Claude Desktop opens with a double click. Setup still runs once on your machine, because the models and tools
 never travel inside a package. Long tools answer with a task id after about
 20 s when a client stops calls early; the `status` tool reports progress and the result.

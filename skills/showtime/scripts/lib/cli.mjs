@@ -292,10 +292,17 @@ export function jobDir(slug, base) {
   let root = path.resolve(base || process.env.SHOWTIME_OUT || process.cwd());
   if (path.basename(root) !== 'showtime-out') root = path.join(root, 'showtime-out');
   const stem = `${slug}-${timestamp()}`;
-  let d = path.join(root, stem), n = 2;
-  while (fs.existsSync(d)) d = path.join(root, `${stem}-${n++}`);
-  fs.mkdirSync(d, { recursive: true });
-  return d;
+  fs.mkdirSync(root, { recursive: true });
+  // claimed by an exclusive mkdir: two renders started in the same second never get the same folder
+  for (let n = 1; ; n++) {
+    const d = path.join(root, n === 1 ? stem : `${stem}-${n}`);
+    try {
+      fs.mkdirSync(d);
+      return d;
+    } catch (e) {
+      if (e.code !== 'EEXIST') throw e;
+    }
+  }
 }
 
 /** A path that does not exist yet: foo.mp4, foo-2.mp4, ... */

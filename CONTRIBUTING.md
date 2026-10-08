@@ -2,7 +2,10 @@
 
 Thanks for helping. showtime is a Claude Code skill that makes videos entirely on the user's machine, on
 macOS (Apple Silicon and Intel), Windows 10/11 and Linux. Read [CONTEXT.md](CONTEXT.md) for the words we
-use and [.out-of-scope/](.out-of-scope/README.md) for what we have decided not to do.
+use and [.out-of-scope/](.out-of-scope/README.md) for what we have decided not to do. Everyone here follows
+the [code of conduct](CODE_OF_CONDUCT.md). Bugs, feature ideas, example requests and docs problems each
+have an issue form; questions and videos you made go to
+[Discussions](https://github.com/FavioVazquez/showtime/discussions).
 
 ## Set up a development checkout
 
@@ -54,7 +57,7 @@ skills/showtime/bin/showtime setup --link     # ~/.claude/skills/showtime -> thi
 ## Tests
 
 ```bash
-python skills/showtime/tests/run_all.py --fast        # what CI runs on every pull request (a few minutes)
+python skills/showtime/tests/run_all.py --fast        # what CI runs on every pull request (11 min on a clean Ubuntu machine, 18 on Windows and a macOS VM)
 python skills/showtime/tests/run_all.py               # everything (longer; renders, voice, ASR)
 python skills/showtime/tests/run_all.py -k audio      # one module
 python skills/showtime/tests/run_all.py --fast --changed --explain   # only what your changes can affect

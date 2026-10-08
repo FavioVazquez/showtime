@@ -205,6 +205,13 @@ export function writeWavFloat(file, channels, sampleRate) {
   fs.writeFileSync(file, Buffer.concat([h, data]));
 }
 
+/** Stills from a video (the same as ff.py STILL_FLAGS and JPEG_VF). The conversion out of 4:2:0 runs with exact
+ *  rounding and full chroma interpolation (ffmpeg's default drew a saturated gradient 1-2 levels darker), and a
+ *  JPEG gets BT.601 full range, what every viewer decodes: a BT.709 tv-range video frame kept its own matrix
+ *  under JPEG's BT.601 tag (saturated colours ~6 levels darker than the video). */
+export const STILL_VF = 'scale=flags=accurate_rnd+full_chroma_int';
+export const JPEG_VF = `${STILL_VF}:out_color_matrix=bt601:out_range=pc,format=yuvj420p`;
+
 /** "30" or "30000/1001" for ffmpeg -r / -framerate. */
 export function fpsArg(fps) {
   if (Number.isInteger(fps)) return String(fps);
@@ -215,16 +222,43 @@ export function fpsArg(fps) {
   return String(fps);
 }
 
-/** EBU R128 integrated loudness, loudness range and true peak. -> {I, LRA, TP} (I = null when silent) */
-export async function ebur128(file) {
-  const r = await ffmpeg(['-i', file, '-vn', '-af', 'ebur128=peak=true:framelog=quiet', '-f', 'null', '-'], { loglevel: 'info', allowFail: true });
-  const t = String(r.stderr || '');
-  const tail = t.slice(t.lastIndexOf('Summary:'));
+// `framelog=quiet` keeps the per-frame lines out of the log, but builds before it existed (ffmpeg 4.x) reject the
+// option; `metadata=1` moves those lines to the verbose level instead, which older builds accept. A rejected option
+// still prints a Summary of zeros, which was read as 0 LUFS.
+const EBUR128_FILTERS = ['ebur128=peak=true:framelog=quiet', 'ebur128=peak=true:metadata=1'];
+let ebur128Pick = 0;
+
+/** Parse ebur128's Summary block. -> {I, LRA, TP} or null when there is none. */
+export function parseEbur128(stderr) {
+  const t = String(stderr || '');
+  const at = t.lastIndexOf('Summary:');
+  if (at < 0) return null;
+  const tail = t.slice(at);
   const num = (re) => { const m = re.exec(tail); return m ? Number(m[1]) : null; };
   let I = num(/\bI:\s*(-?[\d.]+|-inf)\s*LUFS/);
   if (I === null || !isFinite(I) || I < -70) I = null;
   const TP = num(/True peak:\s*[\r\n]+\s*Peak:\s*(-?[\d.]+)/);
   return { I, LRA: num(/LRA:\s*(-?[\d.]+)\s*LU\b/), TP: TP === null || !isFinite(TP) ? -120 : TP };
+}
+
+/**
+ * EBU R128 integrated loudness, loudness range and true peak. -> {I, LRA, TP} (I = null when silent).
+ * A reading that failed is never a number: -> {I: null, LRA: null, TP: null, error} (the callers warn).
+ */
+export async function ebur128(file) {
+  let last = null;
+  for (let k = ebur128Pick; k < EBUR128_FILTERS.length; k++) {
+    const r = await ffmpeg(['-i', file, '-vn', '-af', EBUR128_FILTERS[k], '-f', 'null', '-'], { loglevel: 'info', allowFail: true });
+    // a filter that failed to start still prints a Summary, of zeros ("I: 0.0 LUFS"): only a run that ended well counts
+    const m = r.code === 0 ? parseEbur128(r.stderr) : null;
+    if (m) { ebur128Pick = k; return m; }
+    last = r;
+    // only an option this build does not know moves on to the next form; a bad input fails the same way in both
+    if (!/framelog|Unable to parse option value|Error (initializing|applying option)|Option not found/i.test(String(r.stderr || ''))) break;
+  }
+  const lines = String((last && last.stderr) || '').split('\n').map((l) => l.trim()).filter(Boolean);
+  const why = (lines.filter((l) => /error|invalid|unable|not found|failed/i.test(l)).pop() || lines.pop() || `exit ${last ? last.code : '?'}`).slice(0, 200);
+  return { I: null, LRA: null, TP: null, error: `the loudness meter (ffmpeg ebur128) failed on ${path.basename(String(file))}: ${why}` };
 }
 
 let encCache = null;

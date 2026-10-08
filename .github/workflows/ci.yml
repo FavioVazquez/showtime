@@ -6,7 +6,8 @@ name: ci
 #                               after a core-tier setup; shard 1 also runs a 2 s 360p render and the
 #                               path-with-spaces shims
 #   nightly / manual          : the full test suite (voice, ASR, longer renders; a superset of the fast
-#                               tier) on every OS image, the Intel Mac included
+#                               tier) on every OS image, the Intel Mac included; then nightly-report keeps
+#                               one "Nightly failing on main" issue open while it fails on main
 # The Intel Mac runner (macos-15-intel) is the slowest and scarcest image, so pushes and pull requests do
 # not wait on it: it runs in the nightly tier and whenever the workflow is started by hand (Actions > ci >
 # Run workflow; an empty "os" input means every image, the Intel Mac included).
@@ -203,3 +204,28 @@ jobs:
       - name: Release checks
         if: always()
         run: python scripts/check_release.py --check
+
+  # After the nightly matrix on main: a failed run comments its failed jobs and test files on the open issue
+  # labelled "ci: nightly" (or opens "Nightly failing on main"); a green run on every OS image closes it.
+  # Only the workflow's own GITHUB_TOKEN, no other secret (scripts/nightly_report.py).
+  nightly-report:
+    name: nightly report
+    needs: [nightly]
+    if: always() && github.ref == 'refs/heads/main' && ((github.event_name == 'schedule' && !github.event.repository.private) || (github.event_name == 'workflow_dispatch' && inputs.full))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Open, update or close the nightly issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULT: ${{ needs.nightly.result }}
+          EVENT: ${{ github.event_name }}
+          OS_INPUT: ${{ inputs.os }}
+        run: |
+          full=(); if [ "$EVENT" = schedule ] || [ -z "$OS_INPUT" ]; then full=(--full); fi
+          python3 scripts/nightly_report.py --repo "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" --result "$RESULT" "${full[@]}"

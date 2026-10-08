@@ -132,10 +132,10 @@ class SpeakerTests(unittest.TestCase):
         th = hearing.thresholds()
         self.assertEqual((th["speaker_gap_lu"], th["speaker_gap_fail_lu"]), (10.0, 18.0))
 
-        def run(gap, mix=None):
+        def run(gap, mix=None, **kw):
             F = Collect()
-            sp = {"integrated_lufs": -14.0, "above_300_lufs": -14.0 - gap, "gap_300_lu": gap,
-                  "above_1k_lufs": -20.0 - gap, "gap_1k_lu": gap + 6, "mix": mix}
+            sp = dict({"integrated_lufs": -14.0, "above_300_lufs": -14.0 - gap, "gap_300_lu": gap,
+                       "above_1k_lufs": -20.0 - gap, "gap_1k_lu": gap + 6, "mix": mix}, **kw)
             hearing.check_speaker(F, {"thresholds": th, "speaker": sp})
             return F.items
         self.assertEqual(run(8.2), [])
@@ -145,6 +145,11 @@ class SpeakerTests(unittest.TestCase):
         self.assertIn("about 9 dB quieter", w[0]["message"])
         self.assertIn("speaker-safe", w[0]["fix"])
         self.assertEqual(run(19.0)[0]["severity"], "FAIL")
+        # a soundtrack showtime did not mix (the user's own song, a footage edit's sound): WARN, never a FAIL
+        own = run(19.0, showtime_mix=False)
+        self.assertEqual(own[0]["severity"], "WARN")
+        self.assertIn("showtime did not mix this soundtrack", own[0]["message"])
+        self.assertEqual(run(19.0, showtime_mix=True)[0]["severity"], "FAIL")
         off = run(13.6, {"on": False, "set_by": "the mix's master.speaker_safe"})
         self.assertEqual(off[0]["severity"], "INFO")
         capped = run(12.0, {"on": True, "set_by": "default", "capped": True, "shelf_db": -12.0})

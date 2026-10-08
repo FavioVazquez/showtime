@@ -77,6 +77,9 @@ async function running(root) {
   return null;
 }
 
+// the Chrome features the preview window turns off (Playwright turns the same ones off for render and check)
+const PREVIEW_DISABLED_FEATURES = 'Translate,MediaRouter,DialMediaRouteProvider,GlobalMediaControls';
+
 function openBrowserWindow(url, which) {
   if (which !== 'default') {
     const b = findSystemBrowsers()[0];
@@ -84,8 +87,10 @@ function openBrowserWindow(url, which) {
       const profile = path.join(showtimeHome(), 'cache', 'preview-profile');
       fs.mkdirSync(profile, { recursive: true });
       try {
+        // no Cast/DIAL device discovery (MediaRouter): its mDNS and SSDP traffic can make macOS ask to "allow Python
+        // to find devices on local networks" (the window is a child of this command); the preview only uses 127.0.0.1
         const ch = spawn(b.path, [`--app=${url}`, `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check',
-          '--autoplay-policy=no-user-gesture-required', '--window-size=1440,960', '--disable-features=Translate'],
+          '--autoplay-policy=no-user-gesture-required', '--window-size=1440,960', `--disable-features=${PREVIEW_DISABLED_FEATURES}`],
         { detached: true, stdio: 'ignore', windowsHide: false });
         ch.on('error', () => openDefault(url));
         ch.unref();

@@ -211,7 +211,9 @@ def register_new(sub: argparse._SubParsersAction) -> None:
         "starts. Canvas projects: every number in the `var CUE = {...}` table of the\n"
         "project's *.js files is scaled (except cps), and bpm is adjusted so the cues stay on\n"
         "bar lines. A scene stretched more than %gx gets a warning: it now holds still after\n"
-        "its last animation, so give it more content or motion.\n\n"
+        "its last animation, so give it more content or motion. A scene marked\n"
+        "data-stretch=\"spread\" spreads instead: its component start times scale with it and\n"
+        "their lengths stay, so its beats move apart at the same speed.\n\n"
         "--from-voice <timeline.json> (from `showtime voice script`) sets the scene lengths from\n"
         "the narration instead: lines are matched to scenes by id (a line \"bars\" narrates the\n"
         "scene id=\"bars\"), else in order, else by --map. Each narrated scene becomes --pad +\n"
@@ -735,6 +737,8 @@ _INNER_TIMES = ("data-at", "data-dur", "data-exit-at", "data-exit-dur", "data-ho
                 # typewriter / code-block: finish typing within this many seconds (ken-burns' data-fit
                 # is a word, "cover"/"contain", and never matches the number test)
                 "data-fit")
+# the start times among them: what a data-stretch="spread" scene moves apart when it gets longer
+_SPREAD_TIMES = ("data-at", "data-exit-at", "data-diff-at")
 _NUM = r"-?\d+(?:\.\d+)?|-?\.\d+"
 
 
@@ -879,11 +883,15 @@ class _SceneMap:
     `pairs` = [((old_start, old_end), (new_start, new_end)), ...] for the top-level scenes. A time
     inside a scene keeps its offset from the scene start when the scene gets longer (animations run
     at the same speed, the scene holds longer) and is scaled with the scene when it gets shorter.
-    Times outside every scene are interpolated between the scene boundaries.
+    A scene marked data-stretch="spread" (indexes in `spread`) spreads its times over a longer length
+    too: its beats move apart, its animations keep their speed. Times outside every scene are
+    interpolated between the scene boundaries.
     """
 
-    def __init__(self, pairs: List[Any], old: float, new: float) -> None:
-        self.pairs = [p for p in pairs if p[0][0] == p[0][0] and p[1][0] == p[1][0]]
+    def __init__(self, pairs: List[Any], old: float, new: float, spread: Any = ()) -> None:
+        keep = [i for i, p in enumerate(pairs) if p[0][0] == p[0][0] and p[1][0] == p[1][0]]
+        self.pairs = [pairs[i] for i in keep]
+        self.spreads = {j for j, i in enumerate(keep) if i in set(spread)}
         self.old, self.new = old, new
         pts: Dict[float, float] = {0.0: 0.0}
         for (os_, oe), (ns, ne) in self.pairs:
@@ -898,6 +906,13 @@ class _SceneMap:
         if oe == _INF or ne == _INF or oe - os_ <= 1e-9:
             return 1.0
         return min(1.0, (ne - ns) / (oe - os_))
+
+    def spread(self, i: int) -> float:
+        """How far a data-stretch="spread" scene's beats move apart (its new length over its old), else 1."""
+        (os_, oe), (ns, ne) = self.pairs[i]
+        if i not in self.spreads or oe == _INF or ne == _INF or oe - os_ <= 1e-9:
+            return 1.0
+        return max(1.0, (ne - ns) / (oe - os_))
 
     def scene_of(self, t: float) -> Optional[int]:
         best = None
@@ -923,7 +938,7 @@ class _SceneMap:
         if i is None:
             return self._lerp(t)
         (os_, oe), (ns, ne) = self.pairs[i]
-        v = ns + (t - os_) * self.factor(i)
+        v = ns + (t - os_) * self.factor(i) * self.spread(i)
         return min(v, ne) if ne != _INF else v
 
 
@@ -992,7 +1007,8 @@ def _retime_html(text: str, old: float, new: float, plan: Optional[List[Any]] = 
             targets.append((ns, ne))
     else:
         targets = list(plan)
-    smap = _SceneMap([((c["t0"], c["t1"]), tg) for c, tg in zip(scenes, targets)], old, new)
+    spread = [i for i, c in enumerate(scenes) if (c["attrs"].get("data-stretch") or "").strip().lower() == "spread"]
+    smap = _SceneMap([((c["t0"], c["t1"]), tg) for c, tg in zip(scenes, targets)], old, new, spread)
     index = {id(c): i for i, c in enumerate(scenes)}
     edits: List[Any] = []
     for t in doc.tags:
@@ -1001,6 +1017,7 @@ def _retime_html(text: str, old: float, new: float, plan: Optional[List[Any]] = 
         inside = t["parent"] is not None
         sc = _top_of(t)
         kin = smap.factor(index[id(sc)]) if sc is not None and id(sc) in index else k
+        ksp = smap.spread(index[id(sc)]) if sc is not None and id(sc) in index else 1.0
         if t["clip"] and top and id(t) in over_ids:
             # an overlay: its start and end follow the scenes they fall in (a credit across two scenes)
             sp = _CLIP_TIME.match(a.get("data-start") or "")
@@ -1071,6 +1088,17 @@ def _retime_html(text: str, old: float, new: float, plan: Optional[List[Any]] = 
                 if m:
                     x = float(m.group(2))     # a shorter handoff, but not a jump cut
                     raw = _set_attr(raw, "data-transition", tr[:m.start(2)] + _fmt(max(x * kin, min(x, 0.35))))
+        elif ksp > 1 and inside:
+            # a longer data-stretch="spread" scene: the component start times spread with it (beats move
+            # apart), the lengths stay (each animation keeps its speed)
+            for name in _SPREAD_TIMES:
+                if a.get(name) not in (None, "") and re.match(r"^\s*(%s)\s*$" % _NUM, a[name]):
+                    raw = _set_attr(raw, name, _fmt(float(a[name]) * ksp))
+            for name, v in a.items():
+                if name.startswith("data-") and v and v.lstrip()[:1] in "[{" and name != "data-st":
+                    nv = _scale_json_times(v, ksp, name)
+                    if nv != v:
+                        raw = _set_attr(raw, name, nv.replace('"', "&quot;") if _quote_of(t["raw"], name) == '"' else nv)
         elif not inside and not t["clip"] and a.get("data-at") not in (None, ""):
             # a component outside every clip: its start is absolute
             try:
@@ -1101,8 +1129,9 @@ def _retime_html(text: str, old: float, new: float, plan: Optional[List[Any]] = 
     final = _split_tops(_Tags(out).resolve())[0]
     info = {"scenes": [{"name": c["id"] or c["attrs"].get("data-name") or c["tag"],
                         "from": [_r(o["t0"]), _r(o["t1"]) if o["t1"] != _INF else None],
-                        "to": [_r(c["t0"]), _r(c["t1"]) if c["t1"] != _INF else None]}
-                       for o, c in zip(scenes, final)] if len(final) == len(scenes) else []}
+                        "to": [_r(c["t0"]), _r(c["t1"]) if c["t1"] != _INF else None],
+                        **({"spread": True} if i in spread else {})}
+                       for i, (o, c) in enumerate(zip(scenes, final))] if len(final) == len(scenes) else []}
     words = [t["attrs"].get("data-src") for t in doc.tags
              if t["attrs"].get("data-st") in ("caption-karaoke", "captions") and t["attrs"].get("data-src")]
     return out, smap, info, words
@@ -1279,7 +1308,7 @@ def _stretch_notes(scenes: List[Dict[str, Any]]) -> List[str]:
             continue
         ratio = (b1 - b0) / (a1 - a0)
         extra = (b1 - b0) - (a1 - a0)
-        if ratio > STRETCH_WARN and extra >= 1.0:
+        if ratio > STRETCH_WARN and extra >= 1.0 and not sc.get("spread"):
             long.append("%s x%.1f (+%.1fs)" % (sc["name"], ratio, extra))
     if not long:
         return []

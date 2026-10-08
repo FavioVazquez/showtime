@@ -17,6 +17,9 @@ marble, metaballs).
   * WebGL contexts (Chrome keeps about 16 per page): 20 looks in one scene all draw (none white or empty) and
     check fails the page with look_contexts; 20 scenes with a look each draw every scene, give the same frames
     with 1 and 3 workers, pass check's shuffled-order probe, and count one look on screen at a time
+  * frames read back on a GPU: check reports each look's present ('readback' in a render on a GPU, 'webgl'
+    without one); forced on without a GPU the frames are the WebGL ones within a code value, and scenes with a look
+    each give the same frames with 1 and 3 workers
 
 Needs a browser. usage: python tests/test_looks.py [--fast] [-v]
 """
@@ -282,7 +285,14 @@ class LooksTests(unittest.TestCase):
   <div class="p" style="left:0;width:50%%"><div data-st="tilt-shift" data-src="media/plate.png" data-scale="1" data-blur="2"
     style="inset:auto;left:0;top:0;width:2400px;height:1350px" id="big"></div></div>
   <div class="p" style="left:50%%;width:50%%"><div data-st="tilt-shift" data-src="media/plate.png" id="small"></div></div>"""
-        rep = check(self.project("budget", page(body=body.replace("%%", "%"))))
+        proj = self.project("budget", page(body=body.replace("%%", "%")))
+        rep = check(proj)
+        # the summary names each look's cost too (it was only in report.json)
+        cp = showtime("check", proj, "--no-determinism", "--no-timeline", "--no-history", "--samples", "2", check=False)
+        line = re.search(r"looks\s+(.+ per frame without a GPU \(budget 50 ms\))", cp.stdout)
+        self.assertTrue(line, cp.stdout)
+        self.assertRegex(line.group(1), r"tilt-shift #big [\d.]+ ms \(over\)")
+        self.assertRegex(line.group(1), r"tilt-shift #small [\d.]+ ms(,| per)")
         items = {x["sel"]: x for x in (rep.get("looks") or {}).get("items", [])}
         self.assertIn("#big", items, items)
         self.assertGreater(items["#big"]["ms"], 50, items["#big"])
@@ -435,6 +445,51 @@ class LooksTests(unittest.TestCase):
         self.assertEqual(len(warn), 1, warn)
         self.assertIn("#big", warn[0]["message"])
         self.assertIn("data-scale", warn[0].get("fix", ""))
+
+    # ------------------------------------------------------------- frames read back on a GPU
+    def test_10_gpu_frames_read_back(self):
+        """A GPU can hand the screenshot a WebGL canvas it has not finished writing (on the macOS CI runner one look
+        came out 3 frames behind, in one frame of 93, so 1 and 3 workers differed): in a render on a GPU each look
+        is read back into a 2D canvas the page shows. check reports present 'readback' on a GPU and 'webgl' without
+        one; forced on without a GPU (ST_LOOKS_READBACK) the frames are the WebGL ones (within a code value, where
+        alpha is rounded), and scenes with a look each (contexts given back and built again) give the same frames
+        with 1 and 3 workers."""
+        FORCE = "<script>window.ST_LOOKS_READBACK = true;</script>"
+        proj = self.project("present", page())
+        forced = self.project("present-forced", page(FORCE))
+        for p, gpu in ((proj, "off"), (proj, "auto"), (forced, "off")):
+            items = (check(p, "--gpu", gpu).get("looks") or {}).get("items") or []
+            self.assertEqual(sorted(x["look"] for x in items), sorted(LOOKS), items)
+            for x in items:
+                self.assertIn(x["software"], (True, False), x)
+                if gpu == "off":
+                    self.assertTrue(x["software"], x)
+                want = "readback" if p == forced or not x["software"] else "webgl"
+                self.assertEqual(x["present"], want, "gpu %s: %s" % (gpu, x))
+        stills = {}
+        for name, p in (("webgl", proj), ("readback", forced)):
+            r = json.loads(showtime("snap", p, "--at", "0.3,1.2,2.5", "--gpu", "off", "-o", self.tmp / ("present-" + name),
+                                    "--format", "png", "--json").stdout)
+            stills[name] = [Path(s["file"]) for s in r["stills"]]
+        for a, b in zip(stills["webgl"], stills["readback"]):
+            counts, big = panel_diff(a, b)
+            self.assertLessEqual(big, 1, "%s: the read-back frame is not the WebGL one (changed pixels per panel %s, "
+                                 "largest change %d)" % (b.name, counts, big))
+        scenes = "".join(
+            '<section class="scene" data-start="%.1f" data-dur="0.2" style="position:absolute;inset:0;background:#05060f">'
+            '<div data-st="%s" data-seed="%d"></div></section>'
+            % (i * 0.2, ("liquid-metal", "fluted-glass")[i % 2], i) for i in range(10))
+        sp = self.project("present-scenes", page(FORCE, body=scenes), w=320, h=180, dur=2)
+        frames = {}
+        for w in (1, 3):
+            files, frames[w] = self.frames_of(sp, "present-scenes", w, "off")
+            self.assertEqual(len(files), 60)
+            if w == 1:
+                for i in range(0, 60, 6):          # every scene's first frame is drawn, not the bare ground
+                    px = self.gray(files[i], 8, 4)
+                    self.assertGreater(max(px) - min(px), 20, "scene %d's first frame is flat" % (i // 6))
+        diff = [i for i in range(60) if frames[1][i] != frames[3][i]]
+        self.assertEqual(diff, [], "read back: frames that differ between 1 and 3 workers: %s" % diff[:12])
 
 
 if __name__ == "__main__":

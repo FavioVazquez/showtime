@@ -7,7 +7,9 @@
 //                                          a canvas filling the element at its box size x devicePixelRatio
 //                                          x scale, or null when WebGL is missing (use the fallback). It holds
 //                                          a WebGL context (preserveDrawingBuffer: the renderer screenshots it)
-//                                          only while the look's clip is on screen (context lifecycle, below)
+//                                          only while the look's clip is on screen (context lifecycle, below);
+//                                          in a render on a GPU each frame is read back into a 2D canvas
+//                                          (frames read back, below)
 //   layer.program(frag, defines)           compile a fragment shader (HEADER is prepended); variants by
 //                                          #define, never by a branch on a uniform (a CPU renderer pays both)
 //   layer.texture(source, {mips, wrap})    upload an <img> or <canvas>; mips: a power-of-two copy with
@@ -21,7 +23,7 @@
 //   keyed(values, keys, lt)                option values moved by keyframes [{at, dur, ease, ...values}]
 //   register(entry)                        what `showtime check` reads (window.__stLooks): size, passes, cost
 //
-// The cost model is the no-GPU cost measured on the build box (SwiftShader, one browser, 1080p, each frame a
+// The cost model is the no-GPU cost measured on our 64-core test machine (SwiftShader, one browser, 1080p, each frame a
 // seek and a JPEG screenshot as render takes it, against the same page without the look): extra ms per frame
 // for one full-frame pass of each kind, and how that grows with the pass's size (cost x (pixels / 1080p) ^ exp:
 // a CPU renderer does not pay in proportion to pixels, its canvas and caches cost more at full size). `showtime
@@ -283,6 +285,19 @@ function material(gl, h) {
   }
 }
 
+/* ---------------------------------------------- frames read back on a GPU */
+
+// In a render on a GPU the screenshot of a WebGL canvas can come out stale: the compositor reads the canvas's
+// buffer before the GPU has finished writing it, and the frame shows what that buffer held a few frames
+// earlier (seen on the macOS CI runner's virtual GPU: one look 3 frames behind in one frame of 93, so 1 and 3
+// workers differed). There each look draws on a WebGL canvas kept out of the page, reads its pixels back
+// (readPixels waits for the GPU) and puts them on a 2D canvas the page shows, as Chrome itself does without
+// a GPU. window.ST_LOOKS_READBACK (true / false) forces it on or off, for tests.
+function readbackHere() {
+  if (typeof window.ST_LOOKS_READBACK === 'boolean') return window.ST_LOOKS_READBACK;
+  return !!window.__ST_RENDER__ && !softwareGL();
+}
+
 /**
  * A WebGL look filling `el`: a canvas at its box size x devicePixelRatio x scale. Returns null when WebGL is
  * missing or a test turned it off (window.ST_LOOKS_GL === false); the look then draws its fallback.
@@ -296,8 +311,11 @@ export function lookLayer(el, { name, scale = 1, alpha = false, fallback = null 
   if (window.ST_LOOKS_GL === false) return null;
   const opts = { preserveDrawingBuffer: true, premultipliedAlpha: true, antialias: false, alpha, depth: false, stencil: false };
   const handles = [];
+  const readback = readbackHere();
+  // what check reports (looks[].present): 'readback' (a 2D canvas the frames are read into) or 'webgl'
+  el.__stLookPresent = readback ? 'readback' : 'webgl';
   const layer = {
-    el, gl: null, canvas: null, buf: null, W, H, dpr, scale, box: [bw, bh], used: 0, failed: false,
+    el, gl: null, glc: null, canvas: null, ctx: null, px: null, buf: null, W, H, dpr, scale, box: [bw, bh], used: 0, failed: false, readback,
     /** Get a context (a new canvas each time) and build every handle on it. false when WebGL cannot be had. */
     acquire() {
       while (LIVE.size >= LIVE_MAX) {
@@ -315,10 +333,25 @@ export function lookLayer(el, { name, scale = 1, alpha = false, fallback = null 
       canvas.addEventListener('webglcontextlost', () => {
         if (canvas.__stReleased) return;
         if (el.__stLook) el.__stLook.lost = (el.__stLook.lost || 0) + 1;
-        if (layer.canvas === canvas) { layer.gl = null; LIVE.delete(layer); }
+        if (layer.glc === canvas) { layer.gl = null; LIVE.delete(layer); }
       });
-      if (layer.canvas && layer.canvas.isConnected) layer.canvas.replaceWith(canvas); else el.prepend(canvas);
-      layer.canvas = canvas; layer.gl = gl;
+      if (readback) {
+        // the WebGL canvas stays out of the page; the page shows one 2D canvas (a CPU one) for the look's life
+        if (!layer.canvas) {
+          const shown = document.createElement('canvas');
+          shown.className = 'st-look-canvas';
+          shown.width = W; shown.height = H;
+          shown.setAttribute('aria-hidden', 'true');
+          el.prepend(shown);
+          layer.canvas = shown;
+          layer.ctx = shown.getContext('2d', { alpha, willReadFrequently: true });
+          layer.px = layer.ctx.createImageData(W, H);
+        }
+      } else {
+        if (layer.canvas && layer.canvas.isConnected) layer.canvas.replaceWith(canvas); else el.prepend(canvas);
+        layer.canvas = canvas;
+      }
+      layer.glc = canvas; layer.gl = gl;
       layer.buf = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, layer.buf);
       gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
@@ -336,9 +369,10 @@ export function lookLayer(el, { name, scale = 1, alpha = false, fallback = null 
       LIVE.delete(layer);
       layer.gl = null;
       if (!gl) return;
-      const old = layer.canvas;
+      const old = layer.glc;
       old.__stReleased = true;
-      if (onScreen(el)) {
+      // read back, the page's 2D canvas keeps this frame by itself
+      if (!readback && onScreen(el)) {
         const still = document.createElement('canvas');
         still.className = old.className;
         still.width = W; still.height = H;
@@ -411,6 +445,28 @@ export function lookLayer(el, { name, scale = 1, alpha = false, fallback = null 
       gl.vertexAttribPointer(P.aPos, 2, gl.FLOAT, false, 0, 0);
       if (alpha && !target) { gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); }
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      if (readback && !target) layer.present();
+    },
+    /** Read the canvas pass back and put it on the page's 2D canvas (readback only). */
+    present() {
+      const gl = layer.gl, img = layer.px, d = img.data, stride = W * 4;
+      // readPixels returns once the GPU has drawn the pass: the frame is complete, never a buffer still being written
+      gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(d.buffer, d.byteOffset, d.length));
+      // WebGL rows run bottom-up, ImageData rows top-down
+      const row = layer.row || (layer.row = new Uint8ClampedArray(stride));
+      for (let a = 0, b = (H - 1) * stride; a < b; a += stride, b -= stride) {
+        row.set(d.subarray(a, a + stride));
+        d.copyWithin(a, b, b + stride);
+        d.set(row, b);
+      }
+      // the drawing buffer holds premultiplied colour; ImageData takes it straight
+      if (alpha) {
+        for (let i = 0; i < d.length; i += 4) {
+          const k = d[i + 3];
+          if (k > 0 && k < 255) { const f = 255 / k; d[i] *= f; d[i + 1] *= f; d[i + 2] *= f; }
+        }
+      }
+      layer.ctx.putImageData(img, 0, 0);
     },
   };
   // WebGL must be there at setup (else the caller draws its fallback); the shaders are checked on this first
@@ -436,16 +492,19 @@ function selectorOf(el) {
 }
 
 /**
- * Record a look for `showtime check`: window.__stLooks = [{look, sel, gl, preset, box, passes, ms, note, clip, lost}].
- * gl false means the fallback drew (no WebGL here); clip is the [start, end] the look is on screen (end null:
- * to the end); lost counts contexts the browser took back.
+ * Record a look for `showtime check`: window.__stLooks = [{look, sel, gl, preset, box, passes, ms, note, clip, lost,
+ * present, software}]. gl false means the fallback drew (no WebGL here); clip is the [start, end] the look is on screen (end
+ * null: to the end); lost counts contexts the browser took back; present is how a WebGL look reaches the page:
+ * 'webgl' (its own canvas) or 'readback' (read into a 2D canvas: a render on a GPU), null for a fallback;
+ * software whether WebGL is drawn on the CPU here (softwareGL), null for a fallback.
  */
 export function register(el, entry) {
   const list = window.__stLooks || (window.__stLooks = []);
   const start = clipStart(el), dur = clipDuration(el);
   const rec = { look: entry.look, sel: selectorOf(el), gl: !!entry.gl, preset: entry.preset || null,
     box: entry.box, passes: entry.passes || [], ms: entry.passes ? estimateMs(entry.passes) : 0, note: entry.note || null,
-    clip: [start, Number.isFinite(dur) ? start + dur : null], lost: 0 };
+    clip: [start, Number.isFinite(dur) ? start + dur : null], lost: 0,
+    present: entry.gl ? el.__stLookPresent || 'webgl' : null, software: entry.gl ? softwareGL() : null };
   list.push(rec);
   el.__stLook = rec;
   el.dataset.stLook = entry.gl ? 'webgl' : 'fallback';

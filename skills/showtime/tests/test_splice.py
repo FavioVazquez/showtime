@@ -454,6 +454,43 @@ class TestSpanClips(unittest.TestCase):
         rep, _ = render(self.proj, "--from", 1, "--to", 2, "-o", self.tmp / "o" / "clip.mp4", cwd=self.tmp)
         self.assertEqual((Path(rep["output"]).name, rep["kind"]), ("clip.mp4", "span"))
         self.assertTrue(ledger.is_span_video(self.tmp / "o" / "clip.mp4"))
+        # -o with its own name inside a job folder (no --job): written there too, not <job>/work/span-1-2.mp4,
+        # and never spliced into the job's full render
+        job = new_job("named", self.tmp)
+        render(self.proj, "--job", job, cwd=self.tmp)
+        rep, _ = render(self.proj, "--from", 1, "--to", 2, "-o", job / "loops" / "look-01.mp4", cwd=self.tmp)
+        self.assertEqual((Path(rep["output"]), rep["kind"], rep["frames"]), (job / "loops" / "look-01.mp4", "span", 30))
+        self.assertIn("-o names a clip", rep["span_reason"])
+        self.assertEqual(ledger.latest_video(job)[0], job / "final.mp4")
+
+    def test_new_folders_are_claimed_atomically(self):
+        """Renders started in the same second with the same title get folders of their own (the folder is claimed by
+        an exclusive mkdir; two span renders once shared one and one failed on its frames)."""
+        from st import common
+        base = self.tmp / "race"
+        code = ("import { jobDir } from %s; const go = %d; while (Date.now() < go) {} "
+                "console.log(JSON.stringify(jobDir('same-title', %s)));")
+        go = int(time.time() * 1000) + 1500
+        procs = [subprocess.Popen([NODE, "--input-type=module", "-e", code % (
+            json.dumps((SKILL / "scripts" / "lib" / "cli.mjs").as_uri()), go, json.dumps(str(base)))],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8", env=ENV) for _ in range(6)]
+        dirs = []
+        for p in procs:
+            out, err = p.communicate(timeout=60)
+            self.assertEqual(p.returncode, 0, err[-2000:])
+            dirs.append(json.loads(out))
+        self.assertEqual(len(set(dirs)), 6, dirs)
+        # the Python side (showtime-out folders of the other commands): threads released together
+        import threading
+        got, gate = [], threading.Barrier(6)
+
+        def claim():
+            gate.wait()
+            got.append(str(common.output_dir("same-title", base)))
+        ts = [threading.Thread(target=claim) for _ in range(6)]
+        [t.start() for t in ts]
+        [t.join(30) for t in ts]
+        self.assertEqual(len(set(got)), 6, got)
         # a --preview span is a draft of those seconds
         job = new_job("prev", self.tmp)
         rep, _ = render(self.proj, "--from", 1, "--to", 2, "--job", job, "--preview", cwd=self.tmp)

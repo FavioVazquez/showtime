@@ -6,6 +6,7 @@
 //   burst(canvas, opts)         a particle burst on a beat: closed-form ballistic paths with drag, drawn as streaks
 //   tunnel(canvas, opts)        a fly-through of square rings (zoom-through into the next shot)
 //   chart(canvas, opts)         live data: bars spring up, a line draws on with a head, a counter rolls to a number
+//   chartLayout(W, H)           where chart() puts the bars, the label and the counter for a frame size
 //   morph(canvas, opts)         one filled shape morphing through a list of outlines on the beats, turning
 //   spiro(canvas, opts)         a generative line drawing (a hypotrochoid) drawing itself on with a glowing head
 //   halftone(canvas, opts)      a dot field: a lit sphere in halftone dots, its light swinging round, ripples outside
@@ -181,6 +182,30 @@ const inOutCubic = (p) => { p = clamp01(p); return p < 0.5 ? 4 * p * p * p : 1 -
 const spring = (p) => (p <= 0 ? 0 : 1 - Math.exp(-6 * p) * Math.cos(9 * p));
 
 /**
+ * Where chart() puts things in a W x H frame. Wide (W > H): the chart on the left, the counter on the right, the
+ * label over the chart. Square and tall (H >= W): the counter in its ring on top, the label and the chart under it.
+ * The tall layout runs from a square (a smaller ring, a lower chart) to 9:16 (inside the vertical safe box, clear
+ * of the shot tag and the platform UI); frames in between take the values in between, so the ring never leaves
+ * the frame or crosses the label. size: the counter's font size; the ring's radius is 0.95 size round
+ * (cx, cy - 0.42 size).
+ */
+export function chartLayout(W, H) {
+  const S = Math.min(W, H);
+  if (W > H) {
+    const [x0, x1, base, top] = [W * 0.08, W * 0.6, H * 0.84, H * 0.34];
+    return { tall: false, x0, x1, base, top, cx: W * 0.8, cy: H * 0.62, size: S * 0.3, labelY: top - H * 0.07 };
+  }
+  // [H / W, size (of S), cy, labelY, chart top, chart base (of H)] for 1:1, 4:5 and 9:16; shapes between take the
+  // values between (taller than 9:16: the 9:16 values)
+  const KEYS = [[1, 0.294, 0.484, 0.7, 0.74, 0.86], [1.25, 0.31, 0.54, 0.72, 0.75, 0.86], [16 / 9, 0.36, 0.47, 0.615, 0.64, 0.73]];
+  const r = Math.min(H / W, 16 / 9);
+  const i = r <= KEYS[1][0] ? 0 : 1, a = KEYS[i], b = KEYS[i + 1], k = clamp01((r - a[0]) / (b[0] - a[0]));
+  const [size, cy, labelY, top, base] = a.slice(1).map((v, j) => v + (b[j + 1] - v) * k);
+  return { tall: true, x0: W * 0.1, x1: W * 0.9, base: H * base, top: H * top, cx: W * 0.5, cy: H * cy,
+    size: S * size, labelY: H * labelY };
+}
+
+/**
  * Live data: `bars` values (0..1) spring up one after another, a line through `line` values draws on with a
  * head, a ring gauge closes and a counter rolls like an odometer to `value`, all landed by `land` seconds.
  * ground/ink/accent: CSS colours; font: the counter's face (a family the page has loaded). Drawn on the canvas,
@@ -190,13 +215,9 @@ export function chart(canvas, { bars = [0.28, 0.36, 0.31, 0.45, 0.41, 0.53, 0.49
   line = null, value = 900, ground = '#f1ede4', ink = '#05060f', accent = '#ff3b30', font = 'Anton',
   label = 'INDEX', land = 1.2 } = {}) {
   const g = ctx2d(canvas);
-  const W = canvas.width, H = canvas.height, S = Math.min(W, H), tall = H > W;
+  const W = canvas.width, H = canvas.height, S = Math.min(W, H);
   const L = line || bars.map((v, i) => Math.min(0.98, v * 0.8 + 0.12 + i * 0.006));
-  // wide: the chart on the left, the counter on the right, the label over the chart; tall: the counter on top, the
-  // label and the chart under it (inside the vertical safe box, clear of the shot tag and the platform UI)
-  const [x0, x1, base, top] = tall ? [W * 0.1, W * 0.9, H * 0.73, H * 0.64] : [W * 0.08, W * 0.6, H * 0.84, H * 0.34];
-  const [cx, cy, size] = tall ? [W * 0.5, H * 0.47, S * 0.36] : [W * 0.8, H * 0.62, S * 0.3];
-  const labelY = tall ? H * 0.615 : top - H * 0.07;
+  const { x0, x1, base, top, cx, cy, size, labelY } = chartLayout(W, H);
   const slot = (x1 - x0) / bars.length;
   const bx = (i) => x0 + slot * (i + 0.5);
   return {

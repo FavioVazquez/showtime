@@ -5,7 +5,7 @@ import path from 'node:path';
 import { startServer } from '../server.mjs';
 import { resolveProject, info, c, UserError } from './cli.mjs';
 import { openStage } from './stagehost.mjs';
-import { resolveFF, ffmpeg, probe } from './ff.mjs';
+import { resolveFF, ffmpeg, probe, STILL_VF } from './ff.mjs';
 import { stripColorChunks } from './png.mjs';
 
 export const VIDEO_EXT = /\.(mp4|mov|m4v|webm|mkv)$/i;
@@ -29,7 +29,7 @@ export async function openSource(arg, a, shared) {
         // accurate seek to half a frame before the wanted frame: the first frame decoded is that frame
         // the container can run longer than the video stream (audio tail): step back until a frame decodes
         for (let back = 0; back <= 1.0 + 1e-9 && !fs.existsSync(tmp); back += back < 0.2 ? 1 / fps : 0.25) {
-          await ffmpeg(['-ss', Math.max(0, t - 0.5 / fps - back).toFixed(6), '-i', file, '-frames:v', '1', '-update', '1', tmp]);
+          await ffmpeg(['-ss', Math.max(0, t - 0.5 / fps - back).toFixed(6), '-i', file, '-frames:v', '1', '-vf', STILL_VF, '-update', '1', tmp]);
           if (t - back <= 0) break;
         }
         if (!fs.existsSync(tmp)) throw new UserError(`could not decode a frame of ${path.basename(file)} at ${t.toFixed(3)} s`);

@@ -6,8 +6,8 @@ Short answers, each with a link to the long one. Something missing? Open an
 ## Do I need a GPU?
 
 No. Every frame is drawn by a browser, and without a GPU the browser draws on the CPU, WebGL included. On a
-64-core Linux machine with no GPU, a 30-second 1080p launch film rendered in 42 s with 3 browsers and 19 s with 16
-(measured with 0.4.0 on 7 October 2026). On fewer cores, WebGL scenes are the slow part: on a 6-core Intel Mac
+64-core Linux machine with no GPU, a 30-second 1080p launch film rendered in 17.6 s with 0.4.1's automatic settings
+(8 browsers), against 42.0 s with 0.4.0's (3 browsers), and in 13.1 s with 16 browsers (measured on 7 October 2026). On fewer cores, WebGL scenes are the slow part: on a 6-core Intel Mac
 with its GPU turned off, a shader-heavy 1080p frame took about 0.5 s. Without a GPU, showtime picks the number of
 browsers from your cores, and each of the seven WebGL looks adds less than 50 ms to a 1080p frame at its default
 size (measured on the same 64-core machine, one browser). More numbers:
@@ -34,7 +34,7 @@ anyone can rerun it.
 
 No. showtime has no server and no telemetry, and it uploads nothing you make. It goes online to download its tools
 and models (once), and when you ask it to fetch something: a media search, a website capture, a pull request for
-`showtime pr-video`. Your prompts go to your coding agent, under that agent's own policy. The details are in
+`showtime pr-video`, and the Google Fonts (and their licence texts) of a page you adopt with `showtime adopt`. Your prompts go to your coding agent, under that agent's own policy. The details are in
 [PRIVACY.md](../PRIVACY.md).
 
 ## Who owns the videos I make?
@@ -47,10 +47,13 @@ model, whose drafts are labelled. The speaker cutout model (MODNet) is Apache-2.
 
 ## How much disk does it need?
 
-About 770 MB on Linux x64 and 560 to 610 MB on macOS and Windows, with a browser already installed. Bigger pieces
-come the first time a video needs them, each with its size shown first: the transcription model (465 MB), Manim (60
-MB), music tracks and sound packs (a few MB each). `showtime setup --plan` lists your exact sizes, and
-`showtime setup --full` fetches everything now (about 5.1 to 5.7 GB) for a machine that will be offline.
+Setup downloads about 0.53 to 0.59 GB on macOS and Windows and 0.73 GB on Linux x64, and once unpacked the
+install takes about 1.4 GB on macOS and Windows and 1.7 to 1.8 GB on Linux, with a browser already installed (the
+headless browser setup fetches otherwise adds 0.2 to 0.3 GB). Bigger pieces come the first time a video needs them,
+each with its size shown first: the transcription model (about 490 MB), Manim (60 MB), music tracks and sound packs (a few
+MB each). Running the test suite keeps about 0.7 GB of caches. `showtime setup --estimate` prints your sizes,
+`showtime setup --plan` lists every download, and `showtime setup --full` fetches everything now (about 5.1 to 5.7
+GB to download) for a machine that will be offline.
 
 ## How long does a video take?
 
@@ -67,7 +70,8 @@ issue. What ran where is in the [README](https://github.com/FavioVazquez/showtim
 
 ## Which languages?
 
-Voices speak English, Spanish and more than 30 other languages, all on your machine. Transcripts cover 25 languages
+Voices speak English, Spanish and 30 other languages, all on your machine: the default voices cover eight of them, and
+the Supertonic voices, an extra (`showtime setup --with supertonic`), add the rest. Transcripts cover 25 languages
 with the default model, and more with Whisper. Ask for "the same video in French" and your agent re-voices it,
 re-times the scenes and translates the on-screen text
 ([localize](../skills/showtime/references/workflows/localize.md)).

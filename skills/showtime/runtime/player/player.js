@@ -579,11 +579,75 @@
     A.setAttribute('playsinline', '');
     A.volume = S.volume;
     root.appendChild(A);
-    var E = { el: A, kind: 'element', hasSrc: false, failed: false, lastT: -1, lastP: 0, t0: null, p0: 0, moving: false, holdT: 0 };
+    var E = { el: A, kind: 'element', hasSrc: false, failed: false, lastT: -1, lastP: 0, t0: null, p0: 0, moving: false, holdT: 0,
+      detached: false, blob: null, swapping: false };
     if (src) { A.src = src; E.hasSrc = true; }
     A.addEventListener('ended', function () { if (S.playing) anchorWall(S.t); });
     E.ready = function () { return !!(E.hasSrc && A.readyState >= 2 && !E.failed); };
-    E.drives = function () { return !A.paused && !A.ended && E.ready(); };
+    E.drives = function () { return !E.detached && !A.paused && !A.ended && E.ready(); };
+    // A --folder export served without HTTP Range requests (python -m http.server and other simple servers):
+    // the element cannot seek past what it has downloaded and plays on from where it was, so the clock stalled
+    // after a seek. Then the soundtrack is read whole into a blob (always seekable) and swapped in; until it
+    // is, the sound stops driving the clock (the picture plays on by the wall clock) and the element is paused.
+    // When that read fails, the next seek tries it again (or seeks the element itself where it can get to).
+    function remote() { return /^https?:/i.test(String(A.currentSrc || A.src || '')); }
+    function canSeek(t) {
+      try {
+        var s = A.seekable;
+        if (!s || !isFinite(A.duration)) return true;    // not known yet: the seek is tried as usual
+        for (var i = 0; i < s.length; i++) if (s.start(i) <= t + 0.05 && t <= s.end(i) + 0.25) return true;
+      } catch (e) { return true; }
+      return false;
+    }
+    function fetchBlob() {
+      if (!E.blob && remote() && typeof fetch === 'function') {
+        E.blob = fetch(A.currentSrc || A.src).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.blob(); });
+        E.blob.catch(function () {});
+      }
+      return E.blob;
+    }
+    function swapIn() {
+      if (E.swapping) return;
+      var p = fetchBlob();
+      if (!p) { E.detached = false; return; }
+      E.swapping = true;
+      p.then(function (b) {
+        A.addEventListener('canplay', function () {
+          E.swapping = false;
+          E.detached = false;
+          E.reset();
+          try { A.currentTime = Math.min(S.t, A.duration || S.t); } catch (e) { /* ignore */ }
+          A.muted = S.muted;
+          if (S.playing) A.play().catch(function () {});
+        }, { once: true });
+        A.src = URL.createObjectURL(b);
+        try { A.load(); } catch (e) { /* ignore */ }
+      }).catch(function (e) {
+        // forget the failed read (kept, every later seek waited on it and the sound stayed detached for the rest
+        // of the session); a plain seek where the element can get to, else the sound waits for the next seek
+        E.swapping = false; E.blob = null;
+        if (canSeek(S.t)) {
+          E.reset();
+          try { seekEl(Math.min(S.t, A.duration || S.t)); } catch (x) { /* ignore */ }
+          A.muted = S.muted;
+          if (S.playing) A.play().catch(function () {});
+        }
+        reportChild('the soundtrack could not be read whole for seeking: ' + (e && e.message || e));
+      });
+    }
+    /** Seek the element to t, or, when it cannot get there (no Range support), detach it until the blob is in. */
+    function seekEl(t) {
+      if (!remote() || (!E.swapping && canSeek(t))) { E.detached = false; A.currentTime = t; return true; }   // blob:, data:, file: seek
+      E.detached = true;
+      if (!A.paused) A.pause();
+      swapIn();
+      return false;
+    }
+    A.addEventListener('loadedmetadata', function () {
+      // not seekable to the end once the length is known: read the file whole now (swapped in at the first
+      // seek it needs), so that seek waits for little or nothing
+      if (remote() && isFinite(A.duration) && !canSeek(Math.max(0, A.duration - 1))) fetchBlob();
+    });
     E.reset = function () { E.lastT = -1; E.t0 = null; E.moving = false; E.holdT = S.t; };
     E.time = function () {
       if (!E.drives()) return null;
@@ -599,8 +663,8 @@
     };
     E.play = function (t) {
       E.reset();
-      if (!E.ready()) return;
-      try { if (Math.abs(A.currentTime - t) > 0.02) A.currentTime = Math.min(t, (A.duration || t)); } catch (e) { /* ignore */ }
+      if (!E.ready() || E.swapping) return;    // swapping: the swap starts it at the film's time
+      try { if (Math.abs(A.currentTime - t) > 0.02 && !seekEl(Math.min(t, (A.duration || t)))) return; } catch (e) { /* ignore */ }
       A.muted = S.muted;
       var pr = A.play();
       if (pr && pr.catch) pr.catch(function () { if (S.playing && !A.muted) { S.muted = true; A.muted = true; unmuteBtn.hidden = false; renderUI(); A.play().catch(function () {}); } });
@@ -608,12 +672,12 @@
     E.pause = function () { if (!A.paused) A.pause(); };
     E.seek = function (t) {
       E.reset();
-      if (!E.ready()) return;
-      try { A.currentTime = t; } catch (e) { /* ignore */ }
+      if (!E.ready() || E.swapping) return;
+      try { if (!seekEl(t)) return; } catch (e) { /* ignore */ }
       if (S.playing && A.paused) A.play().catch(function () {});
     };
     E.setVolume = function () { A.volume = S.volume; A.muted = S.muted; };
-    E.resumeIfPaused = function () { if (S.playing && A.paused) A.play().catch(function () {}); };
+    E.resumeIfPaused = function () { if (S.playing && A.paused && !E.detached) A.play().catch(function () {}); };
     E.buffering = function () { return false; };
     var SILENT = 'data:audio/wav;base64,UklGRiYAAABXQVZFZm10IBAAAAABAAEAgLsAAAB3AQACABAAZGF0YQIAAAAAAA==';
     var unlocked = false;

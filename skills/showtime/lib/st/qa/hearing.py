@@ -630,9 +630,13 @@ RULES = {
     "level_jump": "the level jumps more than 6 LU at a cut (bed with bed, or voice with voice)",
     "abrupt_end": "the sound is still at full level on the last frame (music or a word cut off)",
     "speaker_loudness": "on a phone or laptop speaker (the mix above 300 Hz) the video is far quieter than its "
-                        "loudness says: a mix of bass and sub (WARN over 10 LU under the full mix, FAIL over 18)",
+                        "loudness says: a mix of bass and sub (WARN over 10 LU under the full mix, FAIL over 18 for "
+                        "a showtime mix; a soundtrack showtime did not mix, such as your own song or footage sound, "
+                        "stays WARN)",
     "readback": "a name, acronym or number of the voice-over is heard differently from the script (the narration "
-                "transcribed again locally); FAIL for a name in the title, the brand or the project's lexicon",
+                "transcribed again locally); FAIL for a name in the title, the brand or the project's lexicon that "
+                "a second installed recognizer also hears differently; showtime.json \"readback\": {\"ok\": [...]} "
+                "clears a word someone listened to",
 }
 
 
@@ -663,25 +667,29 @@ def readback(video: Path, proj: Optional[Path]) -> Optional[Dict[str, Any]]:
 
 
 def check_readback(F: Any, rep: Optional[Dict[str, Any]]) -> None:
-    """The read-back as qa items: a WARN per word heard differently (FAIL for a name in the title, brand or
-    project lexicon), an INFO when it could not run."""
+    """The read-back as qa items: a WARN per word heard differently, FAIL only for a name in the title, brand
+    or project lexicon that a second installed recognizer also hears differently (one recognizer alone can
+    respell a rare name the voice said right); an INFO when it could not run."""
     if not rep:
         return
     from ..voice import readback as rb
     if rep.get("skipped"):
-        F.add("readback", "INFO", "the voice-over was not heard back: %s" % rep["skipped"],
-              fix="install the local recognizer to check names: %s" % rb.fetch_hint())
+        why = str(rep["skipped"])
+        F.add("readback", "INFO", "the voice-over was not heard back: %s" % why,
+              fix=("install the local recognizer to check names: %s" % rb.fetch_hint()
+                   if why.startswith(rb.NOT_INSTALLED) else ""))
         return
     sus = rep.get("suspects") or []
     if not sus:
         F.ok(rep.get("summary") or rb.summary(rep))
         return
     for s in sus[:8]:
-        F.add("readback", "FAIL" if s.get("critical") else "WARN",
+        note = rb.tag(s)
+        F.add("readback", "FAIL" if rb.is_fail(s) else "WARN",
               "voice line %s: the script says \"%s\", the voice is heard as \"%s\"%s" % (
-                  s.get("line"), s["word"], s.get("heard") or "nothing",
-                  " (a name in the title, brand or lexicon)" if s.get("critical") else ""),
-              t=s.get("t"), fix=rb.fix_for(s, s.get("clip")), word=s["word"], heard=s.get("heard"))
+                  s.get("line"), s["word"], s.get("heard") or "nothing", " (%s)" % note if note else ""),
+              t=s.get("t"), fix=rb.fix_for(s, s.get("clip")), word=s["word"], heard=s.get("heard"),
+              confirmed=s.get("confirmed"))
     if len(sus) > 8:
         F.add("readback", "WARN", "%d more words heard differently (voice/readback.json, review-pack's audio.txt)"
               % (len(sus) - 8), t=sus[8].get("t"))
@@ -705,19 +713,25 @@ def check_speaker(F: Any, h: Dict[str, Any]) -> None:
         return
     mx = sp.get("mix") or {}
     by_choice = mx.get("on") is False and mx.get("set_by") not in (None, "default")
-    sev = "INFO" if by_choice else ("FAIL" if g > th["speaker_gap_fail_lu"] else "WARN")
+    # a soundtrack showtime did not mix (no mix report, no ST.score bed: the user's song or footage sound) is
+    # often the content itself: a WARN to know about, never a FAIL that blocks delivery
+    ours = sp.get("showtime_mix", True) is not False
+    sev = "INFO" if by_choice else ("FAIL" if g > th["speaker_gap_fail_lu"] and ours else "WARN")
     k1 = (" (above 1 kHz %.1f LUFS, %.1f LU under)" % (sp["above_1k_lufs"], sp["gap_1k_lu"])
           if sp.get("gap_1k_lu") is not None else "")
     msg = ("%s%s; the full mix is %.1f LUFS. Phones and laptops play little under 300 Hz and this mix's energy is "
            "bass and sub, so it plays about %.0f dB quieter there than a voice-led video at the same loudness" % (
                speaker_line(sp), k1, sp.get("integrated_lufs") or 0.0, max(1.0, g - 4.5)))
+    if not ours and not mx:
+        msg += " (showtime did not mix this soundtrack: if the song or the footage's own sound is the content, " \
+               "this is for information)"
     if by_choice:
         msg += " (the speaker-safe step is off by choice: %s)" % mx.get("set_by")
         fix = "if the video is not only for headphones, remove \"speaker_safe\": false and render again"
     elif mx.get("on") and mx.get("capped"):
         fix = ("the mixer's speaker-safe step already cut the bed's lows by %g dB: pick a bed with more in the mids, "
-               "raise its mid parts (lead, keys), or layer a mid transient on sub hits (metal-hit, glitch at -8 to "
-               "-12 dB)" % abs(float(mx.get("shelf_db") or 12)))
+               "raise its mid parts (lead, keys), or layer a mid transient on sub hits (static-burst, glitch or "
+               "tick at -8 to -12 dB)" % abs(float(mx.get("shelf_db") or 12)))
     elif mx.get("on") is False:
         fix = "turn the mixer's speaker-safe step back on (\"master\": {\"speaker_safe\": true}) and render again"
     elif mx:
@@ -963,6 +977,7 @@ def readback_text(rep: Optional[Dict[str, Any]]) -> List[str]:
     """audio.txt's read-back table: every voice line as the script has it and as it was heard back."""
     if not rep:
         return []
+    from ..voice import readback as rb
     L = ["", "## Read-back: the voice-over transcribed again and compared with the script (names, acronyms, numbers)"]
     if rep.get("skipped"):
         return L + ["(not run: %s)" % rep["skipped"]]
@@ -972,7 +987,10 @@ def readback_text(rep: Optional[Dict[str, Any]]) -> List[str]:
     for s in sus:
         L.append("%7ss  %s  script: %s / heard: %s%s" % (
             "%.2f" % s["t"] if s.get("t") is not None else "?", s.get("line"), s["word"], s.get("heard") or "(nothing)",
-            "  <- a name in the title, brand or lexicon" if s.get("critical") else ""))
+            "  <- " + rb.tag(s) if rb.tag(s) else ""))
+    for s in rep.get("cleared") or []:
+        L.append("%7ss  %s  script: %s / heard: %s  <- cleared after listening (showtime.json readback.ok)" % (
+            "%.2f" % s["t"] if s.get("t") is not None else "?", s.get("line"), s["word"], s.get("heard") or "(nothing)"))
     for ln in rep.get("lines") or []:
         t = ln.get("video_start", ln.get("start"))
         L.append("%7ss  %s%s" % ("%.2f" % float(t) if t is not None else "?", ln.get("id"),

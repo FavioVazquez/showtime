@@ -1354,7 +1354,8 @@ def render_reel(cards: List[Dict[str, Any]], width: int, height: int, fps: Fract
 
 
 def overlays_for(reel: Path, plan: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Internal overlay entries (edl.normalize's shape) that place each card of the reel at its output time."""
+    """Internal overlay entries (edl.normalize's shape) that place each card of the reel at its output time,
+    frame for frame (reel_frames)."""
     from . import util as U
     pr = U.probe(reel)
     out = []
@@ -1363,7 +1364,9 @@ def overlays_for(reel: Path, plan: List[Dict[str, Any]]) -> List[Dict[str, Any]]
         out.append({"index": "card%d" % c["index"], "file": reel, "image": False, "probe": pr, "start": c["start"],
                     "duration": p["dur"], "offset": p["offset"], "position": "full", "x": None, "y": None,
                     "width": None, "height": None, "scale": None, "opacity": 1.0, "fade": 0.0, "margin": 0.0,
-                    "fit": "cover", "audio": False, "volume_db": 0.0, "duck_db": None, "card": c["index"]})
+                    "fit": "cover", "audio": False, "volume_db": 0.0, "duck_db": None, "card": c["index"],
+                    # frame-exact placement (render_edl._overlay_graph): the reel's first frame and frame count
+                    "reel_frames": [p["offset_frames"], p["frames"]]})
     return out
 
 

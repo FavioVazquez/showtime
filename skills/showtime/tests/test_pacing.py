@@ -90,6 +90,17 @@ PROJECTS = {
     "same": ('<section class="scene" id="s1" data-start="0" data-dur="3"><ul><li>One sample item</li><li>Two sample items</li><li>Three sample items</li></ul></section>', 3, {}),
     "stagger": ('<section class="scene" id="s1" data-start="0" data-dur="3"><ul class="stag"><li style="--i:0">One sample item</li>'
                 '<li style="--i:1">Two sample items</li><li style="--i:2">Three sample items</li></ul></section>', 3, {}),
+    # three lines invisible from frame 0, each entering later by its own keyframes (an adopted CSS design: one 8 s
+    # animation each, opacity 0 until 3.0 / 4.6 / 6.2 s): not a same-frame entrance
+    "keyframed": ('<style>@keyframes k1{0%,37.5%{opacity:0}40%,100%{opacity:1}}@keyframes k2{0%,57.5%{opacity:0}60%,100%{opacity:1}}'
+                  '@keyframes k3{0%,77.5%{opacity:0}80%,100%{opacity:1}}.kf p{margin:0;font:500 6cqh/1.3 serif;color:var(--fg)}</style>'
+                  '<section class="scene" id="s1" data-start="0" data-dur="8"><div class="kf"><p style="animation:k1 8s linear both">One '
+                  'sample line</p><p style="animation:k2 8s linear both">Two sample lines</p><p style="animation:k3 8s linear both">'
+                  'Three sample lines</p></div></section>', 8, {}),
+    # the same keyframes all holding to 3.0 s: they do land together, at frame 90
+    "keyframed-same": ('<style>@keyframes k1{0%,37.5%{opacity:0}40%,100%{opacity:1}}.kf p{margin:0;font:500 6cqh/1.3 serif;'
+                       'color:var(--fg);animation:k1 8s linear both}</style><section class="scene" id="s1" data-start="0" data-dur="8">'
+                       '<div class="kf"><p>One sample line</p><p>Two sample lines</p><p>Three sample lines</p></div></section>', 8, {}),
 }
 
 
@@ -219,6 +230,25 @@ class PacingChecks(unittest.TestCase):
         self.assertIn("frame 0", same[0]["message"])
         self.assertIn("frame 3", same[0]["fix"])
         self.assertEqual(self.codes("stagger", "same_frame_entrance"), [])
+
+    def test_dom_template_lengthened_keeps_moving(self):
+        """`new dom --duration 24`: the hero (data-stretch="spread") spreads its beats over its longer length, so check
+        finds no slow scene (it held still for 5.4 s after its last change) and the cut still builds after Generate."""
+        p = self.tmp / "dom24"
+        showtime("new", "dom", p, "--duration", "24", "--look", "template")
+        html = (p / "index.html").read_text(encoding="utf-8")
+        self.assertIn('data-dur="10.88"', html)
+        self.assertIn('data-st="typewriter" data-at="5.36"', html)
+        rep = json.loads(showtime("check", p, "--json", "--no-determinism", check=False).stdout)
+        bad = [(f["code"], f["message"][:100]) for f in rep["findings"] if f["severity"] in ("error", "warning")]
+        self.assertEqual(bad, [])
+
+    def test_keyframed_entrances_count_from_where_they_appear(self):
+        # opacity 0 from frame 0 is not the entrance: the keyframe where it starts rising is
+        self.assertEqual(self.codes("keyframed", "same_frame_entrance"), [], self.rep["keyframed"]["findings"])
+        same = self.codes("keyframed-same", "same_frame_entrance")
+        self.assertEqual(len(same), 1, self.rep["keyframed-same"]["findings"])
+        self.assertIn("frame 90", same[0]["message"])
 
 
 if __name__ == "__main__":

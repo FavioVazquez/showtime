@@ -10,12 +10,15 @@ showtime export html <project>                     # -> showtime-out/<title>-<ts
 showtime export html <project> -o launch.html      # one file, opens offline in any browser
 showtime export html <project> --folder -o site/   # index.html + assets/ for web hosting
 showtime export html <project> --target artifact -o launch.html   # to publish as an HTML artifact
+showtime export html <job>                         # a job: its project/ folder, written into the job folder
+showtime export html <job> --folder out            # a job as a folder: ./out/index.html + assets/
 ```
 
 ## Essentials
 
 - `showtime export html <project>` writes one offline `.html`; `-o launch.html` names it, `--folder -o site/`
-  writes `index.html` + `assets/` for hosting, `--target artifact` for an artifact or docs page (§ Options)
+  writes `index.html` + `assets/` for hosting, `--target artifact` for an artifact or docs page (§ Options). A job
+  (`<job>`, as qa takes it) exports its `project/` folder into the job folder; `<job> --folder out` writes `./out/`
 - After a render, offer the HTML version in one line when the destination is a browser; share an MP4 for
   social platforms, video hosts, editors, long footage or pages that are heavy to draw (§ MP4 or HTML?)
 - Publishing is the user's call: offer it, never do it unasked (§ Sharing and hosting)
@@ -48,14 +51,14 @@ showtime export html <project> --target artifact -o launch.html   # to publish a
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| What you get | 60-126 |
-| MP4 or HTML? | 128-138 |
-| Audio modes (--audio): How the live score streams (and why seeking is exact) | 140-171 |
-| Size budget | 173-196 |
-| Sharing and hosting | 198-240 |
-| Questions | 242-285 |
-| Options | 287-317 |
-| Limitations | 319-353 |
+| What you get | 63-129 |
+| MP4 or HTML? | 131-141 |
+| Audio modes (--audio): How the live score streams (and why seeking is exact) | 143-174 |
+| Size budget | 176-199 |
+| Sharing and hosting | 201-250 |
+| Questions | 252-295 |
+| Options | 297-327 |
+| Limitations | 329-363 |
 
 ## What you get
 
@@ -216,6 +219,13 @@ images at the size they appear; fewer font families and weights.
   GitHub Pages: push the folder to a repository (or its `docs/`) and turn Pages on for it. The export
   writes an empty `.nojekyll` beside `index.html`: without it Pages' Jekyll step drops folders whose
   names start with `_` (`assets/media/_export/`, the mixed audio) and the page plays silent.
+  Serve it from a server that answers byte-range requests, as GitHub Pages and most web hosts do: a seek
+  then plays at once. A plain test server without them (`python3 -m http.server`) cannot seek the
+  mixed audio, so after a seek the player reads the audio file whole and the picture plays on silent
+  until it is in. That read starts as soon as the player knows the file's length, before any seek, so a
+  seek a few seconds in waits for what is left of it (the whole read is about 3.3 s for 2 MB at 0.6 MB/s).
+  If the read fails, the next seek tries it again. To look at it on your own machine, open
+  `index.html` from disk instead.
 - **Link previews**: the page carries `og:title`, `og:description`, `og:url`, `og:image` and
   `twitter:card`, so a link to it shows a card in chats and social posts. Set them in showtime.json,
   `"share": {"url": "https://me.github.io/launch/", "image": "card.jpg", "description": "One sentence."}`,

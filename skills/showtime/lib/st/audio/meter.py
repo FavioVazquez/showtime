@@ -241,6 +241,8 @@ def ffmpeg_ebur128(path) -> Dict[str, Optional[float]]:
     cp = ff.run_ffmpeg(["-nostats", "-i", str(path), "-vn", "-af", "ebur128=peak=true", "-f", "null", "-"],
                        loglevel="info", overwrite=False, check=False)
     e = cp.stderr or ""
+    if cp.returncode != 0:      # a failed run still prints a Summary of zeros (I: 0.0 LUFS)
+        return {"integrated_lufs": None, "lra": None, "true_peak_dbtp": None}
     summary = e[e.rfind("Summary:"):] if "Summary:" in e else e
 
     def g(pat: str) -> Optional[float]:

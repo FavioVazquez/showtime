@@ -1674,6 +1674,8 @@ def cmd_grade(args) -> int:
         out.parent.mkdir(parents=True, exist_ok=True)
         vf = ("split=2[a][b];[b]%s[g];[a]scale=960:-2,drawbox=w=iw:h=ih:c=black@0:t=0[a2];[g]scale=960:-2[g2];"
               "[a2][g2]hstack" % (chain or "null"))
+        if out.suffix.lower() in (".jpg", ".jpeg"):
+            vf += "," + ff.JPEG_VF                    # JPEG's own colours (BT.601 full range), as posters
         ff.run_ffmpeg(["-ss", "%.3f" % t, "-i", str(src), "-frames:v", "1", "-filter_complex", vf, str(out)])
         if args.json:
             print_json({"png": str(out), "filter": chain})

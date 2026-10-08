@@ -370,7 +370,7 @@ class FaceTest(unittest.TestCase):
 
 
 class ReviewW1Test(unittest.TestCase):
-    """Fixes from the independent review of the cards (REVIEW-W1: S1, S3-S5, P2, P5, P6, P8)."""
+    """Fixes from the independent review of the cards (findings S1, S3-S5, P2, P5, P6, P8)."""
 
     def test_caption_cut_at_a_split_edge(self):
         # S1: a caption group that starts before a 9:16 panel and ends inside it is cut at the panel's start;
@@ -550,6 +550,50 @@ class SuggestTest(unittest.TestCase):
         tr = TMP / "sug" / "transcripts" / "clip.json"
         cp = st("edit", "cards", "suggest", tr)
         self.assertIn("\"type\": \"stat\"", cp.stdout)
+
+
+class ReelPlacementTest(unittest.TestCase):
+    """The card reel lands on the output frame for frame: each card's first reel frame on the card's first output
+    frame, its last on the frame before the card's cut (a behind card's plate is cut frame-exact, so a reel frame
+    short left the speaker on a bare plate: example 23's 9:16, frame 1307 before the cut at 43.600 s)."""
+
+    def placed(self, fps, starts):
+        from st import ff
+        from st.footage import cards as CD, render_edl as R
+        FF, W, H = ff.ffmpeg_path(), 32, 32
+        d = Path(tempfile.mkdtemp(prefix="reel-", dir=str(TMP)))
+        reel, base = d / "reel.mov", d / "base.mp4"
+        rate = "%d/%d" % (fps.numerator, fps.denominator)
+        # reel frame i is gray (i mod 30) * 8, opaque, like the real reel (QuickTime Animation, argb)
+        subprocess.run([FF, "-v", "error", "-y", "-f", "lavfi", "-i", "color=black:s=%dx%d:r=%s:d=8,format=rgba" % (W, H, rate),
+                        "-vf", "geq=r='mod(N,30)*8':g='mod(N,30)*8':b='mod(N,30)*8':a='255'", "-c:v", "qtrle",
+                        "-pix_fmt", "argb", str(reel)], check=True)
+        subprocess.run([FF, "-v", "error", "-y", "-f", "lavfi", "-i", "color=white:s=%dx%d:r=%s:d=12" % (W, H, rate),
+                        "-c:v", "libx264", "-qp", "0", "-pix_fmt", "yuv420p", str(base)], check=True)
+        cards = [{"index": i, "start": float(Fraction(f) / fps), "end": float(Fraction(f + 23 + 7 * i) / fps)}
+                 for i, f in enumerate(starts)]
+        plan = CD.reel_plan(cards, fps)
+
+        class Ctx:
+            pass
+        ctx = Ctx()
+        ctx.w, ctx.h, ctx.full_w, ctx.full_h, ctx.fps = W, H, W, H, fps
+        ctx.edl = {"overlays": CD.overlays_for(reel, plan)}
+        args, parts, cur = R._overlay_graph(ctx, 1)
+        raw = subprocess.run([FF, "-v", "error", "-i", str(base)] + args + [
+            "-filter_complex", ";".join(parts) + ";%sformat=rgb24[v]" % cur, "-map", "[v]", "-f", "rawvideo", "-"],
+            stdout=subprocess.PIPE, check=True).stdout
+        px = [raw[(k * W * H + (H // 2) * W + W // 2) * 3] for k in range(len(raw) // (W * H * 3))]
+        vals = [v if v > 245 else int(round(v / 8.0)) for v in px]
+        for p in plan:
+            f0 = int(round(p["card"]["start"] * float(fps)))
+            want = [255] + [i % 30 for i in range(p["offset_frames"], p["offset_frames"] + p["frames"])] + [255]
+            self.assertEqual(vals[f0 - 1:f0 + p["frames"] + 1], want, "card %d at frame %d (%s fps)" % (
+                p["card"]["index"], f0, rate))
+
+    def test_every_reel_frame_on_its_output_frame(self):
+        self.placed(Fraction(30), [13, 63, 123, 183])          # 13: start/TB came out 12.999..., truncated a frame early
+        self.placed(Fraction(30000, 1001), [7, 50, 101, 170])
 
 
 class RenderTest(unittest.TestCase):

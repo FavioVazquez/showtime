@@ -34,7 +34,8 @@ Give the source (a page, a paper, your notes). Say who it is for, so the questio
 - `final.mp4` with a pause-and-think beat at each question.
 - `<title>.html`: one file that plays offline in any browser, with chapters, keys (`?` lists them) and the
   questions. The scrubber marks each question green or red once answered.
-- With `--folder`: `index.html` and `assets/`, plus an empty `.nojekyll` so GitHub Pages serves every file.
+- With `--folder`: `index.html` and `assets/`, plus an empty `.nojekyll` so GitHub Pages serves every file. Serve
+  it from a host that answers byte-range requests (GitHub Pages and most web hosts do), so a seek plays at once.
 - `socratic.json` beside the export, for a page that drives the player itself.
 
 ## Links to a moment or a stretch
@@ -45,8 +46,8 @@ Give the source (a page, a paper, your notes). Say who it is for, so the questio
 
 ## How long it takes
 
-No explainer with questions was timed for this guide. For scale, on a 6-core Intel Mac shared with other jobs:
-[example 02](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/02-explainer-heat-pump) (45 s) rendered in 1 min 56 s, and
+[Example 25](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/25-nobel-physics-ice-telescope) (2:38, three questions) rendered in about 3 min 15 s on
+a 6-core Intel Mac, and its `--folder` export with a link preview took 82 s on a 64-core Linux machine. On the Mac,
 [example 13](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/13-wikipedia-waggle-dance) (60 s) exported to one HTML file in about 25 s.
 
 ## Phrases that change it
@@ -65,6 +66,7 @@ No explainer with questions was timed for this guide. For scale, on a 6-core Int
 
 ## The example
 
-<!-- example: 25 -->
-How to write good questions: [story.md, section 9](../../skills/showtime/references/story.md). The export's
+[Example 25](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/25-nobel-physics-ice-telescope) explains the 2026 Nobel Prize in Physics with three
+questions; its [HTML video](https://github.com/FavioVazquez/showtime-examples/blob/main/examples/25-nobel-physics-ice-telescope/interactive/index.html) is a folder export
+with a link preview. How to write good questions: [story.md, section 9](../../skills/showtime/references/story.md). The export's
 options: [html-export.md](../../skills/showtime/references/html-export.md).

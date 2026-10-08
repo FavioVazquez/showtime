@@ -394,7 +394,10 @@ class TestRender(unittest.TestCase):
         decision (__ST_RENDER__.softwareGL, read by the looks through gl.js softwareGL), render.json records it,
         and a span spliced into a job's full render takes that render's decision."""
         proj = self.tmp / "gpu"
-        write(proj / "showtime.json", json.dumps({"width": 128, "height": 72, "fps": 10, "duration": 2, "poster": 0}))
+        # 256x144, the size of the other small pages here: at 128x72 (the only page this small in the suite) a
+        # no-GPU Ubuntu machine (SwiftShader) saw this test's screenshots wait out the 60 s shot timeout, about 4
+        # minutes instead of seconds
+        write(proj / "showtime.json", json.dumps({"width": 256, "height": 144, "fps": 10, "duration": 2, "poster": 0}))
         write(proj / "index.html", GL_DECISION_HTML)
         r, _ = render(proj, self.tmp / "gpu-out" / "final.mp4", "--gpu", "off", "--workers", 2, "--no-audio",
                       env=dict(ENV, SHOWTIME_TEST_FAIL_WRITE="5"))
@@ -423,13 +426,13 @@ class TestRender(unittest.TestCase):
 
 # the colour says what the page was told: red = no GPU, green = a GPU, blue = not told (gl.js probed)
 GL_DECISION_HTML = """<!doctype html><html><head><script src="/_st/stage.js"></script></head>
-<body style="margin:0;background:#000"><canvas id="c" width="128" height="72"></canvas>
+<body style="margin:0;background:#000"><canvas id="c" width="256" height="144"></canvas>
 <script type="module">import { softwareGL } from '/_st/effects/gl.js';
 window.__told = !!window.__ST_RENDER__ && 'softwareGL' in window.__ST_RENDER__; window.__sw = softwareGL();</script>
 <script>
 const g = document.getElementById('c').getContext('2d');
 ST.onSeek((t) => {
-  g.fillStyle = !window.__told ? '#0000ff' : window.__sw ? '#ff0000' : '#00ff00'; g.fillRect(0, 0, 128, 72);
+  g.fillStyle = !window.__told ? '#0000ff' : window.__sw ? '#ff0000' : '#00ff00'; g.fillRect(0, 0, 256, 144);
   g.fillStyle = '#fff'; g.fillRect((t * 40) % 120, 4, 6, 6);
 });
 </script></body></html>

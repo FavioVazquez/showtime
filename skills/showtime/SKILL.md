@@ -129,7 +129,7 @@ Log each stage boundary: `showtime job note <job> --stage <name> --verified ... 
 |---|---|
 | "The render exited 0, so it's fine" | Run `showtime qa <job>`; the log proves frames were written, not that the file is right |
 | "I'll wait for a yes before the final" (quick mode) | Show the first look and keep going; confirm only destructive or costly steps |
-| "The template is close enough" | `--duration <len>` (or `showtime retime`); no placeholder left (74 %, northwind.app) |
+| "The template is close enough" | `--duration <len>` (or `showtime retime`); no placeholder left (74 %, northwind.example) |
 | "check passed with warnings" | Read every WARN; `short_text`, still holds and `slow_scene` are real defects: fix them |
 | "I'll call ffmpeg directly" | `footage trim`, `snap <video>`, `deliver exports --max-mb` (or `--targets gif,webp`) |
 | "A stat or a plausible detail would help" | Only sourced specifics: docs or a saved run (`references/story.md` §6); label sample data |

@@ -88,6 +88,46 @@
   "22-manim-circle-area": {
    "from": 3.93,
    "dur": 4.0
+  },
+  "23-talking-head-cards-nasa": {
+   "from": 39.8,
+   "dur": 4.0
+  },
+  "24-highlights-apollo17-panel": {
+   "from": 6.0,
+   "dur": 4.0
+  },
+  "25-nobel-physics-ice-telescope": {
+   "from": 36.0,
+   "dur": 4.0
+  },
+  "26-nobel-chemistry-en-es": {
+   "from": 21.0,
+   "dur": 4.0
+  },
+  "28-claude-design-to-mp4": {
+   "from": 4.6,
+   "dur": 4.0
+  },
+  "29-pr-video-showtime": {
+   "from": 17.6,
+   "dur": 4.0
+  },
+  "30-showreel-four-shapes": {
+   "from": 1.0,
+   "dur": 4.0
+  },
+  "32-twelve-looks": {
+   "from": 0.8,
+   "dur": 4.0
+  },
+  "_looks": {
+   "from": 14.4,
+   "dur": 4.0
+  },
+  "_blur": {
+   "from": 3.5,
+   "dur": 4.0
   }
  }
 }

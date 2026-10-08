@@ -461,6 +461,11 @@ class ClipsTest(unittest.TestCase):
         for c in rep["clips"]:                                                 # each segment: sound as long as picture
             segs = sorted((Path(c["edl"]).parent / "work" / Path(c["edl"]).stem / "segments").glob("seg*.mov"))
             self.assertTrue(segs, c)
+            # the clip's own intermediates: work/<name>/render, not work/<name>/<name> (Windows' 260-character
+            # limit with long paths off failed opening the temp WAV there)
+            shared = Path(c["edl"]).parent / "work" / Path(c["edl"]).stem
+            self.assertTrue((shared / "render").is_dir(), sorted(p.name for p in shared.iterdir()))
+            self.assertFalse((shared / Path(c["edl"]).stem).exists())
             for sp in segs:
                 raw = json.loads(ff.run([ff.ffprobe_path(), "-v", "error", "-show_entries",
                                          "stream=codec_type,duration", "-of", "json", str(sp)], check=True).stdout)

@@ -11,7 +11,7 @@ import {
 } from './lib/cli.mjs';
 import { checkFreshness } from './lib/lean.mjs';
 import { openBrowser, openStage, writeDiagnostics, pullScore, parseSize, glRenderer, withTimeout, withPacedTimeout, newPace, paceSummary } from './lib/stagehost.mjs';
-import { resolveFF, ffmpeg, probe, ebur128, writeWavFloat, fpsArg, hasEncoder, setLogFile, logLine, meanFrameDiff } from './lib/ff.mjs';
+import { resolveFF, ffmpeg, probe, ebur128, writeWavFloat, fpsArg, hasEncoder, setLogFile, logLine, meanFrameDiff, JPEG_VF } from './lib/ff.mjs';
 import { CaptureQueue, OrderedFeed, autoWorkers, machineLimits } from './lib/pipeline.mjs';
 import { renderFlags } from './lib/chrome.mjs';
 import { audioCacheOn, audioKey, restoreAudio, saveAudio } from './lib/audiocache.mjs';
@@ -42,7 +42,8 @@ const SPEC = {
     '--from/--to with --job, when the job has a full render of this project at the same size, fps and length:',
     'only those seconds (widened to the keyframes around them) are rendered and spliced into a copy of that',
     'render, giving the next full final-N.mp4 (audio mixed again for the whole video). Otherwise the result is',
-    'a span clip, <job>/work/span-A-B.mp4 (without a job: span-A-B.mp4 in a new folder), never a final.',
+    'a span clip, <job>/work/span-A-B.mp4 (without a job: span-A-B.mp4 in a new folder; -o clip.mp4: that file),',
+    'never a final.',
     'Encode defaults can live in showtime.json "render": {"crf": 22, "x264_preset": "slow", "format": "png",',
     '"quality": 92, "poster": "none"}; flags override them, so every re-render keeps the same settings.',
   ].join('\n'),
@@ -184,8 +185,11 @@ async function main() {
   const wholeTarget = a.output ? (path.extname(a.output) ? path.resolve(a.output) : path.resolve(a.output) + ext) : null;
   const spanName = partialRange ? `span-${spanNum(a.from !== undefined ? parseTime(a.from) : 0)}-${a.to !== undefined ? spanNum(parseTime(a.to)) : 'end'}` : null;
   const spanJob = partialRange && wholeTarget ? (jobFolder || enclosingJob(wholeTarget)) : null;
+  // -o with a name of its own (not final*/preview*/draft*): the span clip goes exactly there, inside a job too
+  // (it used to become <job>/work/span-A-B.mp4), and it is never spliced into the job's final
+  const ownName = !!(partialRange && wholeTarget && !jobFolder && !/^(final|preview|draft)/i.test(path.basename(wholeTarget)));
   let target = wholeTarget;
-  if (partialRange && wholeTarget) {
+  if (partialRange && wholeTarget && !ownName) {
     if (spanJob) target = path.join(spanJob, 'work', spanName + ext);
     else if (/^(final|preview|draft)/i.test(path.basename(wholeTarget))) target = path.join(path.dirname(wholeTarget), spanName + ext);
   }
@@ -371,9 +375,10 @@ async function main() {
       // the range covers the whole video: an ordinary render
       replace(wholeTarget);
     } else if (partial) {
-      const into = spanJob || (wholeTarget && target !== wholeTarget ? wholeTarget : null);
+      const into = ownName ? null : spanJob || (wholeTarget && target !== wholeTarget ? wholeTarget : null);
       if (a.preview) spanWhy = 'a --preview span is a draft of those seconds';
       else if (alpha || sizeFlag) spanWhy = `a span with --${alpha ? 'alpha' : 'size'} is not spliced into the final`;
+      else if (ownName && spanJob) spanWhy = `-o names a clip of its own (render with --job ${path.basename(spanJob)} to splice the fix into the job's final)`;
       else if (!into) spanWhy = 'it is not rendered into a job (--job <job>), so there is no full render to splice it into';
       else {
         const found = await findSpliceBase({ job: spanJob, beside: spanJob ? null : wholeTarget, proj, W, H, fps, total });
@@ -544,7 +549,7 @@ async function main() {
     let posterStaged = false;
     const writePoster = async (src, dst = posterFile) => {
       if (frameExt === 'jpg') fs.copyFileSync(src, dst);
-      else await ffmpeg(['-i', src, '-q:v', '2', dst], { timeout: 120000 });   // one still: a hung ffmpeg never holds the render
+      else await ffmpeg(['-i', src, '-vf', JPEG_VF, '-q:v', '2', dst], { timeout: 120000 });   // one still: a hung ffmpeg never holds the render
     };
     const wantPoster = !a.preview && !alpha && !posterOff && posterT !== null && !isSpan;
     // a splice is a whole video: its poster can be any frame (the poster frame was captured) and its
@@ -915,7 +920,7 @@ async function main() {
       if (!report.poster && splice) {
         // most frames of a splice were not captured: take the frame from the video
         const tt = Math.floor(total * 0.4) / fps;
-        await ffmpeg(['-ss', tt.toFixed(3), '-i', outFile, '-frames:v', '1', '-q:v', '2', posterFile], { timeout: 120000 });
+        await ffmpeg(['-ss', tt.toFixed(6), '-i', outFile, '-frames:v', '1', '-vf', JPEG_VF, '-q:v', '2', posterFile], { timeout: 120000 });
         report.poster = { file: posterFile, time: tt, baked: false, method: '40%' };
       } else if (!report.poster) {
         const idx = first + Math.round(nFrames * 0.4);
@@ -1348,11 +1353,13 @@ async function buildAudio({ proj, cfg, info, browser, openOpts, audioDir, from, 
   if (noLoudnorm) {
     fs.copyFileSync(combined, masterWav);
     const m = await ebur128(masterWav);
-    mres = { mode: 'as mixed', lufs: m.I, true_peak: m.TP, reached: null };
+    mres = { mode: 'as mixed', lufs: m.I, true_peak: m.TP, reached: null, error: m.error };
+    if (m.error) addWarn(`loudness not measured (render.json says null): ${m.error}`);
   } else {
     // master 0.5 dB under the ceiling: AAC adds 0.2-0.4 dB of true-peak overshoot
     mres = await master(combined, masterWav, { target, tp: tp - AAC_HEADROOM_DB });
-    if (mres.mode === 'silent') addWarn('the soundtrack is silent');
+    if (mres.error) addWarn(`loudness not measured, the soundtrack is not leveled to ${target} LUFS: ${mres.error} (an ffmpeg older than 6.0? \`showtime doctor\` checks; \`showtime setup --ffmpeg static\` installs showtime's own)`);
+    else if (mres.mode === 'silent') addWarn('the soundtrack is silent');
     else if (!mres.reached) {
       addWarn(`the soundtrack reached ${mres.lufs === null ? '?' : mres.lufs.toFixed(1)} LUFS instead of ${target}: its peaks are very sharp, and more loudness would need heavy limiting`);
     }
@@ -1415,6 +1422,7 @@ async function buildAudio({ proj, cfg, info, browser, openOpts, audioDir, from, 
   for (const c of cands) fs.rmSync(c.f, { force: true });
   fs.rmSync(path.join(audioDir, 'master2.wav'), { force: true });
   const mOut = pick.m;
+  if (mOut.error && !mres.error) addWarn(`loudness of the encoded soundtrack not measured (render.json says null): ${mOut.error}`);
   if (leveled && !ok(pick)) addWarn(`the AAC audio peaks at ${mOut.TP} dBTP, above the ${tp} dBTP ceiling`);
   const result = {
     file: m4a, wav: masterWav, credits, mixReport, creditItems,

@@ -32,10 +32,8 @@ def extract_frame(video: PathLike, t: float, out: PathLike, width: Optional[int]
     t = min(t, max(0.0, dur - 1.0 / fps)) if dur else t
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    vf = "scale=%d:-2:flags=lanczos" % width if width else "null"
-    args: List[str] = ["-ss", "%.6f" % t, "-i", os.fspath(video), "-frames:v", "1", "-vf", vf]
-    if out.suffix.lower() in (".jpg", ".jpeg"):
-        args += ["-q:v", "2"]
+    # a .jpg gets the frame in JPEG's own colours (BT.601 full range), not the video's BT.709 tv range
+    args: List[str] = ["-ss", "%.6f" % t, "-i", os.fspath(video), "-frames:v", "1"] + ff.still_args(out, width)
     ff.run_ffmpeg(args + ["-update", "1", os.fspath(out)])
     if not out.is_file():
         raise ShowtimeError("could not extract a frame at %.3fs from %s" % (t, video))

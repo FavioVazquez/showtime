@@ -1,0 +1,57 @@
+name: Example request
+description: A video you would like to see showtime make, as a public example.
+title: "[example] "
+labels: ["type: example", "status: triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The current examples, with their requests and files: https://faviovazquez.github.io/showtime/
+        A problem with an existing example is a Bug (name the example's number).
+  - type: textarea
+    id: request
+    attributes:
+      label: The request, as you would type it to your agent
+      placeholder: "A 45 s explainer of how a hash map works, for developers, calm tone"
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind of video
+      options:
+        - Explainer
+        - Launch or promo
+        - Data story or chart
+        - Talking head or podcast
+        - Footage edit or highlights
+        - Tutorial or screen recording
+        - Social short
+        - Music video or audiogram
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: features
+    attributes:
+      label: Which showtime features should it show? (optional)
+  - type: textarea
+    id: sources
+    attributes:
+      label: Source material (public links only)
+      description: A repo, site, paper, dataset or clip you have the right to share.
+  - type: dropdown
+    id: aspect
+    attributes:
+      label: Aspect
+      options:
+        - "16:9"
+        - "9:16"
+        - "1:1"
+        - Any
+  - type: checkboxes
+    id: credit
+    attributes:
+      label: Credit
+      options:
+        - label: Credit me by my GitHub handle in the example's README.

@@ -156,6 +156,38 @@ def rmtree(path: Path) -> None:
     shutil.rmtree(str(path), onerror=onerror)
 
 
+def rmtree_aside(path: Path, trash: Path) -> List[str]:
+    """Remove a folder even when files in it are in use. On Windows a running python.exe or a loaded DLL
+    cannot be deleted (WinError 5) but can be renamed: such files move into `trash` (on the same drive)
+    and a later run deletes them. Returns the files moved aside; raises OSError when one cannot move."""
+    moved: List[str] = []
+
+    def onerror(func, p, exc_info):  # noqa: ANN001
+        try:
+            os.chmod(p, stat.S_IWRITE)
+            func(p)
+            return
+        except OSError:
+            pass
+        if os.path.isdir(p) and not os.path.islink(p):
+            raise exc_info[1]
+        trash.mkdir(parents=True, exist_ok=True)
+        os.replace(p, str(trash / ("%d-%d-%s" % (os.getpid(), len(moved), os.path.basename(p)))))
+        moved.append(p)
+    shutil.rmtree(str(path), onerror=onerror)
+    return moved
+
+
+def empty_trash(trash: Path) -> None:
+    """Delete what rmtree_aside moved aside earlier (files still in use stay for the next run)."""
+    if trash.is_dir():
+        for p in trash.iterdir():
+            try:
+                rmtree(p) if p.is_dir() and not p.is_symlink() else p.unlink()
+            except OSError:
+                pass
+
+
 # ==========================================================================
 # Manifest / selection
 # ==========================================================================
@@ -737,52 +769,132 @@ def install_estimate(tier: str = "core", extras: Sequence[str] = (), home: Optio
 
     Returns download_bytes (models, binaries), packages_bytes (Python + Node
     packages, when not installed yet), total_bytes and minutes_low/high
-    (50 MB/s .. 8 MB/s plus a fixed install overhead). Used by the launcher's
-    first-run message and setup's own preflight line.
+    (50 MB/s .. 8 MB/s plus a fixed install overhead), and what it takes on disk once
+    installed: disk_bytes and disk (by component: python, node, ffmpeg, browser, models;
+    from the measured sizes in the manifest's "disk" table and packages.*.disk). Used by
+    the launcher's first-run message and setup's own preflight line.
     """
     man = man or load_manifest()
     key = plat.platform_key()
     home = home or Path(os.path.expanduser(os.environ.get("SHOWTIME_HOME") or "~/.showtime"))
+    sizes = man.get("disk") or {}
+    disk: Dict[str, int] = {}
     items = select_items(man, tier, list(extras))
     todo = [it for it in items if item_status(it, home, key)[0] != "ok"]
     dl = sum(item_size(it, key) for it in todo)
+    disk["models"] = dl
     ff_have = (home / "bin" / plat.exe("ffmpeg")).is_file()
     if not ff_have:
         cands = plat.pick_for_platform(man.get("ffmpeg", {}), key) or []
         if cands:
-            dl += sum(int(f.get("size") or 0) for f in cands[0].get("files", []))
+            ff_dl = sum(int(f.get("size") or 0) for f in cands[0].get("files", []))
+            dl += ff_dl
+            disk["ffmpeg"] = int((sizes.get("ffmpeg") or {}).get(cands[0].get("id"), 0) or ff_dl)
     browser = browser_item(man)
     if browser is not None and not system_browsers() and item_status(browser, home, key)[0] != "ok":
         dl += item_size(browser, key)
+        disk["browser"] = int(plat.pick_for_platform(sizes.get("browser") or {}, key) or item_size(browser, key))
     if tier == "full":   # --full also takes the first-use parts that are not manifest items
         ids = {it["id"] for it in man["items"]}
-        dl += sum(r["size"] for r in plan_rows(man, key, home) if r["tier"] == "first-use"
-                  and r["component"] not in ids and not r["component"].startswith("Chrome Headless Shell"))
+        later = sum(r["size"] for r in plan_rows(man, key, home) if r["tier"] == "first-use"
+                    and r["component"] not in ids and not r["component"].startswith("Chrome Headless Shell"))
+        dl += later
+        disk["models"] += later
     pk = 0
     if not plat.venv_python(home / "venv").exists():
         pk += packages_bytes(man, "python", key)
+        disk["python"] = packages_bytes(man, "python", key, "disk") or 3 * packages_bytes(man, "python", key)
     if not (home / "node" / "node_modules" / "playwright").is_dir():
         pk += packages_bytes(man, "node", key)
+        disk["node"] = packages_bytes(man, "node", key, "disk") or 8 * packages_bytes(man, "node", key)
     total = dl + pk
     mb = total / 1024.0 ** 2
     low = mb / 50.0 / 60.0 + (2 if pk else 0.2)
     high = mb / 8.0 / 60.0 + (5 if pk else 0.5)
+    disk = {k: v for k, v in disk.items() if v}
     return {"tier": tier, "extras": list(extras), "download_bytes": dl, "packages_bytes": pk, "total_bytes": total,
             "items": [it["id"] for it in todo], "minutes_low": max(1, int(round(low))),
-            "minutes_high": max(2, int(round(high)))}
+            "minutes_high": max(2, int(round(high))), "disk_bytes": sum(disk.values()), "disk": disk}
+
+
+# what grows after setup (setup --estimate says so): the parts features fetch the first time they are used
+GROWS_LATER = ("Later: features fetch their parts the first time they are used (the first transcription adds "
+               "about 490 MB, its speech model), `showtime setup --full` takes them all now (about 5 GB), and "
+               "renders and the test suite keep caches in %s (about 0.7 GB after a test run). uv keeps its own "
+               "copy of the Python packages in its cache (`uv cache clean` frees it), and fetches Python 3.12 "
+               "(about 60 MB) when none is installed.")
+
+
+def describe_disk(est: Dict[str, Any]) -> str:
+    """'about 1.4 GB on disk once installed (Python packages 699 MB, Node packages 341 MB, ...)'."""
+    if not est.get("disk_bytes"):
+        return ""
+    names = {"python": "Python packages", "node": "Node packages", "ffmpeg": "ffmpeg", "browser": "browser",
+             "models": "models"}
+    parts = ["%s %s" % (names.get(k, k), human(v)) for k, v in sorted(est["disk"].items(), key=lambda kv: -kv[1])]
+    return "about %s on disk once installed (%s)" % (human(est["disk_bytes"]), ", ".join(parts))
+
+
+def find_uv() -> Optional[str]:
+    env = os.environ.get("SHOWTIME_UV")
+    if env and Path(env).is_file():
+        return env
+    return plat.find_tool("uv")
+
+
+def find_node() -> Tuple[Optional[str], Optional[Tuple[int, ...]]]:
+    node = os.environ.get("SHOWTIME_NODE") or plat.find_tool("node")
+    if not node:
+        return None, None
+    try:
+        out = subprocess.run([node, "--version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                             encoding="utf-8", timeout=30).stdout.strip()
+        ver = tuple(int(x) for x in re.findall(r"\d+", out)[:3])
+        return node, ver
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return node, None
+
+
+def missing_prereqs(skip: Iterable[str] = ()) -> List[Dict[str, str]]:
+    """The tools setup cannot download itself, checked before anything is fetched: uv (builds the
+    Python environment) and Node.js 20+ (renders). -> [{tool, problem, fix}], empty when both are here."""
+    skip = set(skip)
+    out: List[Dict[str, str]] = []
+    if "python" not in skip and not find_uv():
+        out.append({"tool": "uv", "problem": "uv was not found (setup uses it to build the Python environment)",
+                    "fix": uv_hint()})
+    if "node" not in skip:
+        node, ver = find_node()
+        if not node:
+            out.append({"tool": "node", "problem": "Node.js was not found (it renders the videos)", "fix": "    " + node_hint()})
+        elif ver and ver[0] < MIN_NODE:
+            out.append({"tool": "node", "problem": "Node.js %s is too old (showtime needs %d or newer)"
+                        % (".".join(map(str, ver)), MIN_NODE), "fix": "    " + node_hint()})
+    return out
+
+
+def describe_prereqs(missing: Sequence[Dict[str, str]]) -> str:
+    lines = []
+    for m in missing:
+        lines.append("  %s. Install it:\n%s" % (m["problem"], m["fix"]))
+    lines.append("Nothing was downloaded. Install %s, then run `showtime setup` again."
+                 % " and ".join("Node.js" if m["tool"] == "node" else m["tool"] for m in missing))
+    return "\n".join(lines)
 
 
 def describe_estimate(est: Dict[str, Any]) -> str:
-    """'about 2.3 GB (1.1 GB downloads + 1.2 GB packages), usually 4-12 min'."""
+    """'about 522 MB to download (258 MB models and tools + 264 MB Python/Node packages), about 1.3 GB on disk,
+    usually 2-6 min'."""
     if est["total_bytes"] <= 0:
         return "nothing to download (already installed)"
     parts = []
     if est["download_bytes"]:
-        parts.append("%s downloads" % human(est["download_bytes"]))
+        parts.append("%s models and tools" % human(est["download_bytes"]))
     if est["packages_bytes"]:
         parts.append("%s Python/Node packages" % human(est["packages_bytes"]))
-    return "about %s (%s), usually %d-%d min" % (human(est["total_bytes"]), " + ".join(parts),
-                                                est["minutes_low"], est["minutes_high"])
+    disk = (", about %s on disk" % human(est["disk_bytes"])) if est.get("disk_bytes") else ""
+    return "about %s to download (%s)%s, usually %d-%d min" % (human(est["total_bytes"]), " + ".join(parts), disk,
+                                                               est["minutes_low"], est["minutes_high"])
 
 
 # ==========================================================================
@@ -830,22 +942,10 @@ class Installer:
         self.report.add(component, status, detail, time.time() - t0, **extra)
 
     def find_uv(self) -> Optional[str]:
-        env = os.environ.get("SHOWTIME_UV")
-        if env and Path(env).is_file():
-            return env
-        return plat.find_tool("uv")
+        return find_uv()
 
     def find_node(self) -> Tuple[Optional[str], Optional[Tuple[int, ...]]]:
-        node = os.environ.get("SHOWTIME_NODE") or plat.find_tool("node")
-        if not node:
-            return None, None
-        try:
-            out = subprocess.run([node, "--version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                 encoding="utf-8", timeout=30).stdout.strip()
-            ver = tuple(int(x) for x in re.findall(r"\d+", out)[:3])
-            return node, ver
-        except (OSError, ValueError, subprocess.SubprocessError):
-            return node, None
+        return find_node()
 
     def npm_cmd(self, node: str) -> List[str]:
         nd = Path(node).resolve().parent
@@ -892,6 +992,13 @@ class Installer:
                     self.report.add("os", "warn", "%s: glibc 2.28+ is needed (Ubuntu 20.04+ / Debian 10+)" % libc)
             except (ValueError, OSError, AttributeError):
                 pass
+        elif o == "windows" and not VENV_PLATFORM.get(self.key):
+            # this Python has the venv's architecture: its probe tells whether onnxruntime will load
+            vc = plat.missing_vc_runtime()
+            if vc:
+                self.report.add("vc++ runtime", "warn", "Microsoft Visual C++ 2015-2022 x64 runtime not found; voices "
+                                "and transcription will not load until it is installed: " + plat.vc_runtime_fix(vc))
+                say("  " + plat.vc_runtime_fix(vc))
         if plat.pick_for_platform(self.man["ffmpeg"], self.key) is None:
             self.report.add("os", "warn", "platform %s has no prebuilt downloads; using system tools" % self.key)
         self.home.mkdir(parents=True, exist_ok=True)
@@ -910,12 +1017,16 @@ class Installer:
     # --------------------------------------------------------------- ffmpeg
     def _ff_check(self, ffmpeg: str, timeout: float = 30) -> Tuple[bool, List[str], List[str], str]:
         from st.ff import (REQUIRED_ENCODERS, REQUIRED_FILTERS, RECOMMENDED_FILTERS,
-                           RECOMMENDED_ENCODERS, _list_names, _run_version)
+                           RECOMMENDED_ENCODERS, _list_names, _run_version, probe_features, too_old)
         v, why = _run_version(ffmpeg, timeout)
         if not v:
             return False, ["(does not run: %s)" % why], [], ""
         filters, encoders = set(_list_names(ffmpeg, "filters")), set(_list_names(ffmpeg, "encoders"))
         miss_req = [f for f in REQUIRED_FILTERS if f not in filters] + [e for e in REQUIRED_ENCODERS if e not in encoders]
+        # an old build (Ubuntu 22.04's 4.4.2) has the filters but not the options showtime uses
+        old = too_old(v, probe_features(ffmpeg))
+        if old:
+            miss_req.insert(0, "too old: " + ", ".join(old))
         miss_rec = [f for f in RECOMMENDED_FILTERS if f not in filters] + [e for e in RECOMMENDED_ENCODERS if e not in encoders]
         return not miss_req, miss_req, miss_rec, v
 
@@ -948,7 +1059,8 @@ class Installer:
                 say("  system ffmpeg %s not used (%s)" % (cand, "does not run" if not v else
                     "missing: " + ", ".join((req + rec)[:6])))
             if mode == "system":
-                return "fail", "no capable system ffmpeg found (use --ffmpeg static)"
+                return "fail", "no capable system ffmpeg found (an older build lacks what showtime uses): " \
+                               "use showtime's own build: `showtime setup --ffmpeg static`"
         cands = ffmpeg_candidates(self.man, self.key)
         if not cands:
             return "warn", "no static ffmpeg for %s; install ffmpeg with libass/libx264 yourself" % self.key
@@ -1022,10 +1134,20 @@ class Installer:
             have = cp.stdout.strip()
             if have != want_plat:
                 why = "%s Python, %s needed" % (have or "unknown", want_plat)
+        trash = self.home / "cache" / "trash"
+        empty_trash(trash)
         if why:
             if venv.exists():
                 say("  recreating venv (%s)" % why)
-                rmtree(venv)
+                try:
+                    aside = rmtree_aside(venv, trash)
+                except OSError as e:
+                    return "fail", ("cannot remove the old venv %s (%s): a running showtime process uses it, often "
+                                    "your coding agent's showtime MCP server or a preview. Close it (or quit the "
+                                    "agent), then run `showtime setup --force` again." % (venv, e))
+                if aside:
+                    say("  %d file(s) of the old venv are still in use (%s): moved to %s, the next setup deletes them"
+                        % (len(aside), Path(aside[0]).name, trash))
             if want_plat:
                 say("  %s: using x64 Python %s, run by Windows' emulation (some packages have no arm64 wheels)"
                     % (self.key, PY_VERSION))
@@ -1070,6 +1192,9 @@ class Installer:
         versions = self.pkg_versions(uv)
         self.state.data["python"] = {"venv": str(venv), "python": self.venv_version(), "packages": versions}
         if bad:
+            vc = plat.missing_vc_runtime(self.vpy) if plat.IS_WINDOWS else []
+            if vc or (plat.IS_WINDOWS and any("DLL load failed" in v for v in bad.values())):
+                return "fail", "%s; imports failing: %s" % (plat.vc_runtime_fix(vc), "; ".join("%s (%s)" % kv for kv in bad.items()))
             return "fail", "imports failing: " + "; ".join("%s (%s)" % kv for kv in bad.items())
         return "ok", detail + "; python %s" % self.venv_version()
 
@@ -1396,6 +1521,13 @@ class Installer:
                 self.state.save()
                 return self.finish()
             self.preflight()
+            # uv and Node.js are installed by the user: say so before the first download, not after 200 MB
+            missing = missing_prereqs(self.skip)
+            if missing:
+                for m in missing:
+                    self.report.add(m["tool"], "fail", "%s; install it:\n%s" % (m["problem"], m["fix"]))
+                say(describe_prereqs(missing))
+                return self.finish()
             ffmpeg_ok = True
             if "ffmpeg" not in self.skip:
                 self.timed("ffmpeg", self.step_ffmpeg)
@@ -1917,11 +2049,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         except SystemExit as e:
             say(str(e))
             return 2
+        missing = missing_prereqs(args.skip or [])
+        est["missing"] = [m["tool"] for m in missing]
         if args.json:
             print(json.dumps(est, indent=2))
         else:
             print("showtime setup --tier %s%s: %s" % (tier, (" --with " + ",".join(args.with_)) if args.with_ else "",
                                                      describe_estimate(est)))
+            if est.get("disk_bytes"):
+                print("  " + describe_disk(est))
+                print("  " + GROWS_LATER % home)
+            if missing:
+                print("Install first (setup stops before downloading anything without it):")
+                for m in missing:
+                    print("  %s. Install it:\n%s" % (m["problem"], m["fix"]))
         return 0
     if args.home:
         os.environ["SHOWTIME_HOME"] = str(home)

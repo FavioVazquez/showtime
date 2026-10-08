@@ -1181,45 +1181,77 @@
     }
   ],
   "packages": {
-    "about": "Download sizes of the Python wheels uv installs (requirements.txt + tinysoundfont) and the Node tarballs (package-lock.json), computed 2026-09-28 from PyPI / the npm registry for each platform; python_download is the uv-managed Python 3.12, fetched only when no Python 3.12 is installed. disk: measured on a fresh Linux x64 install.",
+    "about": "Download sizes of the Python wheels uv installs (requirements.txt + tinysoundfont) and the Node tarballs (package-lock.json), computed 2026-09-28 from PyPI / the npm registry for each platform; python_download is the uv-managed Python 3.12, fetched only when no Python 3.12 is installed. disk: the installed size (python: the venv, from each pinned wheel's unpacked size plus 3% for file-system blocks, 2026-10-07, and mac-x64 measured on a fresh venv; node: node_modules measured after npm ci).",
     "python": {
       "mac-arm64": {
         "download": 218146675,
-        "python_download": 25017789
+        "python_download": 25017789,
+        "disk": 699000000
       },
       "mac-x64": {
         "download": 234876778,
-        "python_download": 24719239
+        "python_download": 24719239,
+        "disk": 716900000
       },
       "win-x64": {
         "download": 243007812,
-        "python_download": 22052624
+        "python_download": 22052624,
+        "disk": 649000000
       },
       "linux-x64": {
         "download": 317041149,
-        "python_download": 34270188
+        "python_download": 34270188,
+        "disk": 903000000
       },
       "linux-arm64": {
         "download": 284034725,
-        "python_download": 29199580
+        "python_download": 29199580,
+        "disk": 831000000
       }
     },
     "node": {
       "mac-arm64": {
-        "download": 41451373
+        "download": 41451373,
+        "disk": 341000000
       },
       "mac-x64": {
-        "download": 41451373
+        "download": 41451373,
+        "disk": 341000000
       },
       "win-x64": {
-        "download": 41451373
+        "download": 41451373,
+        "disk": 341000000
       },
       "linux-x64": {
-        "download": 41451373
+        "download": 41451373,
+        "disk": 341000000
       },
       "linux-arm64": {
-        "download": 41451373
+        "download": 41451373,
+        "disk": 341000000
       }
     }
+  },
+  "disk": {
+    "about": "Installed sizes for `setup --estimate` (bytes): ffmpeg + ffprobe per build (unpacked size of the picked files, read from each archive's zip directory, 2026-10-07; the two tar.xz builds are estimated from the same builder's static Windows build), the headless browser per platform (unpacked archive), and the Python 3.12 runtime uv fetches when none is installed. Models take their download size.",
+    "ffmpeg": {
+      "evermeet-9.0.2": 161500000,
+      "martin-riedl-9.0.2-amd64": 189400000,
+      "martin-riedl-9.0.2-arm64": 132500000,
+      "btbn-n9.0.2-win64-gpl-shared": 190900000,
+      "gyan-9.0.2-essentials": 210600000,
+      "btbn-n9.0.2-win64-gpl": 330100000,
+      "btbn-n9.0.2-winarm64-gpl": 188800000,
+      "martin-riedl-9.0.2-linux-amd64": 182500000,
+      "btbn-n9.0.2-linux64-gpl": 330000000,
+      "btbn-n9.0.2-linuxarm64-gpl": 300000000
+    },
+    "browser": {
+      "mac-arm64": 204700000,
+      "mac-x64": 208200000,
+      "win-x64": 283200000,
+      "linux-x64": 272500000
+    },
+    "python_runtime": 60000000
   }
 }

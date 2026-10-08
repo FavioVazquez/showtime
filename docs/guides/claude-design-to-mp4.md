@@ -47,8 +47,9 @@ Intel Mac with a load average around 50:
 | `showtime adopt` (unpack, size, length, determinism check, `showtime check`) | 42 s |
 | `showtime render --preview` (120 frames at 1280x720) | 30 s |
 
-A real 12-20 s design was not timed here. As a rule a final render takes about 1-2 times the video's length at
-1080p on a mid-range laptop (`render.md`, Speed).
+[Example 28](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/28-claude-design-to-mp4)'s two real designs, on a 64-core Linux machine without a
+GPU: adopt took 21 s (a 12 s design) and 51 s (a 20 s loop), the final renders 10.5 s and 20.5 s. As a rule a final
+render takes about 1-2 times the video's length at 1080p on a mid-range laptop (`render.md`, Speed).
 
 ## Phrases that change it
 
@@ -68,5 +69,5 @@ A real 12-20 s design was not timed here. As a rule a final render takes about 1
 
 ## The example
 
-<!-- example: 28 -->
-The details are in [adopt.md, From Claude Design](../../skills/showtime/references/adopt.md).
+[Example 28](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/28-claude-design-to-mp4) adopts two exported designs, a 12 s 16:9 test and a 9:16 loop,
+with a music bed each (CC BY 4.0 for the 16:9, CC0 for the loop) and before-and-after stills of the text at 100 %. The details are in [adopt.md, From Claude Design](../../skills/showtime/references/adopt.md).

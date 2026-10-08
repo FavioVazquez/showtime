@@ -16,7 +16,7 @@ import os from 'node:os';
 import { ffmpegPipe } from './ff.mjs';
 
 /**
- * The automatic worker count, and why. Measured (0.4.1 speed lab, build box and review):
+ * The automatic worker count, and why. Measured (0.4.1 speed lab, a 64-core test machine and review):
  * - with a GPU, 3 browsers were best on a 6-core machine (4 and 6 were slower);
  * - without one (SwiftShader and the like) every browser already spreads its drawing over many cores. On
  *   a 6-core machine a WebGL showreel was about 10 % faster with 1 browser than with 3, but a DOM page was

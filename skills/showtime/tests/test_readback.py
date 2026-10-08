@@ -6,8 +6,12 @@
 - what matters in a line (names, acronyms, numbers, lexicon words), a lone "A" told as the article
 - the case that shipped (7 Oct): the maths explainer's line "Now Open A I says ..." (bm_george); the fixture
   is a 3 s cut of that render's own voice-over, in which the recognizer hears "open an eye" (when installed)
-- qa: the `readback` item (WARN, FAIL for a title/brand/lexicon name, INFO when it cannot run),
-  voice/readback.json reused for the same vo.wav, audio.txt's table, the receipt's QA line
+- qa: the `readback` item (WARN; FAIL for a title/brand/lexicon name only when a second recognizer also hears it
+  differently; INFO when it cannot run, with the fetch hint only when the recognizer is missing), voice/readback.json
+  reused for the same vo.wav, audio.txt's table, the receipt's QA line
+- a right read respelled by the recognizer (review of 0.4.1: "JSON" written "JSO" by Parakeet, heard "JSON" by
+  Whisper small.en, in a project titled "JSON for teams"): WARN, not FAIL; showtime.json "readback": {"ok": [...]}
+  clears it for voice script and qa; the recognizer's name is in the cache key
 - `voice script`'s "heard back" lines; lexicon precedence (project over the built-in list)
 - without --fast, when Kokoro and the recognizer are here: `voice script` flags the bad line, passes the fix
 
@@ -197,17 +201,17 @@ class QaTests(Base):
                                                    for w in words(HEARD_BAD, 0.4)]
         calls = []
 
-        def fake(wav, lang, key=None):
+        def fake(wav, lang, key=None, model="auto"):
             calls.append(Path(wav).name)
             return heard
-        orig = self.rb.heard_words
-        orig_ready = self.rb.asr_ready
+        orig = self.rb.heard_words, self.rb.asr_ready, self.rb.second_recognizer
         self.rb.heard_words, self.rb.asr_ready = fake, (lambda lang: (True, ""))
+        self.rb.second_recognizer = lambda lang: None
         self.rb._READY.clear()
         try:
             rep = self.rb.for_project(d)
         finally:
-            self.rb.heard_words, self.rb.asr_ready = orig, orig_ready
+            self.rb.heard_words, self.rb.asr_ready, self.rb.second_recognizer = orig
             self.rb._READY.clear()
         self.assertEqual(calls, ["vo.wav"])                  # no line clips: the whole vo.wav, split by line
         self.assertEqual(rep["source"], "voice/vo.wav")
@@ -227,12 +231,12 @@ class QaTests(Base):
 
         def boom(*a, **k):
             raise AssertionError("the recognizer ran although readback.json belongs to this vo.wav")
-        orig = self.rb.heard_words
-        self.rb.heard_words = boom
+        orig = self.rb.heard_words, self.rb.second_recognizer
+        self.rb.heard_words, self.rb.second_recognizer = boom, (lambda lang: None)
         try:
             rep = self.rb.for_project(d)
         finally:
-            self.rb.heard_words = orig
+            self.rb.heard_words, self.rb.second_recognizer = orig
         self.assertIn("readback.json", rep["source"])
         self.assertTrue(rep["suspects"][0]["critical"])      # "OpenAI" is a name in the title
         # a timeline newer than the video is not what the video plays
@@ -256,11 +260,24 @@ class QaTests(Base):
         self.assertIn("one word", F.items[0]["fix"])
         rep["suspects"][0]["critical"] = True
         F = Findings()
-        hearing.check_readback(F, rep)
-        self.assertEqual(F.items[0]["severity"], "FAIL")
+        hearing.check_readback(F, rep)              # a title/brand name heard by one recognizer only: WARN
+        self.assertEqual(F.items[0]["severity"], "WARN")
+        self.assertIn("a name in the title, brand or lexicon", F.items[0]["message"])
+        rep["suspects"][0].update(confirmed=True, second={"by": "Whisper small.en", "heard": "OpenI"})
         F = Findings()
-        hearing.check_readback(F, {"skipped": "the speech recognizer is not installed", "suspects": []})
+        hearing.check_readback(F, rep)              # a second recognizer heard it wrong too: FAIL
+        self.assertEqual(F.items[0]["severity"], "FAIL")
+        self.assertIn('Whisper small.en also hears "OpenI"', F.items[0]["message"])
+        F = Findings()
+        hearing.check_readback(F, {"skipped": "the speech recognizer is not installed (showtime setup --fetch x)",
+                                   "suspects": []})
         self.assertEqual(F.items[0]["severity"], "INFO")
+        self.assertIn("setup --fetch", F.items[0]["fix"])
+        F = Findings()                              # installing changes nothing for a language it does not cover
+        hearing.check_readback(F, {"skipped": "the local recognizer (Parakeet) does not cover language 'zh'",
+                                   "suspects": []})
+        self.assertEqual(F.items[0]["severity"], "INFO")
+        self.assertNotIn("fix", F.items[0])
         F = Findings()
         hearing.check_readback(F, {"summary": "read-back: 7 lines heard back", "suspects": []})
         self.assertEqual((F.items, F.passed), ([], ["read-back: 7 lines heard back"]))
@@ -281,6 +298,159 @@ class QaTests(Base):
             "summary": rep["summary"], "words": [{"word": "Open A I", "heard": "OpenI", "t": 26.66}]}}}
         qa_line = [ln for ln in receipt.card_facts(rec) if ln.startswith("QA:")][0]
         self.assertEqual(qa_line, 'QA: WARN (0 fail, 1 warn) on final.mp4; read-back: "Open A I" heard as "OpenI" at 26.7s')
+
+
+JSON_LINE = "Open the JSON file in Visual Studio Code, then press the Enter key twice."
+JSON_PARAKEET = "Open the JSO file in Visual Studio Code, then press the Enter key twice."   # the review's l5
+JSON_WHISPER = "Open the JSON file in Visual Studio Code, then press the Enter key twice."
+
+
+class RespelledNameTests(Base):
+    """A right read the first recognizer respells: one recognizer is not enough to FAIL qa, a person can clear it."""
+
+    def json_project(self, ok=None):
+        d = Path(tempfile.mkdtemp(prefix="st-rb-json-"))
+        cfg = {"title": "JSON for teams", "duration": 10}
+        if ok is not None:
+            cfg["readback"] = {"ok": ok}
+        (d / "showtime.json").write_text(json.dumps(cfg), encoding="utf-8")
+        (d / "narration.md").write_text("## l5\n%s\n" % JSON_LINE, encoding="utf-8")
+        tl = {"file": "vo.wav", "script": "../narration.md", "lines": [
+            {"id": "l5", "text": JSON_LINE, "source_text": JSON_LINE, "lang": "en-us", "start": 1.0, "end": 5.8,
+             "speech_start": 1.05, "speech_end": 5.7, "file": "lines/01-l5.wav", "audio_key": "k5"}]}
+        (d / "voice").mkdir()
+        (d / "voice" / "timeline.json").write_text(json.dumps(tl), encoding="utf-8")
+        _wav(d / "voice" / "vo.wav", 6.0)
+        _wav(d / "voice" / "lines" / "01-l5.wav", 4.8)
+        return d
+
+    def run_project(self, d, second_hears=JSON_WHISPER, second=True):
+        calls = []
+
+        def fake(wav, lang, key=None, model="auto"):
+            calls.append(model)
+            return words(JSON_PARAKEET if model == "auto" else second_hears, 0.32)
+        orig = self.rb.heard_words, self.rb.asr_ready, self.rb.second_recognizer
+        self.rb.heard_words, self.rb.asr_ready = fake, (lambda lang: (True, ""))
+        self.rb.second_recognizer = ((lambda lang: {"model": "small.en", "label": "Whisper small.en"}) if second
+                                     else (lambda lang: None))
+        self.rb._READY.clear()
+        try:
+            return self.rb.for_project(d), calls
+        finally:
+            self.rb.heard_words, self.rb.asr_ready, self.rb.second_recognizer = orig
+            self.rb._READY.clear()
+
+    def qa(self, rep):
+        from st.qa import hearing
+        from st.qa.video import Findings
+        F = Findings()
+        hearing.check_readback(F, rep)
+        return F
+
+    def test_matcher_flags_the_respelling_only(self):
+        self.assertEqual(self.flagged(JSON_LINE, JSON_PARAKEET, "en-us"), [("JSON", "JSO")])
+        self.assertEqual(self.flagged(JSON_LINE, JSON_WHISPER, "en-us"), [])
+
+    def test_title_name_heard_right_by_the_second_recognizer_is_a_warn(self):
+        d = self.json_project()
+        rep, calls = self.run_project(d)
+        self.assertEqual(calls, ["auto", "small.en"])          # the second recognizer hears only the flagged line
+        s = rep["suspects"][0]
+        self.assertEqual((s["word"], s["heard"], s["critical"], s["confirmed"]), ("JSON", "JSO", True, False))
+        F = self.qa(rep)
+        self.assertEqual([(f["rule"], f["severity"]) for f in F.items], [("readback", "WARN")])
+        self.assertIn("Whisper small.en hears it as written", F.items[0]["message"])
+        self.assertIn('"readback": {"ok": ["JSON"]}', F.items[0]["fix"])
+        self.assertIn("listen to lines/01-l5.wav", F.items[0]["fix"])
+
+    def test_title_name_heard_wrong_by_both_is_a_fail(self):
+        rep, _ = self.run_project(self.json_project(), second_hears=JSON_PARAKEET)
+        self.assertTrue(rep["suspects"][0]["confirmed"])
+        F = self.qa(rep)
+        self.assertEqual(F.items[0]["severity"], "FAIL")
+        self.assertIn('Whisper small.en also hears "JSO"', F.items[0]["message"])
+
+    def test_no_second_recognizer_is_a_warn(self):
+        rep, calls = self.run_project(self.json_project(), second=False)
+        self.assertEqual(calls, ["auto"])
+        self.assertNotIn("confirmed", rep["suspects"][0])
+        self.assertEqual(self.qa(rep).items[0]["severity"], "WARN")
+
+    def test_a_word_cleared_after_listening(self):
+        rep, _ = self.run_project(self.json_project(ok=["json"]), second_hears=JSON_PARAKEET)
+        self.assertEqual(rep["suspects"], [])
+        self.assertEqual([s["word"] for s in rep["cleared"]], ["JSON"])
+        self.assertIn('cleared after listening (showtime.json readback.ok): "JSON"', rep["summary"])
+        F = self.qa(rep)
+        self.assertEqual(F.items, [])
+        self.assertIn("cleared after listening", F.passed[0])
+        from st.qa import hearing
+        self.assertIn("cleared after listening", "\n".join(hearing.readback_text(rep)))
+
+    def test_stored_readback_gets_the_second_opinion_and_the_clearance(self):
+        from st.footage.util import quick_hash
+        d = self.json_project()
+        stored = {"version": self.rb.READBACK_VERSION, "vo_hash": quick_hash(d / "voice" / "vo.wav"), "checked": 4,
+                  "lines": [{"id": "l5", "start": 1.0, "script": JSON_LINE, "heard": JSON_PARAKEET,
+                             "suspects": ["JSON"]}],
+                  "suspects": [{"line": "l5", "word": "JSON", "heard": "JSO", "keys": ["json"], "critical": False,
+                                "kind": "lexicon", "t": 1.64, "clip": "lines/01-l5.wav"}]}
+        (d / "voice" / "readback.json").write_text(json.dumps(stored), encoding="utf-8")
+        rep, calls = self.run_project(d)
+        self.assertEqual(calls, ["small.en"])                  # only the second opinion: the first is reused
+        self.assertEqual(rep["suspects"][0]["confirmed"], False)
+        self.assertEqual(self.qa(rep).items[0]["severity"], "WARN")
+        cfg = json.loads((d / "showtime.json").read_text(encoding="utf-8"))
+        cfg["readback"] = {"ok": ["JSON"]}                     # cleared after voice script ran: qa honours it
+        (d / "showtime.json").write_text(json.dumps(cfg), encoding="utf-8")
+        rep, _ = self.run_project(d)
+        self.assertEqual((rep["suspects"], rep["lines"][0]["suspects"]), ([], []))
+        self.assertEqual(self.qa(rep).items, [])
+
+    def test_voice_script_lines_and_cleared_words(self):
+        lines = [{"id": "l5", "text": JSON_LINE, "lang": "en-us", "start": 27.237, "heard": words(JSON_PARAKEET)}]
+        rep = self.rb.check_lines(lines, self.lex, {"json"},
+                                  second={"label": "Whisper small.en", "hear": lambda ln: words(JSON_WHISPER)})
+        out = self.rb.report_lines(rep)
+        self.assertIn('WARN', out[1])
+        self.assertIn("[a name in the title, brand or lexicon; Whisper small.en hears it as written]", out[1])
+        d = Path(tempfile.mkdtemp(prefix="st-rb-ok-"))
+        (d / "showtime.json").write_text(json.dumps({"readback": {"ok": ["JSON", 3, ""]}}), encoding="utf-8")
+        self.assertEqual(self.rb.cleared_words(d), ["JSON"])
+        self.rb.apply_cleared(rep, self.rb.cleared_words(d))
+        self.assertEqual(rep["suspects"], [])
+        self.assertIn("cleared after listening", self.rb.report_lines(rep)[0])
+
+    def test_cache_key_names_the_recognizer(self):
+        from st.footage import transcribe as T
+        cache = Path(tempfile.mkdtemp(prefix="st-rb-cache-"))
+        ran = []
+
+        def fake_transcribe(wav, model="auto", **kw):
+            ran.append(model)
+            return {"model": model, "words": [{"type": "word", "text": "hi", "start": 0.0, "end": 0.2}]}, None
+        orig = self.rb._cache_dir, T.transcribe
+        self.rb._cache_dir, T.transcribe = (lambda: cache), fake_transcribe
+        old_env = os.environ.pop("SHOWTIME_ASR_MODEL", None)
+        try:
+            wav = cache / "x.wav"
+            wav.write_bytes(b"0")
+            self.rb.heard_words(wav, "en", "k1")
+            self.rb.heard_words(wav, "en", "k1")               # cached
+            os.environ["SHOWTIME_ASR_MODEL"] = "turbo"         # another recognizer: heard again
+            self.rb.heard_words(wav, "en", "k1")
+            del os.environ["SHOWTIME_ASR_MODEL"]
+            self.rb.heard_words(wav, "en", "k1", model="small.en")
+        finally:
+            self.rb._cache_dir, T.transcribe = orig
+            os.environ.pop("SHOWTIME_ASR_MODEL", None)
+            if old_env is not None:
+                os.environ["SHOWTIME_ASR_MODEL"] = old_env
+        self.assertEqual(ran, ["auto", "auto", "small.en"])
+        names = sorted(p.name for p in cache.glob("k1-*.json"))
+        self.assertEqual(names, ["k1-en-large-v3-turbo.json", "k1-en-sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.json",
+                                 "k1-en-small.en.json"])
 
 
 class VoiceScriptTests(Base):

@@ -35,6 +35,21 @@ try:
 except ImportError:  # pragma: no cover
     build = None
 
+# The examples (their READMEs and MEDIA.json) live in examples/ of the development checkout, or in a clone of the
+# examples repository next to this one (site/config.json "examples_dir"). The public plugin repository has neither:
+# the tests that read the real gallery skip there, with this reason.
+HAVE_EXAMPLES = False
+NO_EXAMPLES = "needs the examples folder: examples/ in this checkout or a clone of the examples repository next to it"
+if build is not None:
+    try:
+        _ex = build.find_examples()
+        if _ex != build.EXAMPLES.resolve():
+            build.configure_examples(_ex)
+        HAVE_EXAMPLES = True
+    except SystemExit:
+        NO_EXAMPLES = "needs the examples folder (examples/ here, or a clone of %s at %s)" % (
+            build.CONFIG.get("examples_repo", "the examples repository"), build.CONFIG.get("examples_dir", "../"))
+
 
 def page(body: str, footer: bool = True) -> str:
     return ("<!doctype html><html><head><title>A page</title><script>var a='<b>';</script></head><body><main>%s</main>%s"
@@ -185,6 +200,7 @@ class PeoplePages(unittest.TestCase):
         self.assertIn("docs/whats-new.html", start)
         self.assertIn("docs/faq.html", start)
 
+    @unittest.skipUnless(HAVE_EXAMPLES, NO_EXAMPLES)
     def test_example_without_a_card_links_to_github(self):
         # examples/<NN>-*/ folders that have no gallery card get no page; a link to one must not point at a missing page
         tmp = Path(tempfile.mkdtemp(prefix="st-site-"))
@@ -198,6 +214,95 @@ class PeoplePages(unittest.TestCase):
         self.assertEqual(site.resolve_ref("../examples/%s/" % carded, docs, "docs/x.html"), "../examples/%s.html" % carded)
         out = site.resolve_ref("../examples/%s/" % other, docs, "docs/x.html")
         self.assertTrue(out.startswith("https://github.com/owner/repo/"), out)
+
+
+CARD = """<a id="ex-{id}"></a>
+
+<table>
+<tr>
+<td width="44%" valign="top"><a href="{folder}/"><img src="../assets/readme/gallery/{folder}.webp" width="100%" alt="An alt."></a></td>
+<td valign="top">
+<sub>{label} · 8 s · 16:9</sub><br>
+<b><a href="{folder}/">A title</a></b>
+<p><sub>THE PROMPT</sub><br><i>\u201cMake it.\u201d</i></p>
+<p><sub>WHAT IT SHOWS</sub><br>Something</p>
+<p>\u25b6 <a href="{folder}/final.mp4"><code>final.mp4</code></a>{html}<br><a href="{folder}/">the folder, the story and the commands</a></p>
+</td>
+</tr>
+</table>
+"""
+
+
+@unittest.skipIf(build is None, "needs markdown-it-py (showtime's venv has it)")
+class GalleryCards(unittest.TestCase):
+    """examples/README.md is the gallery's source: numbered cards, named demo cards, and "Also in this group"."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="st-cards-"))
+        self.saved = build.EXAMPLES
+
+    def tearDown(self):
+        import shutil
+        build.EXAMPLES = self.saved
+        shutil.rmtree(str(self.tmp), ignore_errors=True)
+
+    def parse(self, text: str):
+        (self.tmp / "README.md").write_text(text, encoding="utf-8")
+        build.EXAMPLES = self.tmp
+        return build.parse_examples()
+
+    def test_named_demo_cards_and_also_lines(self):
+        text = ("# Examples\n\n## Footage\n\n" + CARD.format(id="06", folder="06-a", label="06", html="") +
+                "\n<sub>Also in this group: <a href=\"#ex-30\"><b>30 \u00b7 Later</b></a>, below.</sub>\n\n"
+                "## Looks and motion\n\n" + CARD.format(id="30", folder="30-b", label="30", html="") + "\n" +
+                CARD.format(id="looks", folder="_looks", label="Demo", html="") +
+                "\n<sub>Also in this group: <a href=\"#ex-06\"><b>06 \u00b7 Earlier</b></a>, above.</sub>\n\n## Also here\n\n- x\n")
+        groups, exs = self.parse(text)
+        self.assertEqual([g for g, _ in groups], ["footage", "looks-and-motion"])
+        by = {e["num"]: e for e in exs}
+        self.assertEqual([e["num"] for e in exs], ["06", "30", "looks"], "numbers first, then demos")
+        self.assertEqual(by["looks"]["folder"], "_looks")
+        self.assertEqual(by["looks"]["meta"], "8 s \u00b7 16:9")
+        self.assertEqual(build.ex_label(by["looks"]), "Demo")
+        self.assertEqual(build.ex_label(by["06"]), "06")
+        # an "Also" line under a card counts for the group it sits in, even for a card the page has not reached yet
+        self.assertEqual(by["30"]["tags"], ["looks-and-motion", "footage"])
+        self.assertEqual(by["06"]["tags"], ["footage", "looks-and-motion"])
+
+    @unittest.skipUnless(HAVE_EXAMPLES, NO_EXAMPLES)
+    def test_this_checkout_parses(self):
+        groups, exs = build.parse_examples()
+        self.assertGreater(len(exs), 20)
+        names = [g for g, _ in groups]
+        for e in exs:
+            self.assertTrue(e["watch"], e["num"])
+            self.assertTrue(set(e["tags"]) <= set(names), e["num"])
+            self.assertTrue((build.EXAMPLES / e["folder"] / "README.md").is_file(), e["folder"])
+        counts = {g: sum(1 for e in exs if g in e["tags"]) for g in names}
+        nav = (build.EXAMPLES / "README.md").read_text(encoding="utf-8")
+        for g, name in groups:   # the use-case line's counts match the cards
+            self.assertIn('<a href="#%s"><b>%s</b></a> (%d)' % (g, name, counts[g]), nav, g)
+
+    def test_folder_export_is_copied_whole(self):
+        ex = self.tmp / "examples" / "40-x" / "interactive"
+        (ex / "assets" / "media").mkdir(parents=True)
+        (ex / "index.html").write_text("<!doctype html><title>x</title>", encoding="utf-8")
+        (ex / "assets" / "vfs.js").write_text("window.__ST_FILES__ = {};", encoding="utf-8")
+        (ex / "assets" / "media" / "soundtrack.m4a").write_bytes(b"\0" * 16)
+        site = build.Site(self.tmp / "out", [self.tmp / "examples"], "", None, "main")
+        dst, _ = site.media("examples/40-x/interactive/index.html", "40-x")
+        self.assertEqual(dst, "media/40-x/interactive/index.html")
+        out = self.tmp / "out" / "media" / "40-x" / "interactive"
+        for f in ("index.html", "assets/vfs.js", "assets/media/soundtrack.m4a"):
+            self.assertTrue((out / f).is_file(), f)
+        # a single-file export (no assets/vfs.js beside it) is still copied alone
+        one = self.tmp / "examples" / "41-y"
+        one.mkdir(parents=True)
+        (one / "film.html").write_text("<!doctype html><title>y</title>", encoding="utf-8")
+        (one / "notes.txt").write_text("not copied", encoding="utf-8")
+        dst, _ = site.media("examples/41-y/film.html", "41-y")
+        self.assertTrue((self.tmp / "out" / dst).is_file())
+        self.assertFalse((self.tmp / "out" / "media" / "41-y" / "notes.txt").exists())
 
 
 GUIDE_SECTIONS = ["Say this", "What happens", "What you get", "How long it takes", "Phrases that change it", "Limits",
@@ -250,6 +355,7 @@ class Guides(unittest.TestCase):
             self.assertEqual([h for h in heads if h in GUIDE_SECTIONS], GUIDE_SECTIONS, p.name)
             self.assertRegex(text, r"(example|examples)/|<!-- example: \d\d -->", p.name)
 
+    @unittest.skipUnless(HAVE_EXAMPLES, NO_EXAMPLES)
     def test_an_example_without_a_page_links_to_github(self):
         # an example folder links to its page only when the gallery builds it; else to the folder on GitHub
         built = sorted(build.EXAMPLES.glob("[0-9][0-9]-*/README.md"))[0].parent

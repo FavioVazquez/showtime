@@ -40,7 +40,9 @@ signatures `showtime new` (and `edit render`, for an edit's cards) picked for yo
 signature, the project or EDL path and the time). Neither is
 ever uploaded; turn both off with `showtime history off` (or `SHOWTIME_HISTORY=off`), delete both with
 `showtime history clear`. Its local preview, studio and notes
-(`showtime review open`) servers listen only on 127.0.0.1 and require a per-session key.
+(`showtime review open`) servers listen only on 127.0.0.1 and require a per-session key, and the preview window
+(`showtime preview`) opens your Chrome with Chrome's device discovery (Cast) turned off. Setup writes into `~/.showtime` (about 1.4 to 1.8 GB once installed; `showtime setup --estimate` gives
+yours); outside it, only uv's and npm's usual download caches in your user folder grow.
 
 Terms: showtime is provided under the [MIT License](LICENSE), "as is", without warranty. You are responsible for
 the content you make with it and for having the rights to any media you give it. Tools and models that setup

@@ -430,7 +430,9 @@ def export_one(src: PathLike, target: Target, out: PathLike, fit: str = "auto", 
         if tp["attempts"]:
             loud["peak_repair"] = tp["attempts"]
             if not tp["fixed"]:
-                warnings.append("true peak %.1f dBTP is above the %.1f dBTP ceiling" % (tp["after"], target.true_peak))
+                warnings.append("true peak %.1f dBTP is above the %.1f dBTP ceiling" % (tp["after"], target.true_peak)
+                                if tp["after"] is not None else "the true peak could not be measured after the repair "
+                                "(it was %.1f dBTP, ceiling %.1f)" % (tp["before"], target.true_peak))
     res = ff.probe(out)
     rect = picture_rect(sw, sh, target.width, target.height, mode)
     side = Path(str(out) + ".export.json")

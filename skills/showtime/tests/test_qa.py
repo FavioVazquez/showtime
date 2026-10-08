@@ -1025,6 +1025,21 @@ Film.start({ look: 'dark', design: [1920, 1080], scenes(T, g, F) {
         self.assertEqual(M.png_colour_chunks(poster), [])
         self.assertEqual(poster.read_bytes(), raw)
         self.assertNotIn("poster_mismatch", rules())
+        # a saturated frame (a showreel's frame 0) encoded as the render does (BT.709, tv range) and its poster
+        # JPEG from the same pixels: the same level (each file's own Y channel differed by ~4: 601 vs 709 luma)
+        src = d / "frame.png"
+        ffmpeg("-f", "lavfi", "-i", "color=c=0x05060f:s=320x568,drawbox=x=0:y=0:w=320:h=150:c=0xff3b30:t=fill,"
+               "drawbox=x=0:y=180:w=320:h=120:c=0x2337ff:t=fill,drawbox=x=0:y=330:w=160:h=120:c=0xff4fd8:t=fill,"
+               "drawbox=x=160:y=330:w=160:h=120:c=0x29e7ff:t=fill", "-frames:v", "1", src)
+        ffmpeg("-loop", "1", "-framerate", "30", "-t", "2", "-i", src, "-vf",
+               "scale=out_color_matrix=bt709:out_range=tv:flags=accurate_rnd+full_chroma_int,format=yuv420p",
+               "-c:v", "libx264", "-crf", "18", "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709",
+               "-color_range", "tv", str(v))
+        ffmpeg("-i", src, "-q:v", "2", d / "poster.jpg")
+        (d / "render.json").write_text(json.dumps({"output": str(v), "duration": 2,
+                                                   "poster": {"file": "poster.jpg", "time": 0.0}}), encoding="utf-8")
+        self.assertLess(abs(M.mean_luma(d / "poster.jpg") - M.mean_luma(v, at=0.0)), 1.0)
+        self.assertNotIn("poster_mismatch", rules())
 
 
 if __name__ == "__main__":

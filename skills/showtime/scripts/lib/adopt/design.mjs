@@ -193,7 +193,7 @@ export function fontFetchFailure(stderr, exitCode = 1) {
   return { code, why };
 }
 
-const GF_HOST =/^https?:\/\/fonts\.googleapis\.com\/css2?\?/i;
+const GF_HOST = /^https?:\/\/fonts\.googleapis\.com\/css2?\?/i;
 
 /** Google Fonts stylesheets a page loads (<link href> or @import) -> [{url, raw}] (url with &amp; decoded). */
 export function googleFontLinks(html) {

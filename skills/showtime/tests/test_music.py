@@ -917,6 +917,22 @@ class CliTests(unittest.TestCase):
         st = json.loads(launcher("audio", "music", "stats", "--json").stdout)
         self.assertGreaterEqual(st["tracks"], 150)
 
+    def test_41_ids_are_never_cut(self):
+        # the table shows the whole id, however long (a copied id must work in `music info` and mix.json)
+        longest = max((t["id"] for t in music.tracks()), key=len)
+        self.assertGreater(len(longest), 40)
+        out = launcher("audio", "music", "search", longest, "--limit", "40").stdout
+        self.assertIn(longest + " ", out)
+        for ln in out.splitlines()[:-1]:
+            self.assertIn(ln.split()[0], {t["id"] for t in music.tracks(include_vetoed=True)})
+        # an id that lost its end, or a typo: the error names the closest id
+        cp = launcher("audio", "music", "info", longest[:40], check=False)
+        self.assertNotEqual(cp.returncode, 0)
+        self.assertIn("did you mean %s?" % longest, cp.stderr)
+        with self.assertRaises(ShowtimeError) as e:
+            music.resolve("buckley-with-thse-hands")             # a mix.json "catalog" id
+        self.assertIn("did you mean buckley-with-these-hands", str(e.exception))
+
 
 @unittest.skipUnless(NETWORK, "set SHOWTIME_TEST_NETWORK=1 to check real URLs")
 class NetworkTests(unittest.TestCase):

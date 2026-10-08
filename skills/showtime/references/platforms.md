@@ -5,7 +5,7 @@ copy for the post.
 
 Numbers checked in September 2026. Platforms change limits often, so when a spec decides a hard
 cutoff (a length cap, a file-size cap), say it's "as of 2026" and suggest the user double-check.
-`showtime deliver exports <video|job> --targets ...` builds the platform variants (`--help` lists the targets; a job means its latest final, and the job logs a `deliver` stage).
+`showtime deliver exports <video|job> --targets ...` builds the platform variants (`showtime deliver targets` lists them; a job means its latest final, and the job logs a `deliver` stage).
 
 ## Essentials
 

@@ -361,3 +361,12 @@
 /* ---------- grain */
 .st-grain { position: absolute; inset: 0; pointer-events: none; z-index: 95; }
 .st-grain canvas { width: 100%; height: 100%; display: block; }
+
+/* ---------- looks: fluted-glass, tilt-shift, liquid-metal, mesh-gradient, god-rays, marble, metaballs (WebGL, runtime/effects/gl.js) */
+.st-fluted-glass, .st-tilt-shift, .st-liquid-metal, .st-mesh-gradient, .st-god-rays, .st-marble, .st-metaballs { position: absolute; inset: 0; overflow: hidden; }
+.st-look-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
+.st-look-src { position: absolute; inset: 0; width: 100%; height: 100%; display: block; object-fit: cover; }
+.st-look-hidden { visibility: hidden; }
+/* text or other content placed inside a look sits over it (zero specificity: page CSS wins) */
+:where(.st-fluted-glass, .st-tilt-shift, .st-liquid-metal, .st-mesh-gradient, .st-god-rays, .st-marble, .st-metaballs) > :where(:not(.st-look-canvas, .st-look-src, .st-fg-pane)) { position: relative; }
+.st-fg-pane { position: absolute; inset: 0; pointer-events: none; }

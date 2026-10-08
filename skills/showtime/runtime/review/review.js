@@ -6,6 +6,8 @@
  * review/notes/notes.json; the agent reads them with `showtime review notes <job> --new` and replies there.
  * A note's time is the middle of the frame it was written on, so the page and the agent's frame image
  * show the same frame. Regions are in 0-1 units of the picture: {x, y} (a spot) or {x, y, w, h} (a box).
+ * A note can also be about a stretch of time ({t, to}): Shift + drag on the bar, or [ at its start and ] at
+ * its end (the Mark stretch button on a phone); it shows on the bar as a band.
  */
 (function () {
   'use strict';
@@ -20,7 +22,8 @@
   var list = $('list'), empty = $('empty'), countEl = $('count'), summary = $('nSummary'), saved = $('saved'), banner = $('banner');
 
   $('title').textContent = CFG.title || 'Notes';
-  if (W.matchMedia && W.matchMedia('(pointer: coarse)').matches) hint.textContent = 'Pause, then tap a spot or drag a box to add a note';
+  var coarse = !!(W.matchMedia && W.matchMedia('(pointer: coarse)').matches);
+  if (coarse) hint.textContent = 'Pause, then tap a spot or drag a box to add a note';
   $('media').textContent = CFG.media + (CFG.kind === 'export' ? ' (HTML export)' : '');
 
   // ------------------------------------------------------------------ the video (two kinds, one interface)
@@ -122,6 +125,8 @@
   /** The middle of the frame shown at t: the page and the agent's frame image agree on it. */
   function frameMid(t) { return Math.round(((frameOf(t) + 0.5) / fps) * 1000) / 1000; }
   function num(n) { return String(n.id).replace(/^n/, ''); }
+  function isRange(n) { return !!n && n.to !== undefined && n.to !== null; }
+  function spanLabel(n) { return isRange(n) ? fmt(n.t, true) + '–' + fmt(n.to, true) : fmt(n.t, true); }
   function regionText(r) {
     if (!r) return 'whole frame';
     return r.w === undefined ? 'a spot' : 'a box';
@@ -228,10 +233,12 @@
     scrub.setAttribute('aria-valuetext', fmt(t, true) + ' of ' + fmt(dur));
     var key = [frameOf(t), playing, stage.clientWidth, stage.clientHeight, notes.length, draft ? JSON.stringify(draft) : ''].join('|');
     if (key !== lastUI) { lastUI = key; drawBoxes(); }
+    drawDraftBand();
+    if (playStop !== null && playing && t >= playStop - 0.5 / fps) { playStop = null; src.pause(); seek(t); }
   }
   (function loop() { if (!src.paused()) update(); W.requestAnimationFrame(loop); })();
   if (W.ResizeObserver) new ResizeObserver(function () { lastUI = ''; update(); }).observe(stage);
-  function toggle() { if (src.paused()) src.play(); else src.pause(); update(); }
+  function toggle() { playStop = null; if (src.paused()) src.play(); else src.pause(); update(); }
   function seek(t) { src.seek(t); setTimeout(update, 0); }
   function stepFrame(k) { if (!src.paused()) src.pause(); seek((frameOf(src.t()) + k + 0.5) / fps); }
   $('playBtn').addEventListener('click', toggle);
@@ -241,25 +248,113 @@
 
   function scrubT(e) { var r = scrub.getBoundingClientRect(); return clamp((e.clientX - r.left) / r.width, 0, 1) * src.duration(); }
   var scrubbing = false;
+  var pick = null;          // shift + drag on the bar: {from, to, at, x, moved} (as the HTML player's range links)
   scrub.addEventListener('pointerdown', function (e) {
-    scrubbing = true;
     try { scrub.setPointerCapture(e.pointerId); } catch (x) { /* ignore */ }
+    playStop = null;
     if (!src.paused()) src.pause();
+    if (e.shiftKey) { var t0 = scrubT(e); pick = { from: t0, to: t0, at: src.t(), x: e.clientX, moved: false }; return; }
+    scrubbing = true;
     seek(scrubT(e));
   });
-  scrub.addEventListener('pointermove', function (e) { if (scrubbing) seek(scrubT(e)); });
-  ['pointerup', 'pointercancel'].forEach(function (ev) { scrub.addEventListener(ev, function () { scrubbing = false; }); });
+  scrub.addEventListener('pointermove', function (e) {
+    if (pick) { pick.to = scrubT(e); if (Math.abs(e.clientX - pick.x) > 4) pick.moved = true; drawDraftBand(); return; }
+    if (scrubbing) seek(scrubT(e));
+  });
+  ['pointerup', 'pointercancel'].forEach(function (ev) {
+    scrub.addEventListener(ev, function (e) {
+      scrubbing = false;
+      if (!pick) return;
+      var p = pick;
+      pick = null;
+      if (e.type === 'pointercancel') { drawDraftBand(); return; }
+      // dragged: that stretch; a shift + click: from the playhead to the click
+      var a = p.moved ? Math.min(p.from, p.to) : Math.min(p.at, p.from);
+      var b = p.moved ? Math.max(p.from, p.to) : Math.max(p.at, p.from);
+      if (b - a >= MIN_STRETCH) newStretch(a, b);
+      else { drawDraftBand(); toast('Drag along the bar for a stretch of ' + MIN_STRETCH.toFixed(2) + ' s or more', true); }
+    });
+  });
   function renderTicks() {
     var dur = src.duration();
     ticks.innerHTML = '';
     if (!(dur > 0)) return;
+    var pc = function (t) { return (100 * clamp(t / dur, 0, 1)).toFixed(3) + '%'; };
     notes.forEach(function (n) {
+      if (isRange(n)) {   // a stretch: a band under the frame notes' ticks
+        var bd = el('span', 'band' + (n.status === 'open' ? '' : ' ' + n.status));
+        bd.style.left = pc(n.t);
+        bd.style.width = (100 * clamp((n.to - n.t) / dur, 0.004, 1)).toFixed(3) + '%';
+        bd.title = '#' + num(n) + ' from ' + fmt(n.t, true) + ' to ' + fmt(n.to, true);
+        ticks.insertBefore(bd, ticks.firstChild);
+        return;
+      }
       var i = el('i', n.status === 'open' ? '' : n.status);
-      i.style.left = (100 * clamp(n.t / dur, 0, 1)).toFixed(3) + '%';
+      i.style.left = pc(n.t);
       i.title = '#' + num(n) + ' at ' + fmt(n.t, true);
       ticks.appendChild(i);
     });
+    ticks.appendChild(dband);
+    drawDraftBand();
   }
+
+  // ------------------------------------------------------------------ stretches of time
+  var MIN_STRETCH = Math.max(0.25, 2 / fps);
+  var mark = null;          // {from}: a stretch's start ([ or Mark stretch), waiting for its end
+  var playStop = null;      // Play stretch: pause at this time
+  var dband = el('span', 'band draft');
+  dband.hidden = true;
+  /** The stretch being picked or written: a dashed band on the bar. */
+  function drawDraftBand() {
+    var dur = src.duration(), r = null;
+    if (pick && pick.moved) r = [Math.min(pick.from, pick.to), Math.max(pick.from, pick.to)];
+    else if (mark) r = [Math.min(mark.from, src.t()), Math.max(mark.from, src.t())];
+    else if (draft && isRange(draft)) r = [draft.t, draft.to];
+    if (!r || !(dur > 0)) { dband.hidden = true; return; }
+    if (dband.parentNode !== ticks) ticks.appendChild(dband);
+    dband.hidden = false;
+    dband.style.left = (100 * clamp(r[0] / dur, 0, 1)).toFixed(3) + '%';
+    dband.style.width = Math.max(0.4, 100 * clamp((r[1] - r[0]) / dur, 0, 1)).toFixed(3) + '%';
+  }
+  function syncMarkBtn() {
+    var b = $('rangeBtn');
+    b.textContent = mark ? 'End stretch' : 'Mark stretch';
+    b.classList.toggle('is-marking', !!mark);
+    b.title = mark ? 'End the stretch here and write a note on it (])' : 'Mark the start of a stretch of time ([)';
+  }
+  function markStart() {   // playing on is fine: the band grows with the playhead, and End stretch pauses
+    mark = { from: src.t() };
+    syncMarkBtn();
+    toast('Stretch starts at ' + fmt(mark.from, true) + '. Go to where it ends, then End stretch' + (coarse ? '' : ' (or ])'));
+    update();
+  }
+  function markEnd() {
+    if (!mark) { toast('Mark where the stretch starts first ([ or Mark stretch)', true); return; }
+    var a = Math.min(mark.from, src.t()), b = Math.max(mark.from, src.t());
+    if (b - a < MIN_STRETCH) { toast('Go to where the stretch ends first (' + MIN_STRETCH.toFixed(2) + ' s or more from its start)', true); return; }
+    newStretch(a, b);
+  }
+  function cancelMark() { mark = null; syncMarkBtn(); update(); }
+  /** Open the composer for a note on the stretch from a to b (each the middle of its frame). */
+  function newStretch(a, b) {
+    if (!src.paused()) src.pause();
+    mark = null;
+    syncMarkBtn();
+    var A = frameMid(a), B = Math.max(A + MIN_STRETCH, frameMid(b));
+    var dur = src.duration();
+    if (dur > 0) B = Math.min(B, dur);
+    draft = { t: A, to: B, region: null };
+    cTitle.textContent = 'New note from ' + fmt(A, true) + ' to ' + fmt(B, true);
+    cWhere.textContent = '· a stretch of ' + (B - A).toFixed(1) + ' s';
+    cWhole.hidden = true;
+    composer.hidden = false;
+    stage.classList.add('has-draft');
+    seek(A);
+    lastUI = ''; update();
+    cText.focus({ preventScroll: true });
+    if (composer.scrollIntoView && W.innerWidth < 900) composer.scrollIntoView({ block: 'nearest' });
+  }
+  $('rangeBtn').addEventListener('click', function () { if (mark) markEnd(); else markStart(); });
 
   // ------------------------------------------------------------------ pointing at the picture
   var drag = null;
@@ -313,6 +408,8 @@
     if (!src.paused()) src.pause();
     var t = frameMid(src.t());
     var keep = !composer.hidden && draft && !draft.editId;
+    if (keep && isRange(draft)) draft = { t: t, region: null };   // pointing at the picture: a note on this frame
+    mark = null; syncMarkBtn();
     draft = { t: keep ? draft.t : t, region: region || null };
     if (keep && Math.abs(draft.t - t) > 0.5 / fps) draft.t = t;
     cTitle.textContent = 'New note at ' + fmt(draft.t, true);
@@ -339,6 +436,7 @@
     if (!text) { toast('Type what should change first', true); cText.focus(); return; }
     if (!draft) return;
     var body = { op: 'add', t: draft.t, region: draft.region, text: text };
+    if (isRange(draft)) body.to = draft.to;
     $('cSave').disabled = true;
     api(body).then(function (j) {
       closeComposer();
@@ -370,13 +468,13 @@
       var li = el('li', 'note st-' + n.status + (n.id === sel ? ' sel' : ''));
       li.tabIndex = 0;
       li.setAttribute('data-id', n.id);
-      li.setAttribute('aria-label', 'Note ' + num(n) + ' at ' + fmt(n.t, true));
+      li.setAttribute('aria-label', 'Note ' + num(n) + (isRange(n) ? ' from ' + fmt(n.t, true) + ' to ' + fmt(n.to, true) : ' at ' + fmt(n.t, true)));
       var h = el('div', 'nh');
       h.appendChild(el('span', 'num', '#' + num(n)));
-      var at = el('button', 'at', fmt(n.t, true));
-      at.type = 'button'; at.title = 'Go to this frame'; at.setAttribute('data-act', 'go');
+      var at = el('button', 'at', spanLabel(n));
+      at.type = 'button'; at.title = isRange(n) ? 'Go to the start of this stretch' : 'Go to this frame'; at.setAttribute('data-act', 'go');
       h.appendChild(at);
-      h.appendChild(el('span', 'where', regionText(n.region)));
+      h.appendChild(el('span', 'where', isRange(n) ? 'a stretch of ' + (n.to - n.t).toFixed(1) + ' s' + (n.region ? ' · ' + regionText(n.region) : '') : regionText(n.region)));
       if (n.author === 'agent') h.appendChild(el('span', 'chip agent', 'From your agent'));
       h.appendChild(el('span', 'chip' + (n.status === 'done' ? ' done' : ''), statusLabel(n.status)));
       li.appendChild(h);
@@ -410,6 +508,7 @@
           a.appendChild(btn('Delete', 'delete-yes', 'small danger'));
           a.appendChild(btn('Keep', 'delete-no', 'ghost small'));
         } else {
+          if (isRange(n)) a.appendChild(btn('Play stretch', 'play-range', 'ghost small'));
           if (n.author === 'person') a.appendChild(btn('Edit', 'edit', 'ghost small'));
           a.appendChild(n.status === 'open' ? btn('Mark done', 'done', 'ghost small') : btn('Reopen', 'reopen', 'ghost small'));
           if (n.author === 'person') a.appendChild(btn('Delete', 'delete', 'ghost small danger'));
@@ -449,6 +548,7 @@
     else if (act === 'delete') { confirming = id; renderList(); var y = list.querySelector('[data-act="delete-yes"]'); if (y) y.focus(); }
     else if (act === 'delete-no') { confirming = null; renderList(); focusNote(id); }
     else if (act === 'delete-yes') api({ op: 'delete', id: id }).then(function () { confirming = null; if (sel === id) sel = null; renderAll(); toast('Note deleted'); }, function () {});
+    else if (act === 'play-range') { var pr = noteById(id); if (pr && isRange(pr)) { selectNote(id, false); seek(pr.t); playStop = pr.to; src.play(); update(); } }
     else if (act === 'done' || act === 'reopen') api({ op: 'status', id: id, status: act === 'done' ? 'done' : 'open' }).then(function () { focusNote(id); }, function () {});
   });
 
@@ -477,13 +577,15 @@
     else if (k === ',' || k === '<') stepFrame(-1);
     else if (k === '.' || k === '>') stepFrame(1);
     else if (lower === 'n') newNote(draft && draft.region || null);
+    else if (k === '[') markStart();
+    else if (k === ']') markEnd();
     else if (lower === 'j') moveSel(-1);
     else if (lower === 'l') moveSel(1);
     else if (lower === 'e' && sel) { var n = noteById(sel); if (n && n.author === 'person') { editing = sel; renderList(); } }
     else if ((k === 'Delete' || k === 'Backspace') && sel && tg !== 'BUTTON') { var m = noteById(sel); if (m && m.author === 'person') { confirming = sel; renderList(); var y = list.querySelector('[data-act="delete-yes"]'); if (y) y.focus(); } }
     else if (k === 'Enter' && e.target.classList && e.target.classList.contains('note')) selectNote(e.target.getAttribute('data-id'), true);
     else if (k === '?') $('keysDlg').showModal();
-    else if (k === 'Escape') { if (!composer.hidden) closeComposer(); else if (confirming) { confirming = null; renderList(); } else if (sel) { sel = null; renderList(); } else handled = false; }
+    else if (k === 'Escape') { if (!composer.hidden) closeComposer(); else if (mark) cancelMark(); else if (confirming) { confirming = null; renderList(); } else if (sel) { sel = null; renderList(); } else handled = false; }
     else handled = false;
     if (handled) e.preventDefault();
   });
@@ -499,6 +601,7 @@
     get box() { return src.box(); },
     ready: src.ready,
     seek: function (t) { src.pause(); seek(t); },
+    get marking() { return mark ? mark.from : null; },
     refresh: refresh,
     render: renderAll,
   };

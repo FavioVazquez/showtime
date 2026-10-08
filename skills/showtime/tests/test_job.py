@@ -117,7 +117,45 @@ class JobTests(unittest.TestCase):
         self.assertEqual(cp.returncode, 1)
         self.assertNotIn("Traceback", cp.stderr)
 
+    def test_01b_windows_path_length(self):
+        """job init warns on Windows when the deepest file showtime writes in the job would pass 260 characters."""
+        from pathlib import PureWindowsPath
+        from unittest import mock
+        from st.job import ledger
+        short = PureWindowsPath("D:\\work\\videos\\showtime-out\\launch-teaser-20261007-120000")
+        self.assertIsNone(ledger.windows_path_warning(short, "launch-teaser", windows=True))
+        deep = PureWindowsPath("D:\\Shared drives\\Example Corporation\\Documents\\Projects\\2026\\Marketing"
+                               "\\Q4 campaign assets and drafts\\final review\\video work\\showtime-out\\"
+                               "quarterly-product-launch-teaser-final-20261007-120000")
+        w = ledger.windows_path_warning(deep, "quarterly-product-launch-teaser-final", windows=True)
+        self.assertIsNotNone(w)
+        self.assertIn("260-character", w)
+        self.assertGreaterEqual(len(str(deep)) + 1 + ledger.DEEPEST_IN_JOB, ledger.WIN_MAX_PATH)
+        # the slug it suggests fits: that folder name plus the deepest file stays under the limit
+        import re
+        n = int(re.search(r"a slug of at most (\d+) characters", w).group(1))
+        fixed = deep.parent / ("q" * n + "-20261007-120000")
+        self.assertIsNone(ledger.windows_path_warning(fixed, "q" * n, windows=True))
+        self.assertIsNotNone(ledger.windows_path_warning(deep.parent / ("q" * (n + 1) + "-20261007-120000"), "q" * (n + 1), windows=True))
+        # no-op off Windows, whatever the length
+        self.assertIsNone(ledger.windows_path_warning(deep, "x", windows=False))
+        if os.name != "nt":
+            self.assertIsNone(ledger.windows_path_warning(Path("/" + "d" * 300), "x"))
+        # job init records it in the ledger's warnings (here with Windows simulated and a deep base)
+        real = ledger.windows_path_warning
+        base = self.tmp / ("deep-" + "b" * 200)
+        with mock.patch.object(ledger, "windows_path_warning", lambda j, s: real(j, s, windows=True)):
+            d, data = ledger.init("long-path-test", base=base)
+        self.assertTrue(any("260-character" in x for x in data["warnings"]), data["warnings"])
+        cp = showtime("job", "init", "short", "--no-check", "--json", "--base", self.tmp / "shallow")
+        self.assertNotIn("path_warning", json.loads(cp.stdout))
+
     def test_02_status(self):
+        cp = showtime("status", cwd=self.repo)
+        lines = cp.stdout.strip().splitlines()
+        # test_01 wrote under SHOWTIME.md "## Notes" (the person's place): shown once, then seen (test_catchup.py)
+        self.assertTrue(lines[3].startswith("since you last looked"), cp.stdout)
+        self.assertIn("SHOWTIME.md notes added", cp.stdout)
         cp = showtime("status", cwd=self.repo)
         lines = cp.stdout.strip().splitlines()
         self.assertEqual(len(lines), 3, cp.stdout)

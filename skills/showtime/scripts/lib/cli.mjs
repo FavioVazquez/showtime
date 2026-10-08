@@ -15,6 +15,7 @@ export const c = { dim: paint('2'), bold: paint('1'), red: paint('31'), green: p
 
 let DEBUG = process.env.SHOWTIME_DEBUG === '1';
 let CMD = 'showtime';
+const T_START = Date.now();   // when this command started: a file changed after it was not the agent's (sinceLastLooked)
 
 export class UserError extends Error {
   constructor(message, hint) { super(message); this.hint = hint; this.userError = true; }
@@ -340,8 +341,27 @@ export function hasPyModule(rel) {
 export function runPyCli(args, { timeout = 30 * 60 * 1000, cwd } = {}) {
   const py = venvPython();
   if (!py) return Promise.resolve({ code: 127, stdout: '', stderr: 'showtime venv not found (run `showtime setup`)' });
-  return runProc(py, ['-m', 'st.cli', ...args], { env: pyEnv(), timeout, cwd });
+  // SHOWTIME_INTERNAL: a step of this command, not the agent's own (no "since you last looked" line of its own)
+  return runProc(py, ['-m', 'st.cli', ...args], { env: { ...pyEnv(), SHOWTIME_INTERNAL: '1' }, timeout, cwd });
 }
+
+/**
+ * "Since you last looked" for a job-scoped command (render, check, snap, look): what the person changed in the
+ * job while the agent was away (files edited by hand, unread notes, new board events, open critic findings;
+ * lib/st/job/catchup.py). -> {count, line, files, notes, board, findings} or null (nothing unseen, no job, or
+ * it could not be read). It marks nothing seen: `showtime status <job>` does. Put it in a --json result as
+ * "since_last_looked"; otherwise print it last with printSince (one line, never more).
+ */
+export async function sinceLastLooked(job) {
+  if (!job || process.env.SHOWTIME_INTERNAL === '1' || /^(0|off|false|no)$/i.test(process.env.SHOWTIME_CATCHUP || '')) return null;
+  try {
+    const r = await runPyCli(['job', 'catchup', job, '--footer', '--json', '--started', (T_START / 1000).toFixed(3)], { timeout: 60000 });
+    if (r.code !== 0) return null;
+    const s = JSON.parse(r.stdout || 'null');
+    return s && s.count ? s : null;
+  } catch { return null; }
+}
+export function printSince(s) { if (s && s.line) process.stderr.write(`${s.line}\n`); }
 
 /** Spawn with an argument list (no shell), capture output. */
 export function runProc(cmd, args, { env, timeout = 0, cwd, onStderr, input } = {}) {

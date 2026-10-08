@@ -4,7 +4,7 @@
   "tiers": {
     "minimal": "ffmpeg, Python venv, Node deps, Kokoro (timestamped fp16) + voices, a browser (CI tier)",
     "core": "minimal + Silero VAD, YuNet, arnndn models, FluidR3Mono SoundFont (MIT): the default install",
-    "full": "core + every component fetched on first use (Parakeet v3, the vocal separator, Whisper small.en, Manim, the audio library, the produced-music catalog, SFX packs, icon packs, full Chromium) + asr-turbo, parakeet, diarize, events, supertonic, deepfilter"
+    "full": "core + every component fetched on first use (Parakeet v3, the vocal separator, the portrait matting model, Whisper small.en, Manim, the audio library, the produced-music catalog, SFX packs, icon packs, full Chromium) + asr-turbo, parakeet, diarize, events, supertonic, deepfilter"
   },
   "full_extras": [
     "asr-turbo",
@@ -752,6 +752,31 @@
       ],
       "when": "a transcription with speech under loud music",
       "for": "speech under music"
+    },
+    {
+      "id": "modnet",
+      "tier": "lazy",
+      "group": "vision",
+      "description": "MODNet portrait matting (fp32 ONNX), cuts the speaker out of footage: footage cutout and \"behind\" cards",
+      "license": "Apache-2.0",
+      "attribution": "MODNet by Zhanghan Ke, Jiayu Sun, Kaican Li, Qiong Yan and Rynson W.H. Lau (Apache-2.0, code and models); fp32 ONNX export by Xenova (Apache-2.0)",
+      "source": "https://github.com/ZHKKKe/MODNet",
+      "files": [
+        {
+          "url": "https://huggingface.co/Xenova/modnet/resolve/fa2fa546052fba4c08921230a26cc69a333fca12/onnx/model.onnx",
+          "sha256": "07c308cf0fc7e6e8b2065a12ed7fc07e1de8febb7dc7839d7b7f15dd66584df9",
+          "size": 25888640,
+          "dest": "models/matte/modnet.onnx"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/ZHKKKe/MODNet/28165a451e4610c9d77cfdf925a94610bb2810fb/LICENSE",
+          "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+          "size": 11357,
+          "dest": "models/matte/LICENSE"
+        }
+      ],
+      "when": "the first footage cutout or \"behind\" card",
+      "for": "cutting the speaker out"
     },
     {
       "id": "pyannote-segmentation-3-0",

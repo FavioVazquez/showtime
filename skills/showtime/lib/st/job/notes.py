@@ -1,7 +1,7 @@
 """Notes on the finished video (`showtime review open|notes`, scripts/review.mjs): read-only, stdlib only.
 
-The person reviewing leaves notes on a frame of the render; they live in <job>/review/notes/notes.json
-(schema showtime.review.notes/1, written only by the Node side under a lock). At delivery
+The person reviewing leaves notes on a frame of the render, or on a stretch of it (t to "to"); they live in
+<job>/review/notes/notes.json (schema showtime.review.notes/1, written only by the Node side under a lock). At delivery
 (`job note --stage deliver`, `deliver exports`) the person's notes that are still open are listed as a
 warning: delivery goes on (a note is feedback, not a gate), but the agent sees what it has not answered.
 """
@@ -48,7 +48,8 @@ def warning(job: Path, width: int = 80) -> str:
         text = " ".join(str(n.get("text") or "").split())
         if len(text) > width:
             text = text[:width - 1].rstrip() + "…"
-        lines.append("    %-4s at %s%s: \"%s\"" % (n.get("id"), _at(n.get("t")), "  (answered)" if n.get("reply") else "", text))
+        when = ("from %s to %s" % (_at(n.get("t")), _at(n.get("to")))) if n.get("to") is not None else "at %s" % _at(n.get("t"))
+        lines.append("    %-4s %s%s: \"%s\"" % (n.get("id"), when, "  (answered)" if n.get("reply") else "", text))
     if len(op) > 8:
         lines.append("    ... and %d more" % (len(op) - 8))
     lines.append("  -> showtime review notes %s (frames and text), then --reply %s \"what changed\" --done, or --wontfix \"why\"; "

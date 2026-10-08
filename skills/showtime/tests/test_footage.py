@@ -702,8 +702,9 @@ class CaptionRulesTest(unittest.TestCase):
         """ROUND3: render_edl asks plan_crop not to announce (its own _upscale_info reports the upscale into the
         render report), and the burn itself never triggers the burned-captions note."""
         src = (SKILL / "lib" / "st" / "footage" / "render_edl.py").read_text(encoding="utf-8")
-        self.assertEqual(src.count("R.plan_crop("), 2)
-        self.assertEqual(src.count("announce=False"), 2)
+        # every call (cover/reframe and the cards' panel framing, each with its no-tracking fallback) is quiet
+        self.assertEqual(src.count("R.plan_crop("), 4)
+        self.assertEqual(src.count("announce=False"), src.count("R.plan_crop("))
         self.assertIn("burned_note=False", src)
 
     def test_edit_check_near_contiguous_ranges(self):

@@ -219,9 +219,11 @@ def state(job: Path, data: Optional[Dict[str, Any]] = None, video: Optional[Path
         res["message"] = ("review pending: round-%d is built but no critic has answered (FINDINGS.md missing)"
                           % last["round"])
         crit = Path(last["dir"]) / ("order-1/CRITIC.md" if last["kind"] == "pairwise" else "CRITIC.md")
-        res["next"] = ("give a fresh critic sub-agent only %s%s and ask for FINDINGS.md next to it (no sub-agent tool: "
-                       "answer it yourself as a SELF-REVIEW); a newer render: showtime review-pack %s rebuilds it"
-                       % (crit, " (and a second one order-2/CRITIC.md)" if last["kind"] == "pairwise" else "", jn))
+        res["next"] = ("give a fresh critic sub-agent only %s%s and ask for FINDINGS.md next to it (a critic that "
+                       "cannot write files: showtime review-findings %s%s < reply.txt; no sub-agent tool: answer it "
+                       "yourself as a SELF-REVIEW); a newer render: showtime review-pack %s rebuilds it"
+                       % (crit, " (and a second one order-2/CRITIC.md)" if last["kind"] == "pairwise" else "", jn,
+                          " --order N" if last["kind"] == "pairwise" else "", jn))
         return res
     if last is not None and last["kind"] == "pairwise" and not last["decided"]:
         res.update(status="waiting", pending=True)

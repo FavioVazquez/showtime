@@ -49,13 +49,78 @@
   function clamp(x, a, b) { return x < a ? a : x > b ? b : x; }
   function isPromise(x) { return x instanceof Promise; } // NOT thenables: timelines are thenables that never settle
   function timeout(ms) { return new Promise(function (r) { real.setTimeout(r, ms); }); }
-  function race(p, ms, label) {
-    var timer;
+  function nextFrame() { return new Promise(function (r) { real.raf(function () { r(); }); }); }
+
+  // ------------------------------------------------------------------ pace
+  // The waits below (page load, fonts, images, videos, ST.waitFor gates, per-seek fonts and video seeks) are
+  // their fixed values on a normal machine. On a slow one (no GPU, a busy runner, a heavy page) the same page
+  // needs longer, so each wait is scaled by the page's measured cost: the gaps between its frames while it
+  // gets ready (a frame should come every ~17 ms; PACE.frameRef is 3 of them) and the time its first seeks
+  // take (PACE.seekRef, a heavy frame without a GPU). factor = the larger ratio, at least 1 (never a wait
+  // shorter than the fixed value), at most PACE.ceil. The host (stagehost.mjs) reads it with ST.pace() and
+  // scales its own deadlines the same way; render.json and check's report record it.
+  var PACE = { ceil: 5, frameRef: 50, seekRef: 250, samples: 8 };
+  var paceOn = !(RENDER && RENDER.pace === false);
+  var waitScale = RENDER && RENDER.waitScale > 0 ? +RENDER.waitScale : 1;   // tests only: shrinks every base wait
+  var pace = { factor: 1, frameMs: null, seekMs: null, gaps: [], seeks: [] };
+  function median(a) {
+    var s = a.slice().sort(function (x, y) { return x - y; }), n = s.length;
+    return n ? (n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2) : null;
+  }
+  function paceUpdate() {
+    var f = 1;
+    if (pace.gaps.length >= 3) {
+      // the mean, not the median: a page busy in 200 ms pieces draws a frame after each piece and often another
+      // right away, so half its gaps are short
+      pace.frameMs = pace.gaps.reduce(function (x, y) { return x + y; }, 0) / pace.gaps.length;
+      f = Math.max(f, pace.frameMs / PACE.frameRef);
+    }
+    if (pace.seeks.length) { pace.seekMs = median(pace.seeks); f = Math.max(f, pace.seekMs / PACE.seekRef); }
+    pace.factor = paceOn ? Math.round(clamp(f, 1, PACE.ceil) * 100) / 100 : 1;
+  }
+  var sampling = false;
+  /** While the page gets ready: keep the last few gaps between real frames. */
+  function sampleFrames() {
+    if (sampling) return;
+    sampling = true;
+    var last = null;
+    (function tick() {
+      if (!sampling) return;
+      var now = real.now();
+      if (last !== null) {
+        pace.gaps.push(now - last);
+        if (pace.gaps.length > PACE.samples) pace.gaps.shift();
+        paceUpdate();
+      }
+      last = now;
+      real.raf(tick);
+    })();
+  }
+  function paceSeek(ms) {
+    if (pace.seeks.length >= PACE.samples) return;   // the first few seeks
+    pace.seeks.push(ms);
+    paceUpdate();
+  }
+  function paceInfo() {
+    return { factor: pace.factor, frame_ms: pace.frameMs === null ? null : Math.round(pace.frameMs),
+      seek_ms: pace.seekMs === null ? null : Math.round(pace.seekMs), seeks: pace.seeks.length,
+      ceiling: PACE.ceil, on: paceOn };
+  }
+  /**
+   * Promise.race against a deadline of baseMs times the pace factor, read again while it waits: it grows when
+   * the page turns out slower, and never shrinks (the slow stretch may be why this wait is long).
+   */
+  function pacedRace(p, baseMs, label) {
+    var t0 = real.now(), timer, f = 1;
     return Promise.race([p, new Promise(function (_, rej) {
-      timer = real.setTimeout(function () { rej(new Error('timed out after ' + ms + ' ms: ' + label)); }, ms);
+      (function tick() {
+        f = Math.max(f, pace.factor);
+        var lim = Math.round(baseMs * waitScale * f), left = lim - (real.now() - t0);
+        if (left <= 0) return rej(new Error('timed out after ' + lim + ' ms' + (f > 1 ? ' (x' + f + ' for this page\'s pace)' : '') + ': ' + label));
+        timer = real.setTimeout(tick, Math.min(left, 250));
+      })();
     })]).then(function (v) { real.clearTimeout(timer); return v; }, function (e) { real.clearTimeout(timer); throw e; });
   }
-  function nextFrame() { return new Promise(function (r) { real.raf(function () { r(); }); }); }
 
   // ------------------------------------------------ deterministic randomness
   function hashStr(s) {
@@ -250,7 +315,8 @@
       'html{background:' + bg + ';overflow:hidden}' +
       'html,body{margin:0;padding:0}' +
       'body{width:' + cfg.width + 'px;height:' + cfg.height + 'px;overflow:hidden;position:relative}' +
-      'img.st-emoji{height:1em;width:1em;margin:0 .05em;vertical-align:-.12em;display:inline-block}';
+      'img.st-emoji{height:1em;width:1em;margin:0 .05em;vertical-align:-.12em;display:inline-block}' +
+      '[data-st-blurring]{visibility:hidden!important}';
     // alpha renders: the page ground and the themes' default scene/stage fills (--scene-bg, --bg) are
     // transparent; a background a scene sets itself (a plate) still paints
     if (RENDER && RENDER.alpha) css += 'html,body{background:transparent!important;background-image:none!important}' +
@@ -288,10 +354,13 @@
     mo = new MutationObserver(function (muts) {
       for (var i = 0; i < muts.length; i++) {
         var m = muts[i];
-        if (m.type === 'childList' || (m.type === 'attributes' && m.attributeName !== 'data-active' && m.attributeName !== 'style')) { clipsDirty = true; return; }
+        if (inBlurHost(m.target)) continue;   // the shutter copies (see blurFrame) come and go every frame
+        if (m.type === 'attributes' && m.attributeName === 'data-st-blur') { blurDirty = true; continue; }
+        if (m.type === 'childList' && !blurDirty) blurDirty = hasElement(m.addedNodes) || hasElement(m.removedNodes);
+        if (m.type === 'childList' || (m.type === 'attributes' && m.attributeName !== 'data-active' && m.attributeName !== 'style')) clipsDirty = true;
       }
     });
-    mo.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-start', 'data-dur', 'data-end', 'id'] });
+    mo.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-start', 'data-dur', 'data-end', 'id', 'data-st-blur'] });
   }
   var TIME_RE = /^\s*(?:(#[A-Za-z_][\w:.-]*)\s*(?:([+-])\s*(\d*\.?\d+))?|([+])?\s*(-?\d*\.?\d+)\s*s?)\s*$/;
   function parseClips() {
@@ -425,9 +494,9 @@
 
   // ------------------------------------------------ handlers and adapters
   var handlers = [];         // [{name, fn}]
-  function addHandler(name, fn) {
+  function addHandler(name, fn, light) {
     if (typeof fn !== 'function') throw new TypeError('ST.' + (name ? 'adapter' : 'onSeek') + ' needs a function');
-    handlers.push({ name: name || ('onSeek#' + (handlers.length + 1)), fn: fn });
+    handlers.push({ name: name || ('onSeek#' + (handlers.length + 1)), fn: fn, light: !!light });
     if (started && MODE !== 'render') real.setTimeout(function () { ST.seek(ST.t); }, 0);
     return function off() { handlers = handlers.filter(function (h) { return h.fn !== fn; }); };
   }
@@ -517,7 +586,7 @@
     return waits;
   }
   function seekVideo(v, t, key) {
-    return race(seekOne(v, t), 15000, 'video seek ' + key).catch(function (e) { diag.videos[key] = e.message; });
+    return pacedRace(seekOne(v, t), 15000, 'video seek ' + key).catch(function (e) { diag.videos[key] = e.message; });
   }
 
   // ------------------------------------------- the canvas route for <video>
@@ -791,6 +860,7 @@
       emojiObserver = new MutationObserver(function (recs) {
         if (!emojiPending) return;
         recs.forEach(function (r) {
+          if (inBlurHost(r.target)) return;
           if (r.type === 'characterData') emojiPending.add(r.target);
           else r.addedNodes.forEach(function (a) { if (!(a.nodeType === 1 && a.classList.contains('st-emoji'))) emojiPending.add(a); });
         });
@@ -805,6 +875,692 @@
         img.addEventListener('load', r, { once: true }); img.addEventListener('error', r, { once: true });
       }).then(function () { if (img.naturalWidth > 0 && img.decode) return img.decode().catch(function () {}); });
     });
+  }
+
+  // ------------------------------------------------------------ shutter blur
+  // Motion blur on chosen elements, for snap beats (a whip, a slam, a scale punch): `data-st-blur` on the
+  // element ("shutter 180; samples 8; threshold 6; max 50%", all optional) or ST.blur(el, {...}). While
+  // the element moves faster than `threshold` px a frame, the frame shows `samples` copies of it posed at
+  // sub-frame times from t back to t - shutter (180 deg = half a frame), averaged in its place: every copy
+  // adds its share (mix-blend-mode: plus-lighter) inside an isolated group, so the smear is the box filter
+  // a camera shutter gives and an opaque element stays opaque where all the copies cover it. The copies are
+  // averaged in a balanced tree of groups (pairs of halves), so 8-bit rounding adds at most a level or two
+  // instead of one level per copy. `max` caps the smear (px, or % of the element's shorter side on screen)
+  // by shortening the shutter for that frame. At rest, moving slowly, or on the frame it comes to rest, the
+  // element draws itself, sharp.
+  //
+  // Nothing is captured twice: poses are computed. The element's own sources are set to each sample time
+  // and read back: its CSS animations and Web Animations (and its descendants'), the showtime component
+  // around it, the `pose(t)` function given to ST.blur, and the timelines handed to ST.anime / ST.gsap.
+  // Motion that comes from an onSeek handler of the page or from an ancestor is not seen (check reports it:
+  // blur_unsampled). The copies live in a <st-blur> made once right after the element (so selectors see
+  // the same tree on every frame and in every worker) and are rebuilt from t on every frame they show.
+  var BLUR_DEFAULTS = { shutter: 180, samples: 8, threshold: 6, max: '50%' };
+  // the host and its groups take nothing from the page's rules (all: unset) but pass on what the element's parent
+  // passes on (inherited properties: its font, colour, letter-spacing...), as the element itself inherits them
+  var BLUR_BOX = 'all:unset!important;position:absolute!important;left:0!important;top:0!important;width:0!important;' +
+    'height:0!important;margin:0!important;padding:0!important;border:0!important;overflow:visible!important;' +
+    'pointer-events:none!important;visibility:inherit!important;';
+  // never copied from the element to a copy: where it sits and how it composites are the copy's own
+  var BLUR_SKIP = /^(position|inset|top|right|bottom|left|margin|float|clear|z-index|transition|animation|will-change|visibility|pointer-events|mix-blend-mode|isolation|opacity|transform$|translate$|rotate$|scale$|view-transition|anchor-|position-|content-visibility|(min|max)-(width|height|inline-size|block-size)$|-webkit-transition|-webkit-animation)/;
+  var BLUR_POS = 'right:auto!important;bottom:auto!important;margin:0!important;float:none!important;z-index:auto!important;' +
+    'min-width:0!important;min-height:0!important;max-width:none!important;max-height:none!important;' +
+    'visibility:inherit!important;pointer-events:none!important;mix-blend-mode:plus-lighter!important;animation:none!important;' +
+    'transition:none!important;will-change:auto!important;content-visibility:visible!important;view-transition-name:none!important;';
+  var REPLACED = /^(IMG|VIDEO|CANVAS|IFRAME|EMBED|OBJECT|INPUT|SELECT|TEXTAREA|BUTTON|svg)$/i;
+  var blurRecs = [];
+  var blurMap = new WeakMap();   // element -> record
+  var blurDirty = true;
+  var blurCost = { frames: 0, ms: 0, copies: 0 };
+  var blurIds = 0;
+
+  function hasElement(list) {
+    for (var i = 0; i < list.length; i++) if (list[i].nodeType === 1) return true;
+    return false;
+  }
+  function inBlurHost(n) {
+    for (var e = n && n.nodeType === 1 ? n : n && n.parentNode; e && e.nodeType === 1; e = e.parentNode) {
+      if (e.localName === 'st-blur') return true;
+    }
+    return false;
+  }
+  function blurParse(s) {
+    s = String(s == null ? '' : s).trim();
+    var o = {};
+    if (!s) return o;
+    if (/^(off|none|false|no)$/i.test(s)) return { off: true };
+    if (s.charAt(0) === '{') { try { return JSON.parse(s) || {}; } catch (e) { reportError('data-st-blur', e); return o; } }
+    s.split(/[;,]/).forEach(function (part) {
+      var m = /^\s*([a-z][\w-]*)\s*(?::|=|\s)\s*(\S.*?)\s*$/i.exec(part);
+      if (m) o[m[1].toLowerCase()] = m[2];
+    });
+    return o;
+  }
+  function blurOptions(raw) {
+    var o = {}, k;
+    for (k in BLUR_DEFAULTS) o[k] = raw[k] != null && raw[k] !== '' ? raw[k] : BLUR_DEFAULTS[k];
+    var sh = num(o.shutter), n = Math.round(num(o.samples)), th = num(o.threshold), mx = String(o.max).trim();
+    o.shutter = sh > 0 ? Math.min(sh, 720) : BLUR_DEFAULTS.shutter;
+    o.samples = n >= 2 ? Math.min(n, 32) : BLUR_DEFAULTS.samples;
+    o.threshold = th >= 0 ? th : BLUR_DEFAULTS.threshold;
+    o.maxFrac = 0; o.maxPx = Infinity;
+    if (/%$/.test(mx) && num(mx) > 0) o.maxFrac = num(mx) / 100;
+    else if (num(mx) > 0) o.maxPx = num(mx);
+    else if (!/^(none|off|infinity)$/i.test(mx)) o.maxFrac = 0.5;
+    o.off = !!raw.off;
+    return o;
+  }
+  function blurRecord(el) {
+    var rec = blurMap.get(el);
+    if (!rec) {
+      rec = { el: el, host: null, attr: null, js: null, pose: null, o: blurOptions({}), on: false, last: null };
+      blurMap.set(el, rec);
+      blurRecs.push(rec);
+    }
+    return rec;
+  }
+  function blurSettle(rec) {
+    var raw = {}, k;
+    if (rec.attr) for (k in rec.attr) raw[k] = rec.attr[k];
+    if (rec.js) for (k in rec.js) if (rec.js[k] !== undefined && k !== 'pose') raw[k] = rec.js[k];
+    rec.o = blurOptions(raw);
+  }
+  function blurDrop(rec) {
+    blurOff(rec);
+    if (rec.host && rec.host.parentNode) rec.host.parentNode.removeChild(rec.host);
+    rec.host = null;
+    blurMap.delete(rec.el);
+  }
+  function scanBlurs() {
+    blurDirty = false;
+    if (!document.documentElement) return;
+    var els = document.querySelectorAll('[data-st-blur]'), seen = new Set();
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      if (inBlurHost(el) || el === document.body || el === document.documentElement) continue;
+      seen.add(el);
+      var rec = blurRecord(el);
+      rec.attr = blurParse(el.getAttribute('data-st-blur'));
+      blurSettle(rec);
+    }
+    blurRecs = blurRecs.filter(function (r) {
+      if (r.attr && !seen.has(r.el)) { r.attr = null; blurSettle(r); }
+      var keep = r.el.isConnected && !!(r.attr || r.js);
+      if (!keep) blurDrop(r);
+      return keep;
+    });
+    // the copies' home, made once right after each element: the same tree on every frame
+    blurRecs.forEach(blurHostOf);
+  }
+  function blurHostOf(rec) {
+    var el = rec.el, h = rec.host, p = el.parentNode;
+    if (!h) {
+      h = document.createElement('st-blur');
+      h.setAttribute('data-st-blur-host', '');
+      h.setAttribute('data-st-ignore', '');   // check's text audits look at the element, not at its copies
+      h.setAttribute('aria-hidden', 'true');
+      h.style.cssText = BLUR_BOX + 'display:none!important;';
+      rec.host = h;
+    }
+    if (p && p.nodeType === 1 && el.nextSibling !== h) p.insertBefore(h, el.nextSibling);
+    return h;
+  }
+  /** ST.blur(el | selector | list, {shutter, samples, threshold, max, pose}) -> off() */
+  function blurApi(target, opts) {
+    var els = typeof target === 'string' ? document.querySelectorAll(target) : target && target.nodeType === 1 ? [target] : target;
+    var recs = [];
+    opts = opts || {};
+    var pose = typeof opts.pose === 'function' ? opts.pose : null;
+    for (var i = 0; els && i < els.length; i++) {
+      if (!els[i] || els[i].nodeType !== 1) continue;
+      var rec = blurRecord(els[i]);
+      rec.js = opts;
+      if (pose) rec.pose = pose;
+      blurSettle(rec);
+      recs.push(rec);
+    }
+    if (!recs.length) reportError('ST.blur', new Error('no element matches ' + String(target)));
+    // pose(t) is the element's motion: it runs on every seek, like an onSeek handler
+    var offPose = pose ? addHandler('blur pose', function (t) { return pose(t); }) : null;
+    blurDirty = true;
+    return function off() {
+      if (offPose) offPose();
+      recs.forEach(function (r) { r.js = null; r.pose = null; blurSettle(r); });
+      blurDirty = true;
+    };
+  }
+
+  // ---- poses at any time: the element's own sources, set to tau and read back
+  function blurSources(rec) {
+    var el = rec.el, comp = null;
+    for (var e = el; e && e.nodeType === 1; e = e.parentElement) {
+      if (e.__stComponent && typeof e.__stComponent.update === 'function') { comp = e.__stComponent; break; }
+    }
+    var anims = [], bases = [];
+    var list = el.getAnimations ? el.getAnimations({ subtree: true }) : [];
+    for (var i = 0; i < list.length; i++) {
+      var a = list[i], target = a.effect && a.effect.target;
+      if (W.CSSTransition && a instanceof W.CSSTransition) continue;
+      if (target && target.closest && target.closest('[data-st-free]')) continue;
+      anims.push(a);
+      bases.push(target ? baseTimeOf(target) : 0);
+    }
+    rec.comp = comp; rec.anims = anims; rec.bases = bases;
+    rec.light = rec.pose ? [] : handlers.filter(function (h) { return h.light; });
+  }
+  function blurPose(rec, tau) {
+    try {
+      if (rec.comp) rec.comp.update(tau);
+      if (rec.pose) rec.pose(tau);
+      for (var i = 0; i < rec.light.length; i++) rec.light[i].fn(tau, Math.round(tau * cfg.fps));
+    } catch (e) { reportError('shutter blur pose at t=' + tau.toFixed(4), e); }
+    for (var j = 0; j < rec.anims.length; j++) {
+      try { rec.anims[j].currentTime = Math.max(0, (tau - rec.bases[j]) * 1000); } catch (e2) { /* ignore */ }
+    }
+  }
+  function lenPx(v, ref) { v = String(v || '0'); return /%$/.test(v) ? parseFloat(v) / 100 * ref : parseFloat(v) || 0; }
+  /** The element's own transform (translate, rotate, scale, transform about transform-origin), as CSS composes it. */
+  function blurMatrix(cs, w, h) {
+    var o = String(cs.transformOrigin || '0 0').split(/\s+/);
+    var ox = lenPx(o[0], w), oy = lenPx(o[1], h), oz = parseFloat(o[2]) || 0;
+    var m = new DOMMatrix().translateSelf(ox, oy, oz);
+    var tr = cs.translate;
+    if (tr && tr !== 'none') {
+      var p = tr.split(/\s+/);
+      m.translateSelf(lenPx(p[0], w), p.length > 1 ? lenPx(p[1], h) : 0, p.length > 2 ? parseFloat(p[2]) || 0 : 0);
+    }
+    var ro = cs.rotate;
+    if (ro && ro !== 'none') {
+      var q = ro.trim().split(/\s+/), ang = q[q.length - 1];
+      var fn = q.length === 1 ? 'rotate(' + ang + ')' : q.length === 2 ? 'rotate' + q[0].toUpperCase() + '(' + ang + ')' : 'rotate3d(' + q.slice(0, 3).join(',') + ',' + ang + ')';
+      try { m.multiplySelf(new DOMMatrix(fn)); } catch (e) { /* ignore */ }
+    }
+    var sc = cs.scale;
+    if (sc && sc !== 'none') {
+      var s = sc.trim().split(/\s+/).map(function (x) { return /%$/.test(x) ? parseFloat(x) / 100 : parseFloat(x); });
+      m.scaleSelf(s[0], s.length > 1 ? s[1] : s[0], s.length > 2 ? s[2] : 1);
+    }
+    if (cs.transform && cs.transform !== 'none') { try { m.multiplySelf(new DOMMatrix(cs.transform)); } catch (e) { /* ignore */ } }
+    return m.translateSelf(-ox, -oy, -oz);
+  }
+  function blurCorners(m, w, h) {
+    var pts = [0, 0, w, 0, 0, h, w, h], out = [];
+    for (var i = 0; i < 8; i += 2) {
+      var p = m.transformPoint(new DOMPoint(pts[i], pts[i + 1], 0, 1)), k = p.w ? 1 / p.w : 1;
+      out.push(p.x * k, p.y * k);
+    }
+    return out;
+  }
+  function blurDist(a, b, sx, sy) {
+    var d = 0;
+    for (var i = 0; i < 8; i += 2) d = Math.max(d, Math.hypot((a[i] - b[i]) * sx, (a[i + 1] - b[i + 1]) * sy));
+    return d;
+  }
+  function blurRead(rec, tau) {
+    blurPose(rec, tau);
+    var cs = getComputedStyle(rec.el);
+    return blurCorners(blurMatrix(cs, rec.w, rec.h), rec.w, rec.h);
+  }
+  /** When the element appears (the latest start of the clips around it): samples never reach before it. */
+  function blurT0(el) {
+    if (clipsDirty) parseClips();
+    var t0 = 0;
+    for (var e = el; e && e.nodeType === 1; e = e.parentElement) {
+      var c = clipMap.get(e);
+      if (c && isFinite(c.start)) t0 = Math.max(t0, edgeTime(c.start));
+    }
+    return t0;
+  }
+  /**
+   * Measure one element at t (the page is posed at t): size, scale on screen, and the shutter decision.
+   * -> {on, v (px a frame), L (smear px), rest, S (shutter seconds), size} ; leaves the element posed at t.
+   */
+  function blurMeasure(rec, t) {
+    var el = rec.el, o = rec.o, dt = 1 / cfg.fps;
+    var st = { on: false, v: 0, L: 0, rest: false, S: o.shutter / 360 * dt, size: 0, why: '' };
+    if (o.off) { st.why = 'off'; return st; }
+    if (!el.isConnected || !el.getClientRects().length) { st.why = 'hidden'; return st; }
+    var cs = getComputedStyle(el);
+    if (cs.visibility !== 'visible') { st.why = 'hidden'; return st; }
+    // a non-replaced inline box is never transformed (CSS), so it never moves
+    if (cs.display === 'inline' && !REPLACED.test(el.tagName)) { st.why = 'inline'; return st; }
+    rec.w = el.offsetWidth != null ? el.offsetWidth : parseFloat(cs.width) || 0;
+    rec.h = el.offsetHeight != null ? el.offsetHeight : parseFloat(cs.height) || 0;
+    if (!(rec.w > 0 && rec.h > 0)) { var bb = el.getBoundingClientRect(); rec.w = rec.w || bb.width; rec.h = rec.h || bb.height; }
+    var m0 = blurMatrix(cs, rec.w, rec.h), c0 = blurCorners(m0, rec.w, rec.h);
+    // the ancestors' scale (a camera zoom): screen box against the element's own transformed box
+    var r = el.getBoundingClientRect(), xs = [c0[0], c0[2], c0[4], c0[6]], ys = [c0[1], c0[3], c0[5], c0[7]];
+    // where it really is on screen at this frame (check compares it with what its sources say)
+    if (!rec.seen) { rec.seen = {}; rec.seenN = 0; }
+    var fk = Math.round(t * cfg.fps);
+    if (rec.seen[fk] || rec.seenN < 4000) { if (!rec.seen[fk]) rec.seenN++; rec.seen[fk] = [r.left, r.top, r.right, r.bottom, el.offsetWidth, el.offsetHeight]; }
+    var lw = Math.max.apply(null, xs) - Math.min.apply(null, xs), lh = Math.max.apply(null, ys) - Math.min.apply(null, ys);
+    rec.sx = lw > 0.5 && r.width > 0 ? r.width / lw : 1;
+    rec.sy = lh > 0.5 && r.height > 0 ? r.height / lh : 1;
+    var a2 = Math.abs(m0.a * m0.d - m0.b * m0.c);
+    st.size = Math.min(rec.w, rec.h) * Math.sqrt(a2 || 1) * Math.min(rec.sx, rec.sy);
+    blurSources(rec);
+    if (!rec.anims.length && !rec.comp && !rec.pose && !rec.light.length) { st.why = 'still'; return st; }
+    rec.t0 = blurT0(el);
+    var cS = blurRead(rec, Math.max(rec.t0, t - st.S));
+    st.L = blurDist(c0, cS, rec.sx, rec.sy);
+    st.v = st.L * 360 / o.shutter;
+    if (st.v >= o.threshold && st.L >= 0.5) {
+      // the frame it comes to rest on is drawn sharp: nothing moves from t to the next frame
+      st.rest = blurDist(c0, blurRead(rec, t + dt), rec.sx, rec.sy) < 0.25;
+      st.on = !st.rest;
+      if (st.rest) st.why = 'rest';
+    } else st.why = 'slow';
+    rec.c0 = c0;
+    blurPose(rec, t);
+    return st;
+  }
+  function blurOff(rec) {
+    if (rec.el.hasAttribute('data-st-blurring')) rec.el.removeAttribute('data-st-blurring');
+    var h = rec.host;
+    if (h && (h.firstChild || h.style.getPropertyValue('display') !== 'none')) {
+      while (h.firstChild) h.removeChild(h.firstChild);
+      h.style.cssText = BLUR_BOX + 'display:none!important;';
+    }
+    rec.on = false;
+  }
+  function blurDecl(map) {
+    var s = '';
+    for (var k in map) s += k + ':' + map[k] + '!important;';
+    return s;
+  }
+  // ancestors that clip the element (overflow) but not its copies: the host is positioned, so its containing
+  // block is above any static ancestor (a mask reveal's overflow: hidden line). Their box clips the host.
+  function isContainingBlock(cs) {
+    return cs.position !== 'static' || cs.transform !== 'none' || (cs.translate && cs.translate !== 'none') ||
+      (cs.rotate && cs.rotate !== 'none') || (cs.scale && cs.scale !== 'none') || cs.perspective !== 'none' ||
+      cs.filter !== 'none' || (cs.backdropFilter && cs.backdropFilter !== 'none') || /paint|layout|strict|content/.test(cs.contain || '') ||
+      /transform|perspective|filter/.test(cs.willChange || '');
+  }
+  function blurClip(rec) {
+    var box = null;
+    for (var a = rec.el.parentElement; a && a !== document.body && a !== document.documentElement; a = a.parentElement) {
+      var cs = getComputedStyle(a);
+      if (isContainingBlock(cs)) break;
+      if (cs.overflowX === 'visible' && cs.overflowY === 'visible') continue;
+      var r = a.getBoundingClientRect();
+      var b = { x: r.left + parseFloat(cs.borderLeftWidth) * rec.sx, y: r.top + parseFloat(cs.borderTopWidth) * rec.sy,
+        r: r.right - parseFloat(cs.borderRightWidth) * rec.sx, b: r.bottom - parseFloat(cs.borderBottomWidth) * rec.sy };
+      box = box ? { x: Math.max(box.x, b.x), y: Math.max(box.y, b.y), r: Math.min(box.r, b.r), b: Math.min(box.b, b.b) } : b;
+    }
+    if (!box) return '';
+    var hr = rec.host.getBoundingClientRect();
+    var X = function (x) { return ((x - hr.left) / rec.sx).toFixed(3) + 'px'; }, Y = function (y) { return ((y - hr.top) / rec.sy).toFixed(3) + 'px'; };
+    return 'clip-path:polygon(' + X(box.x) + ' ' + Y(box.y) + ',' + X(box.r) + ' ' + Y(box.y) + ',' + X(box.r) + ' ' + Y(box.b) + ',' + X(box.x) + ' ' + Y(box.b) + ')!important;';
+  }
+  /** The copy of the element at one sample time: a clone (inline styles at tau) and the values to pin on it. */
+  function blurSample(rec, tau, desc) {
+    blurPose(rec, tau);
+    var el = rec.el, cs = getComputedStyle(el), own = {}, k, i;
+    own.transform = cs.transform; own.translate = cs.translate; own.rotate = cs.rotate; own.scale = cs.scale;
+    // what the element's own animations and its inline style (a component, a pose function) set at tau
+    for (i = 0; i < el.style.length; i++) { k = el.style[i]; if (!BLUR_SKIP.test(k) && k.indexOf('--') !== 0) own[k] = cs.getPropertyValue(k); }
+    var sub = [];
+    for (i = 0; i < rec.anims.length; i++) {
+      var a = rec.anims[i], target = a.effect && a.effect.target, pseudo = a.effect && a.effect.pseudoElement;
+      var props = rec.props[i];
+      if (!target || pseudo) continue;
+      if (target === el) { for (k = 0; k < props.length; k++) if (!BLUR_SKIP.test(props[k])) own[props[k]] = cs.getPropertyValue(props[k]); continue; }
+      var idx = desc.get(target);
+      if (idx === undefined) continue;
+      var tcs = getComputedStyle(target), vals = {};
+      for (k = 0; k < props.length; k++) vals[props[k]] = tcs.getPropertyValue(props[k]);
+      vals.animation = 'none';
+      sub.push([idx, vals]);
+    }
+    var c = blurCorners(blurMatrix(cs, rec.w, rec.h), rec.w, rec.h);
+    return { tau: tau, op: parseFloat(cs.opacity), own: own, sub: sub, c: c, clone: el.cloneNode(true) };
+  }
+  function keyProps(a) {
+    var out = [];
+    try {
+      (a.effect.getKeyframes() || []).forEach(function (kf) {
+        for (var k in kf) {
+          if (k === 'offset' || k === 'computedOffset' || k === 'easing' || k === 'composite') continue;
+          var p = k === 'cssFloat' ? 'float' : k.replace(/[A-Z]/g, function (c) { return '-' + c.toLowerCase(); });
+          if (out.indexOf(p) < 0) out.push(p);
+        }
+      });
+    } catch (e) { /* ignore */ }
+    return out;
+  }
+  /** Clones are inert copies: no clip timing, no component mount, no nested blur; canvases keep their picture. */
+  function blurCleanClone(clone, el) {
+    var orig = [el].concat(Array.prototype.slice.call(el.querySelectorAll('*')));
+    var copy = [clone].concat(Array.prototype.slice.call(clone.querySelectorAll('*')));
+    for (var i = 0; i < copy.length && i < orig.length; i++) {
+      var c = copy[i], o = orig[i];
+      if (c.hasAttribute('data-start')) {
+        if (!o.hasAttribute('data-active')) c.style.setProperty(o.hasAttribute('data-keep') ? 'visibility' : 'display', o.hasAttribute('data-keep') ? 'hidden' : 'none', 'important');
+        c.removeAttribute('data-start'); c.removeAttribute('data-dur'); c.removeAttribute('data-end');
+      }
+      if (c.hasAttribute('data-st')) c.removeAttribute('data-st');
+      if (c.hasAttribute('data-st-blur')) c.removeAttribute('data-st-blur');
+      if (c.hasAttribute('data-st-blurring')) c.removeAttribute('data-st-blurring');
+      var tag = c.localName;
+      if (tag === 'canvas' && o.width && o.height) {
+        try { c.width = o.width; c.height = o.height; var g = c.getContext('2d'); if (g) g.drawImage(o, 0, 0); } catch (e) { /* tainted or lost */ }
+      } else if (tag === 'img') {
+        c.setAttribute('decoding', 'sync'); c.removeAttribute('loading');
+      } else if (tag === 'video') {
+        c.removeAttribute('src'); while (c.firstChild) c.removeChild(c.firstChild); c.style.setProperty('visibility', 'hidden', 'important');
+      }
+    }
+    return copy;
+  }
+  function blurGroupCss(w) {
+    return BLUR_BOX + 'display:block!important;isolation:isolate!important;mix-blend-mode:plus-lighter!important;opacity:' + w + '!important;';
+  }
+  /** Draw the average of the copies under parent, weighted w within it: halves in groups, down to pairs. */
+  function blurAverage(parent, items, w) {
+    if (items.length === 1) {
+      var it = items[0];
+      it.node.style.setProperty('opacity', String(+(w * it.op).toFixed(6)), 'important');
+      parent.appendChild(it.node);
+      return;
+    }
+    var g = parent;
+    if (w !== 1 || parent === null) {
+      g = document.createElement('st-blur');
+      g.style.cssText = blurGroupCss(+w.toFixed(6));
+      parent.appendChild(g);
+    }
+    var half = Math.ceil(items.length / 2);
+    blurAverage(g, items.slice(0, half), half / items.length);
+    blurAverage(g, items.slice(half), (items.length - half) / items.length);
+  }
+  // The copies sit in another parent, so a selector like `.line > span` may no longer reach them: what the page's
+  // rules give a copy where it sits is compared with the element's computed style, and only what differs is pinned,
+  // by one rule per element ([data-st-copy="id"]) in a sheet of the stage's own (parsed once, not in every copy).
+  // A colour that follows the text colour (currentcolor: -webkit-text-fill-color, caret-color...) is left to
+  // follow it, so the copy's descendants still take their own colour.
+  var blurSheet = null, blurSheetText = '';
+  var BLUR_CURRENT = /^(-webkit-text-fill-color|-webkit-text-stroke-color|text-emphasis-color|caret-color|column-rule-color|outline-color|text-decoration-color|border-(top|right|bottom|left|block-start|block-end|inline-start|inline-end)-color)$/;
+  // a descendant is compared on these first (what selectors usually set); only one that differs is compared in full
+  var BLUR_KEY = ('color background-color background-image font-family font-size font-weight font-style line-height ' +
+    'letter-spacing word-spacing text-transform text-align white-space display position top left width height ' +
+    'padding-top padding-right padding-bottom padding-left margin-top margin-left border-top-width border-top-style ' +
+    'border-top-color border-top-left-radius box-shadow text-shadow opacity filter transform visibility vertical-align ' +
+    'clip-path -webkit-text-fill-color -webkit-text-stroke-width text-decoration-line fill stroke').split(' ');
+  function blurDiff(pl) {
+    var cs = getComputedStyle(pl.items[0].node), out = '', i, p, v;
+    for (i = 0; i < pl.vals.length; i++) {
+      p = pl.vals[i][0]; v = pl.vals[i][1];
+      if (cs.getPropertyValue(p) === v) continue;
+      if (BLUR_CURRENT.test(p) && v === pl.color) continue;
+      out += p + ':' + v + '!important;';
+    }
+    pl.pin = out;
+    // descendants: a rule anchored outside the element (`.scene > .card b`) no longer reaches the copy's own
+    pl.subPins = [];
+    var copy = pl.items[0].copy;
+    if (pl.list.length > 60) return;   // a container (check warns blur_container): not worth the reads
+    for (var d = 1; d < copy.length && d <= pl.list.length; d++) {
+      var oc = getComputedStyle(pl.list[d - 1]), cc = getComputedStyle(copy[d]), differs = false;
+      for (i = 0; i < BLUR_KEY.length && !differs; i++) differs = oc.getPropertyValue(BLUR_KEY[i]) !== cc.getPropertyValue(BLUR_KEY[i]);
+      if (!differs) continue;
+      var pins = '', col = oc.color;
+      for (i = 0; i < oc.length; i++) {
+        p = oc[i];
+        if ((p.charCodeAt(0) === 45 && p.charCodeAt(1) === 45) || /^(animation|transition|will-change)/.test(p)) continue;
+        v = oc.getPropertyValue(p);
+        if (cc.getPropertyValue(p) === v || (BLUR_CURRENT.test(p) && v === col)) continue;
+        pins += p + ':' + v + '!important;';
+      }
+      if (pins) pl.subPins.push([d, pins]);
+    }
+  }
+  function blurRules(plans) {
+    if (!blurSheet) {
+      try { blurSheet = new CSSStyleSheet(); document.adoptedStyleSheets = document.adoptedStyleSheets.concat([blurSheet]); } catch (e) { blurSheet = false; }
+    }
+    // a descendant's pins go inline on that descendant of every copy (rare: only where a rule stopped matching)
+    plans.forEach(function (pl) {
+      (pl.subPins || []).forEach(function (sp) { pl.items.forEach(function (it) { var c = it.copy[sp[0]]; if (c) c.style.cssText += sp[1]; }); });
+    });
+    if (!blurSheet) {
+      plans.forEach(function (pl) { if (pl.pin) pl.items.forEach(function (it) { it.node.style.cssText += pl.pin; }); });
+      return;
+    }
+    var text = plans.filter(function (pl) { return pl.pin; }).map(function (pl) { return '[data-st-copy="' + pl.rec.id + '"]{' + pl.pin + '}'; }).join('\n');
+    if (text !== blurSheetText) { blurSheet.replaceSync(text); blurSheetText = text; }
+  }
+  /** Everything a blurred frame of one element needs, read before any copy enters the page (reads stay cheap). */
+  function blurPlan(rec, t, st) {
+    var el = rec.el, o = rec.o, S = st.S, i;
+    var maxLen = o.maxFrac > 0 ? o.maxFrac * st.size : o.maxPx;
+    if (st.L > maxLen && maxLen > 0) S *= maxLen / st.L;
+    var n = o.samples, desc = new Map(), list = el.querySelectorAll('*');
+    for (i = 0; i < list.length; i++) desc.set(list[i], i + 1);   // index in [el, ...descendants]
+    rec.props = rec.anims.map(keyProps);
+    if (!rec.id) rec.id = ++blurIds;
+    var samples = [];
+    for (i = 0; i < n; i++) samples.push(blurSample(rec, Math.max(rec.t0, t - S * i / (n - 1)), desc));
+    blurPose(rec, t);
+    // a CSS transition started by a pose function's style changes would still be running at the capture
+    el.getAnimations({ subtree: true }).forEach(function (a) { if (W.CSSTransition && a instanceof W.CSSTransition) a.finish(); });
+    // the element's computed style at t, less what each copy pins for its own time (its animated and inline
+    // properties): compared with each copy's own once the copies are in (blurDiff)
+    var own = samples[0].own, cs = getComputedStyle(el), vals = [];
+    for (i = 0; i < cs.length; i++) { var p = cs[i]; if ((p.charCodeAt(0) !== 45 || p.charCodeAt(1) !== 45) && !BLUR_SKIP.test(p) && !(p in own)) vals.push([p, cs.getPropertyValue(p)]); }
+    var zi = cs.zIndex;
+    // z-index places the element when it is positioned or a flex or grid item: the host takes the same layer
+    var zOn = zi !== 'auto' && (cs.position !== 'static' || /flex|grid/.test(getComputedStyle(el.parentElement).display));
+    return { rec: rec, t: t, S: S, n: n, maxLen: maxLen, list: list, samples: samples, vals: vals, color: cs.color, zi: zOn ? zi : null };
+  }
+  /** Put one element's copies in its host (no reads: every host fills before the one layout that places them). */
+  function blurBuild(pl) {
+    var rec = pl.rec, el = rec.el, h = blurHostOf(rec), samples = pl.samples;
+    while (h.firstChild) h.removeChild(h.firstChild);
+    h.style.cssText = BLUR_BOX + 'display:block!important;isolation:isolate!important;' + (pl.zi !== null ? 'z-index:' + pl.zi + '!important;' : '') + (pl.clip || '');
+    var x0 = pl.x0, y0 = pl.y0;
+    var items = samples.map(function (sm) {
+      var copy = blurCleanClone(sm.clone, el), node = copy[0];
+      for (var j = 0; j < sm.sub.length; j++) { var c = copy[sm.sub[j][0]]; if (c) c.style.cssText += blurDecl(sm.sub[j][1]); }
+      node.setAttribute('data-st-copy', String(rec.id));
+      node.style.cssText = (node.getAttribute('style') || '') + ';' + blurDecl(sm.own) + BLUR_POS +
+        'position:absolute!important;left:' + x0 + 'px!important;top:' + y0 + 'px!important;';
+      return { node: node, op: isFinite(sm.op) ? sm.op : 1, tau: sm.tau, copy: copy };
+    });
+    // 8 copies spread over a long smear leave steps: a gaussian along the motion, half a step wide, joins
+    // them into one ramp (the copies' own edges across the motion stay sharp)
+    var gx = 0, gy = 0, ux0 = Infinity, uy0 = Infinity, ux1 = -Infinity, uy1 = -Infinity;
+    samples.forEach(function (sm, k) {
+      for (var j = 0; j < 8; j += 2) {
+        ux0 = Math.min(ux0, sm.c[j]); ux1 = Math.max(ux1, sm.c[j]); uy0 = Math.min(uy0, sm.c[j + 1]); uy1 = Math.max(uy1, sm.c[j + 1]);
+        if (k) { gx = Math.max(gx, Math.abs(sm.c[j] - samples[k - 1].c[j])); gy = Math.max(gy, Math.abs(sm.c[j + 1] - samples[k - 1].c[j + 1])); }
+      }
+    });
+    gx *= 0.5; gy *= 0.5;
+    var tree = h;
+    if (gx > 0.3 || gy > 0.3) {
+      var fid = 'st-blur-f' + rec.id;
+      var mx = 3 * gx + 0.2 * rec.w + 16, my = 3 * gy + 0.2 * rec.h + 16;
+      var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('width', '0'); svg.setAttribute('height', '0');
+      svg.style.cssText = 'position:absolute!important;width:0!important;height:0!important;overflow:hidden!important;';
+      svg.innerHTML = '<filter id="' + fid + '" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB" x="' + (x0 + ux0 - mx).toFixed(1) +
+        '" y="' + (y0 + uy0 - my).toFixed(1) + '" width="' + (ux1 - ux0 + 2 * mx).toFixed(1) + '" height="' + (uy1 - uy0 + 2 * my).toFixed(1) +
+        '"><feGaussianBlur stdDeviation="' + gx.toFixed(2) + ' ' + gy.toFixed(2) + '"/></filter>';
+      h.appendChild(svg);
+      tree = document.createElement('st-blur');
+      tree.style.cssText = BLUR_BOX + 'display:block!important;isolation:isolate!important;filter:url(#' + fid + ')!important;';
+      h.appendChild(tree);
+    }
+    blurAverage(tree, items, 1);
+    // pseudo-element animations in the copies come from the page's rules: seek them to their sample time
+    items.forEach(function (it) {
+      var anims = it.node.getAnimations ? it.node.getAnimations({ subtree: true }) : [];
+      for (var j = 0; j < anims.length; j++) {
+        var tg = anims[j].effect && anims[j].effect.target, ix = it.copy.indexOf(tg);
+        var orig = ix === 0 ? el : ix > 0 ? pl.list[ix - 1] : null;
+        try { anims[j].currentTime = Math.max(0, (it.tau - (orig ? baseTimeOf(orig) : baseTimeOf(el))) * 1000); } catch (e) { /* ignore */ }
+      }
+    });
+    pl.items = items;
+  }
+  /** After the one layout: the newest copy is posed as the element is at t, so their boxes must agree (sub-pixel). */
+  function blurPlace(pl) {
+    var rec = pl.rec, el = rec.el, items = pl.items;
+    var re = el.getBoundingClientRect(), rc = items[0].node.getBoundingClientRect();
+    pl.dx = (re.left - rc.left) / rec.sx; pl.dy = (re.top - rc.top) / rec.sy;
+  }
+  function blurFix(pl) {
+    var rec = pl.rec, el = rec.el;
+    if (Math.abs(pl.dx) > 0.001 || Math.abs(pl.dy) > 0.001) {
+      var L = (pl.x0 + pl.dx).toFixed(3) + 'px', T = (pl.y0 + pl.dy).toFixed(3) + 'px';
+      pl.items.forEach(function (it) { it.node.style.setProperty('left', L, 'important'); it.node.style.setProperty('top', T, 'important'); });
+    }
+    if (!el.hasAttribute('data-st-blurring')) el.setAttribute('data-st-blurring', '');
+    rec.on = true;
+  }
+  /** Before a seek's handlers run: last frame's copies go, so page code never meets them (blurFrame redraws them). */
+  function blurClear() {
+    for (var i = 0; i < blurRecs.length; i++) if (blurRecs[i].on) blurOff(blurRecs[i]);
+  }
+  /**
+   * After every seek: the shutter copies of each moving [data-st-blur] element. In phases, so the page lays out
+   * once: every element is measured and sampled while no copy is in the page, then every host is filled, then
+   * one layout places them all.
+   */
+  function blurFrame(t) {
+    if (blurDirty) scanBlurs();
+    if (!blurRecs.length) return;
+    var t1 = real.now(), plans = [], i, pl;
+    for (i = 0; i < blurRecs.length; i++) {
+      var rec = blurRecs[i];
+      try {
+        if (!rec.el.isConnected) { blurDirty = true; continue; }
+        if (rec.el.hasAttribute('data-st-blurring')) rec.el.removeAttribute('data-st-blurring');
+        if (rec.on || rec.host && rec.host.firstChild) blurOff(rec);
+        var st = blurMeasure(rec, t);
+        rec.last = { t: t, on: st.on, v: +st.v.toFixed(2), L: +st.L.toFixed(2), why: st.why, size: +st.size.toFixed(1) };
+        if (!st.on) continue;
+        pl = blurPlan(rec, t, st);
+        var h = blurHostOf(rec);
+        h.style.cssText = BLUR_BOX + 'display:block!important;';
+        pl.clip = blurClip(rec);
+        pl.x0 = rec.el.offsetLeft != null ? rec.el.offsetLeft - h.offsetLeft : 0;
+        pl.y0 = rec.el.offsetTop != null ? rec.el.offsetTop - h.offsetTop : 0;
+        plans.push(pl);
+      } catch (e) { reportError('shutter blur ' + tagOf(rec.el), e); try { blurOff(rec); } catch (e2) { /* ignore */ } }
+    }
+    if (plans.length) {
+      // last frame's pins come off first: each copy is compared with the element as the page's rules alone style it
+      if (blurSheet && blurSheetText) { blurSheet.replaceSync(''); blurSheetText = ''; }
+      var ok = plans.filter(function (p) {
+        try { blurBuild(p); return true; } catch (e) { reportError('shutter blur ' + tagOf(p.rec.el), e); blurOff(p.rec); return false; }
+      });
+      ok.forEach(function (p) { try { blurDiff(p); } catch (e) { p.pin = ''; } });   // one style pass for every copy
+      blurRules(ok);
+      ok.forEach(function (p) { try { blurPlace(p); } catch (e) { p.dx = p.dy = 0; } });   // one layout
+      ok.forEach(function (p) {
+        blurFix(p);
+        p.rec.last.S = +p.S.toFixed(5);
+        blurCost.copies += p.n;
+      });
+    }
+    blurCost.frames++;
+    blurCost.ms += real.now() - t1;
+  }
+  /** The frames an element is on screen: the latest start and the earliest end of the clips around it. */
+  function blurWindow(el) {
+    if (clipsDirty) parseClips();
+    var a = 0, b = Infinity;
+    for (var e = el; e && e.nodeType === 1; e = e.parentElement) {
+      var c = clipMap.get(e);
+      if (!c || !isFinite(c.start)) continue;
+      a = Math.max(a, edgeTime(c.start));
+      if (isFinite(c.end)) b = Math.min(b, edgeTime(c.end));
+    }
+    return [a, b];
+  }
+  /**
+   * For `showtime check` (window.__stBlur.scan()): each blurred element's motion on every frame it is on
+   * screen, computed from its own sources as blurFrame sees them (no capture), plus a few real seeks that
+   * catch motion those sources do not explain (an onSeek handler, a moving ancestor).
+   */
+  async function blurScan(opt) {
+    opt = opt || {};
+    if (blurDirty) scanBlurs();
+    var fps = cfg.fps, total = Math.max(1, Math.round(cfg.duration * fps)), back = current, out = [];
+    var maxFrames = opt.maxFrames || 900;
+    for (var i = 0; i < blurRecs.length; i++) {
+      var rec = blurRecs[i], el = rec.el, o = rec.o;
+      var win = blurWindow(el);
+      var f0 = Math.min(total - 1, Math.max(0, edgeFrame(win[0])));
+      var f1 = isFinite(win[1]) && win[1] < cfg.duration - 1e-6 ? Math.min(total, edgeFrame(win[1])) : total;
+      var text = String(el.textContent || '').replace(/\s+/g, ' ').trim();
+      var item = {
+        sel: tagOf(el), text: text.slice(0, 60), chars: text.length, nodes: el.querySelectorAll('*').length,
+        clip: el.hasAttribute('data-start'), nested: !!el.querySelector('[data-start]'),
+        media: /^(CANVAS|VIDEO|IFRAME)$/.test(el.tagName) || !!el.querySelector('canvas,video,iframe'),
+        decor: !!(el.closest && el.closest('[data-st-decor]')), flash: !!(el.closest && el.closest('[data-st-flash]')),
+        shutter: o.shutter, samples: o.samples, threshold: o.threshold, max: o.maxFrac ? Math.round(o.maxFrac * 100) + '%' : o.maxPx,
+        off: o.off, pose: !!rec.pose, from: [f0 / fps, f1 / fps], frames: [], why: '',
+      };
+      out.push(item);
+      if (o.off || f1 <= f0) { item.why = o.off ? 'off' : 'never on screen'; continue; }
+      // the element on screen and the page posed at a frame inside its window
+      var fm = f0, st = null;
+      for (var tries = 0; tries < 3; tries++) {
+        fm = tries === 0 ? f0 : tries === 1 ? Math.floor((f0 + f1) / 2) : f1 - 1;
+        await seek(fm / fps);
+        blurOff(rec);
+        st = blurMeasure(rec, fm / fps);
+        if (st.why !== 'hidden') break;
+      }
+      item.why = st.why === 'inline' || st.why === 'still' || st.why === 'hidden' ? st.why : '';
+      item.w = rec.w; item.h = rec.h;
+      if (!item.why) {
+        var step = Math.max(1, Math.ceil((f1 - f0) / maxFrames)), dt = 1 / fps, S = o.shutter / 360 * dt, prev = null;
+        item.step = step;
+        for (var f = f0; f < f1; f += step) {
+          var tau = f / fps;
+          var c = blurRead(rec, tau), cS = blurRead(rec, Math.max(rec.t0, tau - S)), cN = blurRead(rec, tau + dt);
+          var L = blurDist(c, cS, rec.sx, rec.sy), v = L * 360 / o.shutter;
+          var on = v >= o.threshold && L >= 0.5 && !(blurDist(c, cN, rec.sx, rec.sy) < 0.25);
+          var ex = Math.hypot((c[2] - c[0]) * rec.sx, (c[3] - c[1]) * rec.sy), ey = Math.hypot((c[4] - c[0]) * rec.sx, (c[5] - c[1]) * rec.sy);
+          var area = Math.abs((c[2] - c[0]) * (c[5] - c[1]) - (c[3] - c[1]) * (c[4] - c[0])) * rec.sx * rec.sy;
+          var maxLen = o.maxFrac > 0 ? o.maxFrac * Math.min(ex, ey) : o.maxPx;
+          item.frames.push([+tau.toFixed(4), prev ? +(blurDist(c, prev, rec.sx, rec.sy) / step).toFixed(2) : 0, +Math.min(L, maxLen).toFixed(2),
+            on ? 1 : 0, +Math.min(ex, ey).toFixed(1), +(area / (cfg.width * cfg.height)).toFixed(4)]);
+          prev = c;
+        }
+        blurPose(rec, fm / fps);
+      }
+      // where it really was on screen at the frames the page was seeked to (check's samples and timeline, plus a
+      // few here when those are sparse): a change between two of them that its sources do not explain is motion
+      // the blur cannot pose (an onSeek handler of the page, a moving ancestor)
+      var seenAt = function () { return Object.keys(rec.seen || {}).map(Number).filter(function (x) { return x >= f0 && x < f1; }); };
+      if (seenAt().length < 8) {
+        var P = Math.min(8, f1 - f0);
+        for (var k = 0; k < P; k++) {
+          var pf = P > 1 ? Math.round(f0 + (f1 - 1 - f0) * k / (P - 1)) : f0;
+          if (!rec.seen || !rec.seen[pf]) await seek(pf / fps);
+        }
+      }
+      var fs = seenAt().sort(function (x, y) { return x - y; }), probes = [];
+      var moved = function (a, b) {   // both edges of an axis moved: the box went somewhere, it did not just change size
+        return Math.max(Math.min(Math.abs(b[0] - a[0]), Math.abs(b[2] - a[2])), Math.min(Math.abs(b[1] - a[1]), Math.abs(b[3] - a[3])));
+      };
+      for (var q = 1; q < fs.length; q++) {
+        var A = rec.seen[fs[q - 1]], B = rec.seen[fs[q]];
+        if (A[4] !== B[4] || A[5] !== B[5]) continue;   // its layout changed (new text): not a move
+        var predicted = 0;
+        item.frames.forEach(function (x) { var ff = Math.round(x[0] * fps); if (ff > fs[q - 1] && ff <= fs[q]) predicted += x[1] * (item.step || 1); });
+        probes.push({ from: +(fs[q - 1] / fps).toFixed(4), t: +(fs[q] / fps).toFixed(4), actual: +moved(A, B).toFixed(2), predicted: +predicted.toFixed(2) });
+      }
+      item.probes = probes;
+    }
+    await seek(back);
+    blurClear();   // the tools that look next meet the page, not the copies
+    return out;
   }
 
   // ------------------------------------------------------------- readiness
@@ -837,7 +1593,7 @@
       var loaded = img.complete ? Promise.resolve() : new Promise(function (r) {
         img.addEventListener('load', r, { once: true }); img.addEventListener('error', r, { once: true });
       });
-      return race(loaded, 15000, 'image ' + img.currentSrc).then(function () {
+      return pacedRace(loaded, 15000, 'image ' + img.currentSrc).then(function () {
         if (img.naturalWidth > 0 && img.decode) return img.decode().catch(function () {});
       }).catch(function () {});
     }));
@@ -849,7 +1605,7 @@
       v.muted = true;
       if (v.preload === 'none') v.preload = 'auto';
       if (v.readyState >= 2 || v.error) return 0;
-      return race(new Promise(function (r) {
+      return pacedRace(new Promise(function (r) {
         v.addEventListener('loadeddata', r, { once: true }); v.addEventListener('error', r, { once: true });
         if (v.networkState === 3) r();
       }), 15000, 'video ' + (v.currentSrc || v.src)).catch(function (e) { diag.videos[v.currentSrc || v.src || 'video'] = e.message; });
@@ -877,7 +1633,7 @@
     if (fileCfg || RENDER) return Promise.resolve();
     if (!/^https?:$/.test(W.location.protocol)) return Promise.resolve();
     if (fileCfgP) return fileCfgP;
-    fileCfgP = race(fetch('/showtime.json', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }), 5000, 'showtime.json')
+    fileCfgP = pacedRace(fetch('/showtime.json', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }), 5000, 'showtime.json')
       .then(function (j) { if (j && typeof j === 'object') { fileCfg = j; mergeConfig(); injectStyle(); } })
       .catch(function (e) { reportError('showtime.json', e); });
     return fileCfgP;
@@ -900,10 +1656,11 @@
       await loadFileConfig();
       injectStyle();
       watchClips();
-      await race(docLoaded(), 30000, 'page load event').catch(function (e) { reportError('ready', e); });
+      sampleFrames();          // the waits below grow with the gaps between this page's frames (pace)
+      await pacedRace(docLoaded(), 30000, 'page load event').catch(function (e) { reportError('ready', e); });
       // 60 s like the author gates below: a look signature's faces on a cold, busy 4-core runner (Windows on Arm,
       // check's several pages at once) took over 20 s, which failed check while the render of the same page passed
-      await race(preloadFonts(), 60000, 'fonts').catch(function (e) { reportError('ready', e); });
+      await pacedRace(preloadFonts(), 60000, 'fonts').catch(function (e) { reportError('ready', e); });
       emojify();
       await decodeImages();
       await videosLoaded();
@@ -911,7 +1668,7 @@
       for (var n = 0; n < 5; n++) {
         var pending = readyWaits.filter(function (w) { return w.state === 'pending'; });
         if (!pending.length) break;
-        await race(Promise.all(pending.map(function (w) { return w.p.catch(function () {}); })), 60000,
+        await pacedRace(Promise.all(pending.map(function (w) { return w.p.catch(function () {}); })), 60000,
           'ST.waitFor: ' + pending.map(function (w) { return w.label; }).join(', '));
       }
       parseClips();
@@ -922,9 +1679,11 @@
         cfg.duration = inf.seconds;
         durationSource = inf.source;
       }
+      sampling = false;
       await seek(opts.at || 0);
       return info();
     })();
+    readyPromise.catch(function () {}).then(function () { sampling = false; });
     return readyPromise;
   }
 
@@ -948,11 +1707,13 @@
   async function doSeek(tIn) {
     var t = quantize(tIn);
     var f = Math.round(t * cfg.fps);
+    var t0 = real.now();
     current = t;
     clock.ms = t * 1000;
     clock.frame = f;
     reseed(f);
     diag.seeks++;
+    blurClear();
     applyClips(t);
     var waits = [];
     var errs = [];
@@ -975,10 +1736,12 @@
       }));
     }
     if (MODE === 'render') syncVideoCanvases();
-    if (document.fonts && document.fonts.status === 'loading') await race(document.fonts.ready, 10000, 'fonts').catch(function () {});
+    blurFrame(t);
+    if (document.fonts && document.fonts.status === 'loading') await pacedRace(document.fonts.ready, 10000, 'fonts').catch(function () {});
     started = true;
     if (MODE === 'render') {
       await settle();
+      paceSeek(real.now() - t0);
       if (errs.length) throw new Error(errs[0] + (errs.length > 1 ? ' (+' + (errs.length - 1) + ' more)' : ''));
     }
     return t;
@@ -1011,7 +1774,7 @@
       duration: cfg.duration, durationSource: durationSource,
       frames: Math.max(0, Math.round(cfg.duration * cfg.fps)), background: cfg.background,
       title: cfg.title || '', poster: cfg.poster, clips: clipList.length, handlers: handlers.map(function (h) { return h.name; }),
-      hasScore: typeof ST.score === 'function', conflicts: cfgConflicts.slice(),
+      hasScore: typeof ST.score === 'function', conflicts: cfgConflicts.slice(), pace: paceInfo(),
     };
   }
   // A clip edge as the stage applies it: a time within 1 ms of a frame (1.9667 at 60 fps) is that frame's
@@ -1068,7 +1831,7 @@
     o = o || {};
     var off = num(o.offset) || 0;
     if (tl && typeof tl.pause === 'function') { try { tl.pause(); } catch (e) { /* ignore */ } }
-    addHandler(o.name || 'anime', function (t) { tl.seek(Math.max(0, t - off) * 1000, true); });
+    addHandler(o.name || 'anime', function (t) { tl.seek(Math.max(0, t - off) * 1000, true); }, true);
     return tl;
   }
   function gsapHelper(tl, o) {
@@ -1079,7 +1842,7 @@
       var x = Math.max(0, t - off);
       tl.totalTime(x + 0.001, true); // forces a re-render even when x equals the cached time
       tl.totalTime(x, false);
-    });
+    }, true);
     return tl;
   }
   function lottieHelper(anim, o) {
@@ -1135,6 +1898,8 @@
     seek: seek,
     ready: ready,
     info: info,
+    /** How much the waits are scaled for this page: {factor, frame_ms, seek_ms, seeks, ceiling, on}. */
+    pace: paceInfo,
     clips: clips,
     diag: function () { return JSON.parse(JSON.stringify(Object.assign({}, diag, { waits: readyWaits.map(function (w) { return { label: w.label, state: w.state }; }) }))); },
     renderScore: renderScore,
@@ -1147,11 +1912,19 @@
     ease: ease,
     clamp: clamp,
     lerp: function (a, b, p) { return a + (b - a) * p; },
+    /** Motion blur on an element while it moves fast (references/stage-api.md § Shutter blur). */
+    blur: function (target, opts) { return blurApi(target, opts); },
     _setPlaying: function (v) { playingHint = !!v; },
     /** Wait for two real painted frames (tools use this after changing styles outside a seek). */
     _paint: function () { return nextFrame().then(nextFrame); },
   };
   Object.defineProperty(W, 'ST', { value: ST, configurable: false, writable: false, enumerable: true });
+  // for tools (showtime check): the blurred elements, their last frame, and their motion over the video
+  W.__stBlur = {
+    items: function () { return blurRecs.map(function (r) { return { sel: tagOf(r.el), options: r.o, pose: !!r.pose, last: r.last }; }); },
+    cost: function () { return Object.assign({}, blurCost); },
+    scan: blurScan,
+  };
 
   if (RENDER) {
     installShim(RENDER.seed);

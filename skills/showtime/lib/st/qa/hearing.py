@@ -28,6 +28,8 @@ What is measured
   ending     the level of the last 0.2 s against the 3 s before (music or a word cut off on the last frame),
              where each music track ends
   peaks      true peak, sample peak and clipped runs (from qa's loudness measurement)
+  speaker    the integrated loudness above 300 Hz and above 1 kHz (st.audio.meter.speaker_loudness): what a phone
+             or laptop speaker, which plays little under ~300 Hz, makes of the mix; the gap to the full mix
 
 Thresholds live in runtime/thresholds.json "hearing" (the literals in DEFAULTS are the fallback).
 numpy and scipy (already used by the meter); no other dependency.
@@ -53,6 +55,8 @@ DEFAULTS: Dict[str, float] = {
     "fast_wpm": 200.0,             # lines faster than this are listed as fast (critic only)
     "slow_wpm": 100.0,             # lines slower than this are listed as slow (critic only)
     "sfx_loud_lu": 10.0,           # an effect peaking this far over the integrated loudness is listed as loud
+    "speaker_gap_lu": 10.0,        # speaker_loudness WARN: the mix above 300 Hz this far under the full mix
+    "speaker_gap_fail_lu": 18.0,   # speaker_loudness FAIL: as good as silent on a phone speaker
 }
 
 
@@ -297,10 +301,15 @@ def _family(name: str) -> str:
 
 def mix_facts(report: Optional[Dict[str, Any]], offset: float, dur: float) -> Dict[str, Any]:
     """Effects, music tracks, section changes and gain automation of a mix report, in video time."""
-    out: Dict[str, Any] = {"sfx": [], "music": [], "sections": [], "gain_points": [], "voice_to_music_db": None}
+    out: Dict[str, Any] = {"sfx": [], "music": [], "sections": [], "gain_points": [], "voice_to_music_db": None,
+                           "speaker_safe": None}
     if not isinstance(report, dict):
         return out
     out["voice_to_music_db"] = report.get("voice_to_music_db")
+    if isinstance(report.get("speaker"), dict):
+        sp = report["speaker"]
+        out["speaker_safe"] = {k: sp.get(k) for k in ("on", "set_by", "shelf_db", "shelf_hz", "capped", "shelved",
+                                                       "gap_300_lu_before", "sub_alone") if sp.get(k) is not None}
     for r in report.get("tracks") or []:
         if not isinstance(r, dict):
             continue
@@ -315,7 +324,8 @@ def mix_facts(report: Optional[Dict[str, Any]], offset: float, dur: float) -> Di
             t = float(at) - offset
             if -0.05 <= t <= dur + 0.05:
                 out["sfx"].append({"id": str(r.get("id")), "name": str(name), "t": round(t, 3), "family": _family(str(r.get("id") or name)),
-                                   "above_bed_db": r.get("above_bed_db"), "texture": bool(r.get("texture"))})
+                                   "above_bed_db": r.get("above_bed_db"), "texture": bool(r.get("texture")),
+                                   "speaker_gap_lu": r.get("speaker_gap_lu"), "speaker_alone": bool(r.get("speaker_alone"))})
         elif kind in ("music", "ambience"):
             st, en = r.get("start"), r.get("end")
             row = {"id": str(r.get("id")), "kind": kind, "name": str(name),
@@ -380,9 +390,11 @@ def _r(v: Optional[float], nd: int = 1) -> Optional[float]:
 def measure(blk: Dict[str, Any], dur: float, *, lines: Sequence[Dict[str, Any]] = (), lines_source: str = "",
             cuts: Sequence[float] = (), scenes: Sequence[Tuple[float, float, str]] = (),
             mix: Optional[Dict[str, Any]] = None, cues: Optional[Dict[str, float]] = None,
-            loud: Optional[Dict[str, Any]] = None, th: Optional[Dict[str, float]] = None) -> Dict[str, Any]:
+            loud: Optional[Dict[str, Any]] = None, th: Optional[Dict[str, float]] = None,
+            speaker: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Everything the hearing pass reports, from block levels (`blocks`) and the video's timings. Pure: qa
-    and review-pack call it with their own cut lists. mix = mix_facts(...); cues in video time."""
+    and review-pack call it with their own cut lists. mix = mix_facts(...); cues in video time; speaker =
+    st.audio.meter.speaker_loudness of the delivered audio (qa measures it on the decoded samples)."""
     import numpy as np
     th = th or thresholds()
     loud = loud or {}
@@ -401,6 +413,7 @@ def measure(blk: Dict[str, Any], dur: float, *, lines: Sequence[Dict[str, Any]] 
         "sample_peak_dbfs": loud.get("sample_peak_dbfs"), "target_lufs": loud.get("target_lufs"),
         "ceiling_dbtp": loud.get("ceiling_dbtp"), "clipping": loud.get("clipping"),
         "voice_to_music_db": mix.get("voice_to_music_db"),
+        "speaker": dict(speaker, mix=mix.get("speaker_safe")) if speaker and speaker.get("gap_300_lu") is not None else None,
     }
     lines = sorted(lines, key=lambda r: r["start"])
     line_spans = [(float(ln["start"]), float(ln["end"])) for ln in lines]
@@ -578,6 +591,8 @@ def measure(blk: Dict[str, Any], dur: float, *, lines: Sequence[Dict[str, Any]] 
             flags.append("under the rest of the mix")
         if over is not None and over > th["sfx_loud_lu"]:
             flags.append("loud")
+        if s.get("speaker_alone"):
+            flags.append("sub only (%.0f LU under above 300 Hz): a phone hardly plays it" % float(s.get("speaker_gap_lu") or 0))
         if nc is not None and 0.08 < abs(t - nc) <= 0.5 and not (cue and abs(cue["off"]) <= 0.04):
             flags.append("%.2fs %s the cut at %.2fs" % (abs(t - nc), "after" if t > nc else "before", nc))
         fx.append(dict(s, rise_lu=_r(rise), over_programme_lu=_r(over),
@@ -614,12 +629,113 @@ RULES = {
     "quiet_stretch": "near silence for 2 s or more mid-video (20 LU under the programme)",
     "level_jump": "the level jumps more than 6 LU at a cut (bed with bed, or voice with voice)",
     "abrupt_end": "the sound is still at full level on the last frame (music or a word cut off)",
+    "speaker_loudness": "on a phone or laptop speaker (the mix above 300 Hz) the video is far quieter than its "
+                        "loudness says: a mix of bass and sub (WARN over 10 LU under the full mix, FAIL over 18)",
+    "readback": "a name, acronym or number of the voice-over is heard differently from the script (the narration "
+                "transcribed again locally); FAIL for a name in the title, the brand or the project's lexicon",
 }
+
+
+def readback(video: Path, proj: Optional[Path]) -> Optional[Dict[str, Any]]:
+    """The voice-over heard back (st.voice.readback) for the project's voice/vo.wav, suspect times moved onto
+    the video's clock. None without a voice timeline that belongs to this render."""
+    if proj is None:
+        return None
+    from ..common import read_json
+    from ..voice import readback as rb
+    from . import review
+    if not rb.enabled():
+        return None
+    rep = rb.for_project(proj, video)
+    if not rep or rep.get("skipped"):
+        return rep
+    tl = read_json(proj / "voice" / "timeline.json", {}) or {}
+    off = review._offset(video)
+    moved = line_offsets(proj, tl) if isinstance(tl, dict) else {}
+    for s in rep.get("suspects") or []:
+        if s.get("t") is not None:
+            s["voice_t"] = s["t"]
+            s["t"] = round(float(s["t"]) - off + moved.get(str(s.get("line")), 0.0), 3)
+    for ln in rep.get("lines") or []:
+        ln.pop("heard_words", None)          # voice/readback.json keeps them; qa.json needs the text only
+        ln["video_start"] = round(float(ln.get("start") or 0.0) - off + moved.get(str(ln.get("id")), 0.0), 3)
+    return rep
+
+
+def check_readback(F: Any, rep: Optional[Dict[str, Any]]) -> None:
+    """The read-back as qa items: a WARN per word heard differently (FAIL for a name in the title, brand or
+    project lexicon), an INFO when it could not run."""
+    if not rep:
+        return
+    from ..voice import readback as rb
+    if rep.get("skipped"):
+        F.add("readback", "INFO", "the voice-over was not heard back: %s" % rep["skipped"],
+              fix="install the local recognizer to check names: %s" % rb.fetch_hint())
+        return
+    sus = rep.get("suspects") or []
+    if not sus:
+        F.ok(rep.get("summary") or rb.summary(rep))
+        return
+    for s in sus[:8]:
+        F.add("readback", "FAIL" if s.get("critical") else "WARN",
+              "voice line %s: the script says \"%s\", the voice is heard as \"%s\"%s" % (
+                  s.get("line"), s["word"], s.get("heard") or "nothing",
+                  " (a name in the title, brand or lexicon)" if s.get("critical") else ""),
+              t=s.get("t"), fix=rb.fix_for(s, s.get("clip")), word=s["word"], heard=s.get("heard"))
+    if len(sus) > 8:
+        F.add("readback", "WARN", "%d more words heard differently (voice/readback.json, review-pack's audio.txt)"
+              % (len(sus) - 8), t=sus[8].get("t"))
+
+
+def speaker_line(sp: Optional[Dict[str, Any]]) -> Optional[str]:
+    """"on a phone speaker: -27.6 LUFS, 13.6 LU under the mix" (None without the measurement)."""
+    if not sp or sp.get("gap_300_lu") is None:
+        return None
+    return "on a phone speaker: %.1f LUFS, %.1f LU under the mix" % (sp["above_300_lufs"], sp["gap_300_lu"])
+
+
+def check_speaker(F: Any, h: Dict[str, Any]) -> None:
+    """speaker_loudness: the mix above 300 Hz far under the full mix (a phone plays it that much quieter)."""
+    sp = h.get("speaker")
+    if not sp or sp.get("gap_300_lu") is None:
+        return
+    th = h["thresholds"]
+    g = float(sp["gap_300_lu"])
+    if g <= th["speaker_gap_lu"]:
+        return
+    mx = sp.get("mix") or {}
+    by_choice = mx.get("on") is False and mx.get("set_by") not in (None, "default")
+    sev = "INFO" if by_choice else ("FAIL" if g > th["speaker_gap_fail_lu"] else "WARN")
+    k1 = (" (above 1 kHz %.1f LUFS, %.1f LU under)" % (sp["above_1k_lufs"], sp["gap_1k_lu"])
+          if sp.get("gap_1k_lu") is not None else "")
+    msg = ("%s%s; the full mix is %.1f LUFS. Phones and laptops play little under 300 Hz and this mix's energy is "
+           "bass and sub, so it plays about %.0f dB quieter there than a voice-led video at the same loudness" % (
+               speaker_line(sp), k1, sp.get("integrated_lufs") or 0.0, max(1.0, g - 4.5)))
+    if by_choice:
+        msg += " (the speaker-safe step is off by choice: %s)" % mx.get("set_by")
+        fix = "if the video is not only for headphones, remove \"speaker_safe\": false and render again"
+    elif mx.get("on") and mx.get("capped"):
+        fix = ("the mixer's speaker-safe step already cut the bed's lows by %g dB: pick a bed with more in the mids, "
+               "raise its mid parts (lead, keys), or layer a mid transient on sub hits (metal-hit, glitch at -8 to "
+               "-12 dB)" % abs(float(mx.get("shelf_db") or 12)))
+    elif mx.get("on") is False:
+        fix = "turn the mixer's speaker-safe step back on (\"master\": {\"speaker_safe\": true}) and render again"
+    elif mx:
+        fix = ("render again: `showtime audio mix` cuts the bed's lows (speaker-safe, on by default) until the mix is "
+               "within 8 LU above 300 Hz; or pick a bed with more in the mids")
+    else:
+        fix = ("mix the soundtrack with `showtime audio mix` (its speaker-safe step cuts the bed's lows before the "
+               "loudness normalisation), or cut the bed's lows by hand (a low shelf of -6 to -12 dB at 160 Hz) and "
+               "master again; an ST.score bed is not mixed there: turn its bass and kick down. A bed with more in "
+               "the mids also does it")
+    F.add("speaker_loudness", sev, msg, fix=fix, gap_300_lu=g, above_300_lufs=sp.get("above_300_lufs"),
+          gap_1k_lu=sp.get("gap_1k_lu"))
 
 
 def check(F: Any, h: Dict[str, Any]) -> None:
     """The cheap hearing checks as qa WARNs with times (st.qa.video.Findings)."""
     th = h["thresholds"]
+    check_speaker(F, h)
     masked = [r for r in h["lines"] if r["method"] == "stem" and r["voice_over_bed_db"] is not None
               and r["voice_over_bed_db"] < th["voice_over_bed_min_db"]]
     for r in masked[:6]:
@@ -671,6 +787,14 @@ def summary(h: Dict[str, Any]) -> str:
     parts.append("%d quiet stretch%s" % (nq, "" if nq == 1 else "es"))
     parts.append("%d level jump%s at cuts (> %g LU)" % (nj, "" if nj == 1 else "s", th["level_jump_lu"]))
     parts.append("ending %s" % ("cut off" if h["ending"].get("abrupt") else "fades or ends"))
+    sl = speaker_line(h.get("speaker"))
+    if sl:
+        parts.append(sl)
+    rb = h.get("readback") or {}
+    if rb and not rb.get("skipped"):
+        n = len(rb.get("suspects") or [])
+        parts.append("read-back %s" % ("%d word%s heard differently" % (n, "" if n == 1 else "s") if n else
+                                       "names and numbers as written"))
     return ", ".join(parts)
 
 
@@ -699,6 +823,7 @@ def text(h: Dict[str, Any], *, plot: Optional[str] = "hearing.png", name: str = 
                      ": %s" % h["voice_note"] if h.get("voice_note") else ""))
     if h.get("voice_to_music_db") is not None:
         L.append("The mix report says the voice sits %.1f dB over the music overall." % h["voice_to_music_db"])
+    L += speaker_text(h.get("speaker"), th)
     if h.get("lines_source"):
         L.append("Lines from %s." % h["lines_source"])
     if plot:
@@ -717,6 +842,8 @@ def text(h: Dict[str, Any], *, plot: Optional[str] = "hearing.png", name: str = 
         L.append("%7.2f-%7.2fs  %s wpm  %s%s  %s: \"%s\"%s" % (
             r["start"], r["end"], "%4d" % r["wpm"] if r["wpm"] else "   -", over, how, r["id"], _snip(r["text"], 90),
             ("  <- " + "; ".join(extra)) if extra else ""))
+
+    L += readback_text(h.get("readback"))
 
     L += ["", "## Pauses in the voice longer than %g s" % th["quiet_stretch_s"]]
     L += ["%7.2f-%7.2fs  %.1fs, the programme at %s LUFS meanwhile" % (g["start"], g["end"], g["seconds"], f(g["lufs"], "%.0f"))
@@ -807,6 +934,55 @@ def text(h: Dict[str, Any], *, plot: Optional[str] = "hearing.png", name: str = 
     return "\n".join(L).rstrip() + "\n"
 
 
+def speaker_text(sp: Optional[Dict[str, Any]], th: Dict[str, float]) -> List[str]:
+    """audio.txt's lines on how the mix plays on a phone or laptop speaker."""
+    if not sp or sp.get("gap_300_lu") is None:
+        return []
+    g = float(sp["gap_300_lu"])
+    L = ["Heard on a phone: %s (above 1 kHz %s LUFS, %s LU under). Phone and laptop speakers play little under "
+         "300 Hz; the posted films sit 1-8 LU under, over %g LU the video sounds quiet on a phone, over %g it is "
+         "close to silent there -> %s." % (
+             speaker_line(sp), "%.1f" % sp["above_1k_lufs"] if sp.get("above_1k_lufs") is not None else "?",
+             "%.1f" % sp["gap_1k_lu"] if sp.get("gap_1k_lu") is not None else "?", th["speaker_gap_lu"],
+             th["speaker_gap_fail_lu"], "fine" if g <= th["speaker_gap_lu"] else
+             "TOO QUIET ON A PHONE" if g <= th["speaker_gap_fail_lu"] else "ALMOST SILENT ON A PHONE")]
+    mx = sp.get("mix") or {}
+    if mx.get("on") is False:
+        L.append("The mixer's speaker-safe step was off (%s)." % (mx.get("set_by") or "?"))
+    elif mx.get("shelf_db"):
+        L.append("The mixer's speaker-safe step cut the bed's lows %g dB at %g Hz (%s; %.1f LU under before)%s." % (
+            abs(float(mx["shelf_db"])), mx.get("shelf_hz") or 160, ", ".join(mx.get("shelved") or []) or "the bed",
+            mx.get("gap_300_lu_before") or 0.0, ", the most it does" if mx.get("capped") else ""))
+    if mx.get("sub_alone"):
+        L.append("Sub-heavy effects with nothing in the mids on their hit (a phone hardly plays them): %s." %
+                 ", ".join(mx["sub_alone"]))
+    return L
+
+
+def readback_text(rep: Optional[Dict[str, Any]]) -> List[str]:
+    """audio.txt's read-back table: every voice line as the script has it and as it was heard back."""
+    if not rep:
+        return []
+    L = ["", "## Read-back: the voice-over transcribed again and compared with the script (names, acronyms, numbers)"]
+    if rep.get("skipped"):
+        return L + ["(not run: %s)" % rep["skipped"]]
+    sus = rep.get("suspects") or []
+    L.append("%s. A word listed here was heard differently: judge it as a mispronunciation unless the heard "
+             "spelling is only another way to write the same sound." % (rep.get("summary") or "read-back").rstrip("."))
+    for s in sus:
+        L.append("%7ss  %s  script: %s / heard: %s%s" % (
+            "%.2f" % s["t"] if s.get("t") is not None else "?", s.get("line"), s["word"], s.get("heard") or "(nothing)",
+            "  <- a name in the title, brand or lexicon" if s.get("critical") else ""))
+    for ln in rep.get("lines") or []:
+        t = ln.get("video_start", ln.get("start"))
+        L.append("%7ss  %s%s" % ("%.2f" % float(t) if t is not None else "?", ln.get("id"),
+                                  "  <- " + ", ".join(ln["suspects"]) if ln.get("suspects") else ""))
+        L.append("           script: %s" % _snip(str(ln.get("script") or ""), 160))
+        L.append("           heard:  %s" % (_snip(str(ln.get("heard") or "(nothing)"), 160) if not ln.get("skipped")
+                                            else "(not heard back: %s)" % ln["skipped"]))
+    return L
+
+
 def graph(h: Dict[str, Any], blk: Dict[str, Any], out: Path, title: str = "") -> Optional[str]:
     """hearing.png (st.qa.images.hearing_graph); None without block levels."""
     if not blk.get("programme"):
@@ -834,8 +1010,10 @@ def for_pack(video: Path, proj: Optional[Path], q: Dict[str, Any], qa_dir: Path,
     mp = own_mix_report(video)
     mix = mix_facts(read_json(mp, None) if mp else None, off, dur)
     cues = {k: v - off for k, v in cue_values(proj).items()}
+    sp = (q.get("hearing") or {}).get("speaker")
     h = measure(blk, dur, lines=lines, lines_source=src, cuts=cuts, scenes=scenes, mix=mix, cues=cues,
-                loud=q.get("loudness") or {})
+                loud=q.get("loudness") or {}, speaker={k: v for k, v in sp.items() if k != "mix"} if isinstance(sp, dict) else None)
+    h["readback"] = (q.get("hearing") or {}).get("readback")
     png = graph(h, blk, out_dir / "hearing.png", title=title)
     (out_dir / "audio.txt").write_text(text(h, plot="hearing.png" if png else None, name=name), encoding="utf-8",
                                        newline="\n")

@@ -34,11 +34,18 @@
   #hook .word { font-size: min(25cqh, 14.5cqw); text-shadow: 0 0.6cqh 4cqh rgb(0 0 0 / 0.55); animation: settle 1s var(--ease-out) both; }
   @keyframes settle { from { transform: scale(1.1); } to { transform: scale(1); } }   /* sharp from frame 0: it is the poster */
 
-  /* ---------- 2. flash words on the beat: three words, a third of a second each */
+  /* ---------- 2. flash words on the beat: three words, a third of a second each, each one a snap (a whip, a slam, a
+     scale punch: the whole move in 6 frames on a hard ease-out) under a shutter blur (data-st-blur: copies only on the
+     fast frames, so each word starts on screen, smears while it snaps and lands sharp for its last frames) */
   #flash { background: var(--ice); }
   #flash .w { position: absolute; inset: 0; display: grid; place-items: center; color: var(--ink); font-size: min(30cqh, 15cqw); }
-  #flash .w span { display: inline-block; animation: skew 0.33s var(--ease-out) both; }
-  @keyframes skew { from { transform: translateY(6cqh) skewX(-14deg); } to { transform: none; } }   /* on screen from its first frame */
+  #flash .w span { display: inline-block; animation: 0.2s cubic-bezier(0.16, 1, 0.3, 1) both; }
+  #flash .whip span { animation-name: whip; }
+  #flash .slam span { animation-name: slam; }
+  #flash .punch span { animation-name: punch; }
+  @keyframes whip { from { transform: translateX(-42cqw) skewX(-14deg); } to { transform: none; } }   /* on screen from its first frame */
+  @keyframes slam { from { transform: translateY(-36cqh); } to { transform: none; } }
+  @keyframes punch { from { transform: scale(2.4); } to { transform: none; } }
 
   /* ---------- 4. 3D: the canvas is drawn by three.js */
   #object { background: radial-gradient(70% 70% at 50% 45%, #1a1240, #05060f 70%); }
@@ -94,11 +101,12 @@
     <div class="tag" data-st-flash><b>01</b>Shader</div>
   </section>
 
-  <!-- 2. Flash words (1-2 s): one word per 2/3 beat, texture not message (data-st-flash). SLOT: three words. -->
+  <!-- 2. Flash words (1-2 s): one word per 2/3 beat, texture not message (data-st-flash), each a snap with a shutter
+       blur (data-st-blur on the word that moves, never on its full-frame .w). SLOT: three words. -->
   <section class="scene" id="flash" data-start="#hook" data-dur="1">
-    <div class="w display" data-start="+0" data-dur="0.333" data-st-flash><span>TYPE.</span></div>
-    <div class="w display" data-start="+0.333" data-dur="0.333" data-st-flash><span>SHAPE.</span></div>
-    <div class="w display" data-start="+0.666" data-dur="0.334" data-st-flash><span>LIGHT.</span></div>
+    <div class="w display whip" data-start="+0" data-dur="0.333" data-st-flash><span data-st-blur>TYPE.</span></div>
+    <div class="w display slam" data-start="+0.333" data-dur="0.333" data-st-flash><span data-st-blur>SHAPE.</span></div>
+    <div class="w display punch" data-start="+0.666" data-dur="0.334" data-st-flash><span data-st-blur>LIGHT.</span></div>
   </section>
 
   <!-- 3. Particle burst on the drop (2-3 s) -->

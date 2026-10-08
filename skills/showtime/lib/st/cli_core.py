@@ -219,7 +219,10 @@ def register_new(sub: argparse._SubParsersAction) -> None:
         "includes the pause; the last one includes the tail; the first line keeps its lead-in, so a\n"
         "line pinned 2.4 s into the voice starts 2.4 s into the video); scenes without a line after the\n"
         "narration (an end card) keep their length, and so does a scene marked data-silent (no line on\n"
-        "purpose) between narrated ones. Every line becomes a voice track at scene\n"
+        "purpose) between narrated ones, unless the line after it is pinned ({at=...}) and the voice\n"
+        "starts it on its pin: pins win, and the silent scene fills the gap the pin leaves (never under\n"
+        "1 s; a note says when it shrinks, or why it keeps its length).\n"
+        "Every line becomes a voice track at scene\n"
         "start + pad in audio/mix.json (music ducks under it), music sections, sound effects\n"
         "and the poster move with their scenes, and the caption layer reads\n"
         "voice/captions.words.json (word times in the video). Files are edited in place;\n"
@@ -1526,6 +1529,74 @@ def _map_lines(lines: List[Dict[str, Any]], names: List[str], spec: Optional[str
                                         for n, i in enumerate(ids[:3])))
 
 
+def _slot_len(ln: Dict[str, Any]) -> float:
+    return float(ln["slot"].get("duration") or (float(ln["slot"]["end"]) - float(ln["slot"]["start"])))
+
+
+MIN_SILENT = 1.0     # a data-silent scene never shrinks below this to make room for a pin
+
+
+def _pinned_silences(proj: Path, scenes: List[Dict[str, Any]], names: List[str],
+                     by_scene: Dict[int, List[Dict[str, Any]]], fps: float, notes: List[str]) -> Any:
+    """Pins win over data-silent scenes, when the voice honoured the pin. When the first line after one or
+    more data-silent scenes is pinned (`at` in timeline.json) and `voice script` placed it on its pin, the
+    voice already holds the silence up to the pin, so the silent scenes fill that gap (from the end of the
+    line before them plus its pause) instead of adding their length on top of it; the narrated scene
+    before them keeps whatever the gap leaves over. A gap a little shorter than the silent scenes want
+    shrinks them (with a note). They keep their length (as without a pin, with a note saying why) when the
+    voice ran past the pin (the line before ran long), when a silent scene would drop under MIN_SILENT, and
+    when the pin is a 0.4.0 storyboard pin that left the silent shots out.
+    -> ({narrated scene index: seconds its last slot gives up}, {silent scene index: new length})."""
+    hold_cut: Dict[int, float] = {}
+    silent_len: Dict[int, float] = {}
+    narrated = sorted(by_scene)
+    for prev, nxt in zip(narrated, narrated[1:]):
+        between = list(range(prev + 1, nxt))
+        if not between or by_scene[nxt][0].get("at") is None:
+            continue                                  # not pinned: the silent scenes keep their lengths
+        last, line = by_scene[prev][-1], by_scene[nxt][0]
+        at = float(line["at"])
+        start = float(line["slot"]["start"])
+        ids = ", ".join(names[j] or str(j + 1) for j in between)
+        want = sum(scenes[j]["t1"] - scenes[j]["t0"] for j in between)
+        if abs(start - at) >= 1e-3:
+            notes.append("line %s is pinned at %.2fs, but the voice starts it at %.2fs (the line before it runs "
+                         "long), so the silent scene(s) %s keep their %.2fs and the line plays later than its pin"
+                         % (line["id"], at, start, ids, want))
+            continue
+        from .storyboard import legacy_pin
+        if legacy_pin(proj, names[nxt], at):
+            notes.append("line %s is pinned at %.2fs by a narration.md from showtime 0.4.0, whose pins leave the "
+                         "silent shots out: the silent scene(s) %s keep their %.2fs. Regenerate narration.md "
+                         "(showtime new --from-storyboard again) or move the pin %.2fs later"
+                         % (line["id"], at, ids, want, want))
+            continue
+        dur = float(last.get("duration") or (float(last.get("end", 0)) - float(last.get("start", 0))) or 0)
+        natural = float(last.get("start", last["slot"]["start"])) + dur + float(last.get("pause_after", 0.35))
+        gap = start - natural
+        if gap <= 0:
+            notes.append("line %s is pinned at %.2fs, right after the line before it, so the silent scene(s) %s "
+                         "keep their %.2fs (pin the line %.2fs later to place them before it)"
+                         % (line["id"], at, ids, want, want))
+            continue
+        give = min(want, gap)
+        scale = give / want if want > 0 else 0.0
+        if any(0 < (scenes[j]["t1"] - scenes[j]["t0"]) * scale < MIN_SILENT for j in between):
+            notes.append("line %s is pinned at %.2fs, which leaves %.2fs for the silent scene(s) %s (they want "
+                         "%.2fs): too little for them (under %gs each), so they keep their lengths and the line "
+                         "plays %.2fs after its pin; pin it %.2fs later"
+                         % (line["id"], at, gap, ids, want, MIN_SILENT, want - gap, want - gap))
+            continue
+        hold_cut[prev] = give
+        for j in between:
+            silent_len[j] = (scenes[j]["t1"] - scenes[j]["t0"]) * scale
+        if gap + 1.0 / fps < want:
+            notes.append("line %s is pinned at %.2fs, which leaves %.2fs after the line before it for the silent "
+                         "scene(s) %s (they want %.2fs): they play %.2fs (pin the line %.2fs later to keep them)"
+                         % (line["id"], at, gap, ids, want, gap, want - gap))
+    return hold_cut, silent_len
+
+
 def voice_plan(proj: Path, timeline: Path, mapping: Optional[str] = None, pad: float = 0.3,
                keep_captions: bool = False, total: Optional[float] = None) -> Any:
     """(plan, new length, voice context) for `retime --from-voice`. `total` keeps the video that long by
@@ -1571,7 +1642,8 @@ def voice_plan(proj: Path, timeline: Path, mapping: Optional[str] = None, pad: f
             "%s->%s" % (ln["id"], names[s] or s + 1) for ln, s in zip(lines, assign)),
                             hint="keep the script in scene order, or fix --map")
     first, last = assign[0], assign[-1]
-    # a scene marked data-silent has no narration on purpose (a storyboard shot without a line): it keeps its length
+    # a scene marked data-silent has no narration on purpose (a storyboard shot without a line): it keeps its
+    # length, or fills the gap up to the next line when that line is pinned (_pinned_silences)
     mute = [names[i] or str(i + 1) for i in range(first, last + 1)
             if i not in set(assign) and "data-silent" not in scenes[i]["attrs"]]
     if mute:
@@ -1585,9 +1657,10 @@ def voice_plan(proj: Path, timeline: Path, mapping: Optional[str] = None, pad: f
     by_scene: Dict[int, List[Dict[str, Any]]] = {}
     for ln, sidx in zip(lines, assign):
         by_scene.setdefault(sidx, []).append(ln)
+    notes: List[str] = []
+    hold_cut, silent_len = _pinned_silences(proj, scenes, names, by_scene, fps, notes)
     plan: List[Any] = []
     placed: List[Any] = []
-    notes: List[str] = []
     cursor = 0.0
     # the first line's lead-in (`lead_in`, or an `at` pin on it: a music-only opening) is a video time, as when
     # vo.wav plays from 0: the first narrated scene gets that much picture before its line (at least the pad)
@@ -1603,10 +1676,10 @@ def voice_plan(proj: Path, timeline: Path, mapping: Optional[str] = None, pad: f
                              % (lines[0]["id"], lead, names[i] or i + 1, ns, lc))
             for ln in by_scene[i]:
                 placed.append((ln, _r(lc)))
-                lc += float(ln["slot"].get("duration") or (float(ln["slot"]["end"]) - float(ln["slot"]["start"])))
-            ne = _r(lc)
+                lc += _slot_len(ln)
+            ne = _r(lc - hold_cut.get(i, 0.0))
         else:
-            ns, ne = cursor, _r(cursor + (c["t1"] - c["t0"]))
+            ns, ne = cursor, _r(cursor + silent_len.get(i, c["t1"] - c["t0"]))
         ns, ne = _on_frame(ns, fps), _on_frame(ne, fps)
         plan.append((ns, ne))
         if ne - ns < 1.0:

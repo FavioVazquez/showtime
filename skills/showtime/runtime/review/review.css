@@ -94,7 +94,9 @@ button { cursor: pointer; }
 .box.old b { background: rgba(10, 10, 12, .8); }
 
 .bar { display: flex; align-items: center; gap: 8px; padding: 10px 2px 4px; }
-@media (max-width: 900px) { .bar { padding: 10px 12px 4px; flex-wrap: wrap; } .scrub { order: 10; flex-basis: 100%; } }
+@media (max-width: 900px) { .bar { padding: 10px 12px 4px; flex-wrap: wrap; } .bar .scrub { order: 10; flex: 1 1 100%; } }
+/* a phone: the bar on its own row, then the two note buttons side by side */
+@media (max-width: 640px) { .bar #rangeBtn, .bar #addBtn { order: 11; flex: 1 1 0; } .bar #rangeBtn { border-color: var(--line-2); } }
 .play .i-pause { display: none; }
 .is-playing-ui .play .i-play { display: none; }
 .is-playing-ui .play .i-pause { display: block; }
@@ -106,6 +108,12 @@ button { cursor: pointer; }
 .ticks i { position: absolute; top: -5px; width: 4px; height: 16px; margin-left: -2px; border-radius: 2px; background: var(--mark); box-shadow: 0 0 0 1.5px var(--surface); }
 .ticks i.done { background: var(--good); }
 .ticks i.wontfix { background: var(--faint); }
+/* a note on a stretch of time: a band along the rail (the frame notes' ticks stay on top) */
+.ticks .band { position: absolute; top: -3px; height: 12px; border-radius: 4px; background: rgba(255, 45, 85, .30); border: 1.5px solid var(--mark); }
+.ticks .band.done { background: var(--good-soft); border-color: var(--good); }
+.ticks .band.wontfix { background: var(--surface-2); border-color: var(--faint); }
+.ticks .band.draft { background: var(--accent-soft); border: 1.5px dashed var(--accent); }
+.btn.range.is-marking { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
 .knob { position: absolute; top: 8px; width: 16px; height: 16px; margin-left: -8px; border-radius: 50%; background: var(--surface); border: 2px solid var(--accent); left: 0; box-shadow: var(--shadow); }
 
 /* ---------- composer ---------- */

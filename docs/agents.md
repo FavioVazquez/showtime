@@ -307,7 +307,7 @@ Any client that starts local (stdio) servers can use showtime's MCP server on it
 ([@faviovazquez/showtime-mcp](https://www.npmjs.com/package/@faviovazquez/showtime-mcp), also in the MCP Registry as
 `io.github.FavioVazquez/showtime`),
 `{"command": "npx", "args": ["-y", "@faviovazquez/showtime-mcp"]}` (see
-[`packages/npm/README.md`](../packages/npm/README.md)), and [`showtime-0.3.0.mcpb`](https://github.com/FavioVazquez/showtime/releases/download/v0.3.0/showtime-0.3.0.mcpb) from the v0.3.0 release, which
+[`packages/npm/README.md`](../packages/npm/README.md)), and [`showtime-0.4.0.mcpb`](https://github.com/FavioVazquez/showtime/releases/download/v0.4.0/showtime-0.4.0.mcpb) from the v0.4.0 release, which
 Claude Desktop opens with a double click. Setup still runs once on your machine, because the models and tools
 never travel inside a package. Long tools answer with a task id after about
 20 s when a client stops calls early; the `status` tool reports progress and the result.
@@ -315,6 +315,15 @@ never travel inside a package. Long tools answer with a task id after about
 The MCP server has a `guide` tool that reads a reference by the piece (its rules, one section, or the lines that
 mention something), so a client without the skill does not have to load whole files, and a `receipt` tool that writes a
 job's receipt. Tokens and cost are "not reported by this agent" through MCP.
+
+Ten core tools are listed by default (`doctor`, `status`, `guide`, `new_project`, `render`, `check`, `qa`,
+`export_html`, `deliver_exports`, `receipt`). Add `"env": { "SHOWTIME_MCP_TOOLS": "all" }` to the server entry to list
+the voice, music, sound-effect, transcription, stills and studio-board tools too; the `.mcpb` sets it for you.
+
+Some features have no MCP tool yet: `adopt` (a Claude Design export too), `footage cutout`, `edit cards`,
+`edit moments`, `edit clips`, `pr-video`, `review open` and `review notes`, and `export html`'s `--share-url` and
+`--share-image` (showtime.json `"share"` works through `export_html`). An agent with a shell runs them as
+`showtime <command>`; a client with MCP only cannot reach them yet.
 
 ## In CI: the GitHub Action
 

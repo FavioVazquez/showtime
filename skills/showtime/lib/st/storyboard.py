@@ -11,7 +11,8 @@ storyboard artist's rows: id, dur, visual, onscreen, vo). Output, next to the te
   column, which are shown as written. Nothing else is invented.
 - narration.md: the narration as a `showtime voice script`, one `## shot-N` line per narrated shot. Every
   line is pinned (`at`) where its shot starts, so after `voice script` and `retime --from-voice` the shots
-  keep the storyboard's lengths wherever the voice fits, and grow where it does not.
+  keep the storyboard's lengths wherever the voice fits, and grow where it does not. A narration cell that
+  is empty, a dash or only a direction ("(pause)", "(silence)") is a silent shot: no line, its length kept.
 - storyboard.json (the plan, read back by `retime --from-voice` to say where the voice outgrew it),
   storyboard.md (the same as a table, for the review pack) and audio/mix.json (a quiet bed on the shots).
 
@@ -142,6 +143,15 @@ _EMPTY = re.compile(r"^[\s.…·\-–—?？/]*$")
 
 def _empty(cell: str) -> bool:
     return bool(_EMPTY.match(cell or "")) or (cell or "").strip().lower() in ("n/a", "na", "tbd", "none", "无", "无旁白")
+
+
+# a narration cell that is only stage directions: "(pause)", "[silence]", "(beat) (music swells)", "（停顿）"
+_DIRECTION = re.compile(r"^\s*(?:[(\[（【][^()\[\]（）【】]*[)\]）】]\s*)+$")
+
+
+def stage_direction(cell: str) -> bool:
+    """True when a narration cell says nothing to voice: empty, a dash, or only parenthesised directions."""
+    return _empty(cell) or bool(_DIRECTION.match(_md_inline(cell or "")))
 
 
 def _md_inline(cell: str) -> str:
@@ -414,6 +424,10 @@ def plan(sb: Dict[str, Any], *, pad: float = PAD) -> Dict[str, Any]:
     used = set()
     for i, s in enumerate(raw, 1):
         narration = (s.get("narration") or "").strip()
+        direction = ""
+        if narration and stage_direction(narration):
+            # "(pause)", "(silence)", "—": a silent shot (a question beat), never voiced as the word
+            direction, narration = narration, ""
         copy, brief = split_visual(s.get("visual") or "")
         onscreen = (s.get("onscreen") or "").strip()
         if onscreen:
@@ -436,7 +450,7 @@ def plan(sb: Dict[str, Any], *, pad: float = PAD) -> Dict[str, Any]:
         shots.append({"n": i, "id": sid, "shot": str(s.get("shot") or i), "start": round(t, 2), "dur": length,
                       "estimated": estimated, "length_text": str(s.get("length") or ""),
                       "visual": (s.get("visual") or "").strip(), "brief": brief, "copy": copy,
-                      "narration": narration, "sound": (s.get("sound") or "").strip(),
+                      "narration": narration, "direction": direction, "sound": (s.get("sound") or "").strip(),
                       "extra": s.get("extra") or {}, "units": units, "need": round(need, 2),
                       "rate": round(rate, 2), "fits": (pad + need + GAP) <= length + 1e-6})
         t += length
@@ -555,9 +569,12 @@ def narration_md(p: Dict[str, Any]) -> Optional[str]:
     """The voice script: one `## <shot id>` per narrated shot, pinned where its shot starts.
 
     `retime --from-voice` makes a narrated shot pad + its line's slot long (the slot runs to the next line's
-    start), and keeps a silent shot's length, so pinning line k at the sum of (length - pad) of the narrated
-    shots before it gives every shot its planned length when its speech fits; a longer line starts the next
-    one late (voice script warns) and that shot grows."""
+    start) and gives every scene after the first narrated one another pad of picture, so the voice runs
+    ahead of the video by one pad per narrated shot before a line. A silent shot (no narration, or only a
+    direction such as "(pause)") fills the gap its pinned next line leaves. So line k is pinned at its
+    shot's start minus pad for every narrated shot before it (plus one pad when the first narrated shot is
+    not the first shot: that line's pin is a video time), and every shot keeps its planned length when its
+    speech fits; a longer line starts the next one late (voice script warns) and that shot grows."""
     narrated = [s for s in p["shots"] if s["narration"]]
     if not narrated:
         return None
@@ -568,18 +585,20 @@ def narration_md(p: Dict[str, Any]) -> Optional[str]:
              "<!-- Written by `showtime new --from-storyboard` from %s: the Narration column, one line per shot, in"
              % (Path(str(p.get("source") or "the storyboard")).name),
              "     order. Each {at=...} pins a line where its shot starts in the voice timeline (the shot's start",
-             "     minus %g s of picture per narrated shot before it), so the shots keep the storyboard's lengths"
-             % p["pad"],
-             "     where the voice fits. Edit the words freely; keep the headings (they name the scenes).",
+             "     minus %g s of picture per narrated shot before it, plus %g s when the opening shot is silent),"
+             % (p["pad"], p["pad"]),
+             "     so the shots keep the storyboard's lengths",
+             "     where the voice fits; a silent shot (no line) fills the gap before the next pin.",
+             "     Edit the words freely; keep the headings (they name the scenes).",
              "     showtime voice script narration.md -o voice",
              "     showtime retime . --from-voice voice/timeline.json --total %s -->" % _secs(p["duration"]), ""]
     body = []
-    at = 0.0
-    for s in narrated:
+    base = p["pad"] if narrated[0]["start"] > 0 else 0.0
+    for k, s in enumerate(narrated):
+        at = max(0.0, s["start"] + base - p["pad"] * k)
         body.append("## %s {at=%s}" % (s["id"], ("%.2f" % at).rstrip("0").rstrip(".") or "0"))
         body.append(s["narration"])
         body.append("")
-        at += s["dur"] - p["pad"]
     return "\n".join(head + body)
 
 
@@ -594,7 +613,7 @@ def storyboard_md(p: Dict[str, Any]) -> str:
     for s in p["shots"]:
         rows.append("| %s | %s | %s | %s s%s | %s | %s | %s |" % (
             cell(s["shot"]), s["id"], _secs(s["start"]), _secs(s["dur"]), " (est.)" if s["estimated"] else "",
-            cell(s["visual"]), cell(" / ".join(s["copy"])), cell(s["narration"])))
+            cell(s["visual"]), cell(" / ".join(s["copy"])), cell(s["narration"] or s.get("direction", ""))))
     return "\n".join(rows) + "\n"
 
 
@@ -606,6 +625,8 @@ def storyboard_json(p: Dict[str, Any]) -> Dict[str, Any]:
                "narration": s["narration"], "planned": {"dur": s["dur"], "estimated": s["estimated"],
                                                        "length": s["length_text"]},
                "speech": {p["unit"]: s["units"], "seconds": s["need"], "rate": s["rate"], "fits": s["fits"]}}
+        if s.get("direction"):
+            row["direction"] = s["direction"]      # "(pause)": a silent shot, not voiced
         if s["sound"]:
             row["sound"] = s["sound"]
         if s["extra"]:
@@ -692,6 +713,32 @@ def write_project(dst: Path, p: Dict[str, Any], *, title: str, theme: str,
 
 
 # --------------------------------------------------------------------------- after the voice
+
+def legacy_pin(proj: Path, scene_id: str, at: float) -> bool:
+    """True when `at`, the pin of the line that opens `scene_id`, is a pin `new --from-storyboard` wrote in
+    0.4.0: the sum of (length - pad) of the narrated shots before it, leaving the silent shots out, where
+    0.4.1 counts them (narration_md). retime then keeps the silent shots' lengths instead of squeezing them."""
+    try:
+        sb = json.loads((Path(proj) / "storyboard.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(sb, dict) or sb.get("generator") != GENERATOR:
+        return False
+    rows = [r for r in sb.get("rows") or [] if isinstance(r, dict)]
+    narrated = [r for r in rows if r.get("vo")]
+    k = next((i for i, r in enumerate(narrated) if r.get("id") == scene_id), None)
+    if not k:
+        return False
+    pad = float(sb.get("pad") or PAD)
+
+    def dur(r: Dict[str, Any]) -> float:
+        return float((r.get("planned") or {}).get("dur") or r.get("dur") or 0)
+
+    old = sum(dur(r) - pad for r in narrated[:k])
+    base = pad if float(narrated[0].get("start") or 0) > 0 else 0.0
+    new = float(narrated[k].get("start") or 0) + base - pad * k
+    return abs(at - old) < 0.01 and abs(at - new) >= 0.01
+
 
 def compare_voice(proj: Path, names: Sequence[str], plan_times: Sequence[Tuple[float, float]]) -> List[str]:
     """`retime --from-voice` notes: the shots whose new length differs from the storyboard's plan."""

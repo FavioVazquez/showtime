@@ -25,17 +25,19 @@ ready. It gives numbers to aim for and how to verify them with `showtime audio m
   `limiting_db` above 6 means lower the hot track (§5)
 - Verify with `showtime audio meter final.mp4 --ffmpeg`: -14 ± 0.5 LUFS, true peak at most -1 dBTP, no
   clipped runs; the report has no warnings and its section `lufs` follows the story (§6)
+- Heard on a phone: the report's `speaker.gap_300_lu` at most 10 LU (posted films 1-8); a sub drop, boom or
+  impact gets a mid transient on its hit, a riser does not count (§3, §5)
 - Tell the user a human must listen on laptop speakers and headphones before publishing (§6)
 
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| 1. How many sounds | 40-64 |
-| 2. Levels (what level: auto does, and why) | 66-89 |
-| 3. Alignment | 91-110 |
-| 4. Ducking and carving | 112-131 |
-| 5. Mastering targets | 133-147 |
-| 6. Measure instead of guessing | 149-168 |
+| 1. How many sounds | 42-66 |
+| 2. Levels (what level: auto does, and why) | 68-91 |
+| 3. Alignment | 93-117 |
+| 4. Ducking and carving | 119-138 |
+| 5. Mastering targets | 140-159 |
+| 6. Measure instead of guessing | 161-181 |
 
 ## 1. How many sounds
 
@@ -106,6 +108,11 @@ ready. It gives numbers to aim for and how to verify them with `showtime audio m
   - The impact starts on the same downbeat.
   - A reverse cymbal or reverse-hit sucks into it.
   - Make the riser 1–2 bars long: at 120 bpm a bar is 2 s.
+  - A phone speaker plays nothing under ~300 Hz, and `sub-drop`, `boom`, `impact`, `punch`, `reverse-hit` and
+    `heartbeat` are 17-30 LU louder in full than above 300 Hz (measured, `speaker_gap_lu` in the report). On a
+    phone such a hit alone is close to nothing: land a mid transient on the same hit (`metal-hit`, `glitch` or
+    `static-burst` at -8 to -12 dB, `"layer": "<id>"`), or put it on a composed bed's crash. The riser stops on
+    the hit, so it does not count; the mix notes a sub hit that lands alone (`sub_alone`).
 - **Transitions:** a transition sound starts at the transition start. A success chime plays when
   the result is fully visible, not when it starts to appear.
 
@@ -141,6 +148,11 @@ ready. It gives numbers to aim for and how to verify them with `showtime audio m
 
 - Loudness range (LRA) up to about 8 LU plays well on phones. Above 12, the quiet parts vanish on
   small speakers.
+- Heard on a phone: a mix of kick, bass and sub reaches -14 LUFS and still plays quiet on a phone, which
+  plays little under 300 Hz. The mixer's speaker-safe step (on by default) high-passes everything but the
+  voice at 40 Hz and, when the mix above 300 Hz is more than 10 LU under the full mix, cuts the bed's lows
+  with a shelf at 160 Hz (up to -12 dB) before the normalisation (`audio.md` § Heard on a phone). Turn it off
+  only for a video meant for headphones (`"master": {"speaker_safe": false}`).
 - The limiter should do a little (0–4 dB). The report's `limiting_db` above 6 means something
   spiky (usually an impact) is too hot: lower that track instead.
 - Master to WAV and encode once. AAC and MP3 add up to 0.5 dB of overshoot. `showtime deliver
@@ -155,6 +167,7 @@ An agent cannot listen. These are the checks that stand in for ears:
    - Any clipped runs mean fail.
 2. `mix.report.json`:
    - `voice_to_music_db` is 10–20.
+   - `speaker.gap_300_lu` is at most 10 (how far a phone speaker hears it under the mix).
    - No warnings.
    - The per-section `lufs` follows the story: the quiet intro is quieter and the drop is louder.
      A flat line means no dynamics. Jumps over 6 LU between neighbouring sections feel like

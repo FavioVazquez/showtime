@@ -132,6 +132,11 @@ function findEmoji(dir, code) {
  * @param o.folder    boolean
  * @param o.notice    text for the header comment
  * @param o.mediaInline  single-file: always inline (default); folder: media and big images become files
+ * @param o.description  the page's description (default: title, size and length)
+ * @param o.share     link-preview <meta> tags (share.mjs shareMeta), or ''
+ * @param o.shareFiles  folder: [{rel, bytes}] written beside (the share image)
+ * A folder also gets an empty .nojekyll: GitHub Pages' Jekyll step drops folders that start with "_"
+ * (assets/media/_export/, the soundtrack), and the page would play silent.
  * -> { output, bytes, breakdown: [{path, category, bytes}], totals: {category: bytes}, files: n }
  */
 export function writeExport(o) {
@@ -188,6 +193,7 @@ export function writeExport(o) {
     if (o.folder) { folderFiles.push({ rel: 'assets/poster.jpg', bytes: o.poster }); posterSrc = 'assets/poster.jpg'; }
     else posterSrc = `data:image/jpeg;base64,${o.poster.toString('base64')}`;
   }
+  if (o.folder) for (const f of o.shareFiles || []) if (!folderFiles.some((x) => x.rel === f.rel)) folderFiles.push(f);
   // the packed files are read by the stage frame (boot.js): inline, or assets/vfs.js next to index.html
   let filesTag = '', playerTag, zBytes = 0, zText = 0;
   if (pack) {
@@ -216,6 +222,7 @@ export function writeExport(o) {
     TITLE: esc(manifest.title || 'video'),
     GENERATOR: esc(manifest.generator),
     DESCRIPTION: esc(o.description || `${manifest.title || 'Video'}: ${manifest.width}x${manifest.height}, ${manifest.duration.toFixed(1)} s, made with showtime`),
+    SHARE: o.share || '',
     NOTICE: String(o.notice || '').replace(/--/g, '- -'),
     CSS: pack ? `html,body{margin:0;height:100%;background:${ground};overflow:hidden}.stp{position:fixed;inset:0;background:${ground}}.stp-poster{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}.stp-noscript{position:absolute;left:50%;bottom:12%;transform:translateX(-50%);padding:10px 14px;border-radius:10px;background:rgba(18,19,23,.82);color:#f4f5f8;font:500 13px/1.3 system-ui,sans-serif}` : css,
     POSTER: esc(posterSrc),
@@ -233,6 +240,7 @@ export function writeExport(o) {
     fs.writeFileSync(output, html);
     const vfs = `/* packed files of a showtime HTML video */\nwindow.__ST_FILES__ = ${safeJson(entries)};\n`;
     fs.writeFileSync(path.join(o.out, 'assets', 'vfs.js'), vfs);
+    fs.writeFileSync(path.join(o.out, '.nojekyll'), '');
     for (const f of folderFiles) {
       const dst = path.join(o.out, ...f.rel.split('/'));
       fs.mkdirSync(path.dirname(dst), { recursive: true });

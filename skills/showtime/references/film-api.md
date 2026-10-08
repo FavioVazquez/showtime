@@ -33,6 +33,8 @@ function of T**. The same `T` must always give the same pixels, whatever frame w
   `scenes()` (§9)
 - Wrap your own `g.globalAlpha`, `g.filter`, transform or clip changes in `g.save()`/`g.restore()`;
   `g.filter = 'blur(...)'` is slow at 1080p, use it for a few elements only (§11)
+- Motion blur on a snapping element: `F.motionBlur(T, (t, g) => { draw it at t; return [x, y, w, h]; })`,
+  smeared only on its fast frames, sharp when it lands; 1-3 snaps a film, never text being read (§12)
 - First motion by 0.1-0.3 s, hero on screen by 0.5 s, never open on a black frame, leave `fadeIn` at 0 (§2, §3)
 - Entrances decelerate; exits accelerate and run 20-30 % faster; no overshooting springs on blocks of text (§3)
 - Stop-and-ask questions (showtime.json `"questions"`): `F.questionBeat(T, id)` draws the MP4's pause and
@@ -48,18 +50,18 @@ function of T**. The same `T` must always give the same pixels, whatever frame w
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| 1. Minimal film | 64-88 |
-| 2. Film.start(options) | 90-115 |
-| 3. Time: progress, windows, keyframes | 117-163 |
-| 4. Scenes and transitions | 165-189 |
-| 5. Text | 191-231 |
-| 6. Shapes, UI pieces and diagrams | 233-261 |
-| 7. Particles, charts, frames and images | 263-290 |
-| 8. Camera and tutorials | 292-357 |
-| 9. Fonts, images and cross-platform rules | 359-371 |
-| 10. Looks and file size | 373-390 |
-| 11. The pure-function-of-T rules (and the pitfalls they prevent) | 392-415 |
-| 12. Recipes | 417-484 |
+| 1. Minimal film | 66-90 |
+| 2. Film.start(options) | 92-117 |
+| 3. Time: progress, windows, keyframes | 119-165 |
+| 4. Scenes and transitions | 167-191 |
+| 5. Text | 193-233 |
+| 6. Shapes, UI pieces and diagrams | 235-263 |
+| 7. Particles, charts, frames and images | 265-292 |
+| 8. Camera and tutorials | 294-359 |
+| 9. Fonts, images and cross-platform rules | 361-373 |
+| 10. Looks and file size | 375-392 |
+| 11. The pure-function-of-T rules (and the pitfalls they prevent) | 394-417 |
+| 12. Recipes | 419-504 |
 
 ## 1. Minimal film
 
@@ -405,7 +407,7 @@ copy (`showtime deliver exports <file> --targets original --max-mb 20`).
    `g.filter`, transforms or clips yourself, wrap the change in `g.save()` / `g.restore()`. `F.*` helpers
    multiply into the current alpha, so fading a group works: `g.save(); g.globalAlpha *= a; ...; g.restore()`.
 6. **`g.filter = 'blur(...)'` is slow** at 1080p. Use it for a few elements or short transitions, not
-   full-frame on every frame.
+   full-frame on every frame. A smear along a fast move is `F.motionBlur` (§12), not a blur filter.
 7. **Fonts and images must be declared** (§9). Otherwise the first frames render with fallbacks.
 8. **Half-open windows**: `F.win(T, a, b)` is 0 at exactly `b`. For something that must remain on the last
    frame, end its window after the film's duration.
@@ -440,6 +442,24 @@ Zoom-through to the next scene (fast push, cut hidden in the blur):
 ```js
 var z = F.seg(T, 5.6, 6.0, 'inExpo');
 F.withCamera({ x: 1400, y: 300, zoom: F.lerp(1, 6, z) }, function () { drawScene1(T); });
+```
+
+Motion blur on a snap (the canvas twin of the DOM's `data-st-blur`, stage-api.md § Shutter blur): `draw(t, g)`
+draws the element at time `t`, with `F.*` or the `g` it is given (not the scene's own `g`), and returns its box
+`[x, y, w, h]` in design units. While it moves faster than `threshold` px a frame on screen, the frame gets
+`samples` draws of it from `T` back to `T - shutter` (each on its own layer, averaged in pairs, smoothed along the
+motion) instead of one; at rest, slowly, and on the frame it lands, it is drawn once, sharp. Options as the DOM's:
+`shutter` 180, `samples` 8, `threshold` 6, `max` `'50%'` of its shorter side (or px), plus `id` (a name for
+`check`). The box keeps the work to the element's own area: a draw that returns only a point `[x, y]` averages
+the whole canvas (slow; `check` warns). `check` judges it as it judges the DOM blur (`blur_text`, `blur_slow`,
+`blur_container`), and `Film.frameInfo()` records its text once, where it is at `T`.
+
+```js
+F.motionBlur(T, (t, g) => {
+  const x = F.tween(t, 0.3, 0.2, -700, 960, 'outExpo');     // the whole move in 6 frames: a whip
+  F.text('SNAP', x, 540, { size: 220, weight: 800, align: 'center', baseline: 'middle' });
+  return [x - 330, 430, 660, 220];
+});
 ```
 
 Spotlight + callout on a UI element:

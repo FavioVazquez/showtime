@@ -35,9 +35,9 @@ push the weight contrast harder and hold longer than you would on a web page.
 | 2. Pairings | 54-81 |
 | 3. Sizes by format (px, at the render size) | 83-105 |
 | 4. Spacing and settings | 107-117 |
-| 5. Kinetic type rules | 119-132 |
-| 6. Safe areas | 134-144 |
-| 7. Contrast | 146-158 |
+| 5. Kinetic type rules | 119-133 |
+| 6. Safe areas | 135-145 |
+| 7. Contrast | 147-159 |
 
 ## 1. Fonts: always files, never system names
 
@@ -129,7 +129,8 @@ Rules:
 7. Don't put a CSS centering transform on an element whose transform you also animate. Center with
    flex or inset instead.
 8. Count-ups ease out, land on a beat, and the label appears after the number lands.
-9. Keep text crisp at rest. Motion blur is for the approach only; land sharp.
+9. Keep text crisp at rest. Motion blur is for the approach only; land sharp. `data-st-blur` does exactly that on a
+   word that snaps in (smeared only on its fast frames), never on text that moves while it is read (stage-api.md).
 
 ## 6. Safe areas
 

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Design loop fixture</title>
+<script src="./dc-mini.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body { margin: 0; background: #0b0a14; }
+/* 4s loop: the drift goes there and back (2 s each way), the pulse repeats every 1 s, the bar every 4 s */
+@keyframes drift { 0% { transform: translateX(0); } 100% { transform: translateX(180px); } }
+@keyframes pulse { 0% { opacity: 0.4; } 50% { opacity: 1; } 100% { opacity: 0.4; } }
+@keyframes bar { 0% { transform: scaleX(0); } 100% { transform: scaleX(1); } }
+</style>
+</helmet>
+<div style="position: relative; width: 360px; height: 640px; overflow: hidden; background: #14123a">
+  <div style="position: absolute; inset: -40px; background: radial-gradient(circle at 50% 80%, #6b2269, #14123a 70%)"></div>
+  <p style="position: absolute; left: 40px; right: 40px; top: 40px; margin: 0; font: 700 40px/1.1 sans-serif; color: #fff7ea">Every four seconds</p>
+  <div style="position: absolute; left: 40px; top: 120px; width: 100px; height: 100px; background: #ffb15a; animation: drift 2s ease-in-out infinite alternate"></div>
+  <div style="position: absolute; left: 130px; top: 320px; width: 100px; height: 100px; border-radius: 50%; background: #7fd1b9; animation: pulse 1s linear infinite"></div>
+  <div style="position: absolute; left: 40px; top: 520px; width: 280px; height: 16px; background: #fff7ea; transform-origin: 0 50%; animation: bar 4s linear infinite"></div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":360,"height":640}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

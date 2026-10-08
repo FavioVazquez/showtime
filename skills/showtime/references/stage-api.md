@@ -26,6 +26,8 @@ a determinism, timing or seek problem.
 - Never: `setTimeout`/`setInterval` animation, class-toggled CSS `transition`, state between frames
   (`x += v`), `Math.random()` for layout, remote files, system fonts, symbols as text, animated GIFs,
   animating `left/top/width/height` instead of `transform` (§ Determinism)
+- Motion blur on a snap beat: `data-st-blur` on the one element that moves (`"shutter 180; samples 8; threshold 6;
+  max 50%"`, all optional) or `ST.blur(el, {pose})`; copies only on the fast frames, it lands sharp (§ Shutter blur)
 - Footage: VP9/WebM made with `showtime footage trim in.mp4 --webm --no-audio -o media/clip.webm` (never bare
   ffmpeg), a proxy at the shown size; the page is always muted, sound goes in the `audio` mix (§ API)
 - Emoji in text become images: install each once with `showtime assets emoji` (§ Determinism)
@@ -36,15 +38,16 @@ a determinism, timing or seek problem.
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| The one rule | 49-54 |
-| Minimal page | 56-91 |
-| Configuration | 93-109 |
-| Clips: data-start / data-dur | 111-151 |
-| API: Library helpers (built-in adapters), <video> in a page | 153-237 |
-| Determinism: what the render mode does and what to avoid | 239-270 |
-| Readiness | 272-277 |
-| Preview mode | 279-291 |
-| Scene transitions with shaders (layer protocol) | 293-299 |
+| The one rule | 52-57 |
+| Minimal page | 59-94 |
+| Configuration | 96-112 |
+| Clips: data-start / data-dur | 114-154 |
+| API: Library helpers (built-in adapters), <video> in a page | 156-241 |
+| Shutter blur: data-st-blur and ST.blur | 243-296 |
+| Determinism: what the render mode does and what to avoid | 298-329 |
+| Readiness | 331-339 |
+| Preview mode | 341-353 |
+| Scene transitions with shaders (layer protocol) | 355-361 |
 
 ## The one rule
 
@@ -170,6 +173,7 @@ plus the line's delay in the scene.
 | `ST.info()` | size, fps, duration (and where it came from), frame count, clip count, handler names |
 | `ST.clips()` | resolved clip windows `[{name, id, start, end}]`, frame-exact: a clip is on screen exactly while `t >= start && t < end` (a time written within 1 ms of a frame, like 1.9667 at 60 fps, is reported as that frame's time, as the stage shows it); `end` is `null` for a clip that runs to the end of the video. Gate canvas drawing on these, not on times typed again in the script |
 | `ST.diag()` | what the runtime noticed: timer callbacks during playback, CSS transitions, video problems, handler errors |
+| `ST.pace()` | how much the waits are scaled for this page: `{factor, frame_ms, seek_ms, seeks, ceiling, on}` (see Readiness) |
 | `ST.seek(t)`, `ST.ready()` | used by the renderer and the player. **Never call them from scene code.** |
 
 ### Library helpers (built-in adapters)
@@ -236,6 +240,61 @@ A `<canvas data-st-video="ID">` of your own, styled like `<video id="ID">`, take
 - For long footage, prefer editing it with the footage tools and compositing graphics rendered
   with `--alpha` on top.
 
+## Shutter blur: `data-st-blur` and `ST.blur`
+
+Motion blur for a snap beat (a whip, a slam, a scale punch) on the one element that moves. While it moves
+faster than `threshold` px a frame on screen, the stage draws `samples` copies of it posed at sub-frame times
+from `t` back to `t - shutter`, averaged in its place (a 180° shutter is half a frame, as on a film camera).
+At rest, moving slowly, and on the frame it comes to rest, the element draws itself, sharp. Nothing is
+captured twice: the poses are computed from the element's own motion, so a blurred frame costs a few
+milliseconds more (render.md § Speed), never `samples` captures. Four snap beats, and the same whip without and
+with the blur: the `_blur` demo in the showtime repository's examples folder.
+
+```html
+<h1 class="word" data-st-blur>SNAP</h1>                      <!-- shutter 180, samples 8, threshold 6, max 50% -->
+<div class="card" data-st-blur="shutter 270; max 120">...</div>
+```
+
+| Option | Default | Meaning |
+|---|---|---|
+| `shutter` | `180` | shutter angle in degrees: 180 is half a frame, 360 a whole frame (a longer smear) |
+| `samples` | `8` | copies averaged on a blurred frame; each one is a copy of the element to draw |
+| `threshold` | `6` | px a frame (on screen) under which the element is drawn sharp |
+| `max` | `50%` | the longest smear: px, or % of the element's shorter side on screen; a faster frame gets a shorter shutter |
+
+Where its motion may come from, because the stage can set each one to any time and read the element back:
+CSS `@keyframes` and Web Animations on the element and its descendants, the showtime component around it,
+timelines handed to `ST.anime` / `ST.gsap`, and a `pose(t)` function. A pose replaces the element's
+`ST.onSeek` code: it runs on every seek and between frames.
+
+```js
+const logo = document.querySelector('#logo');
+ST.blur(logo, { pose: (t) => {               // ST.blur(el | selector, {shutter, samples, threshold, max, pose}) -> off()
+  const p = ST.progress(t, 2.0, 2.25, ST.ease.outExpo);
+  logo.style.transform = `translateX(${((1 - p) * -900).toFixed(1)}px) rotate(${((1 - p) * -30).toFixed(2)}deg)`;
+} });
+```
+
+Motion from a plain `ST.onSeek` handler or from a moving ancestor is not seen: `check` says so
+(`blur_unsampled`). Canvas films: `F.motionBlur` (film-api.md §12).
+
+How it is drawn: each copy is a clone of the element posed at its sample time; where the page's rules no
+longer reach it in its new place (`.line > span`, `.scene > .card b`), the element's computed values are pinned
+on it and on its descendants, so it looks the same. All copies are averaged with `mix-blend-mode:
+plus-lighter` in an isolated group (in pairs of halves, so 8-bit rounding adds a level or two, not one per
+copy) and smoothed along the motion by a gaussian half a step wide. An opaque element stays opaque where
+every copy covers it. The copies live in an `<st-blur>` made once, right after the element, so selectors
+such as `:last-child`, `+` and `:nth-child` see one more sibling on every frame (as after a `<video>`); an
+`overflow: hidden` parent clips them as it clips the element (a mask reveal). Page code never meets them
+(they are removed before each seek's handlers run), the same frame gives the same pixels in any worker, and
+check's text audits read the element itself, as blurred, on those frames.
+
+Taste (motion-craft.md §5): 1-3 snap beats a video, on the element that snaps; never on text being read, a
+slow drift or a whole scene (scenes move with a transition: `push` with `blur: true`, `whip-pan`). `check`
+warns `blur_slow`, `blur_text`, `blur_container`, `blur_unsampled` and `blur_inline` (render.md). Limits: a
+non-replaced inline box is never transformed (use `inline-block`); a blend mode or backdrop filter inside the
+element blends within its copies; a `<video>` inside it shows only in renders (canvases are copied).
+
 ## Determinism: what the render mode does and what to avoid
 
 In render mode (render, check, snap) a small runtime is installed before any page script:
@@ -275,6 +334,9 @@ real delay and in another order, and compares the pixels.
 `load` event, every `@font-face` in the document (all are loaded up front), `<img>` decode,
 `<video>` data, and every `ST.waitFor` promise; then it resolves the duration and seeks to 0.
 A page that never becomes ready fails with the list of pending `waitFor` labels.
+Each of these waits (60 s for fonts and for the `waitFor` gates, 15 s per image or video, 30 s for
+the load event) is multiplied by the page's pace factor, 1 to 5, measured from the gaps between its
+frames while it gets ready and from its first seeks; `ST.pace()` returns it (render.md explains the factor).
 
 ## Preview mode
 

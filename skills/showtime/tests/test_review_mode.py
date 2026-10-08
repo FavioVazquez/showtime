@@ -646,6 +646,116 @@ class TestFindingsGate(Base):
         self.assertEqual(ledger.load(j)["stages"][-1]["name"], "deliver")
 
 
+REPLY = ("The Write tool was denied, so here is the answer for FINDINGS.md:\n\n```\n" + FINDINGS + "```\nDone.\n")
+
+
+class TestReviewFindings(Base):
+    """`showtime review-findings`: a critic's answer returned as text becomes the round's FINDINGS.md."""
+
+    def pack(self, job: Path, n: int = 1, orders=()) -> Path:
+        d = job / "review" / ("round-%d" % n)
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "CRITIC.md").write_text("# brief\n", encoding="utf-8")
+        for o in orders:
+            (d / ("order-%d" % o)).mkdir(parents=True, exist_ok=True)
+            (d / ("order-%d" % o) / "CRITIC.md").write_text("# brief\n", encoding="utf-8")
+        return d
+
+    def save(self, *args, text=REPLY, check=True):
+        cp = subprocess.run([sys.executable, str(LAUNCHER), "review-findings"] + [str(a) for a in args],
+                            cwd=str(self.tmp), env=self.env, input=text, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, encoding="utf-8", errors="replace", timeout=120)
+        if check and cp.returncode != 0:
+            raise AssertionError("review-findings failed (rc=%d):\n%s\n%s" % (cp.returncode, cp.stdout, cp.stderr))
+        return cp
+
+    def test_saves_the_answer_and_the_gate_reads_it(self):
+        j = self.job()
+        self.final(j)
+        d = self.pack(j)
+        cp = self.save(j.name)
+        f = d / "FINDINGS.md"
+        self.assertEqual(f.read_text(encoding="utf-8"), FINDINGS)                # the fence and the chat are left out
+        self.assertIn("saved %s: 1 blocker, 1 should-fix, 1 polish (ids r1-B1, r1-S1)" % f, cp.stdout)
+        self.assertIn("left out 4 lines", cp.stdout)            # the chat and the fence
+        self.assertIn("review-respond %s --fixed r1-B1" % j.name, cp.stdout)
+        from st.job import findings as F
+        self.assertEqual([x["id"] for x in F.collect(j)["open"]], ["r1-B1", "r1-S1"])
+        self.assertIn("critic findings saved: review/round-1/FINDINGS.md", json.dumps(ledger.load(j)))
+        # an answered round is not overwritten by accident
+        again = self.save(j.name, check=False)
+        self.assertEqual(again.returncode, 1)
+        self.assertIn("is already saved", again.stderr)
+        self.save(j.name, "--replace", text=FINDINGS.replace("ship after fixes", "not ready"))
+        self.assertEqual(review_state.parse_verdict(f.read_text(encoding="utf-8")), "not ready")
+
+    def test_refuses_an_answer_out_of_shape(self):
+        j = self.job()
+        d = self.pack(j)
+        bad = self.save(j.name, text="VERDICT: ship | ship after fixes | not ready\nBLOCKERS:\n- none\n", check=False)
+        self.assertEqual(bad.returncode, 1)
+        self.assertFalse((d / "FINDINGS.md").exists())
+        for part in ("no readable VERDICT line", "no answered WOULD I POST THIS line", "no SHOULD-FIX, POLISH section",
+                     "ask the critic to send its whole answer again"):
+            self.assertIn(part, bad.stderr)
+        self.assertNotIn("Traceback", bad.stderr)
+        # --check writes nothing; a finding without a timestamp is a warning; round 2 wants PREVIOUS
+        self.pack(j, 2)
+        loose = FINDINGS.replace("- t=8.00s frames/t0008.000s.jpg part 2", "- part 2")
+        cp = self.save(j.name, "--check", text=loose)
+        self.assertIn("checked (not written)", cp.stdout)
+        self.assertIn("warning: r2-S1 cites no timestamp", cp.stdout)
+        self.assertIn("warning: no PREVIOUS section", cp.stdout)
+        self.assertFalse((j / "review" / "round-2" / "FINDINGS.md").exists())
+        # the round folder itself works as the target, and an unfinished pack is refused
+        cp = self.save(j / "review" / "round-1", "--file", self._file(FINDINGS), text="")
+        self.assertTrue((d / "FINDINGS.md").is_file())
+        (j / "review" / "round-2" / "INCOMPLETE").write_text("x", encoding="utf-8")
+        cp = self.save(j.name, "--round", "2", check=False)
+        self.assertIn("was not finished", cp.stderr)
+        empty = self.save(j.name, "--round", "2", text="", check=False)
+        self.assertEqual(empty.returncode, 1)
+
+    def _file(self, text: str) -> Path:
+        p = self.tmp / "reply.txt"
+        p.write_text(text, encoding="utf-8")
+        return p
+
+    def test_pairwise_needs_the_order(self):
+        j = self.job()
+        d = self.pack(j, 1, orders=(1, 2))
+        pair = ("PREFERENCE: X -- tighter\nVERDICT X: ship\nVERDICT Y: ship after fixes\nWOULD I POST X: yes -- ok\n"
+                "WOULD I POST Y: no -- soft\nBLOCKERS:\n- none\nSHOULD-FIX:\n- [Y] t=2.00s ../Y/frames/b.jpg soft\n"
+                "- t=3.00s frames/c.jpg no label\nPOLISH:\n- none\n")
+        cp = self.save(j.name, text=pair, check=False)
+        self.assertEqual(cp.returncode, 1)
+        self.assertIn("--order 1", cp.stderr)
+        cp = self.save(j.name, "--order", "1", text=pair)
+        self.assertTrue((d / "order-1" / "FINDINGS.md").is_file())
+        self.assertIn("r1o1-S2 names neither video", cp.stdout)
+        self.assertIn("the other order still needs its critic", cp.stdout)
+        cp = self.save(j.name, "--order", "2", text=pair.replace("PREFERENCE: X", "PREFERENCE: X | Y | tie"), check=False)
+        self.assertIn("no readable PREFERENCE line", cp.stderr)
+        cp = self.save(j.name, "--order", "2", text=pair)
+        self.assertIn("next: showtime review-verdict %s" % d, cp.stdout)
+        single = self.save(j.name, "--order", "1", "--round", "1", text=pair, check=False)
+        self.assertIn("is already saved", single.stderr)
+
+    def test_preference_reads_as_review_verdict_reads_it(self):
+        # the reviewer's repro: shape() rejected lines review-verdict accepts (one parser now)
+        from st.job import findings as F
+        from st.qa import pairwise
+        body = ("WOULD I POST X: yes -- clean\nWOULD I POST Y: no -- muddy\nBLOCKERS:\n- none\nSHOULD-FIX:\n"
+                "- [Y] t=3.00s ../Y/frames/t0003.000s.jpg caption too low -> raise 40 px\nPOLISH:\n- none\n")
+        for line, want in (("PREFERENCE: X -- sharper", "X"), ("PREFERENCE: neither -- both weak", "tie"),
+                           ("PREFERENCE: X over Y -- sharper", "X"), ("PREFERENCE: **X** — sharper", "X")):
+            text = line + "\n" + body
+            self.assertEqual(pairwise.parse_findings(text)["preference"], want)
+            self.assertEqual(F.shape(text, 2, 1)[0], [], line)
+        for line in ("PREFERENCE: X | Y | tie  -- one line", "no preference here"):
+            self.assertIn("no readable PREFERENCE line", " ".join(F.shape(line + "\n" + body, 2, 1)[0]), line)
+
+
 # ------------------------------------------------------------------ `showtime new --mode`
 
 class TestNew(Base):

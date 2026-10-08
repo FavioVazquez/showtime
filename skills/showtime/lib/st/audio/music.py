@@ -146,7 +146,23 @@ def get(track_id: str, cat: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     if len(hits) > 1:
         raise ShowtimeError("%r matches %d tracks: %s" % (track_id, len(hits), ", ".join(h["id"] for h in hits[:6])),
                             hint="use the full id")
-    raise ShowtimeError("no catalog track %r" % track_id, hint="find ids with `showtime audio music search <words>`")
+    near = closest_ids(track_id, ts)
+    raise ShowtimeError("no catalog track %r%s" % (track_id, "; did you mean %s?" % " or ".join(near) if near else ""),
+                        hint="find ids with `showtime audio music search <words>`")
+
+
+def closest_ids(track_id: str, ts: Sequence[Dict[str, Any]], n: int = 2) -> List[str]:
+    """The catalog ids closest to a mistyped or cut one: ids that start with it first (a copied id that lost
+    its end), then the nearest by spelling."""
+    import difflib
+    low = (track_id or "").strip().lower()
+    ids = [t["id"] for t in ts]
+    if not low:
+        return []
+    starts = [i for i in ids if i.lower().startswith(low)]
+    if starts:
+        return sorted(starts, key=len)[:n]
+    return difflib.get_close_matches(low, ids, n=n, cutoff=0.6)
 
 
 def source(t: Dict[str, Any], cat: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:

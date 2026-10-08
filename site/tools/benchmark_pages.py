@@ -8,9 +8,11 @@ workflow downloads every one of them into a folder per version and runs this scr
     <out>/index.html          the latest version, served at /benchmark/ (links rewritten for that folder)
     <out>/versions.json       the list, newest first
 
-and adds a small bar to the top of each page that names the version shown and links to the others.
+and adds a small bar to the top of each page that names the version shown and links to the others, and to the
+latest benchmark rounds written up in this repository (LATEST_ROUNDS: rounds 5 and 6 ran on 0.4.0 and have no
+report page of their own).
 
-usage: python site/tools/benchmark_pages.py --src _bench --out _site/benchmark [--site-root ../]
+usage: python site/tools/benchmark_pages.py --src _bench --out _site/benchmark [--site-root ../] [--repo owner/name]
        (_bench/<version>/index.html, e.g. _bench/v0.3.0/index.html)
 """
 from __future__ import annotations
@@ -18,6 +20,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -26,6 +29,8 @@ from typing import List, Tuple
 VERSION_RE = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
 LINK_RE = re.compile(r"""(\s(?:href|src)=)(["'])([^"']*)\2""", re.I)
 BAR_MARK = "<!-- showtime benchmark versions -->"
+# The newest rounds, a Markdown write-up in the repository (path, link text). The bar links it on every page.
+LATEST_ROUNDS = ("benchmarks/rounds/r5-allout.md", "Newer: rounds 5 and 6 (0.4.0)")
 
 BAR_CSS = """<style id="stbv-style">
 .stbv{--stbv-bg:#FBF6EE;--stbv-ink:#1B1411;--stbv-muted:#6E5F56;--stbv-line:rgba(27,20,17,.14);--stbv-on:#1B1411;--stbv-on-ink:#FBF6EE;
@@ -43,7 +48,10 @@ BAR_CSS = """<style id="stbv-style">
 .stbv-v:hover,.stbv-v:focus-visible{border-color:var(--stbv-ink)}
 .stbv-v[aria-current="page"]{background:var(--stbv-on);color:var(--stbv-on-ink);border-color:var(--stbv-on)}
 .stbv-v small{font-weight:400;opacity:.75;margin-left:4px}
+.stbv .stbv-note{white-space:nowrap;text-decoration:underline;text-underline-offset:3px;color:var(--stbv-muted)}
+.stbv .stbv-note:hover,.stbv .stbv-note:focus-visible{color:var(--stbv-ink)}
 @media (max-width:420px){.stbv-lab{display:none}}
+@media (max-width:640px){.stbv-in{flex-wrap:wrap}.stbv-note{order:3;flex-basis:100%}}
 </style>"""
 
 
@@ -58,8 +66,18 @@ def versions(src: Path) -> List[str]:
     return sorted(found, key=vkey, reverse=True)
 
 
-def bar(current: str, all_v: List[str], prefix: str, site_root: str) -> str:
-    """The version bar. `prefix` leads from the page's folder to /benchmark/ ("../" from a version folder)."""
+def rounds_link(repo: str, branch: str = "main") -> str:
+    """The bar's link to the newest rounds (LATEST_ROUNDS) on GitHub; '' without a repository."""
+    if not repo:
+        return ""
+    path, text = LATEST_ROUNDS
+    return ('<a class="stbv-note" href="%s" title="The write-up of the newest rounds: method, settings, results and limits">'
+            '%s</a>' % (html.escape("https://github.com/%s/blob/%s/%s" % (repo, branch, path)), html.escape(text)))
+
+
+def bar(current: str, all_v: List[str], prefix: str, site_root: str, note: str = "") -> str:
+    """The version bar. `prefix` leads from the page's folder to /benchmark/ ("../" from a version folder); `note`
+    is rounds_link()'s link, or ''."""
     items = []
     for i, v in enumerate(all_v):
         cur = ' aria-current="page"' if v == current else ""
@@ -68,7 +86,7 @@ def bar(current: str, all_v: List[str], prefix: str, site_root: str) -> str:
         items.append('<a class="stbv-v" href="%s"%s>%s%s</a>' % (html.escape(href), cur, html.escape(v), tag))
     return ('%s<nav class="stbv" aria-label="Benchmark report versions"><div class="stbv-in">'
             '<a class="stbv-home" href="%s">showtime</a><span class="stbv-lab">Benchmark report</span>'
-            '<div class="stbv-list">%s</div></div></nav>' % (BAR_MARK, html.escape(site_root), "".join(items)))
+            '<div class="stbv-list">%s</div>%s</div></nav>' % (BAR_MARK, html.escape(site_root), "".join(items), note))
 
 
 def document(page: str) -> str:
@@ -106,18 +124,19 @@ def relink_for_parent(page: str, version: str) -> str:
     return LINK_RE.sub(fix, page)
 
 
-def build(src: Path, out: Path, site_root: str = "../") -> List[str]:
+def build(src: Path, out: Path, site_root: str = "../", repo: str = "") -> List[str]:
     all_v = versions(src)
     if not all_v:
         return []
     out.mkdir(parents=True, exist_ok=True)
+    note = rounds_link(repo)
     for v in all_v:
         page = (src / v / "index.html").read_text(encoding="utf-8")
         (out / v).mkdir(parents=True, exist_ok=True)
-        (out / v / "index.html").write_text(inject(page, bar(v, all_v, "../", "../" + site_root)), encoding="utf-8")
+        (out / v / "index.html").write_text(inject(page, bar(v, all_v, "../", "../" + site_root, note)), encoding="utf-8")
     latest = all_v[0]
     page = relink_for_parent((src / latest / "index.html").read_text(encoding="utf-8"), latest)
-    (out / "index.html").write_text(inject(page, bar(latest, all_v, "", site_root)), encoding="utf-8")
+    (out / "index.html").write_text(inject(page, bar(latest, all_v, "", site_root, note)), encoding="utf-8")
     (out / "versions.json").write_text(json.dumps(
         [{"version": v, "path": "" if i == 0 else v + "/", "latest": i == 0} for i, v in enumerate(all_v)],
         indent=1) + "\n", encoding="utf-8")
@@ -129,11 +148,19 @@ def main(argv=None) -> int:
     ap.add_argument("--src", required=True, type=Path, help="folder with one <version>/index.html per report")
     ap.add_argument("--out", required=True, type=Path, help="the site's benchmark folder, e.g. _site/benchmark")
     ap.add_argument("--site-root", default="../", help="the site's home, relative to /benchmark/ (default ../)")
+    ap.add_argument("--repo", default="", help="owner/name for the link to the newest rounds (default: $GITHUB_REPOSITORY, "
+                                               "then site/config.json repo)")
     a = ap.parse_args(argv)
+    repo = a.repo or os.environ.get("GITHUB_REPOSITORY", "")
+    if not repo:
+        try:
+            repo = json.loads((Path(__file__).resolve().parents[1] / "config.json").read_text(encoding="utf-8")).get("repo", "")
+        except (OSError, ValueError):
+            repo = ""
     if not a.src.is_dir():
         print("no benchmark reports (%s not found): /benchmark/ is not published" % a.src)
         return 0
-    got = build(a.src, a.out, a.site_root)
+    got = build(a.src, a.out, a.site_root, repo)
     print("benchmark pages: %s" % (", ".join(got) + " (latest %s)" % got[0] if got else "none found"))
     return 0
 

@@ -37,6 +37,90 @@ export async function openBrowser({ gpu = 'auto', headless = true, args = [], ow
   }
 }
 
+// WebGL renderer strings of a CPU rasteriser: Chrome's SwiftShader, Mesa's llvmpipe/softpipe, Windows' WARP
+// ("Microsoft Basic Render Driver").
+export const SOFTWARE_GL = /swiftshader|llvmpipe|softpipe|basic render driver|\bwarp\b|software/i;
+
+/**
+ * The browser's WebGL renderer, from a blank page: {renderer, software}. software is true for a CPU rasteriser
+ * (or when WebGL is missing), null when the page could not tell. Costs a fraction of a second.
+ */
+export async function glRenderer(browser) {
+  let context = null;
+  try {
+    context = await browser.newContext({ viewport: { width: 64, height: 64 }, deviceScaleFactor: 1 });
+    const page = await context.newPage();
+    const renderer = await withTimeout(page.evaluate(() => {
+      const gl = document.createElement('canvas').getContext('webgl');
+      if (!gl) return '';
+      const ext = gl.getExtension('WEBGL_debug_renderer_info');
+      return String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+    }), 15000, 'WebGL probe');
+    return { renderer: renderer || 'none (no WebGL)', software: !renderer || SOFTWARE_GL.test(renderer) };
+  } catch {
+    return { renderer: 'unknown', software: null };
+  } finally {
+    if (context) await context.close().catch(() => {});
+  }
+}
+
+// ------------------------------------------------------------------ pace
+// The page measures its own cost (runtime/stage.js, ST.pace(): the gaps between its frames while it gets ready,
+// its first seeks) and scales its waits by a factor of 1-5. The host scales its deadlines (ready, seek, layer
+// passes, render's page open) by the same factor, read while it waits, so a slow machine or a heavy page gets
+// more time and a fast one keeps today's values. SHOWTIME_PACE=0 keeps every wait at its fixed value.
+const PACE_ON = !['0', 'false', 'off', 'no'].includes(String(process.env.SHOWTIME_PACE || '').toLowerCase());
+// tests only: shrinks every base wait (page and host) so a test can show a wait running out in seconds
+const WAIT_SCALE = Number(process.env.SHOWTIME_TEST_WAIT_SCALE) > 0 ? Number(process.env.SHOWTIME_TEST_WAIT_SCALE) : 1;
+
+/** A pace record shared by the deadlines of one page (and a caller such as render's page-open timeout). */
+export function newPace() { return { factor: 1, page: null }; }
+/** Take the page's ST.pace() report into a pace record; the factor never drops while the page stays open. */
+export function notePace(pace, rep) {
+  if (!pace || !rep || typeof rep !== 'object') return;
+  pace.page = rep;
+  const f = Number(rep.factor);
+  if (PACE_ON && f > pace.factor) pace.factor = Math.min(f, 5);
+}
+/**
+ * The record of render.json and check's report: the largest factor among the pages (1 = the fixed waits) and
+ * what that page measured (frame_ms: median gap between its frames while it got ready; seek_ms: its first seeks).
+ */
+export function paceSummary(sessions) {
+  let best = null;
+  for (const s of sessions) if (s && s.pace && (!best || s.pace.factor > best.factor)) best = s.pace;
+  const pg = (best && best.page) || {};
+  return { factor: best ? best.factor : 1, frame_ms: pg.frame_ms ?? null, seek_ms: pg.seek_ms ?? null,
+    ceiling: pg.ceiling ?? 5, ...(PACE_ON ? {} : { off: true }) };
+}
+/** ms for a base wait under the test scale (never shorter than base otherwise). */
+export function baseWait(ms) { return ms * WAIT_SCALE; }
+
+/**
+ * withTimeout whose deadline is baseMs x the pace factor, read again while it waits: the page may report a
+ * higher factor meanwhile (a browser that stopped answering never does, so it still times out).
+ */
+export function withPacedTimeout(p, baseMs, label, pace) {
+  const t0 = Date.now();
+  let timer;
+  return Promise.race([
+    p,
+    new Promise((_, rej) => {
+      const tick = () => {
+        const f = pace && pace.factor > 1 ? pace.factor : 1;
+        const lim = baseWait(baseMs) * f;
+        const left = lim - (Date.now() - t0);
+        if (left <= 0) {
+          rej(new Error(`timed out after ${Math.round(lim / 1000)}s${f > 1 ? ` (x${f} for this page's pace)` : ''}: ${label}`));
+          return;
+        }
+        timer = setTimeout(tick, Math.min(left, 1000));
+      };
+      tick();
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
 /**
  * Open the project page in render mode.
  * @param browser  Playwright browser
@@ -53,10 +137,13 @@ export async function openBrowser({ gpu = 'auto', headless = true, args = [], ow
  * @param o.readyTimeout ms
  * @param o.size       "WxH" or "9:16": render the page at this size for this run (beats showtime.json)
  * @param o.followPageSize  reopen at the page's own ST.config size when nothing else sets one (default true)
- * -> session { page, cdp, info, log, close() }
+ * @param o.init       extra init script source, run before the page's own scripts (check's WebGPU probe)
+ * @param o.pace       a newPace() record to keep up to date while the page opens (render's open timeout reads it)
+ * -> session { page, cdp, info, log, pace, close() }
  */
 export async function openStage(browser, o) {
   const size = parseSize(o.size);
+  o = o.pace ? o : { ...o, pace: newPace() };
   const opts = size ? { ...o, override: { ...(o.override || {}), width: size.width, height: size.height } } : o;
   const sess = await openStageOnce(browser, opts);
   const cfg = o.config || {};
@@ -106,7 +193,7 @@ async function openStageOnce(browser, o) {
     reducedMotion: 'no-preference', locale: 'en-US', timezoneId: 'UTC', serviceWorkers: 'block',
   });
   const page = await context.newPage();
-  const log = { console: [], errors: [], requests: [], failed: [], blocked: [], http: [] };
+  const log = { console: [], errors: [], requests: [], failed: [], blocked: [], http: [], cancelled: 0 };
   const ring = (arr, v, max = 200) => { arr.push(v); if (arr.length > max) arr.shift(); };
   page.on('console', (m) => {
     const type = m.type();
@@ -118,7 +205,12 @@ async function openStageOnce(browser, o) {
   page.on('pageerror', (e) => ring(log.errors, { message: String(e.message || e).slice(0, 500), stack: String(e.stack || '').split('\n').slice(0, 4).join('\n') }));
   page.on('requestfailed', (r) => {
     const f = r.failure();
-    if (!log.blocked.includes(r.url())) ring(log.failed, { url: r.url(), error: f ? f.errorText : 'failed' });
+    const error = f ? f.errorText : 'failed';
+    // a load cancelled while it ran (an image whose src changed again before it arrived, as when check scrubs a
+    // page that swaps pictures) is not a failure: counted, and kept out of the ring so it never pushes real
+    // failures out of it
+    if (/ERR_ABORTED/.test(error)) { log.cancelled++; return; }
+    if (!log.blocked.includes(r.url())) ring(log.failed, { url: r.url(), error });
   });
   page.on('response', (r) => { if (r.status() >= 400) ring(log.http, { url: r.url(), status: r.status() }); });
   page.on('request', (r) => ring(log.requests, r.url(), 500));
@@ -132,8 +224,13 @@ async function openStageOnce(browser, o) {
   const renderCfg = {
     config: cfg, override: o.override || null, alpha: !!o.alpha, settle: o.settle || 'raf1', layers,
     seed: o.seed === undefined ? (cfg.seed === undefined ? 1 : cfg.seed) : o.seed,
+    ...(PACE_ON ? {} : { pace: false }), ...(WAIT_SCALE !== 1 ? { waitScale: WAIT_SCALE } : {}),
+    // the render's GPU-or-not decision for the looks (runtime/effects/gl.js softwareGL), the same in every worker
+    ...(typeof o.softwareGL === 'boolean' ? { softwareGL: o.softwareGL } : {}),
   };
+  const pace = o.pace || newPace();
   await page.addInitScript({ content: `window.__ST_RENDER__=${JSON.stringify(renderCfg)};\n${stageSource()}` });
+  if (o.init) await page.addInitScript({ content: String(o.init) });
   const cdp = await context.newCDPSession(page);
   const target = `${o.url}/${String(o.page || 'index.html').replace(/^\/+/, '')}`;
   try {
@@ -144,8 +241,16 @@ async function openStageOnce(browser, o) {
   }
   if (o.alpha) await cdp.send('Emulation.setDefaultBackgroundColorOverride', { color: { r: 0, g: 0, b: 0, a: 0 } });
   let info;
+  // while the page gets ready, read its pace every second (a page busy in a long task answers when it is done)
+  let polling = null;
+  const poll = setInterval(() => {
+    if (polling) return;
+    polling = page.evaluate(() => (window.ST && typeof window.ST.pace === 'function' ? window.ST.pace() : null))
+      .then((r) => notePace(pace, r), () => {}).finally(() => { polling = null; });
+  }, 1000);
   try {
-    info = await withTimeout(page.evaluate(() => window.ST.ready()), o.readyTimeout || 120000, 'the page never became ready');
+    info = await withPacedTimeout(page.evaluate(() => window.ST.ready()), o.readyTimeout || 120000, 'the page never became ready', pace);
+    notePace(pace, info && info.pace);
   } catch (e) {
     const d = await page.evaluate(() => (window.ST ? window.ST.diag() : null)).catch(() => null);
     const pend = d && d.waits ? d.waits.filter((w) => w.state === 'pending').map((w) => w.label) : [];
@@ -154,15 +259,21 @@ async function openStageOnce(browser, o) {
     throw new UserError(`${String(e.message || e).split('\n')[0].replace(/^page\.evaluate: (Error: )?/, '')}` +
       (pend.length ? ` (still waiting for: ${pend.join(', ')})` : '') + firstErr,
       'run `showtime check <project>` for the full list of page errors');
+  } finally {
+    clearInterval(poll);
   }
   const sess = {
-    page, cdp, context, info, log, width, height, scale,
+    page, cdp, context, info, log, width, height, scale, pace,
+    /** Seek; the deadline is timeoutMs x the page's pace factor. */
     async seek(t, timeoutMs = 60000) {
-      const pending = await withTimeout(page.evaluate(async (x) => {
+      const r = await withPacedTimeout(page.evaluate(async (x) => {
         await window.ST.seek(x);
         const L = window.__stLayers;
-        return L && typeof L.pending === 'function' ? L.pending() : null;
-      }, t), timeoutMs, `seek to ${t.toFixed(3)}s`);
+        return { pending: L && typeof L.pending === 'function' ? L.pending() : null,
+          pace: typeof window.ST.pace === 'function' ? window.ST.pace() : null };
+      }, t), timeoutMs, `seek to ${t.toFixed(3)}s`, pace);
+      notePace(pace, r && r.pace);
+      const pending = r && r.pending;
       if (layers && pending && pending.length) await this.layerPass(pending, timeoutMs);
       return t;
     },
@@ -174,9 +285,9 @@ async function openStageOnce(browser, o) {
         if (!ok) continue;
         const img = await this.shot({ format: fmt, quality: 95, scale: 1 / dsf });
         const url = `data:image/${fmt};base64,${img.toString('base64')}`;
-        await withTimeout(page.evaluate(([i, u]) => window.__stLayers.put(i, u), [id, url]), timeoutMs, `layer ${id}`);
+        await withPacedTimeout(page.evaluate(([i, u]) => window.__stLayers.put(i, u), [id, url]), timeoutMs, `layer ${id}`, pace);
       }
-      await withTimeout(page.evaluate(async () => { await window.__stLayers.compose(); await window.ST._paint(); }), timeoutMs, 'layer compose');
+      await withPacedTimeout(page.evaluate(async () => { await window.__stLayers.compose(); await window.ST._paint(); }), timeoutMs, 'layer compose', pace);
     },
     /** Screenshot of the viewport: Buffer. */
     async shot({ format = 'jpeg', quality = 92, scale: s } = {}) {

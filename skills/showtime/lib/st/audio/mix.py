@@ -64,6 +64,11 @@ seconds from its `at`): a top-level "questions" block, `true` or {"duck_db": 12,
 0.4 s out) and, with "tick", adds a soft clock tick on each second of the countdown. The beat times
 are read from the project's showtime.json (voice cues resolved), so they follow a re-voice.
 
+Speaker-safe ("master": {"speaker_safe": true}, the default; false, showtime.json "master": {"speaker_safe":
+false} or `audio mix --no-speaker-safe` turns it off): a 40 Hz high-pass on everything but the voice and, when
+the mix above 300 Hz is more than 10 LU under the full mix, a low shelf on the bed and sub-heavy effects before
+the loudness normalisation, so a phone speaker hears it (see speaker_safe below; the report's "speaker").
+
 Relative paths resolve against the mix.json folder, then the project root (the
 nearest folder with showtime.json), then the current directory.
 """
@@ -988,8 +993,185 @@ def _beat_duck(beats: List[dict], depth_db: float, n: int) -> np.ndarray:
     return _envelope(pts, n)
 
 
+# ---------------------------------------------------------------------------------------------
+# speaker-safe: a mix that is heard on a phone speaker
+# ---------------------------------------------------------------------------------------------
+# Phone and laptop speakers play little under ~300 Hz. A music-led mix whose energy is kick and sub, normalised
+# to -14 LUFS, then plays ~9 dB quieter on them than a voice-led one (the 0.4.1 showreel: -27.6 LUFS above
+# 300 Hz). The step: a gentle high-pass on everything but the voice (under what any speaker plays; it only costs
+# headroom), and when the mix's speaker gap is still over meter.SPEAKER_GAP_LU, a low shelf on the bed and on
+# sub-heavy effects, as deep as it takes to reach meter.SPEAKER_TARGET_LU (at most SPEAKER_MAX_CUT_DB), before
+# the loudness normalisation lifts the whole mix back to the target. The voice is never touched.
+SPEAKER_HP_HZ = 40.0
+SPEAKER_SHELF_HZ = 160.0         # the bass of a bed (kick, bass line) sits at 60-250 Hz; a phone plays from ~300
+SPEAKER_MAX_CUT_DB = 12.0
+SPEAKER_SUB_SFX_LU = 15.0   # an effect whose loudest moment is this far over its own loudest above 300 Hz (a boom,
+                            # a sub drop, a cinematic impact): measured 17-30 LU, a whoosh or riser 0-4, a thock 11
+
+
+def _sos_hp(fc: float, fs: int = SR) -> np.ndarray:
+    return signal.butter(2, fc, btype="high", fs=fs, output="sos")
+
+
+def _sos_lowshelf(fc: float, gain_db: float, fs: int = SR) -> np.ndarray:
+    """RBJ low shelf (slope 1) as one second-order section, for any sample rate."""
+    A = 10 ** (gain_db / 40)
+    w0 = 2 * math.pi * fc / fs
+    cw, alpha = math.cos(w0), math.sin(w0) / 2 * math.sqrt(2.0)
+    sq = 2 * math.sqrt(A) * alpha
+    b = [A * ((A + 1) - (A - 1) * cw + sq), 2 * A * ((A - 1) - (A + 1) * cw), A * ((A + 1) - (A - 1) * cw - sq)]
+    a = [(A + 1) + (A - 1) * cw + sq, -2 * ((A - 1) + (A + 1) * cw), (A + 1) + (A - 1) * cw - sq]
+    return np.array([[b[0] / a[0], b[1] / a[0], b[2] / a[0], 1.0, a[1] / a[0], a[2] / a[0]]])
+
+
+def _peak_gap(y: np.ndarray) -> Optional[float]:
+    """An effect's loudest 400 ms in full minus its loudest 400 ms above 300 Hz (LU), on its sounding part."""
+    act = np.nonzero(np.abs(y).max(axis=1) > 1e-6)[0] if y.ndim == 2 else np.nonzero(np.abs(y) > 1e-6)[0]
+    if not len(act):
+        return None
+    seg = np.asarray(y[act[0]:act[-1] + 1], dtype=np.float64)
+
+    def mmax(z: np.ndarray) -> float:
+        p = meter._block_power(meter.k_weight(z, SR), SR, 0.4, 0.05)
+        return float(meter._lufs(p).max()) if p.size else -120.0
+    full = mmax(seg)
+    if full < -70:
+        return None
+    return round(full - mmax(meter._highpass2(seg, 300.0, SR)), 1)
+
+
+def _sub_only(per_track: List[Dict], tracks: List[dict], sub_ids: List[str]) -> List[Dict]:
+    """The sub-heavy effects that land alone: no effect with mids within 60 ms of the hit, no "layer" between
+    them, and no crash of a composed bed on it. On a phone speaker such a hit is close to nothing.
+    [{id, name, t, gap}]"""
+    def at(r: Dict) -> Optional[float]:
+        v = (r.get("aligned") or {}).get("at", r.get("start"))
+        return float(v) if v is not None else None
+
+    def layers(r: Dict) -> List[str]:
+        v = tracks[r["index"]].get("layer")
+        return [v] if isinstance(v, str) else [str(x) for x in (v or [])]
+
+    def ends_on_hit(r: Dict) -> bool:          # a riser or reverse cymbal stops on the hit: it leads in, it is not on it
+        sy = r.get("synth") or {}
+        try:
+            return sy.get("hit") is not None and float(sy["hit"]) >= float(sy.get("duration") or 0.0) - 0.05
+        except (TypeError, ValueError):
+            return False
+    mids = [r for r in per_track if r["kind"] == "sfx" and r.get("speaker_gap_lu") is not None
+            and r["speaker_gap_lu"] <= meter.SPEAKER_GAP_LU and not ends_on_hit(r)]
+    crashes: List[float] = []
+    for r in per_track:
+        bts = (r.get("_meta") or {}).get("beats")
+        if r["kind"] == "music" and isinstance(bts, dict) and not r.get("fit"):
+            off = float(r.get("start") or 0.0) - float(r.get("offset") or 0.0)
+            crashes += [float(e["t"]) + off for e in bts.get("events") or [] if isinstance(e, dict)
+                        and e.get("type") == "crash" and e.get("t") is not None]
+    out: List[Dict] = []
+    for r in per_track:
+        if r["id"] not in sub_ids or ends_on_hit(r):
+            continue
+        t = at(r)
+        near = t is not None and (any(at(m) is not None and abs(at(m) - t) <= 0.06 for m in mids) or
+                                  any(abs(c - t) <= 0.06 for c in crashes))
+        if near or any(m["id"] in layers(r) or r["id"] in layers(m) for m in mids):
+            continue
+        out.append({"id": r["id"], "name": (r.get("synth") or {}).get("type") or Path(str(r.get("path") or r["id"])).stem,
+                    "t": t, "gap": r["speaker_gap_lu"]})
+    return out
+
+
+def _sub_note(alone: List[Dict]) -> str:
+    return ("%s %s: %s louder in full than above 300 Hz, so a phone or laptop speaker hardly plays %s. Layer a mid "
+            "transient on the same hit (metal-hit, glitch or static-burst at -8 to -12 dB with \"layer\": \"<id>\"), "
+            "or land it on the bed's crash" % (
+                "effect" if len(alone) == 1 else "effects",
+                ", ".join("%s (%s%s)" % (a["id"], a["name"], " at %.2fs" % a["t"] if a["t"] is not None else "")
+                          for a in alone[:4]) + (" and %d more" % (len(alone) - 4) if len(alone) > 4 else ""),
+                "/".join("%.0f LU" % a["gap"] for a in alone[:4]), "it" if len(alone) == 1 else "them"))
+
+
+def speaker_setting(spec: dict, bases: List[Path], override: Optional[bool] = None) -> Tuple[bool, str]:
+    """(on, where it was set): `override` (audio mix --no-speaker-safe), the mix's "master": {"speaker_safe"},
+    the project's showtime.json "master": {"speaker_safe"}, else on."""
+    if override is not None:
+        return bool(override), "the command line"
+    ms = spec.get("master") if isinstance(spec.get("master"), dict) else {}
+    if isinstance(ms.get("speaker_safe"), bool):
+        return ms["speaker_safe"], "the mix's master.speaker_safe"
+    for b in bases:
+        f = Path(b) / "showtime.json"
+        if f.is_file():
+            try:
+                m = (read_json(f) or {}).get("master")
+            except (ShowtimeError, ValueError, AttributeError):
+                m = None
+            if isinstance(m, dict) and isinstance(m.get("speaker_safe"), bool):
+                return m["speaker_safe"], "showtime.json master.speaker_safe"
+            break
+    return True, "default"
+
+
+def speaker_safe(buses: Dict[str, np.ndarray], sub_fx: Optional[np.ndarray], sub_ids: List[str]) -> Dict[str, Any]:
+    """The speaker-safe step on the buses, in place (see SPEAKER_HP_HZ). buses["sfx"] holds every effect;
+    sub_fx the sub-heavy ones among them (already in buses["sfx"]). Returns the step's report."""
+    from scipy.signal import resample_poly, sosfilt
+    rep: Dict[str, Any] = {"on": True, "highpass_hz": SPEAKER_HP_HZ}
+    beds = [k for k in ("music", "ambience", "sfx") if k in buses]
+    if not beds:
+        rep["note"] = "no music, ambience or effects: nothing to do"
+        return rep
+    hp = _sos_hp(SPEAKER_HP_HZ)
+    for k in beds:
+        buses[k] = sosfilt(hp, buses[k], axis=0).astype(np.float32)
+    subf = sosfilt(hp, sub_fx, axis=0).astype(np.float32) if sub_fx is not None else None
+    low = sum(buses[k] for k in ("music", "ambience") if k in buses)
+    low = low + subf if subf is not None else low
+    rest = (buses["voice"] if "voice" in buses else 0) + (buses["sfx"] - subf if subf is not None else buses.get("sfx", 0))
+    if isinstance(low, int):
+        rep["note"] = "no bed to shelve"
+        return rep
+
+    # the search runs at 24 kHz (the speaker loudness hardly moves; the final numbers are measured at 48 kHz)
+    fs2 = SR // 2
+    low2 = resample_poly(low, 1, 2, axis=0)
+    rest2 = resample_poly(rest, 1, 2, axis=0) if not isinstance(rest, int) else np.zeros_like(low2)
+
+    def gap(g: float) -> Optional[float]:
+        y = rest2 + (sosfilt(_sos_lowshelf(SPEAKER_SHELF_HZ, g, fs2), low2, axis=0) if g else low2)
+        return meter.speaker_loudness(y, fs2, bands=("300",)).get("gap_300_lu")
+    g0 = gap(0.0)
+    rep["gap_300_lu_before"] = g0
+    if g0 is None or g0 <= meter.SPEAKER_GAP_LU:
+        rep["shelf_db"] = 0.0
+        return rep
+    lo, hi = -SPEAKER_MAX_CUT_DB, 0.0         # gap(lo) <= target unless capped; gap(hi) > target
+    if (gap(lo) or 0.0) > meter.SPEAKER_TARGET_LU:
+        g = lo
+        rep["capped"] = True
+    else:
+        for _ in range(5):
+            mid = (lo + hi) / 2
+            if (gap(mid) or 0.0) > meter.SPEAKER_TARGET_LU:
+                hi = mid
+            else:
+                lo = mid
+        g = lo
+    g = math.floor(g * 4) / 4                  # a quarter dB, rounded towards the deeper cut
+    sh = _sos_lowshelf(SPEAKER_SHELF_HZ, g)
+    for k in ("music", "ambience"):
+        if k in buses:
+            buses[k] = sosfilt(sh, buses[k], axis=0).astype(np.float32)
+    if subf is not None:
+        buses["sfx"] = (buses["sfx"] - subf + sosfilt(sh, subf, axis=0)).astype(np.float32)
+    rep.update(shelf_db=round(g, 2), shelf_hz=SPEAKER_SHELF_HZ, shelved=[k for k in ("music", "ambience") if k in buses] +
+               sub_ids)
+    return rep
+
+
 def render(spec: Any, out_path, spec_path: Optional[Path] = None, root: Optional[Path] = None,
-           report_path: Optional[Path] = None, ffmpeg_check: bool = False) -> Dict:
+           report_path: Optional[Path] = None, ffmpeg_check: bool = False,
+           speaker_safe_on: Optional[bool] = None) -> Dict:
     if isinstance(spec, (str, Path)):
         spec_path = Path(spec)
         spec = read_json(spec_path)
@@ -1166,6 +1348,28 @@ def render(spec: Any, out_path, spec_path: Optional[Path] = None, root: Optional
     for rec in per_track:
         buses.setdefault(rec["kind"], np.zeros((N, 2), np.float32))
         buses[rec["kind"]] += placed[rec["index"]]
+    # speaker-safe (on by default): heard on a phone speaker, not only on headphones
+    sub_ids: List[str] = []
+    sub_fx: Optional[np.ndarray] = None
+    for rec in per_track:
+        if rec["kind"] != "sfx":
+            continue
+        pg = _peak_gap(placed[rec["index"]])
+        if pg is None:
+            continue
+        rec["speaker_gap_lu"] = pg
+        if pg > SPEAKER_SUB_SFX_LU:
+            sub_ids.append(rec["id"])
+            sub_fx = placed[rec["index"]].copy() if sub_fx is None else sub_fx + placed[rec["index"]]
+    alone = _sub_only(per_track, tracks, sub_ids)
+    for a in alone:
+        next(r for r in per_track if r["id"] == a["id"])["speaker_alone"] = True
+    ss_on, ss_from = speaker_setting(spec, bases, speaker_safe_on)
+    speaker: Dict[str, Any] = speaker_safe(buses, sub_fx, sub_ids) if ss_on else {"on": False}
+    speaker["set_by"] = ss_from
+    if alone:
+        speaker["sub_alone"] = [a["id"] for a in alone]
+        log("note: " + _sub_note(alone))
     mix = sum(buses.values()) if buses else np.zeros((N, 2), np.float32)
     ms = spec.get("master") or {}
     lufs = float(ms.get("lufs", -14.0))
@@ -1201,6 +1405,17 @@ def render(spec: Any, out_path, spec_path: Optional[Path] = None, root: Optional
         raise ShowtimeError("master.engine must be st, loudnorm or none")
     gain_lin = 10 ** ((minfo.get("gain_db") or 0.0) / 20) if engine == "st" else 1.0
     post = meter.measure(wav.load(out_path) if out_path.suffix.lower() not in (".wav", ".flac") else y)
+    speaker.update(meter.speaker_loudness(y, SR, integrated_lufs=post.get("integrated_lufs")))
+    if (speaker.get("gap_300_lu") or 0.0) > meter.SPEAKER_GAP_LU:
+        warnings.append(
+            "on a phone or laptop speaker the mix is %.1f LUFS, %.1f LU under the full mix (above 300 Hz; aim under "
+            "%g LU): its energy is bass and sub, which those speakers do not play. %s" % (
+                speaker["above_300_lufs"], speaker["gap_300_lu"], meter.SPEAKER_GAP_LU,
+                "The speaker-safe step is off (%s): turn it on, or" % speaker["set_by"] if not speaker["on"] else
+                "The speaker-safe step cut the bed's lows by %g dB, the most it does:" % SPEAKER_MAX_CUT_DB
+                if speaker.get("capped") else "Fix:")
+            + " pick a bed with more in the mids, or raise the mid parts (lead, keys, effects with a mid transient)"
+            + (". " + _sub_note(alone) if alone else ""))
     # per-section levels
     secs = _sections(spec, [r["_meta"] for r in per_track], dur)
     sec_rows = []
@@ -1284,7 +1499,7 @@ def render(spec: Any, out_path, spec_path: Optional[Path] = None, root: Optional
         "integrated_lufs": post["integrated_lufs"], "true_peak_dbtp": post["true_peak_dbtp"], "lra": post["lra"],
         "short_term_max_lufs": post["short_term_max_lufs"], "sample_peak_dbfs": post["sample_peak_dbfs"],
         "premaster": {"integrated_lufs": pre["integrated_lufs"], "true_peak_dbtp": pre["true_peak_dbtp"]},
-        "voice_to_music_db": vm, "sections": sec_rows, "tracks": per_track,
+        "voice_to_music_db": vm, "speaker": speaker, "sections": sec_rows, "tracks": per_track,
         "library_items": sorted(k for k in used_lib if not k.startswith(("file:", "music:"))), "credits": [c["attribution"] for c in credits],
         "credit_items": credit_items,
         "catalog_items": sorted(k[len("music:"):] for k in used_lib if k.startswith("music:")),

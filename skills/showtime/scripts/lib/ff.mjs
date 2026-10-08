@@ -5,7 +5,7 @@
 // every ffmpeg on PATH that answers `-version`.
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { showtimeHome } from './deps.mjs';
 import { IS_WIN, runProc, venvPython, pyEnv, UserError } from './cli.mjs';
 
@@ -96,6 +96,45 @@ export async function ffmpeg(args, { timeout = 0, loglevel = 'error', onStderr, 
     throw e;
   }
   return r;
+}
+
+/**
+ * ffmpeg reading its input from stdin (`-i -` in args): -> {stdin, done: Promise<{code, stderr}>, kill()}.
+ * The command and its stderr go to the log file like ffmpeg()'s. kill() ends it (SIGKILL if it hangs).
+ */
+export function ffmpegPipe(args, { loglevel = 'error', onStderr } = {}) {
+  const { ffmpeg: bin } = resolveFF();
+  const full = ['-hide_banner', '-nostdin', '-loglevel', loglevel, '-y', ...args.map(String)];
+  // -nostdin only stops ffmpeg reading keys from the terminal: `-i -` still reads the pipe
+  const child = spawn(bin, full, { windowsHide: true, stdio: ['pipe', 'ignore', 'pipe'] });
+  let err = '';
+  child.stderr.on('data', (d) => { err += d; if (err.length > 4e6) err = err.slice(-2e6); if (onStderr) onStderr(String(d)); });
+  child.stdin.on('error', () => { /* a dead encoder: done says why */ });
+  const done = new Promise((resolve) => {
+    let settled = false;
+    const end = (code, extra = '') => {
+      if (settled) return;
+      settled = true;
+      if (LOG_FILE) {
+        const q = (x) => (/[\s"'$;&|<>()]/.test(x) ? JSON.stringify(x) : x);
+        const lines = (err + extra).split('\n').filter((l) => l && !/^(frame|fps|stream_\d|bitrate|total_size|out_time|dup_frames|drop_frames|speed|progress)=/.test(l));
+        logLine(`$ ffmpeg ${full.map(q).join(' ')}  (frames on stdin)\n  exit ${code}${lines.length ? '\n' + lines.slice(-60).map((l) => '  ' + l).join('\n') : ''}`);
+      }
+      resolve({ code, stderr: err + extra });
+    };
+    child.on('error', (e) => end(127, String(e.message || e)));
+    child.on('close', (code) => end(code === null ? 128 : code));
+  });
+  return {
+    stdin: child.stdin,
+    done,
+    kill() {
+      try { child.stdin.destroy(); } catch { /* gone */ }
+      try { child.kill(); } catch { /* gone */ }
+      const k = setTimeout(() => { try { child.kill('SIGKILL'); } catch { /* gone */ } }, 3000);
+      if (k.unref) k.unref();
+    },
+  };
 }
 
 /** ffprobe JSON (format + streams), falling back to `ffmpeg -i` parsing without ffprobe. */
@@ -208,7 +247,7 @@ export async function grayThumb(file, { t = null, w = 64, h = 36 } = {}) {
   const tmp = path.join(path.dirname(String(file)), `.gray-${process.pid}-${Math.random().toString(36).slice(2)}.raw`);
   try {
     await ffmpeg([...(t !== null ? ['-ss', String(t)] : []), '-i', String(file), '-frames:v', '1',
-      '-vf', `scale=${w}:${h}:flags=area,format=gray`, '-f', 'rawvideo', tmp]);
+      '-vf', `scale=${w}:${h}:flags=area,format=gray`, '-f', 'rawvideo', tmp], { timeout: 60000 });   // one tiny frame
     return fs.readFileSync(tmp);
   } finally { fs.rmSync(tmp, { force: true }); }
 }

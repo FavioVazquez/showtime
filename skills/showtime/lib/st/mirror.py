@@ -219,10 +219,22 @@ def describe_failure(label: str, url: str, tried: List[Tuple[str, str]], mirror_
     `mirror_file` names the mirror asset directly (the audio mirror: no per-url mirror.json entry to look
     up) and `env` names the override variable (SHOWTIME_AUDIO_MIRROR for audio); both default to the
     model mirror's own `entry(url)` lookup and SHOWTIME_MODEL_MIRROR."""
-    parts = ["%s (%s)" % (host(u), why) for u, why in tried]
+    # each source with what it answered and the exact URL, so a missing mirror asset reads as missing,
+    # not as one more blocked host
+    def part(u: str, why: str) -> str:
+        if u == url:
+            return "%s (%s)" % (host(u), why)
+        if why in ("HTTP 404", "HTTP 410"):
+            return "the mirror %s has no %s (%s at %s)" % (host(u), u.rsplit("/", 1)[-1], why, u)
+        return "the mirror %s (%s)" % (host(u), why)
+    parts = [part(u, why) for u, why in tried]
     msg = "could not download %s: %s" % (label, "; ".join(parts) or "no source")
     mf = mirror_file or ((entry(url) or {}).get("file") if env == ENV else None)
-    if mf:
+    gone = [u for u, why in tried if u != url and why in ("HTTP 404", "HTTP 410")]
+    if mf and gone:
+        msg += (". The mirror does not have %s yet: set %s to a folder holding it (a copy from a machine that "
+                "can reach %s), or allow %s in the sandbox's network settings" % (mf, env, host(url), host(url)))
+    elif mf:
         msg += (". Allow one of these hosts in the sandbox's network settings, or set %s to a mirror URL or "
                 "a folder holding %s" % (env, mf))
     elif any(why.startswith(("HTTP 403", "HTTP 407", "blocked")) for _u, why in tried):

@@ -121,10 +121,11 @@ def clear(job: Optional[str] = None) -> int:
     looks = load()
     if job is None:
         n = len(looks)
-        try:
-            file().unlink()
-        except OSError:
-            pass
+        for f in (file(), folder() / "picks.json"):   # the look history and the signature picks kept next to it
+            try:
+                f.unlink()
+            except OSError:
+                pass
         return n
     key = str(job)
     keep = [x for x in looks if not (x.get("job") == key or os.path.normcase(str(x.get("job_path") or "")) ==

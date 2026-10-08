@@ -244,10 +244,13 @@ def cmd_poster(args: argparse.Namespace) -> int:
                 report["delivered"] = False
                 report["held"] = {"reason": held["reason"], "fix": held["fix"]}
                 sys.stderr.write(deliver_held_line(job, held) + "\n")
+    from .cli_job import _since, _since_line
+    since = _since(_job or ledger.enclosing_job(video), report if args.json else None)
     if args.json:
         print_json(report)
     else:
         print(report.get("bake", report.get("cover", {})).get("output", report.get("poster")))
+        _since_line(since)
     return 0
 
 
@@ -305,10 +308,11 @@ def cmd_exports(args: argparse.Namespace) -> int:
         if held:
             rep["delivered"] = False
             rep["held"] = {"reason": held["reason"], "fix": held["fix"]}
-    from .cli_job import _review_of
+    from .cli_job import _review_of, _since, _since_line
     review = _review_of(job, video)
     if review is not None:
         rep["review"] = review
+    since = _since(job, rep if args.json else None)
     if args.json:
         print_json(rep)
     else:
@@ -344,6 +348,8 @@ def cmd_exports(args: argparse.Namespace) -> int:
     if job is not None:
         from .cli_job import _notes_warning
         _notes_warning(job)          # the person's open notes on the video (showtime review): a warning only
+    if not args.json:
+        _since_line(since)           # the last line: what changed since the agent last looked
     return 0
 
 

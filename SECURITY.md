@@ -18,7 +18,9 @@ otherwise.
   stable `<SHOWTIME_HOME>/bin/showtime` command it installs.
 - The MCP server (`skills/showtime/mcp/`, also run through the `@faviovazquez/showtime-mcp` npm package).
 - The local servers: the preview server (`showtime preview`, and the one `check`, `render` and `snap`
-  start) and the studio board server, which listen on 127.0.0.1.
+  start), the studio board server and the notes page server (`showtime review open`), which listen on
+  127.0.0.1. The preview, board and notes pages need a per-session key; the short-lived servers inside
+  `check`, `render` and `snap` run without one.
 - The installers: `showtime setup` (what it downloads and how it verifies it), `showtime install`
   (the files it writes into agent folders) and the plugin and extension manifests in this repository.
 

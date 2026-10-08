@@ -21,6 +21,7 @@ are installed unless --allow-license is given.
 from __future__ import annotations
 
 import difflib
+import os
 import re
 import shutil
 import time
@@ -388,6 +389,243 @@ def copy_to(family: str, dest_dir: Path) -> Path:
         if p.is_file():
             shutil.copy2(str(p), str(dest / p.name))
     return dest
+
+
+GOOGLE_CSS_HOSTS = ("fonts.googleapis.com",)
+_FACE_RE = re.compile(r"(?:/\*\s*([\w-]+)\s*\*/\s*)?@font-face\s*\{([^}]*)\}", re.S)
+
+
+def is_google_css(url: str) -> bool:
+    import urllib.parse
+    try:
+        u = urllib.parse.urlsplit(url.replace("&amp;", "&"))
+    except ValueError:
+        return False
+    return u.scheme in ("http", "https") and (u.hostname or "").lower() in GOOGLE_CSS_HOSTS and u.path in ("/css", "/css2")
+
+
+def parse_font_css(css: str) -> List[Dict[str, Any]]:
+    """@font-face rules of a stylesheet -> [{family, style, weight, stretch, url, format, unicode_range, subset}]."""
+    out = []
+    for m in _FACE_RE.finditer(css):
+        body = m.group(2)
+
+        def prop(name: str) -> Optional[str]:
+            pm = re.search(r"(?:^|;)\s*%s\s*:\s*([^;]+)" % re.escape(name), body)
+            return pm.group(1).strip() if pm else None
+        fam = (prop("font-family") or "").strip().strip("'\"")
+        src = prop("src") or ""
+        um = re.search(r"url\(\s*['\"]?([^'\")]+)['\"]?\s*\)\s*(?:format\(\s*['\"]?([\w-]+)['\"]?\s*\))?", src)
+        if not fam or not um:
+            continue
+        out.append({"family": fam, "style": prop("font-style") or "normal", "weight": prop("font-weight") or "400",
+                    "stretch": prop("font-stretch"), "url": um.group(1), "format": um.group(2) or "woff2",
+                    "unicode_range": prop("unicode-range"), "subset": m.group(1) or ""})
+    return out
+
+
+GSTATIC = "https://fonts.gstatic.com/"
+
+
+def _https(url: str) -> str:
+    """A Google Fonts link over plain http (or scheme-relative) -> the same link over https."""
+    u = str(url).strip()
+    if u.startswith("//"):
+        return "https:" + u
+    if u[:7].lower() == "http://":
+        return "https://" + u[7:]
+    return u
+
+
+def _safe_part(s: Any) -> str:
+    """One piece of a file name built from the stylesheet (weight, style, subset): no separators."""
+    return re.sub(r"[^A-Za-z0-9.-]+", "-", str(s)).strip("-.") or "x"
+
+
+def _safe_id(fid: Any, family: str) -> str:
+    """A family folder name: the catalog id, cleaned the way to_id cleans a family name."""
+    return to_id(str(fid or "")) or to_id(family) or "font"
+
+
+def _write_local_css(url: str, faces: List[Dict[str, Any]], path: Path) -> None:
+    css = ["/* %s - made local by showtime; url()s are relative to this file */" % url]
+    for fc in faces:
+        lines = ["@font-face {", "  font-family: '%s';" % fc["family"].replace("'", "\\'"), "  font-style: %s;" % fc["style"],
+                 "  font-weight: %s;" % fc["weight"]]
+        if fc.get("stretch"):
+            lines.append("  font-stretch: %s;" % fc["stretch"])
+        lines += ["  font-display: block;", '  src: url("%s") format("%s");' % (fc["local"], fc["format"])]
+        if fc.get("unicode_range"):
+            lines.append("  unicode-range: %s;" % fc["unicode_range"])
+        css.append("\n".join(lines + ["}"]))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(css) + "\n", encoding="utf-8")
+
+
+def _local_copy(url: str, dest_dir: Path, css_name: str, allow_license: bool) -> Optional[Dict[str, Any]]:
+    """The fonts an earlier from_css copied for this stylesheet, when every file is still there with its
+    sha256 (and its license text): -> the manifest, with the stylesheet written again from it. None when
+    anything is missing or changed (then the stylesheet is fetched again)."""
+    mpath = dest_dir / (Path(css_name).stem + ".json")
+    if not mpath.is_file():
+        return None
+    try:
+        m = read_json(mpath)
+        if _https(m.get("stylesheet") or "") != url or not m.get("families"):
+            return None
+        local = set()
+        for fam in m["families"]:
+            fid = fam["id"]
+            if fid != _safe_id(fid, fam["family"]) or not fam.get("files"):
+                return None
+            if licenses.classify(fam.get("license")) != licenses.FREE and not allow_license:
+                return None
+            d = dest_dir / fid
+            if not (d / "LICENSE.txt").is_file():
+                return None
+            for f in fam["files"]:
+                name = f["file"]
+                if not isinstance(name, str) or name != Path(name).name or name.startswith("."):
+                    return None
+                if not (d / name).is_file() or hashlib_sha(d / name) != f.get("sha256"):
+                    return None
+                local.add("%s/%s" % (fid, name))
+        faces = m.get("faces")
+        css = dest_dir / css_name
+        if faces:
+            if any(fc.get("local") not in local for fc in faces):
+                return None
+            _write_local_css(url, faces, css)
+        elif not css.is_file():
+            return None
+    except (ShowtimeError, KeyError, TypeError, AttributeError, OSError):
+        return None
+    log("the fonts of %s are already in %s (nothing downloaded)" % (url, dest_dir))
+    m["css"] = css_name
+    m["dir"] = str(dest_dir)
+    return m
+
+
+def from_css(url: str, dest_dir: Path, *, allow_license: bool = False, css_name: str = "fonts.css") -> Dict[str, Any]:
+    """Make a Google Fonts stylesheet local: the same files a browser gets for `url`, saved under
+    dest_dir/<id>/ with their license, and dest_dir/fonts.css with @font-face rules pointing at them.
+
+    The axes and weights are exactly the ones the link asked for (a variable cut stays variable), so the
+    page draws what it drew online; font-display becomes block, so a render never catches a fallback.
+    When every file of an earlier copy for the same link is still there (same sha256), nothing is
+    fetched at all, so a refresh works offline. The link is fetched over https only, font files only
+    from fonts.gstatic.com, and file names are built from cleaned pieces with the extension of the
+    bytes received."""
+    url = _https(url.replace("&amp;", "&"))
+    if not is_google_css(url):
+        raise ShowtimeError("not a Google Fonts stylesheet: %s" % url,
+                            hint="pass the fonts.googleapis.com/css2?family=... link the page uses")
+    dest_dir = Path(dest_dir)
+    if Path(css_name).name != css_name or not css_name.endswith(".css"):
+        raise ShowtimeError("--css-name must be a file name ending in .css (got %s)" % css_name)
+    cached = _local_copy(url, dest_dir, css_name, allow_license)
+    if cached:
+        return cached
+    # a browser agent: Google serves WOFF2 (and variable axes) only to browsers it knows
+    body, _ = net.get_bytes(url, headers={"User-Agent": net.BROWSER_UA, "Accept": "text/css,*/*;q=0.1"},
+                            max_bytes=2 << 20, retries=2)
+    faces = parse_font_css(body.decode("utf-8", "replace"))
+    if not faces:
+        raise ShowtimeError("no @font-face rules in %s" % url, hint="check the link in a browser")
+    for fc in faces:
+        fc["url"] = _https(fc["url"])
+        if not fc["url"].startswith(GSTATIC):
+            raise ShowtimeError("the stylesheet %s names a font file outside %s: %s" % (url, GSTATIC, fc["url"][:120]),
+                                hint="only files on Google's own font host are copied; download that font yourself")
+    prev = {}
+    mpath = dest_dir / (Path(css_name).stem + ".json")
+    if mpath.is_file():
+        try:
+            prev = {f["url"]: f for fam in read_json(mpath).get("families", []) for f in fam.get("files", [])}
+        except (ShowtimeError, KeyError, TypeError):
+            prev = {}
+    fams: Dict[str, Dict[str, Any]] = {}
+    files_by_url: Dict[str, Dict[str, Any]] = {}
+    bases: set = set()
+    for fc in faces:
+        fam = fams.get(fc["family"])
+        if fam is None:
+            fid = to_id(fc["family"])
+            try:
+                meta0 = find(fc["family"])
+                fid = meta0.get("id", fid)
+                lic = meta0.get("license")
+            except ShowtimeError as e:
+                debug("license lookup for %s failed: %s" % (fc["family"], e))
+                meta0, lic = {"id": fid, "family": fc["family"]}, None
+            fid = _safe_id(fid, fc["family"])
+            if licenses.classify(lic) != licenses.FREE and not allow_license:
+                raise ShowtimeError("%s is licensed %s" % (fc["family"], lic or "unknown (not in the Fontsource catalog)"),
+                                    hint="showtime copies OFL/Apache/MIT/UFL fonts by default; pass --allow-license to override")
+            fam = fams[fc["family"]] = {"family": fc["family"], "id": fid, "license": lic, "meta": meta0, "files": []}
+        rec = files_by_url.get(fc["url"])
+        if rec is None:
+            base = "%s-%s-%s-%s" % (fam["id"], _safe_part(fc["subset"] or "all"), _safe_part(fc["weight"].strip()),
+                                    _safe_part(fc["style"]))
+            b0, n = base, 2
+            while base in bases:
+                base = "%s-%d" % (b0, n)
+                n += 1
+            bases.add(base)
+            d = dest_dir / fam["id"]
+            old = prev.get(fc["url"])
+            oname = old.get("file") if old else None
+            if (isinstance(oname, str) and oname == Path(oname).name and Path(oname).stem == base and (d / oname).is_file()
+                    and hashlib_sha(d / oname) == old.get("sha256")):
+                rec = dict(old)
+            else:
+                tmp = d / (base + ".download")
+                info = net.download(fc["url"], tmp, max_bytes=30 << 20, reject_types=("text/html",))
+                ext = info.get("ext")
+                if ext not in ("ttf", "otf", "woff", "woff2"):
+                    tmp.unlink()
+                    raise ShowtimeError("unexpected file for %s (%s)" % (base, ext or "not a font"))
+                name = "%s.%s" % (base, ext)
+                os.replace(str(tmp), str(d / name))
+                rec = {"file": name, "url": fc["url"], "sha256": info["sha256"], "bytes": info["bytes"]}
+            files_by_url[fc["url"]] = rec
+            fam["files"].append(rec)
+        fc["local"] = "%s/%s" % (fam["id"], rec["file"])
+    for fam in fams.values():
+        d = dest_dir / fam["id"]
+        d.mkdir(parents=True, exist_ok=True)
+        lic_src = None
+        if not (d / "LICENSE.txt").is_file():
+            meta = fam["meta"]
+            try:
+                meta = details(fam["id"])
+            except ShowtimeError:
+                pass
+            lic_src = _fetch_license_text(dict(meta, family=fam["family"], license=fam["license"] or meta.get("license")), d / "LICENSE.txt")
+        licenses.write_sidecar(d / fam["id"], {
+            "source": "google-fonts", "source_label": "Google Fonts", "id": fam["id"], "title": fam["family"],
+            "license": fam["license"], "license_url": "https://spdx.org/licenses/%s.html" % fam["license"],
+            "landing_url": "https://fonts.google.com/specimen/%s" % fam["family"].replace(" ", "+"),
+            "license_text": "LICENSE.txt", "license_text_source": lic_src, "stylesheet": url,
+        })
+    _write_local_css(url, faces, dest_dir / css_name)
+    manifest = {
+        "stylesheet": url, "css": css_name,
+        "families": [{"family": f["family"], "id": f["id"], "license": f["license"], "files": f["files"]} for f in fams.values()],
+        "faces": [{k: fc.get(k) for k in ("family", "style", "weight", "stretch", "format", "unicode_range", "local")} for fc in faces],
+    }
+    write_json(mpath, manifest)
+    manifest["dir"] = str(dest_dir)
+    return manifest
+
+
+def hashlib_sha(p: Path) -> str:
+    import hashlib
+    h = hashlib.sha256()
+    with open(p, "rb") as f:
+        for b in iter(lambda: f.read(1 << 16), b""):
+            h.update(b)
+    return h.hexdigest()
 
 
 def remove(family: str) -> bool:

@@ -31,6 +31,11 @@ export function osName() {
   return 'linux';
 }
 
+/** Extra flags for `showtime render`'s browsers only (chrome-flags.json "render"). */
+export function renderFlags() {
+  return Array.isArray(FLAGS.render) ? [...FLAGS.render] : [];
+}
+
 /** Launch flags for the given GPU mode on this OS. */
 export function chromeFlags(gpu = 'auto', os_ = osName()) {
   const software = ['off', 'software', 'swiftshader', false].includes(gpu);

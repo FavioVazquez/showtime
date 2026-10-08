@@ -35,6 +35,7 @@
       <div class="scrub" id="scrub" role="slider" tabindex="0" aria-label="Seek" aria-valuemin="0" aria-valuenow="0">
         <div class="rail"><div class="fill" id="fill"></div><div class="ticks" id="ticks"></div></div><div class="knob" id="knob"></div>
       </div>
+      <button class="btn ghost range" id="rangeBtn" type="button" title="Mark the start of a stretch of time ([)">Mark stretch</button>
       <button class="btn primary" id="addBtn" type="button" title="Note at this frame (n)">Add note</button>
     </div>
     <form class="composer" id="composer" hidden>
@@ -53,7 +54,7 @@
       <span class="muted small" id="nSummary"></span></div>
     <p class="note-about muted small" id="about">Your notes go to your agent as feedback on this video. They stay on this computer.</p>
     <ol class="list" id="list" tabindex="-1"></ol>
-    <div class="empty" id="empty">No notes yet. Pause the video where something should change, click the spot (or drag a box around it) and say what you want.</div>
+    <div class="empty" id="empty">No notes yet. Pause the video where something should change, click the spot (or drag a box around it) and say what you want. For a stretch of time, Shift + drag on the bar or use Mark stretch.</div>
   </aside>
 </main>
 <dialog id="keysDlg" aria-labelledby="kTitle">
@@ -64,6 +65,8 @@
       <span class="kbd">← / →</span><span>Back · forward 1 s (shift: 5 s)</span>
       <span class="kbd">, / .</span><span>One frame back · forward</span>
       <span class="kbd">n</span><span>Note at this frame (the whole frame; click or drag first to point)</span>
+      <span class="kbd">[ / ]</span><span>Start · end of a stretch of time, then a note on it</span>
+      <span class="kbd">Shift + drag</span><span>On the bar: a stretch of time to write a note on</span>
       <span class="kbd">j / l</span><span>Previous · next note</span>
       <span class="kbd">e</span><span>Edit the selected note</span>
       <span class="kbd">Enter</span><span>Save the note you are writing</span>

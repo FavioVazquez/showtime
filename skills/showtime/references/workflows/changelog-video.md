@@ -33,9 +33,9 @@ comes from the change itself; the code is shown as real hunks, never whole files
 | Defaults | 46-55 |
 | Steps | 57-82 |
 | Unattended (CI, no agent) | 84-90 |
-| PR video in one command | 92-118 |
-| Pitfalls | 120-131 |
-| Read next | 133-136 |
+| PR video in one command | 92-120 |
+| Pitfalls | 122-133 |
+| Read next | 135-138 |
 
 ## Inputs
 
@@ -110,6 +110,8 @@ title and the description before anything is written, and the output says how ma
   it yourself: `--diff pr.diff --body pr.md --title '...'` (plus `--repo`, `--author`), a saved `--pr-json`
   (gh's JSON or a REST `pulls/N` object), or `--base main` in the repo (`git diff main...HEAD`; a single commit
   gives the title and body).
+- `--out DIR` is the output folder, its own job (default `pr-<N>-video`, beside the job folder when run inside
+  one; `--force` writes into a non-empty project folder); `--url` sets the PR URL on the closing card.
 - `--no-render` writes only the project; `--aspect 9:16|1:1|4:5`, `--max-items N` (description lines, default 4),
   `--preview` for a quick draft, `--keep-work` keeps the render's `pr-<N>.work/` folder (removed after the
   export otherwise), `--background` for hosts with short command timeouts.

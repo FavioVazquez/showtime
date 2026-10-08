@@ -15,6 +15,7 @@ showtime series add planner-howto --title "Move cards between columns"
 showtime preview planner-howto/episode-02  # edit episode-02/episode.js, watch it live
 showtime series sync planner-howto         # after editing planner-howto/kit.js
 showtime series check planner-howto        # exit 1 when an episode has a stale kit copy
+showtime series list planner-howto         # episodes with their title, length and kit state
 showtime render planner-howto/episode-01   # MP4, like any project
 showtime series export planner-howto -o planner-site/   # every episode as one HTML file + index.html
 ```
@@ -44,11 +45,11 @@ showtime series export planner-howto -o planner-site/   # every episode as one H
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| Layout | 53-65 |
-| The kit (kit.js, global KIT) | 67-79 |
-| An episode: one timeline table | 81-129 |
-| Craft for a series | 131-145 |
-| Checks | 147-152 |
+| Layout | 54-66 |
+| The kit (kit.js, global KIT) | 68-80 |
+| An episode: one timeline table | 82-130 |
+| Craft for a series | 132-146 |
+| Checks | 148-153 |
 
 ## Layout
 

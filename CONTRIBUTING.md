@@ -113,9 +113,13 @@ A README links an asset as `https://github.com/<owner>/<repo>/releases/download/
 
 1. Update CHANGELOG.md (what changed and why).
 2. `python scripts/check_release.py --set-version X.Y.Z` (updates `st.__version__`, both plugin manifests,
-   `setup/package.json`, `server.json` and `packages/npm/package.json`).
-3. `python scripts/check_release.py --check` and the full test run must be clean; work through the
-   "Before publishing" list in CHANGELOG.md.
+   `setup/package.json`, `server.json` and `packages/npm/package.json`, and in the docs the site footer version,
+   the README status line, the `.mcpb` download links and the Action pins). A new minor version also needs a
+   person: the README's "What's new in X.Y.Z" summary and the status badge are reported, not rewritten.
+3. `python scripts/check_release.py --check --mirror` and the full test run must be clean; work through the
+   "Before publishing" list in CHANGELOG.md. `--mirror` goes online: it checks that every model and audio file
+   the mirrors must hold is on its release (a new entry in `mirror.json` needs `scripts/stage_model_mirror.py`
+   and its upload first).
 4. When examples changed: in showtime-examples, `python scripts/publish_media.py --refresh`, then
    `--upload` to the release tag named in `examples/MEDIA.json` (see "Example media").
 5. MCP packages (optional): `python scripts/build_packages.py all --out <folder outside the repo> --pack`

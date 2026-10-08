@@ -213,6 +213,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     from .common import progress_log_command, progress_log_end
     progress_log_command(argv)
     t0 = time.time()
+    os.environ["SHOWTIME_CMD_STARTED"] = "%.3f" % t0     # st.job.catchup: a file changed after this was not the agent's
     try:
         rc = int(func(args) or 0)
         progress_log_end(rc)

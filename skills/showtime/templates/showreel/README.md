@@ -20,7 +20,9 @@ Files:
   (seconds into a scene). Every draw is a function of time only.
 - `index.html`: the reel. Fourteen shots (seconds), each a different technique:
   1. **hook** (0-1): words over a liquid chrome shader, landed at frame 0 and settling.
-  2. **flash** (1-2): three flash words, a third of a second each (`data-st-flash`).
+  2. **flash** (1-2): three flash words, a third of a second each (`data-st-flash`), each a snap (a whip, a slam,
+     a scale punch in 6 frames) under a shutter blur (`data-st-blur` on the word: smeared on its fast frames, sharp
+     when it lands).
   3. **burst** (2-3): a particle burst on the drop.
   4. **object** (3-4.25): an iridescent three.js torus knot lit by a generated room (`RoomEnvironment`, nothing
      fetched), the camera dollying in.
@@ -47,7 +49,8 @@ real work beats a stock technique. Swap a technique for another kind, never for 
 the reel (qa warns `showreel_repeats`).
 
 Flash words: `data-st-flash` marks texture (at most 3 words and 24 characters, on screen 0.2 s or more); in the
-showreel tone they may leave before they can be read. The name on the end card is not texture: it is on screen
+showreel tone they may leave before they can be read. Each one snaps in under a shutter blur: `data-st-blur` sits on the word
+itself (the `<span>`), never on its full-frame `.w` (`check` warns `blur_container`), and a word you swap in keeps it. The name on the end card is not texture: it is on screen
 1.25 s (its reading time), and `check` warns `no_hero_line` when nothing is held its reading time. A longer name
 needs a longer end card: take the time from a shot, and keep the card moving (qa warns `showreel_long_end` when it
 holds still over 10% of the reel).

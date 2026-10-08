@@ -42,7 +42,7 @@ from ..common import ShowtimeError, debug, ensure_dir, info, warn, write_json
 from . import edl as E
 from . import util as U
 
-RENDER_REV = 5
+RENDER_REV = 6
 HDR_TRC = ("smpte2084", "arib-std-b67")
 TONEMAP = ("zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,"
            "zscale=t=bt709:m=bt709:r=tv,format=yuv420p")
@@ -72,6 +72,7 @@ class Ctx:
             self.w, self.h = o["width"], o["height"]
         self.fps: Fraction = o["fps"]
         self.grade_cache: Dict[str, str] = {}
+        self.ground = "black"              # the panel layout's fill (the cards' look ground)
         self.warnings: List[str] = []
         self.lock = threading.Lock()
 
@@ -199,6 +200,10 @@ def _video_graph(seg: Dict[str, Any], ctx: Ctx) -> Tuple[str, Optional[Path], Di
     # start_time=0: output frame 0 exists even when the first decoded frame lands a
     # fraction of a frame after the seek point (otherwise the segment starts at 1/fps)
     pre.append("fps=%s:start_time=0" % fps)
+    held = int(seg.get("hold_frames") or 0)
+    if held:
+        # range "hold": the range's own frames, then its last frame frozen (tpad clone in post)
+        pre.append("trim=end_frame=%d" % (seg["frames"] - held))
     meta: Dict[str, Any] = {}
     if seg.get("stabilize"):
         trf = _vidstab_detect(seg, ",".join(pre), ctx)
@@ -227,9 +232,48 @@ def _video_graph(seg: Dict[str, Any], ctx: Ctx) -> Tuple[str, Optional[Path], Di
     # after the BT.709 conversion, say so in the frames: the encoder's -color_* options alone are not
     # written when the frames carry other or unknown tags (newer ffmpeg), and qa checks all three
     tag709 = "setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv" if ff.has_filter("setparams") else ""
-    post = [x for x in (grade, "tpad=stop_mode=clone:stop_duration=2", ff.BT709_VF, tag709, "format=yuv420p") if x]
+    post = [x for x in (grade, "tpad=stop_mode=clone:stop_duration=%g" % max(2.0, held / float(ctx.fps) + 1.0),
+                        ff.BT709_VF, tag709, "format=yuv420p") if x]
     cmdfile = None
     bg = ctx.edl["output"].get("background") or "black"
+    lay = seg.get("layout")
+    if lay:
+        # a side panel card covers this range: the speaker is framed (face-tracked) into their half and the
+        # rest of the frame is the look's ground, which the panel card paints over (cards.panel_splits)
+        from . import reframe as R
+        sp = lay["speaker"]
+        rw, rh = E._even(sp["w"] * W), E._even(sp["h"] * H)
+        rx, ry = min(int(round(sp["x"] * W)), W - rw), min(int(round(sp["y"] * H)), H - rh)
+        try:
+            plan = R.plan_crop(src["path"], seg["start"], seg["frames"] / float(ctx.fps), sw, sh, rw, rh,
+                               float(ctx.fps), seg["frames"], zoom=zoom, focus=focus, track=R.available()[0],
+                               announce=False)
+        except ShowtimeError as e:
+            ctx.warn("panel framing: face tracking failed (%s); using a centre crop" % e)
+            plan = R.plan_crop(src["path"], seg["start"], 0, sw, sh, rw, rh, float(ctx.fps), seg["frames"],
+                               zoom=zoom, focus=focus, track=False, announce=False)
+        (scw, sch), pos = plan["scale"], plan["positions"]
+        label = "behind" if lay.get("card") == "behind" else "panel"
+        meta.update(faces=plan["faces"], moving=not plan["static"], fit=label,
+                    layout=dict(lay, region=[rx, ry, rw, rh]))
+        x0, y0 = pos[0] if pos else (0, 0)
+        chain = pre + ["scale=%d:%d:flags=lanczos" % (scw, sch)]
+        if not plan["static"]:
+            cmdfile = ensure_dir(ctx.shared / "reframe") / ("%s.cmd" % _hash([seg, rw, rh, fps, pos[:3], len(pos), "panel"]))
+            R.sendcmd_file(cmdfile, pos, float(ctx.fps))
+            chain.append("sendcmd=f=%s" % ff.filter_path(cmdfile))
+        chain.append("crop@rf=%d:%d:%d:%d" % (rw, rh, x0, y0))
+        chain.append("pad=%d:%d:%d:%d:color=%s" % (W, H, rx, ry, ctx.ground))
+        graph = "[0:v]" + ",".join(chain + post) + "[v]"
+        f = round(max(rw / float(sw), rh / float(sh)) * max(1.0, zoom) * (ctx.full_w / float(W)), 2)
+        meta["upscale"] = {"factor": f, "detail": "%dx%d source -> %dx%d speaker %s" % (
+            sw, sh, int(rw * ctx.full_w / W), int(rh * ctx.full_h / H),
+            "region (behind card)" if label == "behind" else "half (panel)")}
+        if f > UPSCALE_WARN and (ctx.edl.get("output") or {}).get("allow_upscale"):
+            meta["upscale"]["accepted"] = True          # the user accepted it (qa reports it as a note)
+        elif f > UPSCALE_WARN:
+            ctx.warn("source '%s' is enlarged %.2fx in the %s layout: it will look soft" % (seg["source"], f, label))
+        return graph, cmdfile, meta
     if fit in ("cover", "reframe"):
         from . import reframe as R
         track = (fit == "reframe" or (zoom > 1.001 and focus is None)) and R.available()[0]
@@ -341,6 +385,8 @@ def _segment(seg: Dict[str, Any], ctx: Ctx, quality: str, denoised: Dict[str, Op
         kd["joins"] = [bool(seg.get("join_in")), bool(seg.get("join_out"))]
     if seg.get("xf_in") or seg.get("xf_out"):
         kd["xf"] = [seg.get("xf_in") or 0.0, seg.get("xf_out") or 0.0]
+    if seg.get("fade_out"):
+        kd["fo"] = [float(seg["fade_out"]), "qua"]
     key = _hash(kd)
     out = ensure_dir(ctx.shared / "segments") / ("seg%03d-%s.mov" % (seg["i"], key))
     sidecar = out.with_suffix(".json")
@@ -374,7 +420,17 @@ def _segment(seg: Dict[str, Any], ctx: Ctx, quality: str, denoised: Dict[str, Op
         fin, curve_in = min(float(seg["xf_in"]), dur_a / 4.0), "qsin"   # equal-power half of the crossfade
     if seg.get("xf_out"):
         fout = 0.0                                                      # the tail fades out over the next segment
+    curve_out = ""
+    if seg.get("fade_out"):
+        # range "fade_out": a long fade at its end, quadratic so the last frames are quiet (no abrupt end)
+        fout, curve_out = min(float(seg["fade_out"]), dur_a / 2.0), ":curve=qua"
     pre = ["aresample=48000", "aformat=sample_fmts=fltp:channel_layouts=stereo", "asetpts=PTS-STARTPTS"]
+    held = int(seg.get("hold_frames") or 0)
+    if held:
+        # a held range: the source sound to the range's end (faded out over its last 0.25 s), then silence
+        base = (n - held) / float(ctx.fps)
+        pre += ["atrim=end_sample=%d" % int(round(base * 48000)),
+                "afade=t=out:st=%.4f:d=%.4f" % (max(0.0, base - 0.25), min(0.25, base))]
     if seg.get("mute"):
         pre.append("volume=0")
     elif seg.get("volume_db"):
@@ -384,7 +440,7 @@ def _segment(seg: Dict[str, Any], ctx: Ctx, quality: str, denoised: Dict[str, Op
     if fin:
         achain.append("afade=t=in:st=0:d=%.4f:curve=%s" % (fin, curve_in))
     if fout:
-        achain.append("afade=t=out:st=%.6f:d=%.4f" % (max(0.0, dur_a - fout), fout))
+        achain.append("afade=t=out:st=%.6f:d=%.4f%s" % (max(0.0, dur_a - fout), fout, curve_out))
     if tail is not None:
         nt = int(round(float(seg["xf_out"]) * 48000))
         graph_full = (graph + ";" + a_in + ",".join(pre) + ",asplit=2[am][at];[am]" + ",".join(achain) + "[a];"
@@ -392,7 +448,11 @@ def _segment(seg: Dict[str, Any], ctx: Ctx, quality: str, denoised: Dict[str, Op
     else:
         graph_full = graph + ";" + a_in + ",".join(pre + achain) + "[a]"
     tmp = out.with_name(out.stem + ".part.mov")
-    args += ["-filter_complex", graph_full, "-map", "[v]", "-map", "[a]", "-frames:v", str(n),
+    # the video stream ends itself after n frames (trim): with -frames:v, ffmpeg closes the file when the last
+    # frame is written and drops the audio still queued (up to a frame of it), so the sound drifts ahead of the
+    # picture at every such cut
+    graph_full = graph_full.replace("[v]", "[vn];[vn]trim=end_frame=%d[v]" % n, 1)
+    args += ["-filter_complex", graph_full, "-map", "[v]", "-map", "[a]",
              "-c:v", "libx264", "-preset", preset, "-crf", str(crf), "-pix_fmt", "yuv420p",
              "-g", str(max(1, int(round(float(ctx.fps) * 2)))), "-bf", "2"] + ff.BT709_TAGS + [
              "-c:a", "pcm_s16le", "-ar", "48000", "-ac", "2", "-video_track_timescale", str(_timescale(ctx.fps)),
@@ -622,15 +682,47 @@ def _pos(v: Any, full: int) -> Optional[str]:
 
 
 def _overlay_graph(ctx: Ctx, first_input: int) -> Tuple[List[str], List[str], str]:
-    """(input args, filter parts, last video label)."""
+    """(input args, filter parts, last video label). Overlays composite in list order; a behind card's layers
+    (its plate, its word from the card reel, the speaker cut out of the base's own frames with the matte) come
+    first, so every other overlay, card and the captions sit on top of the speaker."""
     W, H = ctx.w, ctx.h
     sx, sy = ctx.w / float(ctx.full_w), ctx.h / float(ctx.full_h)
     fps = U.fps_str(ctx.fps)
     args: List[str] = []
     parts: List[str] = []
     cur = "[0:v]"
-    for n, o in enumerate(ctx.edl["overlays"]):
-        k = first_input + n
+    ovs = ctx.edl["overlays"]
+    taps = sum(1 for o in ovs if o.get("kind") == "person" or (o.get("kind") == "plate" and o.get("plate") == "blur"))
+    if taps:
+        # the base itself feeds the speaker cut-outs (and a blurred plate): the same frames, so the speaker's
+        # pixels are the shot's own
+        parts.append("[0:v]split=%d[main]%s" % (taps + 1, "".join("[bb%d]" % i for i in range(taps))))
+        cur = "[main]"
+    tap = 0
+    k = first_input
+    for n, o in enumerate(ovs):
+        kind = o.get("kind")
+        if kind in ("person", "plate"):
+            from . import behind as BH
+            if kind == "person":
+                args += ["-i", str(o["matte"])]
+                parts += BH.person_graph(o, "[bb%d]" % tap, k, ctx.fps, "ov%d" % n)
+                tap += 1
+                k += 1
+            else:
+                src, img = "", None
+                if o["plate"] == "blur":
+                    src = "[bb%d]" % tap
+                    tap += 1
+                elif o["plate"] == "image":
+                    args += ["-loop", "1", "-framerate", fps, "-t", "%.6f" % o["duration"], "-i", str(o["file"])]
+                    img = k
+                    k += 1
+                parts.append(BH.plate_graph(o, src, W, H, ctx.fps, img) + "[ov%d]" % n)
+            parts.append("%s[ov%d]overlay=x=0:y=0:eof_action=pass:enable='between(t,%.4f,%.4f)'[vo%d]"
+                         % (cur, n, o["start"], o["start"] + o["duration"], n))
+            cur = "[vo%d]" % n
+            continue
         if o["image"]:
             args += ["-loop", "1", "-framerate", fps, "-t", "%.6f" % o["duration"], "-i", str(o["file"])]
         else:
@@ -679,7 +771,61 @@ def _overlay_graph(ctx: Ctx, first_input: int) -> Tuple[List[str], List[str], st
         parts.append("%s[ov%d]overlay=x=%s:y=%s:eof_action=pass:enable='between(t,%.4f,%.4f)'[vo%d]"
                      % (cur, n, xy[0], xy[1], o["start"], o["start"] + o["duration"], n))
         cur = "[vo%d]" % n
+        k += 1
     return args, parts, cur
+
+
+def _behind_layers(base: Path, cards: List[Dict[str, Any]], entries: List[Dict[str, Any]], reel: Path,
+                   plan: List[Dict[str, Any]], segs: List[Dict[str, Any]], results: List[Dict[str, Any]], ctx: Ctx,
+                   look: Optional[Dict[str, Any]], work: Path
+                   ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """For every behind card: the speaker's matte from the base (cached), what the speaker hides of the word,
+    and the card's layers in compositing order (plate, the word's reel overlay, the cut-out speaker).
+    Returns (layers, report rows, the other cards' overlays)."""
+    from . import behind as BH
+    from . import cutout as CO
+    plan_by = {p["card"]["index"]: p for p in plan}
+    by_card = {e["card"]: e for e in entries}
+    wins = BH.windows(cards, ctx.fps)
+    cuts = [float(s["out_start"]) for s in segs[1:]]     # the matte starts afresh at every segment boundary
+    holder: Dict[str, Any] = {}
+
+    class _Lazy:
+        """One pool of model sessions for every card, made only when a matte is not cached."""
+
+        def __getattr__(self, name: str) -> Any:
+            if "eng" not in holder:
+                holder["eng"] = CO.Engine()
+            return getattr(holder["eng"], name)
+
+    layers: List[Dict[str, Any]] = []
+    rows: List[Dict[str, Any]] = []
+    done = set()
+    try:
+        for w in wins:
+            c = w["card"]
+            t0 = time.time()
+            st = BH.matte_for(base, w, segs, results, ctx.fps, ctx.w, ctx.h, cuts, work, engine=_Lazy())
+            p = plan_by[c["index"]]
+            hid = BH.measure_hidden(Path(st["file"]), reel, p["offset_frames"], p["frames"], ctx.fps, ctx.w, ctx.h)
+            plate = BH.plate_entry(c, w["f0"], w["f1"], ctx.fps, look, ctx.edl["dir"])
+            layers += ([plate] if plate else []) + [by_card[c["index"]]] + [
+                BH.person_entry(c, st["file"], w["f0"], w["f1"], ctx.fps)]
+            done.add(c["index"])
+            rows.append({"i": c["index"], "start": c["start"], "end": c["end"], "text": " ".join(c.get("lines") or []),
+                         "plate": c.get("plate"), "moved": bool(c.get("moved")), "frames": st["frames"],
+                         "flicker": st.get("flicker"), "flicker_p95": st.get("flicker_p95"),
+                         "coverage": st.get("coverage"), "resets": st.get("resets"), "cached": st.get("cached"),
+                         "matte_fps": st.get("fps"), "sessions": st.get("sessions"), "matte": st["file"],
+                         "seconds": round(time.time() - t0, 2), **hid})
+            info("behind card %d: %s, %s %% of the word behind the speaker, matte flicker %.2f %%%s" % (
+                c["index"], "matte cached" if st.get("cached") else "matte %d frames at %.1f fps" % (st["frames"], st["fps"]),
+                "?" if hid.get("hidden") is None else "%.0f" % (100 * hid["hidden"]), 100 * (st.get("flicker") or 0.0),
+                "" if st.get("cached") else " (%d sessions)" % st.get("sessions", 0)))
+    finally:
+        if "eng" in holder:
+            holder["eng"].close()
+    return layers, rows, [e for e in entries if e["card"] not in done]
 
 
 def _final(base: Path, audio: Path, total: float, ctx: Ctx, ass: Optional[Path], fontsdir: Optional[Path],
@@ -769,7 +915,29 @@ def render(edl_path, out=None, *, preview: bool = False, overwrite: bool = False
     ensure_dir(out.parent)
     shared = ensure_dir(base_dir / "work" / edl_path.stem)
     work = ensure_dir(shared / out.stem)
+    # captions and cards need transcripts: fail early, before any encode
+    transcripts = E.load_transcripts(edl, required=bool(captions and edl["captions"]) or bool(edl.get("cards")))
+    cards: List[Dict[str, Any]] = []
+    look: Optional[Dict[str, Any]] = None
+    avoid_face = (edl["captions"] or {}).get("avoid_face")
+    if edl.get("cards") or (captions and ((edl["captions"] or {}).get("emphasis") or avoid_face)):
+        from . import cards as CD
+        look = CD.look_for(edl, shared / "cards") if edl.get("cards") or (edl["captions"] or {}).get("emphasis") else None
+    if edl.get("cards"):
+        cards = CD.resolve(edl, segs, E.map_words(segs, transcripts, include_events=False), transcripts, look=look)
+        info("cards: %d placed (%s); %s" % (len(cards), ", ".join("%s %.1f-%.1fs%s" % (
+            c["type"], c["start"], c["end"], " (split)" if c.get("split") else "") for c in cards if c["type"] != "ground"),
+            look["about"]))
+        if any(c.get("region") or c.get("speaker") for c in cards):
+            edl = dict(edl, ranges=CD.panel_splits(edl["ranges"], segs, cards, edl["output"]["fps"]))
+            segs = E.plan(edl)
+    elif captions and edl["captions"] and avoid_face:
+        edl = dict(edl, caption_plan=CD.caption_plan(edl, segs, edl["output"]["width"], edl["output"]["height"]))
     ctx = Ctx(edl, out, work, preview, shared)
+    if look is not None:
+        g = str((look.get("tokens") or {}).get("--bg") or "")
+        if g.startswith("#") and len(g) == 7:
+            ctx.ground = "0x" + g[1:]
     for p_ in E.punch_bounce(segs, edl["output"]["fps"]):
         ctx.warn(p_)
     total_planned = E.total_duration(segs)
@@ -780,9 +948,7 @@ def render(edl_path, out=None, *, preview: bool = False, overwrite: bool = False
     if est > 30:
         info("estimated time: ~%s (cached segments are reused)" % U.fmt_time(est))
 
-    # captions need transcripts: fail early, before any encode
-    transcripts = E.load_transcripts(edl, required=bool(captions and edl["captions"]))
-    need_composite = bool(edl["overlays"]) or bool(captions and (edl["captions"] or edl["subtitles"]))
+    need_composite = bool(edl["overlays"]) or bool(cards) or bool(captions and (edl["captions"] or edl["subtitles"]))
     quality = "intermediate" if need_composite else ("preview" if preview else "final")
 
     denoised = {k: _denoised_audio(k, ctx) for k in {s["source"] for s in segs}}
@@ -791,6 +957,20 @@ def render(edl_path, out=None, *, preview: bool = False, overwrite: bool = False
     jobs = jobs or max(1, min(3, plat.cpu_count() // 3))
     done = [0]
     t_seg = time.time()
+    # the card reel renders (browser capture, cached) while the segments encode
+    reel_box: Dict[str, Any] = {}
+    reel_thread = None
+    if cards:
+        lang = (next(iter(transcripts.values())).get("language") or "en") if transcripts else "en"
+
+        def reel_job() -> None:
+            try:
+                reel_box["reel"], reel_box["plan"] = CD.render_reel(cards, ctx.w, ctx.h, ctx.fps, look, shared / "cards",
+                                                                    preview=preview, lang=lang)
+            except Exception as e:  # noqa: BLE001 - raised after the segments
+                reel_box["error"] = e
+        reel_thread = threading.Thread(target=reel_job, daemon=True)
+        reel_thread.start()
 
     def work_one(s: Dict[str, Any]) -> Dict[str, Any]:
         r = _segment(s, ctx, quality, denoised)
@@ -815,7 +995,21 @@ def render(edl_path, out=None, *, preview: bool = False, overwrite: bool = False
     segs = E.retime(segs, ctx.fps, actual)
     total = E.total_duration(segs)
 
+    card_entries: List[Dict[str, Any]] = []
+    if reel_thread is not None:
+        reel_thread.join()
+        if "error" in reel_box:
+            raise reel_box["error"]
+        card_entries = CD.overlays_for(reel_box["reel"], reel_box["plan"])
     base = _concat([r["path"] for r in results], work / "base.mov")
+    behind_layers: List[Dict[str, Any]] = []
+    behind_rows: List[Dict[str, Any]] = []
+    if any(c["type"] == "behind" for c in cards):
+        behind_layers, behind_rows, card_entries = _behind_layers(base, cards, card_entries, reel_box["reel"],
+                                                                  reel_box["plan"], segs, results, ctx, look,
+                                                                  shared / "cards")
+    if card_entries or behind_layers:
+        ctx.edl = dict(ctx.edl, overlays=behind_layers + list(ctx.edl["overlays"]) + card_entries)
     words = E.map_words(segs, transcripts, include_events=False) if transcripts else []
 
     # captions
@@ -823,6 +1017,14 @@ def render(edl_path, out=None, *, preview: bool = False, overwrite: bool = False
     if captions and edl["captions"]:
         from . import captions as C
         copts = {k: v for k, v in edl["captions"].items() if k not in ("style", "srt", "vtt")}
+        if copts.get("emphasis") and not copts.get("emphasis_color") and look is not None:
+            acc = CD.accent_for_captions(look)
+            if acc:
+                copts["emphasis_color"] = acc
+        if cards or edl.get("caption_plan"):
+            zones = CD.caption_zones(cards, ctx.w, ctx.h, edl.get("caption_plan"))
+            if zones:
+                copts["zones"] = zones
         lang = next(iter(transcripts.values())).get("language", "en") if transcripts else "en"
         srt = out.with_suffix(".srt") if edl["captions"].get("srt", True) else None
         cap_rep = C.build(words, work / "captions.ass", style=edl["captions"]["style"], width=ctx.w, height=ctx.h,
@@ -890,6 +1092,23 @@ def render(edl_path, out=None, *, preview: bool = False, overwrite: bool = False
                             if edl["loudness"] else {"mode": "source"}),
         "work": str(work), "seconds": round(time.time() - t_start, 1),
     }
+    if cards:
+        cprob = CD.problems(cards, edl, measured={r["i"]: r for r in behind_rows})
+        for p_ in cprob:
+            ctx.warn("cards: " + p_)
+        if behind_rows:
+            from . import behind as BH
+            BH.record(shared / "cards", behind_rows, out, preview)
+        report["cards"] = {"look": look["about"] if look else None, "reel": str(reel_box.get("reel")),
+                           "items": CD.summary_rows(cards), "problems": cprob,
+                           **({"behind": behind_rows} if behind_rows else {}),
+                           "caption_band": CD.caption_band(edl["captions"], ctx.full_w, ctx.full_h) if edl["captions"] else None,
+                           "caption_moves": len((edl.get("caption_plan") or {}).get("zones") or [])}
+    elif edl.get("caption_plan"):
+        cprob = [p["message"] for p in edl["caption_plan"].get("problems") or []]
+        for p_ in cprob:
+            ctx.warn(p_)
+        report["caption_face"] = {"problems": cprob, "caption_moves": len(edl["caption_plan"].get("zones") or [])}
     if loud and edl["loudness"]:
         li, tp = loud.get("integrated_lufs"), loud.get("true_peak_dbtp")
         if li is not None and abs(li - edl["loudness"]["lufs"]) > 1.0:
@@ -903,7 +1122,7 @@ def render(edl_path, out=None, *, preview: bool = False, overwrite: bool = False
     report["report"] = str(rp)
     if not keep_work:
         shutil.rmtree(shared / "segments", ignore_errors=True)
-    info("wrote %s (%s, %d cut(s)%s) in %.1fs" % (out, U.fmt_time(total), max(0, len(segs) - 1),
+    info("wrote %s (%s, %d cut(s)%s) in %.1fs" % (out, U.fmt_time(total), len(E.cut_times(segs, ctx.fps)),
                                                    (", %.1f LUFS" % loud["integrated_lufs"]) if loud.get("integrated_lufs") is not None else "",
                                                    time.time() - t_start))
     return report

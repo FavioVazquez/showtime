@@ -75,14 +75,13 @@
     await new AsyncFunction(src + '\n//# sourceURL=' + A.setup)();
   }
 
-  var probe = null;
+  // read when adopt asks, after the stage is ready: its first seek has run, so a page that builds itself on
+  // its first animation frame (a Claude Design component mounts there) is already on the page
   if (A.probe) {
-    W.__stAdoptProbe = function () { return probe; };
+    W.__stAdoptProbe = function () { return describe(); };
   }
 
-  ST.waitFor(loaded().then(waitReady).then(runSetup).then(function () {
-    if (A.probe) probe = describe();
-  }), 'adopted page (' + (A.seek || 'clock') + ')');
+  ST.waitFor(loaded().then(waitReady).then(runSetup), 'adopted page (' + (A.seek || 'clock') + ')');
 
   if (A.seek && !A.probe) {
     var warned = false;
@@ -110,7 +109,7 @@
     var FPSN = ['FPS', 'fps', '__fps', 'FRAME_RATE', 'frameRate'];
     var WN = ['WIDTH', 'W', 'VIDEO_WIDTH', '__width'], HN = ['HEIGHT', 'H', 'VIDEO_HEIGHT', '__height'];
     var READY = ['ready', '__ready', 'isReady', 'READY', 'fontsReady', 'loaded', '__loaded'];
-    var out = { functions: [], numbers: {}, ready: [], setters: [], canvases: [], doc: null, animations: 0, timers: 0 };
+    var out = { functions: [], numbers: {}, ready: [], setters: [], canvases: [], doc: null, animations: 0, timing: [], timers: 0 };
     FN.forEach(function (n) {
       var f = lookup(n);
       if (typeof f === 'function') out.functions.push({ name: n, arity: f.length, src: String(f).slice(0, 160) });
@@ -154,6 +153,23 @@
       text: b ? (b.innerText || '').trim().length : 0,
     };
     try { out.animations = document.getAnimations ? document.getAnimations().length : 0; } catch (e) { /* ignore */ }
+    // each animation's timing (ms; iterations null when it repeats forever): adopt finds a loop's period in it
+    out.timing = [];
+    try {
+      var all = document.getAnimations ? document.getAnimations() : [];
+      for (var k = 0; k < all.length && k < 300; k++) {
+        var an = all[k], ef = an.effect;
+        if (!ef || !ef.getComputedTiming) continue;
+        if (W.CSSTransition && an instanceof W.CSSTransition) continue;
+        var ct = ef.getComputedTiming();
+        var tg = ef.target;
+        out.timing.push({
+          name: an.animationName || an.id || (tg && tg.tagName ? tg.tagName.toLowerCase() : 'animation'),
+          delay: Number(ct.delay) || 0, duration: Number(ct.duration) || 0,
+          iterations: isFinite(ct.iterations) ? ct.iterations : null, direction: ct.direction || 'normal',
+        });
+      }
+    } catch (e) { /* ignore */ }
     try { var d = ST.diag(); out.timers = (d.timers && d.timers.length) || d.timerCalls || 0; } catch (e) { /* ignore */ }
     return out;
   }

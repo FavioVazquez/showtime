@@ -118,6 +118,9 @@ def register(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--raw", action="store_true", help="skip mastering (engine's native rate, raw level)")
     p.add_argument("--lufs", type=float, default=-16.0, help="mastering loudness target (default -16)")
     p.add_argument("--no-cache", action="store_true", help="always re-synthesize")
+    p.add_argument("--no-readback", action="store_true",
+                   help="do not hear the clip back (by default it is transcribed locally and its names, acronyms "
+                        "and numbers compared with the text)")
     p.add_argument("-o", "--output", help="output .wav (default ./voice-<text>.wav, never overwritten)")
     p.add_argument("--json", action="store_true", help="print the full result as JSON")
     p.set_defaults(func=cmd_say)
@@ -130,6 +133,8 @@ def register(sub: argparse._SubParsersAction) -> None:
                                  "  vo.words.json     transcript format (for `showtime captions`)\n"
                                  "  vo.srt            ready-made captions\n"
                                  "  lines/NN-id.wav   each line on its own (+ .words.json, line-relative)\n"
+                                 "  readback.json     every line heard back (local ASR) and compared with the script:\n"
+                                 "                    a name, acronym or number heard differently is a WARN with the fix\n"
                                  "Set scene durations from timeline.json lines[].slot.duration.\n"
                                  "Only changed lines are re-synthesized (content-hash cache).",
                      epilog="Script formats (see references/voice.md):\n"
@@ -157,6 +162,9 @@ def register(sub: argparse._SubParsersAction) -> None:
                    help="fit the whole narration to this length (speed 0.85-1.15x, then shorter pauses, "
                         "then says how many words to cut)")
     p.add_argument("--lexicon", action="append", default=[], metavar="FILE", help="extra pronunciation lexicon")
+    p.add_argument("--no-readback", action="store_true",
+                   help="do not hear the lines back (by default every line is transcribed locally and its names, "
+                        "acronyms and numbers compared with the script: readback.json)")
     p.add_argument("--json", action="store_true", help="print timeline.json")
     p.set_defaults(func=cmd_script)
 
@@ -395,6 +403,9 @@ def cmd_say(args: argparse.Namespace) -> int:
         from .common import portable_path
         write_json(tts.words_path(out), sp.transcript(portable_path(out, out.parent)))
     d = _speech_summary(sp, out, report)
+    rb_rep = _readback_say(text, sp, out, lex, args)
+    if rb_rep is not None:
+        d["readback"] = {k: rb_rep.get(k) for k in ("summary", "suspects", "skipped")}
     d["wall_seconds"] = round(time.time() - t0, 2)
     if args.json:
         d["word_timings"] = sp.words
@@ -403,22 +414,43 @@ def cmd_say(args: argparse.Namespace) -> int:
         _say("%s  %.2fs  %d words (%.2f words/s)  voice %s  timing %s%s" % (
             out, sp.duration, d["words"], d["wps"], sp.voice, sp.timing, "  [cached]" if sp.cached else
             "  RTF %.2f" % sp.rtf))
+        if rb_rep is not None:
+            from .voice import readback as rb
+            for ln in rb.report_lines(rb_rep):
+                _say(ln)
         print(out)
         print(tts.words_path(out))
     return 0
 
 
+def _readback_say(text: str, sp, out: Path, lex, args: argparse.Namespace) -> Optional[Dict[str, Any]]:
+    """`voice say`'s read-back (st.voice.readback), or None when it is off."""
+    from .voice import readback as rb
+    if getattr(args, "no_readback", False) or not rb.enabled():
+        return None
+    try:
+        return rb.for_speech(text, sp, out, lex, project_dir=Path.cwd())
+    except Exception as e:  # noqa: BLE001 - a check, never a reason to fail
+        why = "the read-back failed (%s)" % (str(e).splitlines()[0][:120] if str(e) else type(e).__name__)
+        return {"skipped": why, "suspects": [], "summary": "read-back skipped: %s" % why}
+
+
 def cmd_script(args: argparse.Namespace) -> int:
+    from .voice import readback as rb
     from .voice import script
     ov = {"voice": args.voice, "speed": args.speed, "style": args.style, "lang": args.lang, "gap": args.gap,
           "lead_in": args.lead_in, "tail": args.tail, "lufs": args.lufs}
     if args.no_master:
         ov["master"] = False
-    tl = script.build(args.script, args.output, ov, tuple(args.lexicon), fit=args.fit)
+    tl = script.build(args.script, args.output, ov, tuple(args.lexicon), fit=args.fit,
+                      readback=False if args.no_readback else None)
     out = Path(args.output) if args.output else Path(args.script).parent / "voice"
     if args.json:
         if tl.get("fit"):
             _say(script.fit_message(tl["fit"]))
+        if tl.get("readback"):
+            for ln in rb.report_lines(tl["readback"]):
+                _say(ln)
         print_json(tl)
         return 0
     _say("\n%-4s %-16s %-11s %7s %7s %7s  %s" % ("#", "LINE", "VOICE", "START", "END", "SLOT", "TEXT"))
@@ -431,7 +463,11 @@ def cmd_script(args: argparse.Namespace) -> int:
         "%.1f" % tl["loudness"] if tl["loudness"] is not None else "raw", tl["build_seconds"]))
     if tl.get("fit"):
         _say(script.fit_message(tl["fit"]))
-    for name in ("vo.wav", "timeline.json", "vo.words.json", "vo.srt", "lines/"):
+    if tl.get("readback"):
+        for ln in rb.report_lines(tl["readback"]):
+            _say(ln)
+    for name in ("vo.wav", "timeline.json", "vo.words.json", "vo.srt", "lines/") + (
+            (rb.FILE,) if tl.get("readback") and not tl["readback"].get("skipped") else ()):
         print(out / name)
     return 0
 

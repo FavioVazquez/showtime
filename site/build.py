@@ -22,10 +22,12 @@ import argparse
 import html
 import json
 import os
+import posixpath
 import re
 import shutil
 import subprocess
 import sys
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -38,6 +40,7 @@ except ImportError:  # pragma: no cover
 SITE = Path(__file__).resolve().parent
 REPO = SITE.parent
 REFS = REPO / "skills" / "showtime" / "references"
+GUIDES = REPO / "docs" / "guides"   # task guides for people (the sidebar's first group)
 CONFIG = json.loads((SITE / "config.json").read_text(encoding="utf-8"))
 # The examples folder and its media manifest: set by configure_examples() (main). Pages keep calling example
 # files by their path in the examples repository, "examples/<folder>/...", wherever the checkout is.
@@ -152,6 +155,106 @@ def rel(from_page: str, to: str) -> str:
     return "../" * up + to
 
 
+# ----------------------------------------------------------------------------------------------- raw HTML in Markdown
+
+# The HTML tags the rendered Markdown uses on purpose: the README-style layout (centred paragraphs, theme-aware
+# pictures, the example tables), small print, keys and folding sections. Any other tag in the text, such as a
+# "<title>", "<project>" or "<url>" placeholder, is shown as text: passed through as HTML, <title> starts an element
+# that swallows the rest of the page and an unknown tag vanishes. Comments pass through. Code spans and code blocks
+# are always escaped.
+HTML_TAGS = frozenset(
+    "a b br code details div em h3 i img kbd p picture source span strong sub summary sup table tbody td th thead tr"
+    .split())
+TAG_START = re.compile(r"<(/?)([A-Za-z][A-Za-z0-9-]*)")
+
+
+def tag_allowed(src: str, pos: int) -> bool:
+    """True when the text at pos is not a tag (a comment, say) or is a tag on the allowlist."""
+    m = TAG_START.match(src, pos)
+    return not m or m.group(2).lower() in HTML_TAGS
+
+
+def escape_tags(raw: str) -> str:
+    """Raw HTML with every tag that is not on the allowlist turned into text."""
+    return TAG_START.sub(lambda m: m.group(0) if m.group(2).lower() in HTML_TAGS else "&lt;" + m.group(0)[1:], raw)
+
+
+def markdown() -> MarkdownIt:
+    """The site's Markdown: CommonMark with tables, strikethrough and raw HTML limited to HTML_TAGS. A block or
+    inline tag that is not on the list is not HTML to the parser, so it renders as text (escaped); inside an
+    allowed HTML block such tags are escaped in place."""
+    md = MarkdownIt("commonmark", {"html": True}).enable("table").enable("strikethrough")
+
+    def guard(ruler, name: str, pos_of) -> None:
+        rule = ruler.__rules__[ruler.__find__(name)]
+        orig = rule.fn
+
+        def fn(state, *args):
+            src, pos = pos_of(state, *args)
+            return orig(state, *args) if tag_allowed(src, pos) else False
+        ruler.at(name, fn, {"alt": list(rule.alt)})
+
+    guard(md.block.ruler, "html_block", lambda st, line, *_: (st.src, st.bMarks[line] + st.tShift[line]))
+    guard(md.inline.ruler, "html_inline", lambda st, *_: (st.src, st.pos))
+
+    def escape_blocks(state) -> None:
+        for t in state.tokens:
+            if t.type == "html_block":
+                t.content = escape_tags(t.content)
+    md.core.ruler.push("escape_html_blocks", escape_blocks)
+    return md
+
+
+def md_h2_count(md_text: str) -> int:
+    """The h2 headings of a Markdown source, counted with raw HTML off (so it does not depend on HTML_TAGS)."""
+    toks = MarkdownIt("commonmark").enable("table").parse(md_text)
+    return sum(1 for t in toks if t.type == "heading_open" and t.tag == "h2")
+
+
+class _PageScan(HTMLParser):
+    """Counts <title>, <footer> and <h2> the way a browser sees them: the text of title, textarea, xmp, iframe,
+    noembed and noframes is not markup, so a stray opening tag swallows the rest of the page."""
+    CDATA_CONTENT_ELEMENTS = ("script", "style", "title", "textarea", "xmp", "iframe", "noembed", "noframes")
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.counts = {"title": 0, "footer": 0, "h2": 0}
+        self.foreign = 0          # inside inline <svg> or <math>, where <title> is an accessible name, not the page's
+
+    def handle_starttag(self, tag, attrs) -> None:
+        if tag in ("svg", "math"):
+            self.foreign += 1
+        elif tag in self.counts and not (tag == "title" and self.foreign):
+            self.counts[tag] += 1
+
+    def handle_endtag(self, tag) -> None:
+        if tag in ("svg", "math") and self.foreign:
+            self.foreign -= 1
+
+
+def check_pages(out: Path, pages: List[str], h2_expect: Dict[str, Tuple[str, int]]) -> List[str]:
+    """Problems in the written pages, one line each naming the page and the cause: not exactly one <title>, no
+    <footer>, or (for a page rendered from one Markdown source) an h2 count that differs from the source's."""
+    problems = []
+    for page in pages:
+        scan = _PageScan()
+        scan.feed((out / page).read_text(encoding="utf-8"))
+        scan.close()
+        c = scan.counts
+        if c["title"] != 1:
+            problems.append("%s: %d <title> elements, expected 1 (a raw <title> in the text swallows the rest of the "
+                            "page; write it in backticks or add the tag to HTML_TAGS if it is meant as HTML)" % (page, c["title"]))
+        if not c["footer"]:
+            problems.append("%s: no <footer>: the page is cut off (look for a raw tag such as <title>, <textarea> or "
+                            "<iframe> in its source)" % page)
+        if page in h2_expect:
+            src, want = h2_expect[page]
+            if c["h2"] != want:
+                problems.append("%s: %d h2 headings, %s has %d: part of the page is missing or a heading is hidden "
+                                "in raw HTML" % (page, c["h2"], src, want))
+    return problems
+
+
 class Site:
     def __init__(self, out: Path, media_dirs: List[Path], repo: str, only: Optional[set], branch: str,
                  max_html: float = 0.0) -> None:
@@ -166,7 +269,12 @@ class Site:
         self.copied: Dict[str, str] = {}
         self.missing_media: List[str] = []
         self.search: List[dict] = []
-        self.md = MarkdownIt("commonmark", {"html": True}).enable("table").enable("strikethrough")
+        self.written: List[str] = []                       # every page write() wrote, for the build check
+        self.h2_expect: Dict[str, Tuple[str, int]] = {}   # page rendered from one source -> (source, its h2 count)
+        self.described: Dict[str, Tuple[str, str]] = {}  # page -> (title, description), for llms.txt
+        self.doc_groups: List[Tuple[str, List[Tuple[str, str]]]] = []   # the docs sidebar, for llms.txt
+        self.gallery: Optional[set] = None   # folders of the gallery's examples (the pages built); None: every NN-*
+        self.md = markdown()
 
     # -------------------------------------------------------------------------------- files and media
     def gh(self, repo_rel: str, is_dir: bool = False) -> Optional[str]:
@@ -178,8 +286,9 @@ class Site:
         return "https://github.com/%s/%s/%s/%s" % (repo, "tree" if is_dir else "blob", self.branch, repo_rel)
 
     def release_url(self, asset: str) -> Optional[str]:
-        """The media release lives in the examples repository (this one when the examples are here)."""
-        repo = EXAMPLES_REPO or self.repo
+        """The media release lives in the examples repository: the one the examples come from, else the one
+        MEDIA.json names (its release.repo), else this one."""
+        repo = EXAMPLES_REPO or MEDIA["release"].get("repo") or self.repo
         if not repo:
             return None
         return "https://github.com/%s/releases/download/%s/%s" % (repo, MEDIA["release"]["tag"], asset)
@@ -302,9 +411,7 @@ class Site:
             for readme in ("README.md", "index.md"):
                 if (target / readme).resolve() in self.pages:
                     return rel(page, self.pages[(target / readme).resolve()]) + ("#" + frag if frag else "")
-            if r.startswith("examples/") and r.count("/") == 1 and (target / "README.md").is_file():
-                return rel(page, "examples/%s.html" % target.name)
-            return self.gh(r, is_dir=True)
+            return self.gh(r, is_dir=True)   # an example with no page here (not in the gallery, or examples/_x)
         if target in self.pages:
             return rel(page, self.pages[target]) + ("#" + frag if frag else "")
         if target.suffix.lower() in IMG_EXT:
@@ -385,6 +492,13 @@ def site_url(repo: str) -> str:
     return (u.rstrip("/") + "/") if u else ""
 
 
+def page_url(base: str, page: str) -> str:
+    """A page's published address (a folder's index.html is the folder itself); '' without a base."""
+    if not base:
+        return ""
+    return base + (page[:-len("index.html")] if page == "index.html" or page.endswith("/index.html") else page)
+
+
 def shell(site: Site, page: str, title: str, body: str, active: str = "", desc: str = "") -> str:
     r = lambda p: rel(page, p)  # noqa: E731
     fav = site.copy_asset(REPO / "assets/brand/icon/favicon.svg")
@@ -399,7 +513,8 @@ def shell(site: Site, page: str, title: str, body: str, active: str = "", desc: 
     # link previews (Slack, X, iMessage ...) need absolute URLs: the published site's address + the page's path
     base = site_url(site.repo)
     og_abs = (base + og) if base else r(og)
-    page_abs = (base + (page[:-len("index.html")] if page.endswith("index.html") else page)) if base else ""
+    page_abs = page_url(base, page)
+    site.described[page] = (title, d)
     return """<!doctype html>
 <html lang="en">
 <head>
@@ -442,7 +557,8 @@ def shell(site: Site, page: str, title: str, body: str, active: str = "", desc: 
 </body>
 </html>
 """.format(title=esc(full), desc=esc(d), og_abs=esc(og_abs),
-           og_url=('\n<meta property="og:url" content="%s">' % esc(page_abs)) if page_abs else "", fav=r(fav), touch=r(touch), css=r("static/style.css"), boot=THEME_BOOT,
+           og_url=('\n<meta property="og:url" content="%s">\n<link rel="canonical" href="%s">' % (esc(page_abs), esc(page_abs)))
+           if page_abs else "", fav=r(fav), touch=r(touch), css=r("static/style.css"), boot=THEME_BOOT,
            root="../" * page.count("/"), home=r("index.html"), menu=ICON_MENU, links=links, sun=ICON_SUN, body=body,
            version=esc(CONFIG.get("version", "")), docs=r("docs/index.html"), gallery=r("gallery.html"), crew=r("crew.html"),
            js=r("static/app.js"), font=r("static/fonts/inter.woff2"),
@@ -591,7 +707,7 @@ def build_gallery(site: Site, groups, exs) -> None:
                   '<span>\u2192</span></a> %s</p>' % (esc(lfilm_fb or "#"), lcredit))
     body = """<div class="wrap">
 <header class="room-head"><h1 class="title">Now showing</h1>
-<p class="lede">Twenty-two videos, each made from a single request by an agent acting as a user. Hover to preview, press play for
+<p class="lede">{count} videos, each made from a single request by an agent acting as a user. Hover to preview, press play for
 the full video with sound, or open the story behind it.</p>{exrepo}
 {launch}
 <div class="filters" role="group" aria-label="Filter by use case">{tabs}</div>
@@ -604,11 +720,25 @@ control and links to a moment. This one is live; click it and press <kbd>?</kbd>
 {live}
 <ul class="htmllist">{htmls}</ul>
 </section>
-</div>""".format(tabs="".join(tabs), cards=cards, live=live, launch=launch, exrepo=(
-        '\n<p class="lede">All 22 examples, with their projects and full-quality videos, live in <a href="https://github.com/%s">%s</a>.</p>'
-        % (esc(EXAMPLES_REPO), esc(EXAMPLES_REPO.split("/")[-1]))) if EXAMPLES_REPO else "",
+</div>""".format(tabs="".join(tabs), cards=cards, live=live, launch=launch, count=count_words(len(exs)), exrepo=(
+        '\n<p class="lede">All %d examples, with their projects and full-quality videos, live in <a href="https://github.com/%s">%s</a>.</p>'
+        % (len(exs), esc(EXAMPLES_REPO), esc(EXAMPLES_REPO.split("/")[-1]))) if EXAMPLES_REPO else "",
                   htmls="".join(htmls) or "<li class='muted'>Not included in this build.</li>")
-    write(site, page, shell(site, page, "Examples", body, "gallery", "Twenty-two videos made with showtime, from one sentence each."))
+    write(site, page, shell(site, page, "Examples", body, "gallery", "%s videos made with showtime, from one sentence each."
+                            % count_words(len(exs))))
+
+
+ONES = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve",
+        "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"]
+TENS = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"]
+
+
+def count_words(n: int) -> str:
+    """A count as it opens a sentence: 24 -> "Twenty-four" (digits from 100 on)."""
+    if n < 0 or n >= 100:
+        return str(n)
+    w = ONES[n] if n < 20 else TENS[n // 10] + ("-" + ONES[n % 10] if n % 10 else "")
+    return w[:1].upper() + w[1:]
 
 
 def build_example_pages(site: Site, exs) -> None:
@@ -656,9 +786,10 @@ def build_example_pages(site: Site, exs) -> None:
             more = '<p class="edit"><a href="%s">The project files on GitHub</a></p>' % esc(site.gh("examples/" + folder, True))
         body = head + '<div class="wrap"><article class="prose" style="max-width:var(--read);margin:64px auto 120px">%s%s%s</article></div>' % (
             "".join(embeds), body_html, more)
-        write(site, page, shell(site, page, e["title"], body, "gallery", e["what"]))
-        site.search.append({"t": "Example %s: %s" % (e["num"], e["title"]), "u": page, "h": [h[0] for h in heads if h[2] >= 2],
-                            "a": [h[1] for h in heads if h[2] >= 2], "x": plain(e["prompt"] + " " + e["what"] + " " + text)[:6000]})
+        write(site, page, shell(site, page, e["title"], body, "gallery", what_sentence(e)))
+        site.h2_expect[page] = ("examples/%s/README.md" % folder, md_h2_count(text) + len(embeds))
+        site.search.append(search_entry(site, "Example %s: %s" % (e["num"], e["title"]), page, text, heads,
+                                        lead=e["prompt"] + "\n" + e["what"]))
 
 
 # ----------------------------------------------------------------------------------------------- docs
@@ -667,16 +798,20 @@ def doc_sources() -> List[Tuple[Path, str, str]]:
     """(source, output page, sidebar group) for every doc page."""
     out = []
     for p in sorted(REFS.glob("*.md")):
-        out.append((p, "docs/%s.html" % p.stem, ""))
+        if p.name != "index.md":    # the agent's own map: build_docs renders it as docs/index-claude.html
+            out.append((p, "docs/%s.html" % p.stem, ""))
     for p in sorted((REFS / "workflows").glob("*.md")):
         out.append((p, "docs/workflows/%s.html" % p.stem, "workflows"))
     for p in sorted((REFS / "crew").glob("*.md")):
         out.append((p, "docs/crew/%s.html" % p.stem, "crew"))
+    for p in sorted(GUIDES.glob("*.md")):
+        out.append((p, "docs/guides/%s.html" % ("index" if p.name == "README.md" else p.stem), "guides"))
     extra = [(REPO / "CONTEXT.md", "docs/glossary.html"), (REPO / ".out-of-scope/README.md", "docs/out-of-scope.html"),
              (REPO / "skills/showtime/SKILL.md", "docs/skill.html"), (REPO / "assets/brand/BRAND.md", "docs/brand.html"),
              (REPO / "CONTRIBUTING.md", "docs/contributing.html"), (REPO / "CHANGELOG.md", "docs/changelog.html"),
              (REPO / "docs" / "agents.md", "docs/agents.html"),
-             (REPO / "docs" / "github-action.md", "docs/github-action.html")]
+             (REPO / "docs" / "github-action.md", "docs/github-action.html"),
+             (REPO / "docs" / "whats-new.md", "docs/whats-new.html"), (REPO / "docs" / "faq.md", "docs/faq.html")]
     for p, o in extra:
         if p.is_file():
             out.append((p, o, "backstage"))
@@ -693,8 +828,26 @@ def human(slug: str) -> str:
     return " ".join(out)
 
 
+def guide_items(site: Site) -> List[Tuple[str, str]]:
+    """The Guides group: the guides' index, then each guide in the order the index links them, labelled with its
+    h1 (guides the index does not link come last, by name)."""
+    index = GUIDES / "README.md"
+    if index.resolve() not in site.pages:
+        return []
+    order = re.findall(r"\]\(([a-z0-9-]+)\.md\)", index.read_text(encoding="utf-8"))
+    rest = sorted(p.stem for p in GUIDES.glob("*.md") if p.name != "README.md" and p.stem not in order)
+    items = [("All guides", site.pages[index.resolve()])]
+    for stem in dict.fromkeys(order + rest):
+        src = (GUIDES / (stem + ".md")).resolve()
+        if src in site.pages:
+            h1 = re.search(r"^# (.+)$", src.read_text(encoding="utf-8"), re.M)
+            items.append((h1.group(1).strip() if h1 else human(stem), site.pages[src]))
+    return items
+
+
 def sidebar_groups(site: Site) -> List[Tuple[str, List[Tuple[str, str]]]]:
-    """Groups in the docs map's running order (docs/README.md), then the crew briefs and backstage pages."""
+    """The guides first, then groups in the docs map's running order (docs/README.md), then the crew briefs and
+    backstage pages."""
     txt = (REPO / "docs" / "README.md").read_text(encoding="utf-8")
     groups, cur = [], None
     for line in txt.splitlines():
@@ -713,7 +866,11 @@ def sidebar_groups(site: Site) -> List[Tuple[str, List[Tuple[str, str]]]]:
                 label = human(mm.group(1).split("/")[-1])
                 if (label, site.pages[src]) not in cur[1]:
                     cur[1].append((label, site.pages[src]))
-    groups = [g for g in groups if g[1]]
+    guides = guide_items(site)
+    for g in [g for g in groups if g[0] == "Guides"]:   # a "## Guides" heading in the map joins the guides' group
+        guides += [it for it in g[1] if it not in guides]
+        groups.remove(g)
+    groups = ([["Guides", guides]] if guides else []) + [g for g in groups if g[1]]
     crew = [(human(p.stem), site.pages[p.resolve()]) for p in sorted((REFS / "crew").glob("*.md"))]
     groups.append(["The crew's briefs", crew])
     back = [("Glossary", "docs/glossary.html"), ("Out of scope", "docs/out-of-scope.html"), ("SKILL.md", "docs/skill.html"),
@@ -723,13 +880,57 @@ def sidebar_groups(site: Site) -> List[Tuple[str, List[Tuple[str, str]]]]:
     return [(g[0], g[1]) for g in groups]
 
 
+# The search's one normalisation rule, shared with norm() in site/static/app.js (change both together): runs of
+# ` * _ > | # - become one space and whitespace collapses, in the index text here and in the typed query there, so
+# pr-video, SHOWTIME_MCP_TOOLS and #t= find the text they came from. tests/test_site_search.py checks both use it.
+SEARCH_SEPARATORS = r"[`*_>|#-]+"
+
+
 def plain(md_text: str) -> str:
     t = re.sub(r"```.*?```", " ", md_text, flags=re.S)
     t = re.sub(r"<[^>]+>", " ", t)
     t = re.sub(r"!\[[^\]]*\]\([^)]*\)", " ", t)
     t = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", t)
-    t = re.sub(r"[`*_>|#-]+", " ", t)
+    t = re.sub(SEARCH_SEPARATORS, " ", t)
     return re.sub(r"\s+", " ", t).strip()
+
+
+def search_entry(site: Site, title: str, page: str, text: str, heads, lead: str = "") -> dict:
+    """One page of the search index: {"t": title, "u": page, "s": [[heading, anchor, text], ...]}, one section per h2
+    and h3 (the first, with no heading or anchor, is the text above them, after `lead`), so every part of a long page
+    can be found and a hit links to its section. heads are render_md's headings for the same text, in order."""
+    lines = text.split("\n")
+    starts = [t.map[0] for t in site.md.parse(text, {}) if t.type == "heading_open"]
+    if len(starts) != len(heads):
+        raise RuntimeError("%s: %d headings parsed, %d rendered" % (page, len(starts), len(heads)))
+    cuts = [(ln, h) for ln, h in zip(starts, heads) if h[2] in (2, 3)]
+    secs = [["", "", plain(lead + "\n" + "\n".join(lines[:cuts[0][0] if cuts else len(lines)]))]]
+    for i, (ln, h) in enumerate(cuts):
+        end = cuts[i + 1][0] if i + 1 < len(cuts) else len(lines)
+        secs.append([h[0], h[1], plain("\n".join(lines[ln + 1:end]))])
+    return {"t": title, "u": page, "s": secs}
+
+
+def check_search(site: Site) -> List[str]:
+    """Problems in the search index: a page indexed twice, a page not built, an anchor the page does not have."""
+    problems, seen = [], set()
+    for e in site.search:
+        if e["u"] in seen:
+            problems.append("%s is in the search index twice" % e["u"])
+        seen.add(e["u"])
+        p = site.out / e["u"]
+        if not p.is_file():
+            problems.append("%s (%s) is in the search index but was not built" % (e["u"], e["t"]))
+            continue
+        ids = set(re.findall(r'\sid="([^"]+)"', p.read_text(encoding="utf-8")))
+        problems += ["%s#%s (%s) is in the search index but the page has no such anchor" % (e["u"], s[1], s[0])
+                     for s in e["s"] if s[1] and s[1] not in ids]
+    return problems
+
+
+# the sidebar's first group, on every docs page
+START_PAGES = [("docs/index.html", "The map"), ("docs/whats-new.html", "What's new"), ("docs/faq.html", "Questions people ask"),
+               ("docs/agents.html", "Works with your agent")]
 
 
 def docs_frame(site: Site, page: str, groups, content: str, heads, prev_next) -> str:
@@ -737,9 +938,10 @@ def docs_frame(site: Site, page: str, groups, content: str, heads, prev_next) ->
             ICON_SEARCH, '<input id="q" type="search" placeholder="Search the docs" autocomplete="off"><span class="key" aria-hidden="true">/</span>',
             '<div class="results" hidden></div></div>',
             '<button class="side-toggle" type="button" aria-expanded="false"><span>Browse the guides</span><span aria-hidden="true">+</span></button>',
-            '<div class="groups"><h4>Start</h4><ul><li><a href="%s"%s>The map</a></li><li><a href="%s"%s>Works with your agent</a></li></ul>' % (
-                rel(page, "docs/index.html"), ' aria-current="page"' if page == "docs/index.html" else "",
-                rel(page, "docs/agents.html"), ' aria-current="page"' if page == "docs/agents.html" else "")]
+            '<div class="groups"><h4>Start</h4><ul>']
+    for target, label in START_PAGES:
+        side.append('<li><a href="%s"%s>%s</a></li>' % (rel(page, target), ' aria-current="page"' if page == target else "", label))
+    side.append("</ul>")
     for name, items in groups:
         side.append("<h4>%s</h4><ul>" % esc(name))
         for label, target in items:
@@ -769,8 +971,10 @@ def build_docs(site: Site) -> None:
     site.pages[(REPO / "README.md").resolve()] = "index.html"
     site.pages[(EXAMPLES / "README.md").resolve()] = "gallery.html"
     for d in sorted(EXAMPLES.glob("[0-9][0-9]-*/README.md")):
-        site.pages[d.resolve()] = "examples/%s.html" % d.parent.name
+        if site.gallery is None or d.parent.name in site.gallery:   # only examples whose page is built
+            site.pages[d.resolve()] = "examples/%s.html" % d.parent.name
     groups = sidebar_groups(site)
+    site.doc_groups = groups
     flat = [it for _, items in groups for it in items]
     rendered = []
     for src, page, _g in sources + [(REFS / "index.md", "docs/index-claude.html", "")]:
@@ -785,9 +989,9 @@ def build_docs(site: Site) -> None:
         idx = next((i for i, it in enumerate(flat) if it[1] == page), None)
         pn = (flat[idx - 1] if idx else None, flat[idx + 1] if idx is not None and idx + 1 < len(flat) else None) if idx is not None else None
         html_page = docs_frame(site, page, groups, crumbs + body + edit, heads, pn)
-        write(site, page, shell(site, page, title, html_page, "docs", first_line(text)))
-        site.search.append({"t": title, "u": page, "h": [h[0] for h in heads if h[2] >= 2], "a": [h[1] for h in heads if h[2] >= 2],
-                            "x": plain(text)[:14000]})
+        write(site, page, shell(site, page, title, html_page, "docs", md_description(text)))
+        site.h2_expect[page] = (repo_rel, md_h2_count(text))
+        site.search.append(search_entry(site, title, page, text, heads))
         rendered.append(page)
     # the map itself
     src = REPO / "docs" / "README.md"
@@ -796,15 +1000,56 @@ def build_docs(site: Site) -> None:
     write(site, "docs/index.html", shell(site, "docs/index.html", "Documentation",
                                          docs_frame(site, "docs/index.html", groups, body, heads, None), "docs",
                                          "Every showtime guide, in running order."))
-    site.search.append({"t": "Documentation map", "u": "docs/index.html", "h": [h[0] for h in heads if h[2] >= 2],
-                        "a": [h[1] for h in heads if h[2] >= 2], "x": plain(src.read_text(encoding="utf-8"))[:6000]})
+    site.h2_expect["docs/index.html"] = ("docs/README.md", md_h2_count(text))
+    site.search.append(search_entry(site, "Documentation map", "docs/index.html", text, heads))
 
 
-def first_line(md_text: str) -> str:
-    for line in md_text.splitlines():
-        s = line.strip()
-        if s and not s.startswith(("#", "<", "!", "|", ">", "-")):
-            return plain(s)[:180]
+DESC_LIMIT = 200   # characters a link preview's description aims for; whole sentences only
+NOT_ENDS = {"e.g", "i.e", "vs", "cf", "approx", "etc"}   # a period after these does not end the sentence
+
+
+def describe(text: str, limit: int = DESC_LIMIT) -> str:
+    """A page description in whole sentences: as many as fit in `limit` characters, at least the first one, so a
+    link preview never stops mid-sentence. Text without a sentence end is kept whole."""
+    t = re.sub(r"\s+", " ", text or "").strip()
+    ends = []
+    for m in re.finditer(r"[.!?][\"”’')\]]*(?= |$)", t):
+        word = re.search(r"([\w.]+)[.!?]$", t[:m.start() + 1])
+        if t[m.start()] == "." and word and word.group(1).lower() in NOT_ENDS:
+            continue
+        nxt = t[m.end() + 1:m.end() + 2]
+        if nxt and not re.match(r"[A-Z0-9\"“(\[`*_]", nxt):
+            continue
+        ends.append(m.end())
+    if not ends or ends[-1] != len(t):
+        ends.append(len(t))
+    fit = [e for e in ends if e <= limit]
+    return t[:(fit[-1] if fit else ends[0])].strip()
+
+
+def what_sentence(e: dict) -> str:
+    """An example's "what it shows" line (a list of features) as one sentence."""
+    w = e["what"].strip()
+    return w if re.search(r"[.!?]$", w) else w + "."
+
+
+def md_description(md_text: str) -> str:
+    """The description of a Markdown page: its first top-level paragraph as plain text (links keep their text;
+    images, raw HTML and front matter are dropped), cut at a sentence end by describe()."""
+    text = re.sub(r"\A---\n.*?\n---\n", "", md_text, flags=re.S)
+    toks = MarkdownIt("commonmark", {"html": True}).enable("table").parse(text)
+    for i, t in enumerate(toks):
+        if t.type != "paragraph_open" or t.level != 0:
+            continue
+        words = []
+        for c in toks[i + 1].children or []:
+            if c.type in ("text", "code_inline"):
+                words.append(c.content)
+            elif c.type in ("softbreak", "hardbreak"):
+                words.append(" ")
+        s = re.sub(r"\s+", " ", "".join(words)).strip()
+        if len(s) > 1:
+            return describe(s)
     return ""
 
 
@@ -853,9 +1098,9 @@ def build_crew(site: Site) -> None:
                      % (esc(film_fb or "#"), credit))
     body = """<div class="wrap">
 <header class="room-head"><h1 class="title">Ten specialists, one director</h1>
-<p class="lede">Your agent directs every video. For studio work and videos you will publish, it can hand parts of the job to ten
-sub-agents that ship with the plugin. They are optional: a quick video uses none of them, except a researcher and a critic when
-it will be published, and scene builders for long videos.</p></header>
+<p class="lede">Your agent directs every video and can hand parts of the job to ten sub-agents that ship with the plugin. Every
+finished video gets a critic by default (quality mode); say "lean" to skip it (a video you will publish still gets one). A
+researcher joins when the video states facts or will be published, scene builders when it is long, and the rest with studio mode.</p></header>
 {crew_film}
 <div style="margin-top:48px">{cast}</div>
 <section class="section" style="padding-bottom:0"><div class="section-head"><h2 class="title">Who hands what to whom</h2>
@@ -939,12 +1184,13 @@ Make a 20-second launch video for this repo, with a voice-over and upbeat music.
 <div class="section-head"><h2 class="title">Now showing</h2>
 <p class="lede">Each of these came from one request. Hover to preview; play for sound.</p></div>
 <div class="films">{teaser}</div>
-<p class="more"><a class="link-arrow" href="gallery.html">All 22 examples <span>→</span></a></p>
+<p class="more"><a class="link-arrow" href="gallery.html">All {nexs} examples <span>→</span></a></p>
 </div></section>
 
 <section class="section"><div class="wrap">
 <div class="section-head"><h2 class="title">A crew, when you want one</h2>
-<p class="lede">For studio work and videos you will publish, your agent can cast ten specialist sub-agents. Quick videos stay lean.</p></div>
+<p class="lede">Your agent can cast ten specialist sub-agents. Every finished video gets a critic by default; say "lean" to skip it (a video you will publish still gets one).
+Studio work brings in the whole company.</p></div>
 {cast}
 <p class="more"><a class="link-arrow" href="crew.html">Meet the crew <span>→</span></a></p>
 </div></section>
@@ -955,16 +1201,166 @@ Make a 20-second launch video for this repo, with a voice-over and upbeat music.
 when you ask for something from the web.</p></div>
 {runs}
 <div class="facts"><div><h3>Every shape</h3><p>16:9, 1:1 and 9:16, with platform exports, posters, captions and README loops.</p></div>
-<div><h3>Videos that are web pages</h3><p>One HTML file per video, with chapters and keyboard control, playing offline. <a href="gallery.html#html-videos">See one live</a>.</p></div>
-<div><h3>Checked before it is done</h3><p><code>showtime qa</code> checks loudness, black or frozen frames, captions and platform specs.</p></div></div>
+<div><h3>Videos that are web pages</h3><p>One HTML file per video, playing offline, with chapters, keyboard control, questions that
+pause and ask, and range links like <code>#t=10-20</code>. <a href="gallery.html#html-videos">See one live</a>.</p></div>
+<div><h3>Checked before it is done</h3><p><code>showtime qa</code> checks loudness, black or frozen frames, captions and platform specs.
+A hearing pass flags music over the voice, long silences, level jumps at cuts and sound cut off at the end.</p></div>
+<div><h3>Notes on the finished video</h3><p><code>showtime review open</code> plays the render on a local page. Click a spot on the
+frame and type a note; your agent reads it, fixes and replies. <a href="docs/review.html#6-notes-on-the-finished-video">How it works</a>.</p></div>
+<div class="new"><h3>New in 0.4.1</h3><p>Seven WebGL looks and a shutter blur that need no GPU, cards over a talking head and a word behind the
+speaker, a long recording's best moments as short clips, a Claude Design animation to MP4, and faster renders.
+<a href="docs/whats-new.html">What's new</a> · <a href="docs/faq.html">Questions people ask</a>.</p></div></div>
 <p class="more"><a class="link-arrow" href="docs/index.html">Read the docs <span>→</span></a></p>
 </div></section>
 """.format(hero=hero, credit=credit, market=esc(site.repo or CONFIG.get("marketplace", "FavioVazquez/showtime")),
            pipeline=art(site, page, "diagrams/pipeline", "How showtime works: one sentence, your agent directs, a first look, a local render, showtime qa, an MP4 and an HTML video."),
-           teaser="".join(card(site, page, e, show_what=False) for e in teaser),
+           teaser="".join(card(site, page, e, show_what=False) for e in teaser), nexs=len(exs),
            runs=art(site, page, "diagrams/runs-where", "What runs where: the director in your coding agent, the studio on your machine; the web only when you ask."),
            cast=art(site, page, "crew/cast", "The crew: ten illustrated cards, all optional."))
     write(site, page, shell(site, page, "showtime · a local video studio for your coding agent", body, "home"))
+
+
+# ----------------------------------------------------------------------------------------------- share tags, sitemap, llms.txt
+
+SOCIAL_IMAGE = "assets/readme/social/launch-1280x640.jpg"
+SHARE_TAG = re.compile(r'<meta\s+(?:property|name)="(?:og|twitter):[^"]*"\s+content="[^"]*"\s*/?>\s*'
+                       r'|<link\s+rel="canonical"\s+href="[^"]*"\s*/?>\s*', re.I)
+
+
+def share_tags(title: str, desc: str, url: str, image: str, size: Optional[Tuple[int, int]] = None) -> str:
+    """Link-preview tags in the export's own form (shareMeta in skills/showtime/scripts/lib/export/share.mjs), and a
+    canonical link when the address is known."""
+    def m(k: str, v: str, attr: str = "property") -> str:
+        return '<meta %s="%s" content="%s">' % (attr, k, esc(v))
+    out = [m("og:type", "website"), m("og:title", title)]
+    if desc:
+        out.append(m("og:description", desc))
+    if url:
+        out.append(m("og:url", url))
+    if image:
+        out.append(m("og:image", image))
+        if size:
+            out += [m("og:image:width", str(size[0])), m("og:image:height", str(size[1]))]
+        out.append(m("og:image:alt", title))
+    out.append(m("twitter:card", "summary_large_image" if image else "summary", "name"))
+    if url:
+        out.append('<link rel="canonical" href="%s">' % esc(url))
+    return "\n".join(out) + "\n"
+
+
+def tag_html_video(text: str, url: str, desc: str, image: str, size: Optional[Tuple[int, int]] = None) -> str:
+    """An HTML video page with link-preview tags for its address on the site. What its export already wrote wins
+    where it can (a description, an absolute image); og:url and the canonical link are always the site's."""
+    end = text.find("</head>")
+    if end < 0:
+        return text
+    head = text[:end]
+    have = {k.lower(): html.unescape(v) for k, v in
+            re.findall(r'<meta\s+(?:property|name)="((?:og|twitter):[^"]*)"\s+content="([^"]*)"', head, re.I)}
+    head = SHARE_TAG.sub("", head)
+    tm = re.search(r"<title>(.*?)</title>", head, re.S | re.I)
+    title = have.get("og:title") or (html.unescape(tm.group(1)).strip() if tm else "") or "showtime"
+    if re.match(r"^https?://", have.get("og:image", "")):
+        image = have["og:image"]
+        w, h = have.get("og:image:width", ""), have.get("og:image:height", "")
+        size = (int(w), int(h)) if w.isdigit() and h.isdigit() else None
+    return head + share_tags(title, have.get("og:description") or desc, url, image, size) + text[end:]
+
+
+def tag_html_videos(site: Site, exs: List[dict]) -> List[str]:
+    """Link-preview tags on every HTML video the site copied under media/: the example's description and poster
+    (else the page's own description and the site's social image), at the page's address on the site. The
+    exports in the media release predate the export's own share tags (showtime.json "share")."""
+    base = site_url(site.repo)
+    by_folder = {e["folder"]: e for e in exs}
+    done = []
+    for dst, repo_rel in sorted(site.copied.items()):
+        if not (dst.startswith("media/") and dst.endswith(".html")):
+            continue
+        parts = repo_rel.split("/")
+        folder = parts[1] if len(parts) > 2 else ""
+        p = site.out / dst
+        text = p.read_text(encoding="utf-8", errors="surrogateescape")
+        own = re.search(r'<meta\s+name="description"\s+content="([^"]*)"', text[:max(text.find("</head>"), 0)], re.I)
+        e = by_folder.get(folder)
+        board = "studio-board" in dst
+        if e:
+            desc = describe("%s made with showtime, example %s. %s" % (
+                "The studio board of a video job, one HTML file," if board else "An interactive HTML video",
+                e["num"], what_sentence(e)))
+        else:
+            desc = describe(html.unescape(own.group(1))) if own else "An interactive HTML video made with showtime."
+        # the poster beside the page's source (a series episode has its own), else the example's
+        posters = [src_path(posixpath.join(posixpath.dirname(repo_rel), "poster.jpg"))]
+        posters += [src_path("examples/%s/poster.jpg" % folder)] if folder else []
+        poster = next((x for x in posters if x.is_file()), None)
+        if poster is not None:
+            img, size = site.copy_asset(poster), None
+        else:
+            img, size = site.copy_asset(REPO / SOCIAL_IMAGE), (1280, 640)
+        p.write_text(tag_html_video(text, page_url(base, dst), desc, (base + img) if base else rel(dst, img), size),
+                     encoding="utf-8", errors="surrogateescape")
+        done.append(dst)
+    return done
+
+
+def write_sitemap(site: Site, extra: List[str]) -> int:
+    """sitemap.xml: every page this build wrote, then the HTML videos (absolute URLs; none without a base URL)."""
+    base = site_url(site.repo)
+    pages = ["index.html"] + [p for p in site.written + extra if p != "index.html"]
+    urls = list(dict.fromkeys(page_url(base, p) for p in pages)) if base else []
+    (site.out / "sitemap.xml").write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        + "".join("<url><loc>%s</loc></url>\n" % esc(u) for u in urls) + "</urlset>\n", encoding="utf-8")
+    return len(urls)
+
+
+def write_robots(site: Site) -> None:
+    base = site_url(site.repo)
+    (site.out / "robots.txt").write_text("User-agent: *\nAllow: /\n" + ("\nSitemap: %ssitemap.xml\n" % base if base else ""),
+                                         encoding="utf-8")
+
+
+def llms_txt(site: Site) -> str:
+    """llms.txt (https://llmstxt.org): a short Markdown index for agents: what showtime is, how to install it, the key
+    pages with one sentence each, and every guide by title, in the docs map's order (the agent's own map says which
+    guide answers what)."""
+    base = site_url(site.repo)
+    market = site.repo or CONFIG.get("marketplace", "FavioVazquez/showtime")
+    gh = "https://github.com/%s" % market
+
+    def link(page: str, title: str = "", say: bool = True) -> str:
+        t, d = site.described.get(page, (title or page, ""))
+        return "- [%s](%s)%s" % (title or t, page_url(base, page) or page, (": " + d) if d and say else "")
+    lines = ["# showtime", "", "> " + CONFIG.get("description", ""), "",
+             "showtime %s is a local video studio for coding agents: motion graphics, voice-over, music, captions and "
+             "footage editing from one sentence, rendered on the user's machine. It is an Agent Skill with an MCP "
+             "server and a `showtime` command line. Every page below is rendered from Markdown in the repository, %s "
+             "(the guides from `skills/showtime/references/`)." % (CONFIG.get("version", ""), gh), "",
+             "## Install", "",
+             "- Claude Code: `/plugin marketplace add %s`, then `/plugin install showtime@showtime`." % market,
+             "- Any agent that supports Agent Skills: `npx skills add %s`." % market,
+             link("docs/agents.html"),
+             "- [llms-install.md](%s/blob/%s/llms-install.md): installing the MCP server, step by step, written for "
+             "an agent." % (gh, site.branch), "",
+             "## Start here", "",
+             link("docs/index.html", "Documentation map"),
+             link("docs/whats-new.html", "What's new"),
+             link("docs/faq.html", "Questions people ask"),
+             link("docs/index-claude.html", "The agent's own map (the reference index)"),
+             link("docs/skill.html", "SKILL.md"),
+             link("gallery.html", "Examples")]
+    skip = {"The crew's briefs", "Backstage"}
+    listed = {"docs/index.html", "docs/index-claude.html", "docs/skill.html", "docs/agents.html", "docs/whats-new.html",
+              "docs/faq.html"}
+    for name, items in site.doc_groups:
+        rows = [link(p, say=False) for _label, p in items if p not in listed and p in site.described]
+        listed.update(p for _label, p in items)
+        if rows and name not in skip:
+            lines += ["", "## " + name, ""] + rows
+    lines += ["", "## Optional", "", link("crew.html", "The crew"), link("docs/glossary.html"),
+              link("docs/changelog.html"), link("docs/contributing.html")]
+    return "\n".join(lines) + "\n"
 
 
 # ----------------------------------------------------------------------------------------------- main
@@ -973,6 +1369,8 @@ def write(site: Site, page: str, text: str) -> None:
     p = site.out / page
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(text, encoding="utf-8")
+    if page not in site.written:   # list each page once, however often it is written
+        site.written.append(page)
 
 
 def main() -> None:
@@ -1006,23 +1404,40 @@ def main() -> None:
     shutil.copytree(SITE / "static", out / "static", dirs_exist_ok=True)
     (out / ".nojekyll").write_text("")
     groups, exs = parse_examples()
+    site.gallery = {e["folder"] for e in exs}
     build_docs(site)
     build_gallery(site, groups, exs)
     build_example_pages(site, exs)
     build_crew(site)
     build_landing(site, exs)
+    videos = tag_html_videos(site, exs)
+    nurls = write_sitemap(site, videos)
+    write_robots(site)
+    (out / "llms.txt").write_text(llms_txt(site), encoding="utf-8")
     (out / "search-index.js").write_text("window.SHOWTIME_SEARCH=" + json.dumps(site.search, ensure_ascii=False, separators=(",", ":")) + ";\n",
                                          encoding="utf-8")
+    problems = check_search(site)
+    if problems:
+        sys.exit("site/build.py: the search index points at pages or anchors that do not exist:\n  " + "\n  ".join(problems))
     total = sum(f.stat().st_size for f in out.rglob("*") if f.is_file())
     nfiles = sum(1 for f in out.rglob("*") if f.is_file())
     print("site: %s  (%d files, %.1f MB)" % (out, nfiles, total / 1e6))
     print("examples: %s%s" % (EXAMPLES, (" (links: %s)" % EXAMPLES_REPO) if EXAMPLES_REPO else ""))
     print("repo: %s" % (repo or "(none: source links are plain text; set site/config.json \"repo\" or pass --repo)"))
+    print("share: %s; link-preview tags on %d HTML video(s); sitemap.xml lists %d URL(s); robots.txt, llms.txt"
+          % (site_url(repo) or "(no site_url: og:url, canonical links and the sitemap are left out)", len(videos), nurls))
     if site.missing_media:
         uniq = sorted(set(site.missing_media))
         print("videos not found in --media-from (their cards link to the release instead): %d" % len(uniq))
         for m in uniq[:40]:
             print("  " + m)
+    problems = check_pages(out, site.written, site.h2_expect)
+    if problems:
+        sys.stdout.flush()
+        for line in problems:
+            print("site check: " + line, file=sys.stderr)
+        sys.exit("site/build.py: the build check failed on %d page(s) (above)" % len({p.split(":")[0] for p in problems}))
+    print("check: %d pages, each with one <title>, a footer and the h2 headings of its source" % len(site.written))
 
 
 if __name__ == "__main__":

@@ -146,13 +146,24 @@ def check(cap: Dict[str, Any], duration: Optional[float], width: Optional[int], 
     if not cues:
         add("captions_empty", "WARN", None, "the caption file has no cues", "re-export the captions")
         return out
+    # one caption cut into pieces (an edit moves it where the frame's layout changes: a card's split, the face)
+    # is read as one caption for its timing: same text, each piece starting where the one before ends
+    whole: Dict[int, Tuple[float, float]] = {}
+    i = 0
+    while i < len(cues):
+        j = i
+        while j + 1 < len(cues) and cues[j + 1]["text"] == cues[i]["text"] and abs(cues[j + 1]["start"] - cues[j]["end"]) < 0.02:
+            j += 1
+        for k in range(i, j + 1):
+            whole[k] = (cues[i]["start"], cues[j]["end"])
+        i = j + 1
     vertical = R.is_vertical(width, height)
     max_chars = R.max_line_chars(width, height)
     seen = set()
     prev = None
     fast: List[Dict[str, Any]] = []
     long_cues: List[Tuple[Dict[str, Any], str]] = []
-    for c in cues:
+    for ci, c in enumerate(cues):
         s, e = c["start"], c["end"]
         if duration and (s >= duration or e > duration + 0.25) and "end" not in seen:
             seen.add("end")
@@ -174,7 +185,8 @@ def check(cap: Dict[str, Any], duration: Optional[float], width: Optional[int], 
         long = [ln for ln in lines if len(ln) > max_chars]
         if long:
             long_cues.append((c, max(long, key=len)))
-        if R.too_fast(c["text"], max(1e-3, e - s)):
+        ws_, we_ = whole.get(ci, (s, e))
+        if R.too_fast(c["text"], max(1e-3, we_ - ws_)) and (ci == 0 or whole.get(ci - 1) != whole[ci]):   # one per caption
             fast.append(c)
         if width and height and "bounds" not in seen:
             problem = _placement(c, cap.get("play_res"), width, height)
@@ -198,7 +210,7 @@ def check(cap: Dict[str, Any], duration: Optional[float], width: Optional[int], 
             "hold it longer or split it" + (_rest([(x, "") for x in fast[LIST_MAX:]]) if i == LIST_MAX - 1 else ""))
     # flashes: cues too short to read at all (a writer that splits fast speech into 1-word cues passes
     # the reading-speed rule by its exemption; this catches it)
-    flashes = [c for c in cues if 0 < c["end"] - c["start"] < R.FLASH_S]
+    flashes = [c for k, c in enumerate(cues) if 0 < whole[k][1] - whole[k][0] < R.FLASH_S]
     if flashes:
         worst = min(flashes, key=lambda c: c["end"] - c["start"])
         add("caption_flash", "WARN", worst["start"], "%d cue(s) are on screen for less than %.1fs (shortest %.2fs at %.2fs: "

@@ -86,6 +86,7 @@ OVERRIDES = [
     ("agents/**", ["test_skill_structure.py"]),
     ("scripts/check_release.py", ["test_skill_structure.py"]),
     ("scripts/publish_media.py", ["test_skill_structure.py"]),
+    ("scripts/render_speed.py", ["test_render_speed.py"]),   # the before/after render timing script (run by hand)
     # MCP distribution packages (MCP Registry entry, npm wrapper, agent install guide)
     ("server.json", ["test_packages.py", "test_skill_structure.py"]),
     ("packages/**", ["test_packages.py"]),
@@ -98,7 +99,10 @@ OVERRIDES = [
     (".out-of-scope/**", []),
     (".github/**", []),            # CI definitions: exercised by CI itself, not by the local suite
     ("docs/**", []),
-    ("site/**", []),
+    # the guides for people: their shape and sidebar, their search entries, their commands and links (check_release)
+    ("docs/guides/**", ["test_site_build.py", "test_site_search.py", "test_skill_structure.py"]),
+    ("site/**", ["test_site_search.py"]),   # the site build and its search (imports site/build.py by path)
+    ("site/build.py", ["test_site_build.py"]),     # raw HTML in the docs and the build check
     ("examples/**", []),
     ("assets/readme/**", []),
     ("assets/brand/**", []),

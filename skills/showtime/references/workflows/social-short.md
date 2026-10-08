@@ -5,7 +5,8 @@ Read this when the user wants a vertical or short-form video: a reel, a TikTok, 
 vertical explainer with voice-over", "cut this into a TikTok").
 Two starting points: **made from scratch** (the `short` template) or **cut from existing material**
 (a longer render or real footage). Real talking-head footage, even for a reel: follow
-`footage-edit.md` with the vertical settings below. An audiogram (podcast or interview audio with
+`footage-edit.md` with the vertical settings below; several clips from a long recording (a talk, a panel, a
+podcast): `footage-edit.md` § Highlights from a long recording. An audiogram (podcast or interview audio with
 animated captions) is the from-scratch path with the recording as the voice track (section below).
 
 ## Essentials
@@ -36,13 +37,13 @@ animated captions) is the from-scratch path with the recording as the voice trac
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| Inputs | 47-50 |
-| Defaults | 52-59 |
-| Steps (from scratch) | 61-93 |
-| Audiogram (audio clip with captions) | 95-107 |
-| Steps (cut-down of a longer video) | 109-123 |
-| Pitfalls | 125-134 |
-| Read next | 136-139 |
+| Inputs | 48-51 |
+| Defaults | 53-60 |
+| Steps (from scratch) | 62-94 |
+| Audiogram (audio clip with captions) | 96-108 |
+| Steps (cut-down of a longer video) | 110-124 |
+| Pitfalls | 126-135 |
+| Read next | 137-140 |
 
 ## Inputs
 

@@ -142,36 +142,73 @@
     window.addEventListener('scroll', function () { io.takeRecords(); }, { passive: true });
   }
 
-  // ---------- docs search: the index is a script (so it also works from disk), loaded on first use
+  // ---------- docs search: the index is a script (so it also works from disk), loaded on first use.
+  // Each page is {t: title, u: page, s: [[heading, anchor, text], ...]}, one section per h2/h3 (site/build.py
+  // search_entry); a hit links to the section that matches best.
   var input = document.querySelector('.search input'), box = document.querySelector('.results');
   if (!input) return;
   var index = null, sel = -1;
+  // The one normalisation rule, shared with plain() in site/build.py (SEARCH_SEPARATORS; change both together):
+  // runs of ` * _ > | # - become one space, so pr-video, SHOWTIME_MCP_TOOLS and #t= match the indexed text.
+  var SEP = /[`*_>|#-]+/g;
+  function norm(s) { return s.toLowerCase().replace(SEP, ' ').replace(/\s+/g, ' ').trim(); }
+  var avg = 1;   // the mean section length, so a long section (a whole release in the changelog) does not win on bulk
+  function prep(list) {
+    var n = 0, len = 0;
+    list.forEach(function (d) { d.nt = norm(d.t); d.s.forEach(function (c) { c.nh = norm(c[0]); c.nx = c[2].toLowerCase(); n++; len += c.nx.length; }); });
+    avg = Math.max(1, len / Math.max(1, n));
+    return list;
+  }
   function load(cb) {
     if (index) return cb();
-    if (window.SHOWTIME_SEARCH) { index = window.SHOWTIME_SEARCH; return cb(); }
+    if (window.SHOWTIME_SEARCH) { index = prep(window.SHOWTIME_SEARCH); return cb(); }
     var s = document.createElement('script'); s.src = safeSrc(base + 'search-index.js');
-    s.onload = function () { index = window.SHOWTIME_SEARCH || []; cb(); }; document.head.appendChild(s);
+    s.onload = function () { index = prep(window.SHOWTIME_SEARCH || []); cb(); }; document.head.appendChild(s);
   }
   function esc(s) { return s.replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  // matches of w in x, up to 10; one inside a word (review in previewing) counts a quarter
+  function count(x, w) {
+    var i = x.indexOf(w), n = 0, k = 0;
+    while (i >= 0 && k < 10) { k++; n += i && /[a-z0-9]/.test(x.charAt(i - 1)) ? 0.25 : 1; i = x.indexOf(w, i + w.length); }
+    return n;
+  }
   function run() {
-    var q = input.value.trim().toLowerCase(); sel = -1;
+    var q = norm(input.value); sel = -1;
     if (q.length < 2) { box.hidden = true; box.innerHTML = ''; return; }
-    var terms = q.split(/\s+/).filter(Boolean), hits = [];
+    var terms = q.split(' '), phrase = terms.length > 1 ? q : '', hits = [];
+    var mark = new RegExp('(' + terms.slice().sort(function (a, b) { return b.length - a.length; })
+      .map(function (w) { return w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }).join('|') + ')', 'i');
     index.forEach(function (d) {
-      var t = d.t.toLowerCase(), h = d.h.join(' · ').toLowerCase(), x = d.x.toLowerCase(), score = 0, ok = true;
-      terms.forEach(function (w) {
-        var s = 0; if (t.indexOf(w) >= 0) s += 12; if (h.indexOf(w) >= 0) s += 5;
-        var i = x.indexOf(w), n = 0; while (i >= 0 && n < 20) { n++; i = x.indexOf(w, i + w.length); } s += Math.min(n, 10);
-        if (!s) ok = false; score += s;
+      // every term must be somewhere on the page (title, a heading or the text)
+      var ok = terms.every(function (w) { return d.nt.indexOf(w) >= 0 || d.s.some(function (c) { return c.nh.indexOf(w) >= 0 || c.nx.indexOf(w) >= 0; }); });
+      if (!ok) return;
+      // the best section: the most terms, then its score (a heading match, then the text matches weighed by the
+      // section's length, then the whole phrase); the page ranks by its best section plus its title
+      var best = d.s[0], bestHas = -1, bestScore = -1, total = 0;
+      d.s.forEach(function (c) {
+        var has = 0, s = 0, k = 1.2 * (0.5 + 0.5 * c.nx.length / avg);
+        terms.forEach(function (w) {
+          var h = count(c.nh, w), n = count(c.nx, w); if (h || n) has++;
+          s += 3 * Math.min(h, 1) + n * 2.2 / (n + k); total += n;
+        });
+        if (phrase && (c.nh.indexOf(phrase) >= 0 || c.nx.indexOf(phrase) >= 0)) s += 3;
+        if (has > bestHas || (has === bestHas && s > bestScore)) { best = c; bestHas = has; bestScore = s; }
       });
-      if (ok) hits.push([score, d]);
+      var inTitle = 0; terms.forEach(function (w) { inTitle += Math.min(count(d.nt, w), 1); });
+      var score = bestScore + 6 * inTitle + (phrase && d.nt.indexOf(phrase) >= 0 ? 4 : 0) + (bestHas === terms.length ? 2 : 0)
+        + Math.log(1 + Math.min(total, 30)) / 2;   // a page that keeps coming back to the words
+      // a page whose title holds every term opens at its top
+      if (inTitle === terms.length) best = d.s[0];
+      hits.push([score, d, best]);
     });
     hits.sort(function (a, b) { return b[0] - a[0]; });
     box.innerHTML = hits.slice(0, 10).map(function (r) {
-      var d = r[1], x = d.x, lx = x.toLowerCase(), i = lx.indexOf(terms[0]), snip = i >= 0 ? x.slice(Math.max(0, i - 50), i + 110) : x.slice(0, 140);
-      var s = esc(snip); terms.forEach(function (w) { s = s.replace(new RegExp('(' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'ig'), '<mark>$1</mark>'); });
-      var sec = ''; for (var k = 0; k < d.h.length; k++) { if (d.h[k].toLowerCase().indexOf(terms[0]) >= 0) { sec = d.a[k]; break; } }
-      return '<a href="' + esc(base + d.u + (sec ? '#' + sec : '')) + '"><b>' + esc(d.t) + '</b><small>' + (i > 50 ? '…' : '') + s + '…</small></a>';
+      var d = r[1], c = r[2], x = c[2], lx = c.nx, i = lx.indexOf(phrase || terms[0]);
+      if (i < 0) terms.some(function (w) { i = lx.indexOf(w); return i >= 0; });
+      var snip = i >= 0 ? x.slice(Math.max(0, i - 50), i + 110) : x.slice(0, 140);
+      var s = snip.split(mark).map(function (part, k) { return k % 2 ? '<mark>' + esc(part) + '</mark>' : esc(part); }).join('');
+      var title = esc(d.t) + (c[1] ? ' <span class="muted">›</span> ' + esc(c[0]) : '');
+      return '<a href="' + esc(base + d.u + (c[1] ? '#' + c[1] : '')) + '"><b>' + title + '</b><small>' + (i > 50 ? '…' : '') + s + '…</small></a>';
     }).join('') || '<p class="muted" style="padding:10px 11px;margin:0;font-size:.9rem">No guide mentions that.</p>';
     box.hidden = false;
   }

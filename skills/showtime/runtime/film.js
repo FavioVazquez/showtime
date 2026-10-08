@@ -2591,6 +2591,178 @@
       { size: o.size || 18, weight: 600, tracking: 0.18, color: o.color || F.pal.muted, alpha: clamp(p) * 0.9 });
   };
 
+  // @part motionblur: motionBlur blurScan mbRemember
+  // ================================================================== shutter blur
+  // Motion blur on one element of a film, for snap beats (references/film-api.md §11, Shutter blur): the
+  // canvas twin of the DOM's data-st-blur. draw(t, g) draws the element at time t (with F.* or g) and returns
+  // where it is: [x, y, w, h] or {x, y, w, h} (design units; [x, y] works without the % max). While it moves
+  // faster than `threshold` px a frame on screen, the frame gets `samples` draws of it at sub-frame times from
+  // T back to T - shutter instead of one: each on its own layer, averaged in pairs ('lighter' at half weight,
+  // so 8-bit rounding stays under two levels), then smoothed along the motion (a gaussian half a step wide)
+  // and laid on the frame. At rest, moving slowly, or on the frame it comes to rest, it is drawn once, sharp.
+  var MB = { pool: [], scratch: null, filters: {}, defs: null };
+  function mbCanvas(w, h) {
+    var c = MB.pool.pop() || document.createElement('canvas');
+    if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+    var x = c.getContext('2d');
+    x.setTransform(1, 0, 0, 1, 0, 0); x.globalAlpha = 1; x.globalCompositeOperation = 'source-over'; x.filter = 'none';
+    x.clearRect(0, 0, w, h);
+    return c;
+  }
+  function mbBox(p) {
+    if (!p) return null;
+    if (Array.isArray(p)) return p.length >= 4 ? [+p[0], +p[1], +p[2], +p[3]] : p.length >= 2 ? [+p[0], +p[1], 0, 0] : null;
+    if (typeof p === 'object' && isFinite(p.x) && isFinite(p.y)) return [+p.x, +p.y, +(p.w || 0), +(p.h || 0)];
+    return null;
+  }
+  function mbCorners(b, m) {
+    var out = [], pts = [b[0], b[1], b[0] + b[2], b[1], b[0], b[1] + b[3], b[0] + b[2], b[1] + b[3]];
+    for (var i = 0; i < 8; i += 2) out.push(m.a * pts[i] + m.c * pts[i + 1] + m.e, m.b * pts[i] + m.d * pts[i + 1] + m.f);
+    return out;
+  }
+  function mbDist(a, b) { var d = 0; for (var i = 0; i < 8; i += 2) d = Math.max(d, Math.hypot(a[i] - b[i], a[i + 1] - b[i + 1])); return d; }
+  // a draw that paints nothing visible and records no text: where the element is at t
+  function mbDry(draw, t, m, record) {
+    if (!MB.scratch) { var c = document.createElement('canvas'); c.width = c.height = 1; MB.scratch = c.getContext('2d'); }
+    var x = MB.scratch, texts = S.texts, covers = S.covers, prev = S.g;
+    x.setTransform(m.a, m.b, m.c, m.d, m.e, m.f); x.globalAlpha = 1;
+    if (!record) { S.texts = null; S.covers = null; }
+    S.g = x;
+    try { x.save(); return draw(t, x); } finally { x.restore(); S.g = prev; S.texts = texts; S.covers = covers; }
+  }
+  function mbFilter(sx, sy) {
+    var key = sx.toFixed(1) + '_' + sy.toFixed(1), id = 'st-film-mb-' + key.replace(/\./g, 'p');
+    if (!MB.filters[key]) {
+      if (!MB.defs) {
+        MB.defs = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        MB.defs.setAttribute('width', '0'); MB.defs.setAttribute('height', '0'); MB.defs.setAttribute('aria-hidden', 'true');
+        MB.defs.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden';
+        document.body.appendChild(MB.defs);
+      }
+      MB.defs.insertAdjacentHTML('beforeend', '<filter id="' + id + '" filterUnits="userSpaceOnUse" x="-100000" y="-100000" width="200000" height="200000" ' +
+        'color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="' + sx.toFixed(1) + ' ' + sy.toFixed(1) + '"/></filter>');
+      MB.filters[key] = 'url(#' + id + ')';
+    }
+    return MB.filters[key];
+  }
+  // Each call site (o.id, else its draw's source and its turn in the frame) is remembered with the frames it was
+  // drawn on, so `showtime check` can measure its motion over its whole window (Film.blurScan): the draw is a pure
+  // function of t, so where it is at any frame is one dry draw away.
+  function mbRemember(draw, o, m, T, opt) {
+    var src = String(draw), h = 0;
+    for (var i = 0; i < src.length; i++) h = (Math.imul(h, 31) + src.charCodeAt(i)) | 0;
+    var base = o.id ? String(o.id) : 'f' + (h >>> 0).toString(36);
+    var turns = S.mbTurns || (S.mbTurns = {});
+    turns[base] = (turns[base] || 0) + 1;
+    var key = base + (turns[base] > 1 ? '#' + turns[base] : '');
+    var sites = S.mbSites || (S.mbSites = {});
+    var site = sites[key] || (sites[key] = { id: o.id || null, frames: {}, n: 0 });
+    site.draw = draw; site.m = m; site.o = o; site.opt = opt;
+    var f = Math.round(T * ((S.cfg && S.cfg.fps) || 30));
+    if (!site.frames[f] && site.n < 20000) { site.frames[f] = 1; site.n++; }
+  }
+  /** For `showtime check`: every F.motionBlur element's motion on each frame of its window (the same rows as the DOM scan). */
+  F.blurScan = function () {
+    var out = [], fps = (S.cfg && S.cfg.fps) || 30, dt = 1 / fps, sites = S.mbSites || {};
+    var area0 = S.cw * S.ch;
+    Object.keys(sites).forEach(function (key) {
+      var st = sites[key], fr = Object.keys(st.frames).map(Number).sort(function (a, b) { return a - b; });
+      if (!fr.length) return;
+      var f0 = fr[0], f1 = fr[fr.length - 1] + 1, opt = st.opt, mx = st.o.max === undefined ? '50%' : String(st.o.max).trim();
+      var texts = S.texts, rows = [], prev = null, point = false;
+      S.texts = [];
+      try { mbDry(st.draw, ((f0 + f1) / 2 | 0) / fps, st.m, true); } catch (e) { /* a probe only */ }
+      var said = S.texts.map(function (x) { return x.text; }).join(' ').replace(/\s+/g, ' ').trim();
+      var decor = S.texts.length > 0 && S.texts.every(function (x) { return x.decor; });
+      var flash = S.texts.some(function (x) { return x.flash; });
+      S.texts = texts;
+      var Sh = opt.shutter / 360 * dt;
+      for (var f = f0; f < f1; f++) {
+        var t = f / fps, b = mbBox(mbDry(st.draw, t, st.m, false)), bS = mbBox(mbDry(st.draw, t - Sh, st.m, false)), bN = mbBox(mbDry(st.draw, t + dt, st.m, false));
+        if (!b || !bS) { rows.push([+t.toFixed(4), 0, 0, 0, 0, 0]); prev = null; continue; }
+        if (!(b[2] > 0 && b[3] > 0)) point = true;
+        var c = mbCorners(b, st.m), L = mbDist(c, mbCorners(bS, st.m)) / S.dpr;
+        var on = L * 360 / opt.shutter >= opt.threshold && L >= 0.5 && !(bN && mbDist(c, mbCorners(bN, st.m)) / S.dpr < 0.25);
+        var ex = Math.hypot(c[2] - c[0], c[3] - c[1]) / S.dpr, ey = Math.hypot(c[4] - c[0], c[5] - c[1]) / S.dpr;
+        var side = Math.min(ex, ey), maxLen = /%$/.test(mx) ? (side > 0 ? parseFloat(mx) / 100 * side : 160) : +mx > 0 ? +mx : Infinity;
+        rows.push([+t.toFixed(4), prev ? +(mbDist(c, prev) / S.dpr).toFixed(2) : 0, +Math.min(L, maxLen).toFixed(2), on ? 1 : 0, +side.toFixed(1), +(ex * ey / area0).toFixed(4)]);
+        prev = c;
+      }
+      out.push({ sel: 'F.motionBlur ' + (st.id || (said ? '"' + said.slice(0, 24) + '"' : key)), text: said.slice(0, 60), chars: said.length, nodes: 0, clip: false,
+        nested: false, media: false, decor: decor, flash: flash, wholeCanvas: point, shutter: opt.shutter, samples: opt.samples, threshold: opt.threshold, max: mx,
+        off: false, pose: true, from: [f0 / fps, f1 / fps], frames: rows, step: 1, why: '', probes: [] });
+    });
+    return out;
+  };
+  /** o: {shutter: 180, samples: 8, threshold: 6, max: '50%', id}. Returns what draw returned at T. */
+  F.motionBlur = function (T, draw, o) {
+    o = o || {};
+    var g = S.g, fps = (S.cfg && S.cfg.fps) || 30, dt = 1 / fps;
+    var shutter = Math.min(720, +o.shutter > 0 ? +o.shutter : 180), n = Math.min(32, Math.max(2, Math.round(+o.samples) || 8));
+    var th = +o.threshold >= 0 ? +o.threshold : 6, Sh = shutter / 360 * dt, m = g.getTransform();
+    mbRemember(draw, o, m, T, { shutter: shutter, samples: n, threshold: th });
+    var b0 = mbBox(mbDry(draw, T, m, false)), bS = mbBox(mbDry(draw, T - Sh, m, false));
+    var plain = function () { return draw(T, g); };
+    if (!b0 || !bS) return plain();
+    var c0 = mbCorners(b0, m), L = mbDist(c0, mbCorners(bS, m)) / S.dpr;
+    if (L * 360 / shutter < th || L < 0.5) return plain();
+    var bN = mbBox(mbDry(draw, T + dt, m, false));
+    if (bN && mbDist(c0, mbCorners(bN, m)) / S.dpr < 0.25) return plain();   // it lands on this frame: sharp
+    var side = Math.min(Math.hypot(c0[2] - c0[0], c0[3] - c0[1]), Math.hypot(c0[4] - c0[0], c0[5] - c0[1])) / S.dpr;
+    var mx = o.max === undefined ? '50%' : String(o.max).trim(), maxLen = Infinity;
+    if (/%$/.test(mx)) maxLen = side > 0 ? parseFloat(mx) / 100 * side : 160;
+    else if (+mx > 0) maxLen = +mx;
+    var S2 = L > maxLen ? Sh * maxLen / L : Sh;
+    var taus = [];
+    for (var k = 0; k < n; k++) taus.push(T - S2 * k / (n - 1));
+    // the frame's text is recorded once, where the element is at T (check reads it from Film.frameInfo())
+    var ret = mbDry(draw, T, m, true);
+    // where the copies land, in canvas pixels (the whole canvas when draw gives only a point)
+    var bE = mbBox(mbDry(draw, taus[n - 1], m, false)) || bS;
+    var cE = mbCorners(bE, m), steps = [0, 0], cw = S.canvas.width, ch = S.canvas.height;
+    for (var j = 0; j < 8; j += 2) { steps[0] = Math.max(steps[0], Math.abs(c0[j] - cE[j])); steps[1] = Math.max(steps[1], Math.abs(c0[j + 1] - cE[j + 1])); }
+    var gx = 0.5 * steps[0] / (n - 1), gy = 0.5 * steps[1] / (n - 1);
+    var rx = 0, ry = 0, rw = cw, rh = ch;
+    if (b0[2] > 0 && b0[3] > 0) {
+      var xs = c0.concat(cE).filter(function (v, i) { return i % 2 === 0; }), ys = c0.concat(cE).filter(function (v, i) { return i % 2 === 1; });
+      var pad = 0.25 * side * S.dpr + 3 * Math.max(gx, gy) + 16;
+      rx = Math.max(0, Math.floor(Math.min.apply(null, xs) - pad)); ry = Math.max(0, Math.floor(Math.min.apply(null, ys) - pad));
+      rw = Math.min(cw, Math.ceil(Math.max.apply(null, xs) + pad)) - rx; rh = Math.min(ch, Math.ceil(Math.max.apply(null, ys) + pad)) - ry;
+      if (rw <= 0 || rh <= 0) return plain();
+    }
+    var mix = function (a, b) {   // weighted average of two layers (weights a.w and b.w) on a fresh one
+      var c = mbCanvas(rw, rh), x = c.getContext('2d');
+      x.globalCompositeOperation = 'lighter';
+      x.globalAlpha = a.w / (a.w + b.w); x.drawImage(a.c, 0, 0);
+      x.globalAlpha = b.w / (a.w + b.w); x.drawImage(b.c, 0, 0);
+      MB.pool.push(a.c, b.c);
+      return { c: c, w: a.w + b.w };
+    };
+    var stack = [], texts = S.texts, covers = S.covers, prev = S.g;
+    S.texts = null; S.covers = null;
+    try {
+      for (var q = 0; q < n; q++) {
+        var lc = mbCanvas(rw, rh), lx = lc.getContext('2d');
+        lx.setTransform(m.a, m.b, m.c, m.d, m.e - rx, m.f - ry);
+        S.g = lx;
+        lx.save(); try { draw(taus[q], lx); } finally { lx.restore(); }
+        var e = { c: lc, w: 1 };
+        while (stack.length && stack[stack.length - 1].w === e.w) e = mix(stack.pop(), e);
+        stack.push(e);
+      }
+      while (stack.length > 1) { var bb = stack.pop(); stack.push(mix(stack.pop(), bb)); }
+    } finally { S.g = prev; S.texts = texts; S.covers = covers; }
+    g.save();
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    if (gx > 0.3 || gy > 0.3) g.filter = (g.filter && g.filter !== 'none' ? g.filter + ' ' : '') + mbFilter(gx, gy);
+    g.drawImage(stack[0].c, rx, ry);
+    g.restore();
+    MB.pool.push(stack[0].c);
+    if (MB.pool.length > 12) MB.pool.length = 12;
+    return ret;
+  };
+  // @end motionblur
+
   // ================================================================== offscreen helpers
   /** Draw into an offscreen canvas of w x h design units with fn(g), then return it (for caching). */
   F.offscreen = function (w, h, fn, scale) {
@@ -2713,6 +2885,7 @@
     S.T = T; F.T = T;
     S.framesDrawn = (S.framesDrawn || 0) + 1;
     S.texts = [];
+    S.mbTurns = {};  // F.motionBlur call sites seen in this frame (each site's turn: see mbRemember)
     S.covers = [];   // opaque annotation cards (callouts) with their draw order: check flags text they hide
     S.drawSeq = 0;
     F.lastError = null;

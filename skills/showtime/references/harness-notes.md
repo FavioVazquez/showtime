@@ -31,10 +31,10 @@ long commands time out, images cannot be viewed, there is no terminal.
 | Section | Lines |
 |---|---|
 | 1. Claude Code | 39-58 |
-| 2. Any other agent host | 60-84 |
-| 3. Host behaviour that matters | 86-102 |
-| 4. Environment variables | 104-135 |
-| 5. Scripts and CI | 137-151 |
+| 2. Any other agent host | 60-88 |
+| 3. Host behaviour that matters | 90-106 |
+| 4. Environment variables | 108-139 |
+| 5. Scripts and CI | 141-155 |
 
 ## 1. Claude Code
 
@@ -79,6 +79,10 @@ commands can use it:
    Setup and doctor print how to put it on PATH; showtime never edits shell profiles itself.
 4. Optional: hosts that speak MCP can use showtime's MCP server instead of (or next to) the shell;
    `mcp.md` has the config for Claude Desktop, Cursor and Codex.
+5. Or let showtime do steps 1 and 4: `showtime install --agent <name>` (codex, cursor, gemini, kiro ...;
+   `--list` names them all) links the skill, adds the crew agents and the MCP server entry where that
+   agent looks for them, for your user or with `--project` for one folder. `--print` shows what it would
+   write; `--uninstall` removes only what it added.
 
 Everything showtime needs lives under `~/.showtime` (`SHOWTIME_HOME` moves it); several hosts or
 checkouts can share one install.
@@ -95,7 +99,7 @@ checkouts can share one install.
 | No sub-agents | Skip parallel scene authoring; for the critic round (quality mode, or publish-bound) answer `CRITIC.md` yourself as a SELF-REVIEW and give the user the `review-pack` folder for a second look |
 | Sandboxed commands (no network, writes only inside the folder the agent works in) | Run `showtime doctor`: it tests writing the showtime folder and reaching the download hosts, and names the setting to change in the host that runs it (Codex: the `network_access` and `writable_roots` sandbox settings in `~/.codex/config.toml`, doctor prints the lines; Antigravity: `read_url` / `write_file` rules; Cursor: the domains for `sandbox.json`; the Copilot cloud agent: `copilot-setup-steps.yml`). Two ways out work in every host: run `showtime setup` once in a normal terminal, or keep showtime inside that folder with `SHOWTIME_HOME=.showtime showtime setup`; from then on every command run in that project finds `./.showtime` by itself (its `.gitignore` keeps it out of git) |
 | Sandboxed network | Setup needs HTTPS to its download hosts, and so does the first use of anything outside the default install (Whisper before the first transcription, Manim, the audio library's packs, icons, the aligner, Piper voices, rembg; `showtime setup --plan` lists them all). A machine that will be offline later runs `showtime setup --full` first. Media search queries public archives and site capture fetches the pages you point it at; nothing is uploaded. `SHOWTIME_OFFLINE=1` turns off every download (fonts, voices, media search); a feature that would need one says so instead |
-| Windows | Use the `.cmd` shim from cmd and from PowerShell (in PowerShell, call a quoted path with `&`: `& "<path>\bin\showtime.cmd" doctor`); it needs no execution-policy change. `showtime.ps1` runs only where the policy allows local scripts (for example `RemoteSigned`); if PowerShell answers "running scripts is disabled", type `showtime.cmd` instead of `showtime`. Paths with spaces and parentheses work |
+| Windows | Use the `.cmd` shim from cmd and from PowerShell (in PowerShell, call a quoted path with `&`: `& "<path>\bin\showtime.cmd" doctor`); it needs no execution-policy change. `showtime.ps1` runs only where the policy allows local scripts (for example `RemoteSigned`); if PowerShell answers "running scripts is disabled", type `showtime.cmd` instead of `showtime`. Paths with spaces and parentheses work. `job init` warns when the job folder is so deep that files showtime writes in it would pass the 260-character path limit, and names the longest slug that fits; use it or a folder nearer the drive root (`--base C:\st`) |
 
 Exit codes worth handling: `0` ok; `1` a failure the command explains (qa FAIL, check errors); `3` a
 missing extra (prints the `showtime setup --with` line) or, for `showtime site capture`, a bot wall

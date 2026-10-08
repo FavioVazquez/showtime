@@ -33,6 +33,8 @@ showtime export html <project> --target artifact -o launch.html   # to publish a
   corner for the title; `"startTitle": false` when the poster frame is a hook (§ What you get, § Options)
 - Embeds: `--controls none --autoplay-muted --loop` in an `<iframe>`, driven by `window.showtimePlayer`
   (§ Sharing and hosting)
+- Link previews: showtime.json `"share": {"url", "image", "description"}` (or `--share-url`, `--share-image`);
+  give a real `"title"` and `"chapters"`, the export warns about "Project" and "Shot 1" (§ Sharing and hosting)
 - `-o` never overwrites (`-2`, `-3`); `--lang CODE` sets the player's words (en, es, fr, pt, de) (§ Options)
 - Point someone at a passage with a range link, `video.html#t=1:05-1:20`: it plays that part on a loop
   (Shift + drag on the scrubber picks one, `c` copies its link) (§ What you get)
@@ -46,14 +48,14 @@ showtime export html <project> --target artifact -o launch.html   # to publish a
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| What you get | 58-124 |
-| MP4 or HTML? | 126-136 |
-| Audio modes (--audio): How the live score streams (and why seeking is exact) | 138-169 |
-| Size budget | 171-192 |
-| Sharing and hosting | 194-221 |
-| Questions | 223-266 |
-| Options | 268-296 |
-| Limitations | 298-330 |
+| What you get | 60-126 |
+| MP4 or HTML? | 128-138 |
+| Audio modes (--audio): How the live score streams (and why seeking is exact) | 140-171 |
+| Size budget | 173-196 |
+| Sharing and hosting | 198-240 |
+| Questions | 242-285 |
+| Options | 287-317 |
+| Limitations | 319-353 |
 
 ## What you get
 
@@ -183,7 +185,9 @@ largest files, with what to do. Typical sizes: a 12 s canvas film with a live sc
   unpacked by the browser (DecompressionStream; every 2023+ browser has it);
 - fonts: only WOFF2 (the older formats a stylesheet lists are left out), no faces for alphabets the video
   never shows, and for canvas films no families no frame draws with (`--all-fonts` keeps everything);
-- no poster image with the default start screen (the frame is drawn live).
+- no poster image with the default start screen (the frame is drawn live);
+- no sound files the page never plays: the export carries its own mixed audio, so a WAV that only a data file
+  names (`voice/timeline.json` names `vo.wav`) stays out; a sound the page itself requests is packed.
 
 Fonts are then usually the largest part: a variable font's Latin file is 30-65 KB.
 
@@ -209,6 +213,21 @@ images at the size they appear; fewer font families and weights.
   no base64, no size limit). Upload the folder anywhere static. It also opens from disk. The
   folder carries no Content-Security-Policy (it loads its own files), so the no-network guarantee
   is the single file's; set a CSP on the server if you need one.
+  GitHub Pages: push the folder to a repository (or its `docs/`) and turn Pages on for it. The export
+  writes an empty `.nojekyll` beside `index.html`: without it Pages' Jekyll step drops folders whose
+  names start with `_` (`assets/media/_export/`, the mixed audio) and the page plays silent.
+- **Link previews**: the page carries `og:title`, `og:description`, `og:url`, `og:image` and
+  `twitter:card`, so a link to it shows a card in chats and social posts. Set them in showtime.json,
+  `"share": {"url": "https://me.github.io/launch/", "image": "card.jpg", "description": "One sentence."}`,
+  or with `--share-url` and `--share-image`. The title is the export's title; the description defaults
+  to the length and chapter count. The image is an https URL, or a file (`--folder` copies it to
+  `assets/`); without one, a `--folder` export uses the poster frame (`assets/poster.jpg`), and a single
+  file with a share URL gets it beside the file (`<name>.share.jpg`, upload both). A single file without
+  a share URL has no image: link previews cannot read images inside the file. Most platforms ignore a
+  relative image path; with the share URL the export makes it absolute (relative to the page's folder),
+  without it the path stays relative and the export says so. The export warns when the title is a
+  default ("Project", from a folder named `project`) or when the chapters are scene ids ("Shot 1",
+  "Shot 2"): both show in previews and in the player; set `"title"` and `"chapters"` in showtime.json.
 - **Embedding**: `--controls none --autoplay-muted --loop` gives a bare looping picture (a click
   toggles pause); put the file in an `<iframe>`. Pages can drive it through
   `window.showtimePlayer` inside that frame: `ready` (promise), `play()`, `pause()`, `restart()`,
@@ -280,6 +299,8 @@ controls; on a phone held upright it sits under the picture, so the paused frame
 | `--lang CODE` | showtime.json `lang`, else the page's `<html lang>`, else the narration's `lang:`, else en | sets `<html lang>` and the player's own words (Play, Chapters, Sound on, the key help) in en, es, fr, pt or de; other languages get English controls |
 | `--audio-file FILE` | | embed exactly this sound (a WAV, or the shipped MP4's audio) instead of rebuilding the score and the mix |
 | `--title`, `--subtitle`, `--kicker` | showtime.json `title`, `subtitle`, `kicker` | page title and start screen |
+| `--share-url URL` | showtime.json `share.url` | the page's address once hosted: `og:url`, and relative share images made absolute (§ Sharing and hosting) |
+| `--share-image URL\|FILE` | showtime.json `share.image`, else the poster frame | the link-preview image; showtime.json `share.description` sets `og:description` |
 | `--no-questions` | questions asked | a plain player that does not stop at showtime.json `questions` (§ Questions) |
 | `--auto-continue S` | wait for Continue | go on S seconds after a question is answered |
 | showtime.json `"startTitle": false` | title shown | the poster frame already says what the video is (a hook frame): only the Play row sits over the picture, on a light corner scrim; the title still heads the phone layout |
@@ -326,5 +347,7 @@ site/` writes every episode and the opener as single files plus an `index.html` 
   was, and it grows with the score's length (a click in the meantime starts playback once ready).
 - Page code that builds URLs in unusual ways (reading `document.currentScript.src`, string
   surgery on `location.href`, CSS `@import` added at run time) may miss the packed files
-  (`new URL(path, location.href)` does work: it resolves against the page's own address); `showtime export` warns about any file
-  the page asked for that it could not pack, and the browser console names what is missing.
+  (`new URL(path, location.href)` does work: it resolves against the page's own address). A project
+  file the page asks for that cannot be packed (not there, or the server did not answer) stops the
+  export with the list, so a page never ships with scenes missing; a missing emoji or runtime file is a
+  warning. The browser console names anything else that is missing.

@@ -20,12 +20,12 @@ flooding the context, and the local bug report. The fix itself follows `debuggin
 | Section | Lines |
 |---|---|
 | 1. Intake: one question | 30-37 |
-| 2. Evidence on disk | 39-54 |
-| 3. Read with bounds | 56-66 |
-| 4. Findings cite their source | 68-72 |
-| 5. Where to look first | 74-84 |
-| 6. The bug report (local only) | 86-94 |
-| 7. Hand off | 96-100 |
+| 2. Evidence on disk | 39-55 |
+| 3. Read with bounds | 57-67 |
+| 4. Findings cite their source | 69-73 |
+| 5. Where to look first | 75-85 |
+| 6. The bug report (local only) | 87-95 |
+| 7. Hand off | 97-101 |
 
 ## 1. Intake: one question
 
@@ -51,7 +51,8 @@ Every job folder (`showtime-out/<slug>-<timestamp>/`) keeps its own flight recor
 | `<project>/work/check/report.json` | the last `showtime check` findings and the on-screen text list |
 | `<project>/audio/mix.report.json` | loudness, per-track levels, library items and credits |
 
-Start with `showtime status` (three lines) and `showtime job show` (the whole `SHOWTIME.md`).
+Start with `showtime status` (three lines) and `showtime job show` (the whole `SHOWTIME.md`); `showtime job
+list` lists the jobs (`--base DIR` for another folder's `showtime-out/`).
 
 ## 3. Read with bounds
 

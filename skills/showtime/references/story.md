@@ -51,7 +51,7 @@ costs nothing to redo. Motion, sound and render just carry it out.
 | 7. Pitch round (when direction is open) | 209-226 |
 | 8. Distinctness check (before building) | 228-241 |
 | 9. Videos that ask | 243-265 |
-| 10. A storyboard from another skill | 267-288 |
+| 10. A storyboard from another skill | 267-292 |
 
 ## 1. The one-sentence contract
 
@@ -281,6 +281,10 @@ Start from it instead of a template's scenes:
   prints: shots keep their planned lengths where the voice fits and grow where it does not. `new` warns at
   planning rates (2.8 words/s, 3.2 Chinese characters/s) and retime names the shots the voice outgrew. Cut words
   rather than accept a rushed read.
+- A Narration cell that is empty, a dash or only a direction in brackets (`(pause)`, `(silence)`, `[beat]`) is a
+  silent shot: no line is voiced, the scene is marked `data-silent` and keeps the table's length, and the next
+  line's pin counts it. `retime --from-voice` lets that pin win: the silent shot fills the gap up to it, so the
+  shots after it do not drift late (`render.md`, retime).
 - The table's lengths are the plan; the voice decides. `storyboard.json` keeps the plan, `storyboard.md` goes to
   the critic's review pack. `check` warns (`storyboard_brief`) while any brief is left.
 - The plan you show lists the shots in order with their lengths and narration exactly as written, says what

@@ -189,6 +189,7 @@ def view_edl(edl_path, rendered=None, out_dir=None, *, window: float = 1.5, per_
             raise ShowtimeError("rendered video not found: %s" % rendered,
                                 hint="run `showtime edit render %s` first or pass --video" % edl_path.name)
     rep_p = rendered.with_name(rendered.stem + ".report.json")
+    rep = read_json(rep_p, None) if rep_p.is_file() else None
     if rep_p.is_file():
         segs = read_json(rep_p).get("segments") or []
         segs = [dict(s, start=s["src_start"], src_end=s["src_end"]) for s in segs]
@@ -218,6 +219,28 @@ def view_edl(edl_path, rendered=None, out_dir=None, *, window: float = 1.5, per_
             page.paste(b, (0, y))
             y += b.height + 6
         pth = out_dir / ("%s-cuts-%d.png" % (rendered.stem, pg // per_page + 1))
+        page.save(pth)
+        pages.append(pth)
+    # cards: one band per card (the frames while it is on screen, its words, its in and out marked), from the
+    # render's own report (the times it drew them at)
+    cards = ((rep or {}).get("cards") or {}).get("items") or []
+    cwin = []
+    for c in cards:
+        a, b = max(0.0, c["start"] - 0.6), min(total, c["end"] + 0.4)
+        mk = [(c["start"], "in: %s #%d" % (c["type"], c["i"])), (c["end"], "out")]
+        mk += [(it["at"], "item %d" % (k + 1)) for k, it in enumerate(c.get("items") or [])]
+        cwin.append((a, b, mk, "card #%d %s %s-%s \"%s\"" % (c["i"], c["type"], U.fmt_time(c["start"]),
+                                                           U.fmt_time(c["end"]), str(c.get("said", ""))[:40])))
+    for pg in range(0, len(cwin), per_page):
+        bands = [render_band(rendered, a, b, words, width=width, frames=frames, marks=mk,
+                             title="%s  |  %s" % (rendered.name, lab)) for a, b, mk, lab in cwin[pg:pg + per_page]]
+        H = sum(b.height for b in bands) + 6 * (len(bands) - 1)
+        page = Image.new("RGB", (width, H), (0, 0, 0))
+        y = 0
+        for b in bands:
+            page.paste(b, (0, y))
+            y += b.height + 6
+        pth = out_dir / ("%s-cards-%d.png" % (rendered.stem, pg // per_page + 1))
         page.save(pth)
         pages.append(pth)
     return pages

@@ -37,7 +37,9 @@ You own the project's `audio/` folder for this phase; nobody else writes there.
    `showtime audio meter <project>/audio/mix.wav`. Quote the numbers.
 
 Done when: the mix meters within 1 LU of the target with true peak at or below the ceiling, every
-effect lands on its cue, the voice is never masked (check the report's per-section levels), and every
+effect lands on its cue, the voice is never masked (check the report's per-section levels), the mix is
+heard on a phone (`speaker.gap_300_lu` in the report at most 10; a sub drop, boom or impact has a mid
+transient on its hit, `sound-design.md` §3), and every
 CC-BY item has its credit line in `credits.txt` in your folder.
 
 ## When timing changes

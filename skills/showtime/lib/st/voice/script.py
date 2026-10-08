@@ -505,10 +505,13 @@ def write_srt(path: PathLike, cues: List[Dict[str, Any]]) -> Path:
 
 
 def build(script_path: PathLike, out_dir: Optional[PathLike] = None, overrides: Optional[Dict[str, Any]] = None,
-          lexicon_files: Tuple[str, ...] = (), fit: Optional[float] = None) -> Dict[str, Any]:
+          lexicon_files: Tuple[str, ...] = (), fit: Optional[float] = None,
+          readback: Optional[bool] = None) -> Dict[str, Any]:
     """Synthesize every line and write the voice folder. Returns the timeline.
 
-    fit: target length of vo.wav in seconds (see fit_total)."""
+    fit: target length of vo.wav in seconds (see fit_total).
+    readback: hear every line again and compare it with the script (st.voice.readback; default on unless
+    SHOWTIME_READBACK=0): readback.json, and timeline["readback"] with its summary."""
     sp = Path(script_path)
     cfg, raw_lines = load_script(sp)
     c, lines = normalize(cfg, raw_lines, overrides or {})
@@ -578,6 +581,8 @@ def build(script_path: PathLike, out_dir: Optional[PathLike] = None, overrides: 
                 "file": fname, "timing": speech.timing, "wps": rate["wps"], "words": absw}
         if "fit" in ln:
             item["fit"] = ln["fit"]
+        if "at" in ln:
+            item["at"] = ln["at"]          # pinned: retime --from-voice keeps it there past a data-silent scene
         tl_lines.append(item)
         write_json(out / ("lines/%02d-%s.words.json" % (ln["index"], ln["id"])), {
             "source": portable_path(out / fname, out / "lines"), "duration": round(speech.duration, 3),
@@ -604,5 +609,16 @@ def build(script_path: PathLike, out_dir: Optional[PathLike] = None, overrides: 
     if fit_report is not None:
         fit_report["result"] = round(total, 3)
         timeline["fit"] = fit_report
+    from . import readback as rb
+    if (rb.enabled() if readback is None else readback):
+        t_rb = time.time()
+        try:
+            rep = rb.for_voice(out, tl_lines, [speech for _, speech, _ in placed], lex, project_dir=sp.parent)
+        except Exception as e:  # noqa: BLE001 - hearing the voice back is a check, never a reason to fail
+            rep = {"skipped": "the read-back failed (%s)" % (str(e).splitlines()[0][:120] if str(e) else type(e).__name__),
+                   "suspects": []}
+            rep["summary"] = rb.summary(rep)
+        timeline["readback"] = {"file": rb.FILE, "summary": rep["summary"], "suspects": rep.get("suspects") or [],
+                                "skipped": rep.get("skipped"), "seconds": round(time.time() - t_rb, 2)}
     write_json(out / "timeline.json", timeline)
     return timeline

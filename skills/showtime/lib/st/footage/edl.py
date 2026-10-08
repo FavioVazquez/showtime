@@ -22,9 +22,15 @@ optional and has a sensible default:
     "subtitles": "subs.ass" | "subs.srt"          (a ready-made file instead of generated captions)
     "loudness": {"lufs": -14, "tp": -1} | -16 | false | "source"   (default -14 LUFS / -1 dBTP, like every delivery)
     "transcripts": {"a": "transcripts/take1.json"}   (default: found next to the EDL / source)
+    "cards":    [{"type": "lower-third", "say": "my name is", "name": "...", "role": "..."}, ...]
+                (designed cards anchored to the transcript: st.footage.cards, references/editing.md)
+    "look":     a look signature id for the cards and the caption emphasis (default: the brand kit, else
+                one picked once for this EDL)
 
 Per range (all optional): fit, zoom (1.0-3.0 punch-in), focus {"x": 0..1, "y": 0..1},
-grade (overrides the global grade), stabilize (true), volume_db, mute.
+grade (overrides the global grade), stabilize (true), volume_db, mute, hold (s of frozen last frame),
+fade_out (s of sound fading out at the range's end, 0-5). `layout` is internal: the renderer sets it on the
+ranges a side panel card (or a 9:16 behind card that moves the speaker down) covers (cards.panel_splits).
 """
 from __future__ import annotations
 
@@ -173,12 +179,31 @@ def normalize(raw: Dict[str, Any], base: Path, origin: str = "EDL", check_files:
         v = _num(r.get("volume_db"), where + ".volume_db", errs, lo=-60, hi=24)
         if v is not None:
             item["volume_db"] = v
+        hd = _num(r.get("hold"), where + ".hold", errs, lo=0, hi=10)
+        if hd:
+            item["hold"] = hd   # freeze the range's last frame this long (the sound fades out): an ending with air
+        fo = _num(r.get("fade_out"), where + ".fade_out", errs, lo=0, hi=5)
+        if fo:
+            item["fade_out"] = fo   # the range's sound fades out over its last fade_out s (a clip ending on applause)
         ranges.append(item)
 
     output = _output(raw.get("output") or {}, sources, errs)
     overlays = _overlays(raw.get("overlays") or [], base, errs)
     audio = _audio(raw.get("audio") or {}, raw, base, errs)
     captions = _captions(raw.get("captions"), errs)
+    from . import cards as CD
+    cards = CD.normalize_specs(raw.get("cards"), errs, base)
+    look = raw.get("look")
+    if look not in (None, "", "auto"):
+        from ..variety import signatures as sigs
+        try:
+            look = sigs.get(look)["id"]
+        except ShowtimeError as e:
+            errs.append("look: %s (%s)" % (e.message, e.hint or "showtime signature lists them"))
+    else:
+        look = None
+    if captions and captions.get("emphasis") is not None and not isinstance(captions.get("emphasis"), (list, str)):
+        errs.append("captions.emphasis must be a list of words or phrases, e.g. [\"space weather\", \"faster\"]")
     subtitles = None
     if raw.get("subtitles"):
         subtitles = resolve_path(raw["subtitles"], base)
@@ -203,7 +228,7 @@ def normalize(raw: Dict[str, Any], base: Path, origin: str = "EDL", check_files:
     return {"version": int(raw.get("version", 1)), "dir": base, "origin": origin, "sources": sources,
             "ranges": ranges, "output": output, "grade": raw.get("grade", "none"), "overlays": overlays,
             "audio": audio, "captions": captions, "subtitles": subtitles, "loudness": loud,
-            "transcripts": trs, "title": raw.get("title")}
+            "transcripts": trs, "title": raw.get("title"), "cards": cards, "look": look}
 
 
 def _output(o: Dict[str, Any], sources: Dict[str, Dict[str, Any]], errs: List[str]) -> Dict[str, Any]:
@@ -372,12 +397,13 @@ def plan(edl: Dict[str, Any]) -> List[Dict[str, Any]]:
     frames_total = 0
     for i, r in enumerate(edl["ranges"]):
         n = max(1, int(round((r["end"] - r["start"]) * fps)))
+        held = int(round(float(r.get("hold") or 0) * fps))   # frozen frames after the range (range "hold")
         out_start = Fraction(frames_total) / fps
-        frames_total += n
+        frames_total += n + held
         out_end = Fraction(frames_total) / fps
         a0 = int(round(out_start * AUDIO_SR))
         a1 = int(round(out_end * AUDIO_SR))
-        segs.append(dict(r, i=i, frames=n, src_end=r["start"] + float(Fraction(n) / fps),
+        segs.append(dict(r, i=i, frames=n + held, hold_frames=held, src_end=r["start"] + float(Fraction(n) / fps),
                          out_start=float(out_start), out_end=float(out_end), audio_samples=a1 - a0))
     return segs
 
@@ -390,7 +416,7 @@ def retime(segs: List[Dict[str, Any]], fps: Fraction, actual_frames: List[int]) 
         s["out_start"] = float(Fraction(total) / fps)
         total += n
         s["out_end"] = float(Fraction(total) / fps)
-        s["src_end"] = s["start"] + float(Fraction(n) / fps)
+        s["src_end"] = s["start"] + float(Fraction(max(1, n - int(s.get("hold_frames") or 0))) / fps)
     return segs
 
 
@@ -527,5 +553,6 @@ def summary(edl: Dict[str, Any], segs: List[Dict[str, Any]]) -> Dict[str, Any]:
                           "out_start": round(s["out_start"], 3), "out_end": round(s["out_end"], 3),
                           **({"note": s["note"]} if s.get("note") else {})} for s in segs],
             "duration": round(total_duration(segs), 3), "cuts": max(0, len(segs) - 1),
-            "overlays": len(edl["overlays"]), "captions": (edl["captions"] or {}).get("style"),
+            "overlays": len(edl["overlays"]), "cards": len(edl.get("cards") or []),
+            "captions": (edl["captions"] or {}).get("style"),
             "music_tracks": len(edl["audio"]["tracks"])}

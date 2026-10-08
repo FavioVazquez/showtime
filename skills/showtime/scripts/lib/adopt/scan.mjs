@@ -242,6 +242,8 @@ export function pickSource(root, files) {
       const html = read(f);
       const s = scanPage(html);
       if (/(^|\/)(index\.orig|preview|player)\.html?$/i.test(rel)) s.score -= 5;
+      // a Claude Design export's artboard page (an <x-dc> template and its logic class)
+      if (/<x-dc[\s>]/i.test(html) && /\bdata-dc-script\b/i.test(html)) s.score += 60;
       pages.push({ rel, ...s });
     } else if (/\.(mjs|cjs|js|ts|py)$/i.test(rel)) {
       const text = read(f, 5e5);

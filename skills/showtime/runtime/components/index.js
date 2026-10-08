@@ -31,6 +31,13 @@ export { Fit } from './fit.js';
 export { portalShape, counterOf } from './portal.js';
 export { WorldMap } from './map.js';
 export { Grain } from './grain.js';
+export { FlutedGlass } from './fluted-glass.js';
+export { TiltShift } from './tilt-shift.js';
+export { LiquidMetal } from './liquid-metal.js';
+export { MeshGradient } from './mesh-gradient.js';
+export { GodRays } from './god-rays.js';
+export { Marble } from './marble.js';
+export { Metaballs } from './metaballs.js';
 
 import { mountAll } from './core.js';
 import { autoTransitions } from '../transitions/transitions.js';

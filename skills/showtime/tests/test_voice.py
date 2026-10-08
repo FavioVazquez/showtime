@@ -44,6 +44,7 @@ from st import platform as plat  # noqa: E402
 
 FAST = "--fast" in sys.argv
 ENV = build_env(showtime_home())
+ENV["SHOWTIME_READBACK"] = "0"     # hearing the lines back is tests/test_readback.py's; keep these runs short
 VPY = str(plat.venv_python(showtime_home() / "venv"))
 PY = VPY if Path(VPY).is_file() else sys.executable
 

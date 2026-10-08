@@ -40,7 +40,7 @@ Treat color like typography. Fewer choices, each doing one job, applied the same
 | 6. Grading real footage | 116-134 |
 | 7. LUTs | 136-146 |
 | 8. Checks | 148-154 |
-| 9. Look signatures | 156-172 |
+| 9. Look signatures | 156-180 |
 
 ## 1. Palette roles
 
@@ -160,9 +160,10 @@ the project in a look signature: a palette (every text color at the contrast of 
 feel and a ground (key light, grid, vignette), written into the page as a `<style id="st-look">` block of
 theme tokens. The pick is seeded by the folder name (`--look-seed`) and avoids the signatures of the last six
 projects created on this machine and the palettes and display faces of the last five finished videos
-(`showtime history`), so models working side by side do not all land on one dark-and-gold look. `showtime
-signature` lists the twelve (seven dark, five light; data takes the light ones; film, tutorial and series keep
-their own looks).
+(`showtime history list`; `showtime history off` and `on` stop and resume recording), so models working side
+by side do not all land on one dark-and-gold look. `showtime signature list` lists the twelve (seven dark, five
+light; data takes the light ones; film, tutorial and series keep their own looks; `--template T` shows the ones
+template T can wear).
 
 - The brand kit always wins: a kit found for the project stops the pick, and `showtime brand apply` replaces a
   signature. A job's style reference wins too. `--look <id>` names one; `--look template` keeps the template's.
@@ -170,4 +171,11 @@ their own looks).
   `showtime signature apply <project> <id>` (or `next`). Edit the block's tokens to adjust one; keep §3.
 - Templates read three ground tokens, multipliers on what they paint: `--ground-glow`, `--ground-grid`,
   `--ground-vignette` (1 = the template's own ground).
+- The WebGL looks (`components.md` §7) read the same tokens: `liquid-metal` builds its studio from `--bg`,
+  `--fg`, `--accent` and `--accent-2` and picks chrome on the dark signatures and pearl on the light ones;
+  `fluted-glass` with no picture refracts glows in `--accent` and `--accent-2`; `mesh-gradient` blends points
+  from `--bg` and both accents in Oklab (on a dark ground `calm` stays with the accent nearest the ground's hue);
+  `god-rays` takes its light from an accent and its air from `--bg` (from `--fg` on a light ground); `marble`
+  tints carrara with `--accent-2`, nero with `--accent` and stripes ink in both; `metaballs` shade `--accent`
+  and light their rims with `--accent-2`.
 

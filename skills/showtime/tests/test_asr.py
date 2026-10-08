@@ -16,6 +16,9 @@
   the dry narration stem of a showtime render is found (motion render and edit render reports); the
   mixer writes that stem when music plays under a voice
 - CrisperWhisper opt-in: refused on Intel Macs, needs an explicit licence acceptance (remembered)
+- first word: the first VAD chunk starts at 0 (a late onset keeps the word before it); language_source
+  says given/model/detected/guessed/default; Parakeet v3's guess works on merged tokens. With Parakeet v3,
+  the Silero VAD and Kokoro installed, real speech that starts at 0.05 s keeps its first word (else skipped)
 
 usage: python tests/test_asr.py [--fast] [-v]
 """
@@ -111,9 +114,107 @@ class ModelChoiceTest(unittest.TestCase):
         with self.assertRaises(ShowtimeError):
             T.choose_model("nonsense", None)
 
+    def test_setup_extras_exist(self):
+        # the fix a missing model prints (`showtime setup --with <extra>`) names an extra setup knows
+        man = json.loads((SKILL / "setup" / "manifest.json").read_text(encoding="utf-8"))
+        for name, extra in T.SETUP_EXTRA.items():
+            self.assertIn(extra, man["extras"], name)
+        lazy = {it["id"] for it in man["items"] if it.get("tier") == "lazy"}
+        for name, key in T.PARAKEET_ITEMS.items():
+            item = asr_models.ITEMS[key]["item"]
+            self.assertTrue(item in lazy or any(it["id"] == item and it.get("extra") in man["extras"] for it in man["items"]), name)
+
     def test_env_override(self):
         with mock.patch.dict(os.environ, {"SHOWTIME_ASR_MODEL": "turbo"}):
             self.assertEqual(T.choose_model("auto", None), ("whisper", "large-v3-turbo"))
+
+
+class FirstWordTest(unittest.TestCase):
+    """Words before the first speech onset the VAD reports are still decoded; the language says where it came from."""
+
+    def test_first_chunk_starts_at_zero(self):
+        audio = silence(40.0)
+        # the VAD heard the speech late (onset 0.8 s): the soft first word before it stays in the first chunk
+        ch = T._speech_chunks(audio, SR, max_len=5.0, spans=[(0.8, 3.0), (6.0, 9.0), (12.0, 14.0), (30.0, 33.0)])
+        self.assertEqual(ch[0][0], 0.0)
+        self.assertAlmostEqual(ch[0][1], 3.3)
+        # a long lead-in adds only 1.5 s before the (padded) onset, not the whole intro
+        ch = T._speech_chunks(audio, SR, max_len=5.0, spans=[(20.0, 24.0), (30.0, 33.0)])
+        self.assertAlmostEqual(ch[0][0], 18.2)
+        self.assertAlmostEqual(ch[0][1], 24.3)
+        self.assertAlmostEqual(ch[1][0], 29.7)
+
+    def test_music_intro_is_not_decoded(self):
+        """A 25 s music intro (tones and noise, which have energy) then speech: the VAD reports speech from
+        25 s, and a recogniser that 'hears' words in anything loud must get no intro beyond the 1.5 s lead."""
+        rng = np.random.default_rng(3)
+        intro = np.concatenate([tone(0.5, 220.0 * (1 + (k % 5) / 4.0), 0.4) + (0.05 * rng.standard_normal(int(0.5 * SR))).astype(np.float32)
+                                for k in range(50)])
+        speech = np.concatenate([np.concatenate([word_like(0.4, k), silence(0.25)]) for k in range(38)])
+        audio = np.concatenate([intro, speech]).astype(np.float32)
+        onset = len(intro) / SR
+        spans = [(onset + 0.2, onset + 8.0), (onset + 9.0, onset + 16.0), (onset + 17.0, onset + 24.0)]
+
+        class Stream:
+            def accept_waveform(self, sr, x):
+                self.x = x
+
+        class Rec:      # 'hears' a word in every loud 0.5 s, music or not
+            def create_stream(self):
+                return Stream()
+
+            def decode_streams(self, streams):
+                for st in streams:
+                    n = int(0.5 * SR)
+                    ts = [i / SR for i in range(0, len(st.x) - n + 1, n) if float(np.sqrt(np.mean(st.x[i:i + n] ** 2))) > 0.02]
+                    st.result = type("R", (), {"tokens": ["▁la"] * len(ts), "timestamps": ts, "durations": [0.3] * len(ts)})()
+        with mock.patch.object(T, "_parakeet_model", return_value=Rec()), mock.patch.object(T, "_progress"):
+            toks, meta = T._run_parakeet(audio, SR, "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8", 1, spans=spans)
+        self.assertTrue(toks, "the fake recogniser heard the speech")
+        early = [t["start"] for t in toks if t["start"] < onset - 0.3 - T.FIRST_LEAD - 0.01]
+        self.assertEqual(early, [], "words decoded inside the music intro")
+
+    def test_language_source(self):
+        v3, v2 = "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8", "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8"
+        self.assertEqual(T.language_source("parakeet", v3, "es", {}), "given")
+        self.assertEqual(T.language_source("parakeet", v2, None, {"language": "en"}), "model")
+        self.assertEqual(T.language_source("whisper", "small.en", None, {"language": "en"}), "model")
+        self.assertEqual(T.language_source("whisper", "large-v3-turbo", None, {"language": "de"}), "detected")
+        self.assertEqual(T.language_source("parakeet", v3, None, {"language": None}), "default")
+        # Parakeet v3's guess reads merged tokens, which have no type yet (it always said None, so "en")
+        es = [{"text": w} for w in "y entonces el perro de la casa es para los niños que se van".split()]
+        self.assertEqual(T._guess_language(es), "es")
+        self.assertEqual(T._guess_language([{"text": w} for w in "so this is a test of the thing".split()]), "en")
+
+    def test_speech_at_50ms_keeps_its_first_word(self):
+        """Real speech (Kokoro) starting 0.05 s into the file, long enough to be cut into VAD chunks, through
+        Parakeet v3: the first word is in the transcript, and the language is reported as guessed."""
+        sherpa = Path(os.environ.get("SHOWTIME_HOME") or Path.home() / ".showtime") / "models" / "sherpa"
+        if not (sherpa / "silero_vad_v5.onnx").is_file() or not (sherpa / "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8").is_dir():
+            self.skipTest("Parakeet v3 and the Silero VAD are not installed here")
+        try:
+            from st.voice import tts
+            tmp = Path(tempfile.mkdtemp(prefix="st-asr-first-"))
+            self.addCleanup(shutil.rmtree, tmp, True)
+            tts.synthesize("Okay. So this is a quick test of the first word.", voice="am_michael").save(tmp / "p.wav")
+        except Exception as e:  # noqa: BLE001
+            self.skipTest("no Kokoro voice here (%s)" % e)
+        import soundfile as sf
+        x, sr = U.load_audio(tmp / "p.wav", sr=SR)
+        db = U.frame_db(x, sr, 0.01)
+        onset = int(np.argmax(db > U.voice_threshold(db)[0]))
+        x = x[max(0, onset * 160 - 800):]          # the voice starts at 0.05 s
+        full = np.concatenate([x, np.zeros(int(2.5 * SR), np.float32)] * 6 + [x])
+        sf.write(str(tmp / "first.wav"), full, SR)
+        with mock.patch.dict(os.environ, {"SHOWTIME_ASR_CHUNK": "5"}):
+            doc, _ = T.transcribe(tmp / "first.wav", model="parakeet-v3", events="off", force=True,
+                                  out_path=tmp / "first.json", separate="off", gap_scan=False, use_stem=False)
+        words = [w for w in doc["words"] if w["type"] == "word"]
+        self.assertTrue(words, "no words")
+        self.assertEqual(U.bare(words[0]["text"]), "okay", [w["text"] for w in words[:4]])
+        self.assertLess(words[0]["start"], 0.3)
+        self.assertEqual(doc["language"], "en")
+        self.assertEqual(doc["language_source"], "guessed")
 
 
 class LazyFetchTest(unittest.TestCase):

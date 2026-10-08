@@ -71,8 +71,9 @@ HF_REPOS = {
     "base": "Systran/faster-whisper-base", "base.en": "Systran/faster-whisper-base.en",
     "tiny.en": "Systran/faster-whisper-tiny.en",
 }
-SETUP_EXTRA = {"large-v3-turbo": "asr-turbo", "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8": "parakeet",
-               "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8": "parakeet-v3"}
+# `showtime setup --with <extra>` for a model (setup/manifest.json "extras"); Parakeet v3 is no extra: it
+# is a lazy item, fetched on first use (asr_models.ensure)
+SETUP_EXTRA = {"large-v3-turbo": "asr-turbo", "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8": "parakeet"}
 # Rough CPU cost (seconds of processing per second of audio on 6 cores, idle machine).
 COST = {"large-v3-turbo": 0.45, "large-v3": 1.2, "medium": 0.6, "medium.en": 0.6, "small": 0.25, "small.en": 0.22,
         "base": 0.1, "base.en": 0.1, "tiny.en": 0.05, "parakeet": 0.18}   # parakeet: ASR + filler gap scan
@@ -347,6 +348,9 @@ def chunk_seconds() -> float:
         return 30.0
 
 
+FIRST_LEAD = 1.5   # s decoded before the first VAD span (beyond its 0.3 s pad)
+
+
 def _speech_chunks(audio, sr: int, max_len: Optional[float] = None,
                    spans: Optional[List[Tuple[float, float]]] = None) -> List[Tuple[float, float]]:
     """Split long audio on pauses: Silero VAD when installed, else energy minima."""
@@ -374,6 +378,12 @@ def _speech_chunks(audio, sr: int, max_len: Optional[float] = None,
             chunks[-1] = (chunks[-1][0], e)
         else:
             chunks.append((s, e))
+    # the first chunk starts up to FIRST_LEAD s before the first onset: a soft first word the VAD heard
+    # late (its onset after the word) is still decoded, but a music intro or a jingle before the speech is
+    # not sent to the recogniser (music has energy, so the words it would "hear" there survive guard())
+    if chunks and chunks[0][0] > 0:
+        s0, e0 = chunks[0]
+        chunks[0] = (max(0.0, s0 - FIRST_LEAD), e0)
     return chunks
 
 
@@ -434,11 +444,23 @@ def _run_parakeet(audio, sr: int, name: str, threads: int,
     return toks, {"language": "en" if name.endswith("v2-int8") else None, "chunks": len(chunks)}
 
 
+def language_source(engine: str, name: str, given: Optional[str], meta: Dict[str, Any]) -> str:
+    """How the transcript's language was decided: given (--language), model (an English-only model),
+    detected (the model heard it). Parakeet v3 reports none: transcribe() then says guessed or default."""
+    if given:
+        return "given"
+    base = os.path.basename(str(name))
+    if base.endswith(".en") or base.endswith("v2-int8"):
+        return "model"
+    return "detected" if meta.get("language") else "default"
+
+
 def _guess_language(words: List[Dict[str, Any]]) -> Optional[str]:
     """en / es / None from common function words (Parakeet v3 does not report the language)."""
     en = {"the", "and", "to", "of", "a", "is", "that", "it", "we", "you", "i", "in", "was", "this", "for"}
     es = {"el", "la", "de", "que", "y", "en", "los", "las", "un", "una", "es", "por", "con", "para", "se", "lo"}
-    b = [U.bare(w["text"]) for w in words if w.get("type") == "word"]
+    # called on merged tokens, before classify() gives them a type: only events are left out
+    b = [U.bare(w["text"]) for w in words if w.get("type", "word") == "word"]
     ne, ns = sum(1 for x in b if x in en), sum(1 for x in b if x in es)
     if ne + ns < 5:
         return None
@@ -838,9 +860,11 @@ def transcribe(media, *, model: str = "auto", language: Optional[str] = None, sp
         toks, meta = _run_parakeet(audio, sr, name, threads, spans=spans)
     asr_seconds = time.time() - t0
     det_lang = meta.get("language") or lang or "en"
+    lang_source = language_source(engine, name, lang, meta)
     words = merge_tokens(toks, det_lang, subword=(engine in ("parakeet",)))
     if engine == "parakeet" and not meta.get("language") and not lang:
-        det_lang = _guess_language(words) or "en"
+        guessed = _guess_language(words)
+        det_lang, lang_source = (guessed, "guessed") if guessed else ("en", "default")
     words = classify(words, report)
     words = guard(words, audio, sr, duration, report)
     stats: Dict[str, Any] = {}
@@ -894,7 +918,7 @@ def transcribe(media, *, model: str = "auto", language: Optional[str] = None, sp
         report["warnings"].append("no speech was recognised")
     doc: Dict[str, Any] = {
         "source": str(src), "duration": round(off + duration, 3), "language": det_lang,
-        "language_probability": meta.get("language_probability"),
+        "language_source": lang_source, "language_probability": meta.get("language_probability"),
         "model": os.path.basename(name),
         "engine": {"whisper": "faster-whisper", "crisper": "crisperwhisper"}.get(engine, "sherpa-onnx"),
         "audio_track": audio_track, "text": _plain_text(word_list), "version": TRANSCRIPT_VERSION,
@@ -916,8 +940,8 @@ def transcribe(media, *, model: str = "auto", language: Optional[str] = None, sp
         warn("%s: %s" % (src.name, w_))
     if report["dropped"]:
         info("%s: dropped %d likely-hallucinated token(s) (see guards.dropped)" % (src.name, len(report["dropped"])))
-    info("%s%s: %d words (%d fillers), %s, language %s, %s in %.1fs -> %s" % (
-        src.name, (" %s-%s" % (U.fmt_time(rng[0]), U.fmt_time(rng[1]))) if rng else "", len(word_list), fillers, U.fmt_time(duration), det_lang, os.path.basename(name),
+    info("%s%s: %d words (%d fillers), %s, language %s (%s), %s in %.1fs -> %s" % (
+        src.name, (" %s-%s" % (U.fmt_time(rng[0]), U.fmt_time(rng[1]))) if rng else "", len(word_list), fillers, U.fmt_time(duration), det_lang, lang_source, os.path.basename(name),
         time.time() - t0, dst))
     return doc, dst
 

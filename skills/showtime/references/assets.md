@@ -35,13 +35,13 @@ For material from the product itself (screens, logos, copy) read `references/cap
 | Section | Lines |
 |---|---|
 | 1. License policy (applies to every command) | 46-70 |
-| 2. Fonts | 72-102 |
-| 3. Icons | 104-125 |
-| 4. Emoji | 127-142 |
-| 5. Stock photos and video (CC0 / public domain) | 144-195 |
-| 6. Contact sheets of a folder | 197-211 |
-| 7. Cutouts (background removal) | 213-229 |
-| 8. Where things live | 231-244 |
+| 2. Fonts | 72-103 |
+| 3. Icons | 105-126 |
+| 4. Emoji | 128-143 |
+| 5. Stock photos and video (CC0 / public domain) | 145-196 |
+| 6. Contact sheets of a folder | 198-212 |
+| 7. Cutouts (background removal) | 214-230 |
+| 8. Where things live | 232-245 |
 
 ## 1. License policy (applies to every command)
 
@@ -76,6 +76,7 @@ showtime assets font "Space Grotesk"                        # 400 + 700, latin: 
 showtime assets font inter --weights all --subsets latin,latin-ext
 showtime assets font anton --copy-to ./my-video/fonts       # portable copy inside the project; prints the <link> and CSS lines
 showtime assets font inter --path --weight 700              # print a TTF path (installs if missing)
+showtime assets font --css "<Google Fonts link>" --copy-to ./my-video/fonts   # the files a page's link serves, with licenses, and fonts.css
 showtime assets fonts                                       # installed families
 showtime assets fonts --search grotesk                      # search ~2,000 families
 ```

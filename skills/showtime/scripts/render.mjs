@@ -736,7 +736,16 @@ async function main() {
     // every browser was started before the capture (whole videos); a worker opens its page, then takes runs
     // until none is left
     const started = new Array(workers).fill(false);
-    const jobs = Array.from({ length: workers }, async (_, w) => {
+    const jobs = Array.from({ length: workers }, (_, w) => workerJob(w).finally(() => {
+      // a worker that took no frames is not waited for (below): the browser it launched or the page it opened
+      // after the capture ended (and after render closed its browsers) is closed here, or it keeps the command
+      // from exiting (a span's second browser started late on a busy machine)
+      if (w > 0 && !started[w]) {
+        if (wsess[w]) closeSoon(wsess[w].close(), 5000);
+        if (browsers[w]) closeSoon(browsers[w].browser.close());
+      }
+    }));
+    async function workerJob(w) {
       if (w > 0 && !browsers[w]) {
         const pre = early[w - 1];
         browsers[w] = pre ? await pre.catch(() => openBrowser({ gpu, ownSignals: true, args: renderFlags() })) : await openBrowser({ gpu, ownSignals: true, args: renderFlags() });
@@ -759,7 +768,7 @@ async function main() {
         started[w] = true;
         await captureRun(w, run);
       }
-    });
+    }
     // a worker still opening its page when the others have taken and drawn every frame is not waited for
     await new Promise((resolve, reject) => {
       const done = new Array(workers).fill(false);

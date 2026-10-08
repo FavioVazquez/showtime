@@ -11,8 +11,9 @@ seeks, and every wait is its fixed value times a factor of 1-5 (never shorter th
     (SHOWTIME_TEST_WAIT_SCALE=0.04: a seek gets 2.4 s, as 60 s does on a real machine): with the fixed waits
     (SHOWTIME_PACE=0) the render fails on the seek deadline; paced, it renders and render.json records the
     factor (5, the ceiling) and the seek cost
-  * a page whose ST.waitFor gate takes 3 s of work in 200 ms pieces (scale 0.03: the gate gets 1.8 s): with the
-    fixed waits the page never becomes ready; paced, the gaps between its frames raise the factor and it does
+  * a page whose ST.waitFor gate takes 4 s of work in 400 ms pieces from the moment ST.ready() is called (scale
+    0.03: the gate gets 1.8 s): with the fixed waits the page never becomes ready; paced, the gaps between its
+    frames raise the factor and it does
   * the page-open deadline (stagehost openGuarded, SHOWTIME_TEST_OPEN_TIMEOUT shortens it): render's first page
     and check's pages are tried once more in a new browser, then the command fails naming the step; a browser
     really stopped (SIGSTOP) before check opens its page is killed and check finishes in a new one, and stopped
@@ -152,8 +153,16 @@ class TestSlowPages(unittest.TestCase):
     def test_slow_gate_ready_when_paced(self):
         proj = self.tmp / "gate"
         write(proj / "showtime.json", json.dumps({"width": 320, "height": 180, "fps": 10, "duration": 1, "background": "#202830"}))
+        # The gate's deadline starts when ST.ready() reaches the gates, not when the gate starts. A gate that started
+        # while the page parsed had done some of its work by then, as much as the host's calls between the first
+        # load and ST.ready() took (each waits for a 200 ms piece: 5 on a Mac, 2 more on a busy Windows runner, where
+        # 3 s of work in 200 ms pieces then fit the fixed 1.8 s and the fixed run passed). Started by ST.ready() itself,
+        # one piece is done before its deadline starts on any machine: 4 s of work in 400 ms pieces leaves 3.6 s,
+        # twice the fixed wait, and frames 150-200 ms apart make it x3-4 paced (5.4-7.2 s).
         write(proj / "index.html", HEAD + "</head><body><script>" + BUSY_JS +
-              "ST.waitFor((async () => { for (let k = 0; k < 15; k++) { busy(200); await new Promise((r) => setTimeout(r, 0)); } })(), 'heavy init');\n"
+              "let go; const started = new Promise((r) => { go = r; });\n"
+              "const ready = ST.ready; ST.ready = function (o) { go(); return ready.call(this, o); };\n"
+              "ST.waitFor(started.then(async () => { for (let k = 0; k < 10; k++) { busy(400); await new Promise((r) => setTimeout(r, 0)); } }), 'heavy init');\n"
               "ST.onSeek(() => {});</script></body></html>")
         code = """
 const S = await import(%s);
@@ -194,7 +203,8 @@ process.exit(0);
         self.assertNotEqual(cp.returncode, 0, cp.stdout[-1500:])
         self.assertIn("trying once more in a new browser", cp.stderr)
         self.assertEqual(cp.stderr.count("trying once more"), 1, cp.stderr[-2000:])
-        self.assertRegex(cp.stderr, r"timed out after \d+s: opening the page")
+        # the deadline is x the page's pace (a busy runner's frames raise it while the page waits)
+        self.assertRegex(cp.stderr, r"timed out after \d+s( \(x[\d.]+ for this page's pace\))?: opening the page")
         # names the step (on a fast machine the page's own 20 s wait; a slow one may still be setting the tab up)
         self.assertRegex(cp.stderr, STUCK_AT)
 

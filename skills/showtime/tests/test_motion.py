@@ -41,13 +41,32 @@ from st.launcher import build_env, showtime_home  # noqa: E402
 
 FAST = "--fast" in sys.argv
 ENV = build_env(showtime_home())
+# a browser that stops answering (seen on macOS CI runners) ends the command with the step it was stuck at well
+# inside the test's 600 s: the page-open deadline (5 min x the page's pace, twice) and the screenshot wait (10 min)
+# are longer than the test's own limit
+ENV["SHOWTIME_TEST_OPEN_TIMEOUT"] = "90"
+ENV["SHOWTIME_SHOT_TIMEOUT"] = "120"
 RESULTS = {}
 
 
+def _log_tails(args, since):
+    """The render.log / check logs a command wrote (under the paths it was given), newest first, for a timeout."""
+    roots = [Path(str(a)) for a in args if Path(str(a)).is_dir()]
+    logs = sorted({f for r in roots for f in r.rglob("logs/*.log") if f.stat().st_mtime >= since},
+                  key=lambda f: f.stat().st_mtime, reverse=True)
+    return "\n".join("--- %s\n%s" % (f, f.read_text(encoding="utf-8", errors="replace")[-2500:]) for f in logs[:3]) or "(no log)"
+
+
 def showtime(*args, check=True, timeout=600):
-    cp = subprocess.run([sys.executable, str(LAUNCHER)] + [str(a) for a in args], env=ENV,
-                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8",
-                        errors="replace", timeout=timeout)
+    t0 = time.time()
+    try:
+        cp = subprocess.run([sys.executable, str(LAUNCHER)] + [str(a) for a in args], env=ENV,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8",
+                            errors="replace", timeout=timeout)
+    except subprocess.TimeoutExpired as e:
+        err = e.stderr.decode("utf-8", "replace") if isinstance(e.stderr, bytes) else (e.stderr or "")
+        raise AssertionError("showtime %s did not return in %d s\nstderr: %s\n%s" % (
+            " ".join(map(str, args)), timeout, err[-2000:], _log_tails(args, t0 - 1))) from None
     skip_if_listen_refused(cp)   # render, snap and check serve the project on a local port
     if check and cp.returncode != 0:
         raise AssertionError("showtime %s failed (rc=%d):\n%s\n%s" % (

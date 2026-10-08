@@ -21,6 +21,9 @@ waive. Statements are read oldest round first, the critic's FINDINGS.md before t
 round, and the last one about an id wins. `showtime review-respond` writes the maker's lines into the latest
 answered round's RESPONSE.md (an unanswered round is rebuilt by review-pack, so nothing is written there).
 
+A critic that cannot write files returns its answer as text; `showtime review-findings` cuts the reply to the
+answer (extract), checks it against CRITIC.md's format (shape) and saves it as the round's FINDINGS.md.
+
 Read-only and stdlib only, like st.job.review_state.
 """
 from __future__ import annotations
@@ -245,3 +248,91 @@ def gate_error(job: Path, g: Dict[str, Any]) -> Tuple[str, str]:
     if len(op) > 12:
         lines.append("    ... and %d more (showtime review-respond %s lists them all)" % (len(op) - 12, job.name))
     return "\n".join(lines), how_to(job.name, [f["id"] for f in op])
+
+
+# ------------------------------------------------------------------ a critic's answer as text (review-findings)
+# A critic sub-agent the host denies Write returns its answer in its reply; `showtime review-findings` saves
+# that text as the round's FINDINGS.md once its shape is right, so the director never retypes it.
+
+_START = re.compile(r"^\W*(SELF-REVIEW|VERDICT|PREFERENCE)\b", re.I)
+_FENCE = re.compile(r"^\s*(```|~~~)")
+_T = re.compile(r"\bt\s*=\s*\d+(?:\.\d+)?\s*s\b", re.I)
+
+
+def _filled(lines: Sequence[str]) -> int:
+    return sum(1 for x in lines if x.strip())
+
+
+def extract(text: str) -> Tuple[str, int]:
+    """(the answer, non-blank lines left out): the fenced block that holds the answer when the reply wraps it in one,
+    else everything from its first SELF-REVIEW / VERDICT / PREFERENCE line (a sentence of chat before it is
+    not part of FINDINGS.md)."""
+    lines = (text or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    i, n = 0, len(lines)
+    while i < n:
+        if _FENCE.match(lines[i]):
+            j = i + 1
+            while j < n and not _FENCE.match(lines[j]):
+                j += 1
+            block = lines[i + 1:j]
+            if any(_START.match(x.strip().strip("`*")) for x in block):
+                return "\n".join(block).strip("\n") + "\n", _filled(lines) - _filled(block)
+            i = j + 1
+            continue
+        i += 1
+    for k, ln in enumerate(lines):
+        if _START.match(ln.strip().strip("`*")):
+            body = "\n".join(lines[k:]).rstrip()
+            return body + "\n", _filled(lines[:k])
+    return "\n".join(lines).strip("\n") + "\n", 0
+
+
+def _headings(text: str) -> List[str]:
+    """The section words of an answer, upper case, in order (BLOCKERS, SHOULD-FIX, POLISH, VERDICT ...)."""
+    out = []
+    for raw in text.splitlines():
+        line = raw.strip().strip("`").strip()
+        if _BULLET.match(line):
+            continue
+        h = _HEAD.match(line)
+        if h:
+            w = h.group(1).upper()
+            out.append("BLOCKERS" if w.startswith("BLOCKER") else "SHOULD-FIX" if w.startswith("SHOULD") else
+                       "WOULD I POST" if w.startswith("WOULD") else w)
+    return out
+
+
+def shape(text: str, round_no: int = 1, order: Optional[int] = None) -> Tuple[List[str], List[str]]:
+    """(problems, warnings) of a critic's answer against CRITIC.md's format. A problem means the answer
+    cannot count (no verdict, no WOULD I POST line, a missing Blockers / Should-fix / Polish section);
+    a warning is saved anyway (a finding without a timestamp, a pairwise finding that names no video)."""
+    from . import review_state            # review_state imports this module
+    problems: List[str] = []
+    warnings: List[str] = []
+    heads = set(_headings(text))
+    posts = review_state.parse_would_post(text)
+    if order is None:
+        if review_state.parse_verdict(text) is None:
+            problems.append("no readable VERDICT line (ship | ship after fixes | not ready -- one reason)")
+        if "" not in posts:
+            problems.append("no answered WOULD I POST THIS line (yes | no -- one reason)")
+    else:
+        # the parser review-verdict uses, so the two never disagree ("neither" is a tie, "X over Y" is X)
+        from ..qa.pairwise import parse_findings
+        if parse_findings(text)["preference"] is None:
+            problems.append("no readable PREFERENCE line (X, Y or tie -- one reason)")
+        for lab in ("X", "Y"):
+            if lab not in posts:
+                problems.append("no answered WOULD I POST %s line (yes | no -- one reason)" % lab)
+    missing = [h for h in ("BLOCKERS", "SHOULD-FIX", "POLISH") if h not in heads]
+    if missing:
+        problems.append("no %s section (write it with `- none` when it is empty)" % ", ".join(missing))
+    prefix = "r%d" % round_no if order is None else "r%do%d" % (round_no, order)
+    for f in parse(text, prefix):
+        if not _T.search(f["text"]):
+            warnings.append("%s cites no timestamp (t=..s): %s" % (f["id"], short(f, 70)))
+        if order is not None and f["video"] is None:
+            warnings.append("%s names neither video ([X] or [Y]), so it counts for neither: %s" % (f["id"], short(f, 70)))
+    if order is None and round_no > 1 and "PREVIOUS" not in heads:
+        warnings.append("no PREVIOUS section: round %d answers each earlier blocker and should-fix by its id" % round_no)
+    return problems, warnings

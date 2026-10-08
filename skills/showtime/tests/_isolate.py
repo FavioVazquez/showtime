@@ -18,3 +18,5 @@ atexit.register(shutil.rmtree, SCRATCH, True)
 # the look history (st.variety.history) of test jobs stays in the scratch folder, never in the user's
 # ~/.showtime/history (qa records a job's look when it passes)
 os.environ.setdefault("SHOWTIME_HISTORY_DIR", os.path.join(SCRATCH, ".look-history"))
+# and so do the soundtracks render keeps for reuse (scripts/lib/audiocache.mjs), never ~/.showtime/cache
+os.environ.setdefault("SHOWTIME_AUDIO_CACHE_DIR", os.path.join(SCRATCH, ".audio-cache"))

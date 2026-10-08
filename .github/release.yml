@@ -1,0 +1,19 @@
+# Generated release notes ("Generate release notes" on a new release): merged pull requests grouped by label.
+# The hand-written notes and CHANGELOG.md stay the record; these lists help once outside pull requests merge.
+changelog:
+  exclude:
+    labels: [skip-notes, duplicate, out-of-scope]
+    authors: [dependabot, "dependabot[bot]", github-actions, "github-actions[bot]"]
+  categories:
+    - title: Breaking changes
+      labels: [breaking]
+    - title: New
+      labels: ["type: feature", "type: example"]
+    - title: Fixes
+      labels: ["type: bug"]
+    - title: Faster
+      labels: ["type: perf"]
+    - title: Docs
+      labels: ["type: docs"]
+    - title: Other
+      labels: ["*"]

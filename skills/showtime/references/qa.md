@@ -34,7 +34,10 @@ Batch visual checks: one `showtime look` per phase, not dozens of single frames 
   18–25 dB under the voice; `loudness` WARNs past 1 LU off target, FAILs past 3 LU (§2, § Tools)
 - Hearing (WARN, with times): a voice line under 8 dB over the music (`voice_masked`, from the narration stem),
   near silence over 2 s mid-video (`quiet_stretch`), a jump over 6 LU at a cut (`level_jump`), sound still playing
-  on the last frame (`abrupt_end`); `review-pack` hands the critic the full measurements (§2, § Tools)
+  on the last frame (`abrupt_end`), a name or number of the voice-over heard differently from the script
+  (`readback`, FAIL for a title, brand or lexicon name a second recognizer also hears differently), a mix that plays far quieter on a phone speaker than its
+  loudness says (`speaker_loudness`: over 10 LU under above 300 Hz, FAIL over 18); `review-pack` hands the
+  critic the full measurements (§2, § Tools)
 - Frame 0 is the thumbnail: a hook complete at t=0 (`"poster": 0`) or a baked poster (`--poster-bake auto`);
   EDL and external videos: `showtime deliver poster <video> --at <t> --bake`. Ship `share.txt` (1–3 sentences,
   no claim not in the video), burned captions for social plus a sidecar, and credits for any CC-BY asset (§2)
@@ -57,10 +60,10 @@ Batch visual checks: one `showtime look` per phase, not dozens of single frames 
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| 1. Pre-render (on the project) | 65-106 |
-| 2. Post-render (on the MP4) | 108-148 |
-| 3. The critic pass | 150-160 |
-| Tools | 162-371 |
+| 1. Pre-render (on the project) | 68-114 |
+| 2. Post-render (on the MP4) | 116-157 |
+| 3. The critic pass | 159-169 |
+| Tools | 171-386 |
 
 ## 1. Pre-render (on the project)
 
@@ -78,7 +81,12 @@ Batch visual checks: one `showtime look` per phase, not dozens of single frames 
 - [ ] `showtime check` ends with `phone check: PASS` (type size in points at phone width, every text held long enough to read,
       nothing under platform UI; the numbers and their sources are under "Phone check" below).
 - [ ] Contrast is ≥4.5:1 (≥3:1 for large display) on real pixels, including frames **mid-transition**.
+- [ ] No `low_contrast`: check judges a fading text at the frame where it is most opaque, so a long fade-in needs no shortening.
 - [ ] No overflow, clipping, collisions or orphaned single-word lines. Nothing sits in the caption band when captions exist.
+- [ ] No `caption_zone`: nothing visible is drawn where the caption cards sit while a caption shows (`data-st-caption-ok` if intended).
+- [ ] No `webgpu`: scenes draw with WebGL or 2D; a WebGPU page renders a flat ground on a machine without a GPU.
+- [ ] No `blur_*` warning: a shutter blur (`data-st-blur`) sits only on 1-3 snap beats, on the element that snaps, never on
+      text being read, slow moves or a whole scene; snap a blurred frame and the frame it lands on (sharp) to look at both.
 - [ ] No `labels_crowded` (warning): SVG labels in one graphic (chart values and axes, map names) that touch or sit
       closer than 0.15em side by side or stacked (`label_gap_em` in `runtime/thresholds.json`). Fix: fewer bars
       (aggregate, or label only the highlight and extremes), the chart's default `valueLabels` (auto-thinning, not
@@ -131,6 +139,7 @@ Batch visual checks: one `showtime look` per phase, not dozens of single frames 
 | Start | Audio present within the first 0.1 s when music is planned from frame 1 |
 | End | Clean button or tail, with no cut-off decay in the last 0.3 s (`abrupt_end`) |
 | Across cuts | No jump over 6 LU in the bed or the voice that the story does not call for (`level_jump`) |
+| Heard on a phone | The mix above 300 Hz at most 10 LU under the full mix (`speaker_loudness`; posted films 1-8 LU) |
 - [ ] Listen once on small speakers or earbuds, at least the hook, the reveal and the end. No clicks at edits,
       no harsh sibilance, and no SFX louder than the voice. The critic cannot listen: its hearing pass judges
       only the numbers in the pack's `audio.txt` (review.md §1), so these stay yours.
@@ -188,7 +197,7 @@ Output: PASS / WARN / FAIL lines, each with a rule id, a timestamp, the frame at
 (`work/qa/<video>/frames/`) and a fix; `qa.json` and `sheet.jpg` (FAIL/WARN frames outlined). Every long
 caption line and every too-fast cue is listed (up to 12 each, the rest counted), so one run shows them all.
 The hearing measurements (voice over the music per line, words per minute, quiet stretches, the level across
-each cut, effects, the ending) are in `qa.json` `hearing`, summed up in the `hearing` line; their 100 ms block
+each cut, effects, the ending, the read-back) are in `qa.json` `hearing`, summed up in the `hearing` line; their 100 ms block
 levels are in `loudness.json` `blocks`, from which `review-pack` writes the critic's `audio.txt` and `hearing.png`.
 Exit code 1 on FAIL (`--strict`: also on WARN). When the video sits in a job folder, the verdict is logged
 per file in `job.json` (`qa_files`); the job's verdict (`qa`, what `status` and `SHOWTIME.md` show) follows
@@ -220,6 +229,8 @@ export itself (`showtime qa <export> --platform github`); without one it FAILs w
 | `voice_masked` | WARN | a voice line sits under 8 dB (`hearing.voice_over_bed_min_db`) over the music under its words. Measured only when the render's narration stem lines up with the file's audio (render keeps `work/audio/mix.voice.wav`; an edit render its speech stem; a voice-only mix over an `ST.score` bed): the stem is aligned (±50 ms) and scaled to the delivered audio, the rest is the bed. Without a stem `review-pack` still estimates it for the critic, never a WARN |
 | `quiet_stretch` | WARN | near silence for 2 s or more mid-video: 100 ms blocks more than 20 LU under the integrated loudness (`quiet_stretch_s`, `quiet_under_lu`), not already a `silent_gap` |
 | `level_jump` | WARN | the level changes more than 6 LU (`level_jump_lu`) across a cut (planned scene starts and hard cuts), 1 s each side, like with like: the bed with the bed (stem), else both sides speech or both not; a cut where speech starts or stops, an effect within 1 s or a music section change at the cut does not count |
+| `readback` | WARN; FAIL for a name in the title, brand or project lexicon that a second installed recognizer (Whisper small.en for English) also hears differently | the project's `voice/vo.wav` transcribed again locally and lined up with the script sound by sound: a name, acronym or number heard differently ("Open A I" heard as "OpenI"). Reuses `voice/readback.json` when `voice script` wrote it for that `vo.wav`; else transcribes the line clips (cached), or `vo.wav` itself. INFO when the recognizer is not installed. A word someone listened to and found right is cleared with `"readback": {"ok": ["JSON"]}` in showtime.json. Fix: [voice.md](voice.md) § Pronunciation fixes |
+| `speaker_loudness` | WARN over 10 LU, FAIL over 18 (`speaker_gap_lu`, `speaker_gap_fail_lu`) for a showtime mix (a mix report or an ST.score bed); only WARN for sound showtime did not mix (your own song, a footage edit's sound); INFO when the mix turned `speaker_safe` off | heard on a phone: the integrated loudness of the mix above 300 Hz (and above 1 kHz), measured like `ffmpeg -af "highpass=f=300,highpass=f=300,ebur128"`, against the full mix. Phone and laptop speakers play little under 300 Hz, so a mix of kick, bass and sub at -14 LUFS plays quiet there. Calibrated on 7 Oct 2026: every posted film 0.7-8.2 LU, a bass-led showreel preview 13.6 LU (-27.6 LUFS above 300 Hz, about 9 dB quieter on a phone than the voice-led films). The fix: `showtime audio mix` (its speaker-safe step, on by default, cuts the bed's lows; `audio.md` § Heard on a phone), a bed with more in the mids, a mid transient on sub hits. The numbers are in every qa run (`qa.json` `hearing.speaker`, the PASS line, the `hearing` line) |
 | `abrupt_end` | WARN | the last 0.2 s (of the bed, with a stem) are within 10 dB (`abrupt_end_db`) of the 3 s before and audible: music, or a word, cut off on the last frame. A seamless loop may ignore it |
 | `first_frame_black` | FAIL | frame 0 is black (no poster baked) |
 | `first_frame_flat` | WARN | frame 0 is one flat colour |
@@ -243,6 +254,10 @@ export itself (`showtime qa <export> --platform github`); without one it FAILs w
 | `aspect` | WARN (FAIL for `expect.width/height/aspect`) | aspect differs from the platform |
 | `resolution` | WARN | the aspect fits but the frame has under 97 % of the platform's pixels (540x960 for Reels): render the final at full size |
 | `upscale` | WARN (INFO when the EDL sets `"output": {"allow_upscale": true}`) | an EDL render enlarged a source more than 1.5x (from `<video>.report.json`, also for a baked `final.poster.mp4` and for exports, which carry the report with factors scaled to their size); the fix names a smaller output size or `--fit blur`, or says when it is unavoidable (1080p to 1080x1920) |
+| `caption_face` | WARN | an edit with cards (or `captions.avoid_face`) has captions over the tracked face (eyes to chin) with no room above or below it (from `<video>.report.json`) |
+| `card_problem` | WARN | an edit's cards (EDL `cards`) overlap, sit on the captions or out of the safe box, lack room beside the face, or are too short to read (from `<video>.report.json`; `edit check` lists the same) |
+| `behind_hidden` | WARN | a behind card's word is over 45 % behind the speaker, or a stretch over 40 % of its width is hidden (measured by the render from the word's ink and the speaker's matte; `edit check` estimates it from the face) |
+| `matte_flicker` | WARN | the speaker's cut-out under a behind card flickers: over 2 % of the speaker's area jumps on a still picture (the render's matte measure) |
 | `player_chrome` | WARN (footage) | a thin bar across over half the width, low in the frame or in a recorded player, with small glyphs at both ends (play, time, fullscreen), in the same place on 2+ sampled frames: a web player's controls recorded with the page |
 | `soft_footage` | WARN (footage) | edge sharpness (sum \|Laplacian\| / sum \|gradient\| per detailed 64 px cell, at delivery size) under 0.75 on 60 % of the detailed cells, on half the sampled frames: crisp screen text is ~1.5, a 2x upscale ~1.0, 3x ~0.7. Fix: re-record at 2x device scale |
 | `caption_boxes` | WARN | two caption boxes stacked around one centre with widths differing by over 10 % (one box per line: the stepped look), on 2+ sampled frames. Fix: one plate (`captions --style boxed`) |

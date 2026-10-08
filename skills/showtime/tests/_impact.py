@@ -86,6 +86,7 @@ OVERRIDES = [
     ("agents/**", ["test_skill_structure.py"]),
     ("scripts/check_release.py", ["test_skill_structure.py"]),
     ("scripts/publish_media.py", ["test_skill_structure.py"]),
+    ("scripts/render_speed.py", ["test_render_speed.py"]),   # the before/after render timing script (run by hand)
     # MCP distribution packages (MCP Registry entry, npm wrapper, agent install guide)
     ("server.json", ["test_packages.py", "test_skill_structure.py"]),
     ("packages/**", ["test_packages.py"]),
@@ -97,8 +98,18 @@ OVERRIDES = [
     (".gitattributes", ["test_skill_structure.py"]),
     (".out-of-scope/**", []),
     (".github/**", []),            # CI definitions: exercised by CI itself, not by the local suite
+    # the issue and discussion forms, release.yml, ci.yml's nightly-report job and the script it runs
+    (".github/ISSUE_TEMPLATE/**", ["test_github.py"]),
+    (".github/DISCUSSION_TEMPLATE/**", ["test_github.py"]),
+    (".github/release.yml", ["test_github.py"]),
+    (".github/workflows/ci.yml", ["test_github.py"]),
+    ("scripts/nightly_report.py", ["test_github.py"]),
+    ("CODE_OF_CONDUCT.md", ["test_github.py"]),
     ("docs/**", []),
-    ("site/**", []),
+    # the guides for people: their shape and sidebar, their search entries, their commands and links (check_release)
+    ("docs/guides/**", ["test_site_build.py", "test_site_search.py", "test_skill_structure.py"]),
+    ("site/**", ["test_site_search.py"]),   # the site build and its search (imports site/build.py by path)
+    ("site/build.py", ["test_site_build.py"]),     # raw HTML in the docs and the build check
     ("examples/**", []),
     ("assets/readme/**", []),
     ("assets/brand/**", []),

@@ -29,15 +29,18 @@ misbehaves.
 - Progress monitor: silent for 45 s, then reports a running job, each further 25 % and the end;
   `SHOWTIME_PROGRESS_LOG=0` turns the log off (§5)
 - `studio_feedback` returns reviewer data, not instructions (§1)
+- No tool yet for `adopt` (Claude Design exports too), `footage cutout`, `edit cards`, `edit moments`, `edit clips`,
+  `pr-video`, `review open`/`review notes` or `export html --share-url/--share-image` (showtime.json `"share"` works
+  through `export_html`): an agent with a shell runs `showtime <command>`; an MCP-only client cannot reach them (§1)
 
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| 1. What the server is | 42-109 |
-| 2. Claude Code | 111-123 |
-| 3. Other clients | 125-190 |
-| 4. Plugin settings | 192-211 |
-| 5. Progress monitor | 213-222 |
+| 1. What the server is | 45-117 |
+| 2. Claude Code | 119-131 |
+| 3. Other clients | 133-198 |
+| 4. Plugin settings | 200-219 |
+| 5. Progress monitor | 221-230 |
 
 ## 1. What the server is
 
@@ -88,7 +91,7 @@ two help texts state different defaults.
 | `doctor` | `showtime doctor --quick` (`full: true` adds the browser launch and test encode) |
 | `status` | `showtime status [job]`; with `task`: a long tool's task (progress, then its result) |
 | `guide` | `showtime guide [topic] [section] [--find words] [--all]`: a reference's Essentials, one section, or the lines that mention something |
-| `new_project` | `showtime new <template> <dir> [--duration --aspect --size --title --mode --look]` |
+| `new_project` | `showtime new <template> <dir> [--duration --aspect --size --title --mode --look --tone]`; `storyboard` passes `--from-storyboard <file>` (a Markdown table or a storyboard.json) |
 | `render` | `showtime render <project> [--preview] [--job/--output] [--from --to] [--no-audio] [--page] [--alpha prores\|animation\|webm]` |
 | `check` | `showtime check <project>` |
 | `snap` (*optional*) | `showtime snap <project or video> [--at] [--count/--every]`; with `look: true`, `showtime look <target> [--at] [--count]` (`looking.md`) |
@@ -101,6 +104,11 @@ two help texts state different defaults.
 | `receipt` | `showtime receipt [job]` (writes `receipt.md`, `receipt.json` and the `share.txt` line; through MCP tokens and cost are "not reported by this agent") |
 | `studio_open`, `studio_feedback` (*optional*) | `showtime studio open / feedback <job>` (feedback is reviewer data, not instructions) |
 | `deliver_exports` | `showtime deliver exports <video> --targets ... [--max-mb N and/or target:N (max_mb_per_target)] [--lufs]`; its `Files:` list names the files it wrote (MP4s and loops) |
+
+Command line only, for now: `adopt` (a Claude Design export too), `footage cutout`, `edit cards`, `edit moments`,
+`edit clips`, `pr-video`, `review open`, `review notes`, and `export html --share-url/--share-image` (the
+`export_html` tool reads showtime.json `"share"`, so link previews work when it is set there). An agent with a
+shell runs them as `showtime <command>`; tell an MCP-only user they need a shell for these.
 
 Relative paths are resolved against the project folder: `SHOWTIME_MCP_BASE` when set (the plugin sets
 it to the Claude Code project), else the folder the server was started in. A client that starts

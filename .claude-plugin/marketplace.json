@@ -5,14 +5,14 @@
   },
   "metadata": {
     "description": "showtime: a local video studio for your coding agent",
-    "version": "0.4.0"
+    "version": "0.4.1"
   },
   "plugins": [
     {
       "name": "showtime",
       "source": "./",
       "description": "A local video studio for your coding agent. Describe a video. Your agent directs. Your machine renders. Motion graphics, voice-over, music, footage editing, captions and platform-ready exports, with no cloud AI services or API keys.",
-      "version": "0.4.0",
+      "version": "0.4.1",
       "author": {
         "name": "Favio Vazquez"
       },

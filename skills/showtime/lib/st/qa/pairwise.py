@@ -784,7 +784,8 @@ def print_pack(m: Dict[str, Any]) -> None:
     print("  briefs    %s" % "\n            ".join(m["critic"]))
     print("  key       %s  (which label is which; never give it to a critic)" % m["key"])
     print("  next: dispatch two fresh critics at once, each with only one brief's path, each writing FINDINGS.md next "
-          "to its brief; then run showtime review-verdict %s" % m["dir"])
+          "to its brief (one that cannot write files: showtime review-findings %s --order N < reply.txt); then run "
+          "showtime review-verdict %s" % (m["dir"], m["dir"]))
     print(m["dir"])
 
 

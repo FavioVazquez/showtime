@@ -218,6 +218,28 @@
    "license_url": "https://www.apache.org/licenses/LICENSE-2.0",
    "source": "https://huggingface.co/facebook/wav2vec2-base-960h",
    "attribution": "wav2vec2-base-960h by Facebook AI (Apache-2.0); uint8 ONNX export by onnx-community"
+  },
+  {
+   "item": "modnet",
+   "url": "https://huggingface.co/Xenova/modnet/resolve/fa2fa546052fba4c08921230a26cc69a333fca12/onnx/model.onnx",
+   "file": "modnet--model.onnx",
+   "size": 25888640,
+   "sha256": "07c308cf0fc7e6e8b2065a12ed7fc07e1de8febb7dc7839d7b7f15dd66584df9",
+   "license": "Apache-2.0",
+   "license_url": "https://www.apache.org/licenses/LICENSE-2.0",
+   "source": "https://github.com/ZHKKKe/MODNet",
+   "attribution": "MODNet by Zhanghan Ke, Jiayu Sun, Kaican Li, Qiong Yan and Rynson W.H. Lau (Apache-2.0); fp32 ONNX export by Xenova (Apache-2.0)"
+  },
+  {
+   "item": "modnet",
+   "url": "https://raw.githubusercontent.com/ZHKKKe/MODNet/28165a451e4610c9d77cfdf925a94610bb2810fb/LICENSE",
+   "file": "modnet--LICENSE",
+   "size": 11357,
+   "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+   "license": "Apache-2.0",
+   "license_url": "https://www.apache.org/licenses/LICENSE-2.0",
+   "source": "https://github.com/ZHKKKe/MODNet",
+   "attribution": "MODNet by Zhanghan Ke, Jiayu Sun, Kaican Li, Qiong Yan and Rynson W.H. Lau (Apache-2.0); fp32 ONNX export by Xenova (Apache-2.0)"
   }
  ]
 }

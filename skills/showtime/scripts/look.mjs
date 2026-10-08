@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startServer } from './server.mjs';
-import { parseCli, runMain, c, fmtTime, parseTimes, jobDir, UserError } from './lib/cli.mjs';
+import { parseCli, runMain, c, fmtTime, parseTimes, jobDir, UserError, sinceLastLooked, printSince } from './lib/cli.mjs';
 import { openBrowser, openLab, parseSize } from './lib/stagehost.mjs';
 import { enclosingJob, readJSON, resolveJobDir } from './lib/studio/paths.mjs';
 import { VIDEO_EXT, isVideo, openSource } from './lib/frames.mjs';
@@ -204,7 +204,7 @@ async function main() {
     const image = path.join(outDir, `look-${n}.jpg`);
 
     if (!shared.serverUrl) { labServer = await startServer({ root: tmpRoot, port: 0 }); shared.serverUrl = labServer.url; }
-    lab = await openLab((await shared.browser()).browser, shared.serverUrl);
+    lab = await openLab(await shared.browser(), shared.serverUrl);
     const width = Math.max(320, Math.min(3840, Number(a.width || 1280)));
     const k = frames.length;
     const vertical = H > W;
@@ -233,6 +233,8 @@ async function main() {
       scenes_from: scenes ? 'check report' : null, stills: stillsDir, brief, verdicts,
       page_errors: src.kind === 'project' ? src.sess.log.errors.map((e) => e.message) : [],
     };
+    const since = job ? await sinceLastLooked(job) : null;   // what the person changed in the job meanwhile
+    if (job) res.since_last_looked = since;
     if (a.json) { process.stdout.write(JSON.stringify(res, null, 2) + '\n'); return 0; }
     if (why) console.log(`using ${res.source} (${why})`);
     console.log(`look ${n}/${LOOK_BUDGET}  ${image}  (${k} frames: ${frames.map((f) => fmtTime(f.t) + (f.label ? ' ' + f.label : '')).join(', ')})`);
@@ -242,6 +244,7 @@ async function main() {
     if (sceneNote) console.log(c.dim(`  ${sceneNote}`));
     if (n > LOOK_BUDGET) console.log(c.yellow(`  look ${n} is past the budget of ${LOOK_BUDGET} per job: hand looks to a reviewer sub-agent (the brief above), or rely on check/qa text`));
     if (res.page_errors.length) console.log(c.yellow(`  ${res.page_errors.length} page error(s), first: ${res.page_errors[0]} (run \`showtime check\`)`));
+    printSince(since);
     return 0;
   } finally {
     if (lab) await lab.close();

@@ -9,6 +9,7 @@ import net from 'node:net';
 import { pathToFileURL } from 'node:url';
 import { depPath } from './deps.mjs';
 import { UserError } from './cli.mjs';
+import { openGuarded, closeSoon } from './stagehost.mjs';
 import { realpathUnderRoot, symlinkRefusal, escapesBySymlink } from './pathguard.mjs';
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -519,14 +520,21 @@ export async function contactSheet(browser, items, outFile, { title = '', cols =
     figcaption{padding:6px 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px;color:#c9c9d1}
     b{color:#fff;margin-right:4px}
   </style></head><body>${title ? `<h1>${esc(title)}</h1>` : ''}<main>${cells}</main></body></html>`);
-  const page = await browser.newPage({ viewport: { width, height: 800 }, deviceScaleFactor: 1 });
+  let page = null;
   try {
-    await page.goto(pathToFileURL(htmlFile).href, { waitUntil: 'load', timeout: 60000 });
+    // the tab and its load under the page-open deadline (the browser is the caller's: no second try)
+    page = await openGuarded({ browser }, async (br, track) => {
+      track.step = 'opening a tab';
+      const pg = await br.newPage({ viewport: { width, height: 800 }, deviceScaleFactor: 1 });
+      track.step = 'loading the sheet';
+      await pg.goto(pathToFileURL(htmlFile).href, { waitUntil: 'load', timeout: 60000 });
+      return pg;
+    }, { label: 'opening the contact sheet' });
     await page.evaluate(() => Promise.all([...document.images].map((i) => i.decode().catch(() => {}))));
     fs.mkdirSync(path.dirname(path.resolve(outFile)), { recursive: true });
     await page.screenshot({ path: outFile, fullPage: true, type: 'jpeg', quality: 82 });
   } finally {
-    await page.close();
+    if (page) await closeSoon(page.close());
     try { fs.unlinkSync(htmlFile); } catch { /* keep */ }
   }
   return outFile;

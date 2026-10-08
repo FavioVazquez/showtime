@@ -20,6 +20,7 @@ def register(sub: argparse._SubParsersAction) -> None:
         "  showtime guide <topic> <section>    one section: its number (3 or §3), its name or part of it, or a\n"
         "                                      sub-heading such as a component (count-up) or a command\n"
         "  showtime guide --find <words>       every line that mentions all the words, with topic and section\n"
+        "  showtime guide <topic> --find <words>   the same in one reference (the topic goes before --find)\n"
         "  showtime guide                      the list of topics\n\n"
         "A topic is a file under references/ without .md (components, workflows/launch-video, crew/critic);\n"
         "a unique part of the name works too (launch, data-story, manim)."),
@@ -28,11 +29,14 @@ def register(sub: argparse._SubParsersAction) -> None:
                 "  showtime guide components count-up     # one component's options\n"
                 "  showtime guide render 'showtime check' # one command's section\n"
                 "  showtime guide audio 3 5               # two sections\n"
-                "  showtime guide --find typewriter at    # where a detail lives\n"
+                "  showtime guide --find typewriter at    # where a detail lives (every word after --find)\n"
+                "  showtime guide audio --find loudnorm   # in one reference\n"
                 "  showtime guide stage-api --all         # the whole file"))
     p.add_argument("topic", nargs="?", help="a reference name (components, launch, workflows/data-story ...)")
     p.add_argument("section", nargs="*", help="section numbers or names (several print one after another)")
-    p.add_argument("--find", metavar="WORDS", help="lines that contain every word (in the topic, or in all)")
+    p.add_argument("--find", metavar="WORD", nargs="+",
+                   help="lines that contain every word (in the topic, or in all); every word after --find is searched, "
+                        "so put a topic before it")
     p.add_argument("--all", action="store_true", help="print the whole file")
     p.set_defaults(func=cmd_guide)
 
@@ -64,11 +68,12 @@ def cmd_guide(args: argparse.Namespace) -> int:
     all_topics = guide.topics(refs)
 
     if args.find:
+        words = " ".join(args.find) if isinstance(args.find, list) else str(args.find)
         names = [_topic(refs, args.topic)] if args.topic else list(all_topics)
         docs = [(n, guide.Doc(all_topics[n], all_topics[n].read_text(encoding="utf-8"))) for n in names]
-        hits, total = guide.find_lines(docs, args.find)
+        hits, total = guide.find_lines(docs, words)
         if not hits:
-            _out("no line mentions all of: %s%s" % (args.find, " in " + names[0] if args.topic else ""))
+            _out("no line mentions all of: %s%s" % (words, " in " + names[0] if args.topic else ""))
             return 1
         more = ""
         if total > len(hits):

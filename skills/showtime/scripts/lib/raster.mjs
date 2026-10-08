@@ -8,7 +8,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { launchBrowser } from './chrome.mjs';
+import { launchGuarded, openGuarded, closeSoon } from './stagehost.mjs';
 
 function aspectOf(svg) {
   const vb = /viewBox\s*=\s*"([^"]+)"/i.exec(svg);
@@ -22,10 +22,15 @@ function aspectOf(svg) {
 }
 
 export async function rasterize(jobs, { background = null } = {}) {
-  const { browser } = await launchBrowser({ gpu: 'off' });
+  const b = await launchGuarded({ gpu: 'off' });
   try {
-    const ctx = await browser.newContext({ deviceScaleFactor: 1 });
-    const page = await ctx.newPage();
+    // the context and the tab under the page-open deadline (once more in a new browser)
+    const { page } = await openGuarded(b, async (browser, track) => {
+      track.step = 'creating the browser context';
+      const ctx = await browser.newContext({ deviceScaleFactor: 1 });
+      track.step = 'opening a tab';
+      return { page: await ctx.newPage(), close: () => ctx.close() };
+    }, { label: 'opening the drawing page' });
     const out = [];
     for (const job of jobs) {
       const svg = fs.readFileSync(job.in, 'utf8');
@@ -45,7 +50,7 @@ export async function rasterize(jobs, { background = null } = {}) {
     }
     return out;
   } finally {
-    await browser.close();
+    await closeSoon(b.browser.close());
   }
 }
 

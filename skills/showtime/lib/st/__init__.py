@@ -7,7 +7,7 @@ inside the showtime virtualenv (~/.showtime/venv, Python 3.12).
 """
 import os
 
-__version__ = "0.4.0"
+__version__ = "0.4.1"
 
 # onnxruntime (Kokoro, alignment, stem separation, rembg) ships Microsoft's telemetry client on Linux
 # and starts it at import; this turns it off for every process that imports st, and for its children.

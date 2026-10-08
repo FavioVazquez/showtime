@@ -16,9 +16,10 @@ slow, fails, or looks different from the preview; or when you need the exact fla
   video (§ The loop, § showtime render)
 - `showtime render <p>` writes a new job folder and never overwrites; `--job <job>` writes `<job>/final.mp4`
   (`final-2.mp4` on a re-render) so `showtime qa <job>` checks it; not with `-o` (§ showtime render)
-- Defaults: CRF 16 / `medium`, JPEG capture, up to 3 workers, -14 LUFS / -1 dBTP; `--preview` is a 720p draft.
+- Defaults: CRF 16 / `veryfast`, JPEG capture, workers by machine (3 with a GPU; without one, one per 8 CPU
+  threads, 3-8), -14 LUFS / -1 dBTP; `--preview` is a 720p draft, `--preview --fps 12` the fastest first look.
   Keep CRF 16 for anything a platform re-encodes; encode settings you ship go in showtime.json
-  `"render": {...}` (flags still win) (§ showtime render)
+  `"render": {...}` (flags still win); `"x264_preset": "medium"` is the encode before 0.4.1 (§ showtime render)
 - Poster: best default is a hook complete at t=0 with `"poster": 0`; a poster unlike the opening is not baked
   into frame 0 (`poster_not_baked`) unless `"render": {"poster_bake": "force"}` (§ showtime render)
 - `dead_air`: 1.5 s with no clip showing is an error; a still hold of 2.5 s or more, or an end hold over 4 s,
@@ -30,7 +31,7 @@ slow, fails, or looks different from the preview; or when you need the exact fla
   (§ showtime retime)
 - `showtime preview` started by an agent goes to the background (`--status`, `--stop`); give the user the
   printed link as is, ending in `k=...` (§ showtime preview)
-- Speed: a final takes about 1-2x the video length at 1080p; keep JPEG and 2-3 workers; animate `transform`
+- Speed: a final takes about 1-2x the video length at 1080p; keep JPEG and the automatic workers; animate `transform`
   and `opacity`; avoid `backdrop-filter` and full-screen `filter: blur()` above ~20px. Fonts only as files
   (`/_lib/@fontsource/...` or `@font-face`), never system fonts or web font URLs (§ Speed)
 - A length, size or deadline that cannot be met (a long 4K film "in a few minutes") gets a plain no in
@@ -44,15 +45,15 @@ slow, fails, or looks different from the preview; or when you need the exact fla
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| The loop | 57-91 |
-| showtime render <project> | 93-193 |
-| showtime check <project> | 195-250 |
-| showtime snap <project / video> | 252-273 |
-| showtime preview <project> | 275-292 |
-| showtime retime <project> -d <seconds> | 294-335 |
-| Speed | 337-372 |
-| Troubleshooting | 374-388 |
-| Platforms | 390-405 |
+| The loop | 58-95 |
+| showtime render <project> | 97-229 |
+| showtime check <project> | 231-290 |
+| showtime snap <project / video> | 292-313 |
+| showtime preview <project> | 315-332 |
+| showtime retime <project> -d <seconds> | 334-387 |
+| Speed | 389-471 |
+| Troubleshooting | 473-487 |
+| Platforms | 489-504 |
 
 ## The loop
 
@@ -63,6 +64,7 @@ showtime check my-video              # QA gate: fix every error, read every warn
 showtime look my-video               # one small composite of the key frames (references/looking.md)
 showtime snap my-video               # contact sheet or --at 2.5,7 for stills (full size: for reviewers)
 showtime render my-video --preview   # quick 720p draft
+showtime render my-video --preview --fps 12   # fastest first look: layout and story, not motion
 showtime render my-video             # final: showtime-out/<title>-<timestamp>/final.mp4
 showtime render my-video --job <job> # final into a job: <job>/final.mp4 (final-2.mp4 on a re-render)
 showtime retime my-video -d 30       # change the length later: scenes, poster, mix and cues move together
@@ -80,14 +82,16 @@ proving the next fix with `--from S --to S` first.
 
 A fix after the first full render: `showtime render <p> --from 12 --to 18 --job <job>`. When the job's latest
 final comes from `showtime render` of this project at the same size, frame rate and length, only those seconds,
-widened to the keyframes around them (at most 2 s each side), are captured and encoded with the same settings;
-they replace exactly those frames in a copy of that render, whose other frames stay byte for byte. The result is
-the job's next full final (`final-2.mp4`, same length, audio mixed and mastered again for the whole video,
+widened to the keyframes around them (at most 2 s each side), are captured and encoded with the same settings
+(the old render's x264 preset and CRF unless you pass others); they replace exactly those frames in a copy of
+that render, whose other frames stay byte for byte. The result is the job's next full final (`final-2.mp4`, same
+length, the mix of the whole video: reused when its inputs did not change, else mixed and mastered again;
 poster as in a full render), recorded as `spliced: 12-18 from final.mp4` and counted by the receipt as a partial
 render. When the old render was encoded with other settings or another ffmpeg, the whole video is encoded once
 instead (old frames decoded, new ones from the capture). With no such render, after a size, fps or length
 change, with `--preview`, `--alpha` or `--size`, or without `--job`, the result is a span clip:
-`<job>/work/span-12-18.mp4` (without a job, `span-12-18.mp4` in a new folder). It is only those seconds: look at
+`<job>/work/span-12-18.mp4` (without a job, `span-12-18.mp4` in a new folder; `-o clip.mp4` without `--job` writes it
+there, in a job folder too, and never splices it; with `--job` the fix is spliced and `-o` is ignored). It is only those seconds: look at
 it (`showtime look <file>`), never deliver it; `qa <job>`, `look <job>` and the ledger skip span clips.
 
 ## `showtime render <project>`
@@ -101,12 +105,12 @@ A project is a folder with `showtime.json` and `index.html` (or pass an `.html` 
 | `--out-dir DIR` | `$SHOWTIME_OUT` or the current folder | job folder is `DIR/showtime-out/<title>-<timestamp>/` |
 | `--preview`, `-p` | off | a draft: at most 720p, x264 veryfast CRF 23, AAC 128k, no poster bake; the file is named `preview.mp4` |
 | `--from S --to S` | whole video | re-render one section: with `--job` and a full render there, spliced into a copy of it (a full `final-N.mp4`); otherwise a span clip `span-S-S.mp4` (audio cut to match, no poster), never a final (§ The loop) |
-| `--fps N` | showtime.json | |
-| `--workers N`, `-w` | auto: up to 3 | separate browsers, each renders a contiguous range in order |
+| `--fps N` | showtime.json | `--preview --fps 12` is the fastest first look (40 % of the frames): judge layout and story with it, not motion |
+| `--workers N`, `-w` | auto | separate browsers. Auto: 3 with a GPU; without one (SwiftShader, llvmpipe, WARP), one per 8 CPU threads, at least 3 and at most 8; never more than CPU threads - 2, one per 45 frames, one per 3 GB of memory (in a container, of its memory limit), or `SHOWTIME_MAX_WORKERS`. The render log and render.json `workers_why` say what was picked and why |
 | `--scale X` | 1 | `0.5` = half size, `2` = supersampled (sharper text, 4x the pixels) |
 | `--alpha prores\|animation\|webm` | off | transparent background (the themes' scene and stage fills turn transparent; a background a scene sets itself still paints; mark an overlay page `<body data-overlay>` so `check` does not call its gaps dead air): ProRes 4444 `.mov` (editors; large: a 1 s full-frame 1080p stinger is about 30 MB), QuickTime Animation `.mov` (editors; lossless RGBA, a fraction of that for flat graphics such as lower thirds and stingers, larger than ProRes for photos and gradients) or VP9 `.webm` (web) |
 | `--format jpeg\|png` | jpeg (q92) | png is lossless and ~1.5x slower to capture |
-| `--crf N`, `--x264-preset P` | 16 / medium (preview 23 / veryfast) | lower CRF = better and bigger. For masters kept in a repo or an example folder, `"render": {"crf": 18}` in showtime.json: about 20-25 % smaller with no visible loss on flat graphics (a 35 s code video: 22.6 MB at 16, 17.9 MB at 18). Keep 16 (or 14-16 with grain) for anything a platform re-encodes |
+| `--crf N`, `--x264-preset P` | 16 / veryfast (preview 23 / veryfast) | `medium` (the default before 0.4.1) takes 2-3x longer to encode for the same size and look (SSIM within 0.0004 on the templates); `"render": {"x264_preset": "medium"}` keeps it. Lower CRF = better and bigger. For masters kept in a repo or an example folder, `"render": {"crf": 18}` in showtime.json: about 20-25 % smaller with no visible loss on flat graphics (a 35 s code video: 22.6 MB at 16, 17.9 MB at 18). Keep 16 (or 14-16 with grain) for anything a platform re-encodes |
 | `--poster S` / `--poster none` | showtime.json `poster` | the frame at S becomes poster.jpg (and frame 0, see `--poster-bake`) |
 | `--poster-bake auto\|force\|off` | auto | auto bakes the poster into frame 0 only when it looks like the opening frame (else frame 0 would flash on autoplay and loops) |
 | `--lufs N`, `--no-loudnorm`, `--no-audio` | -14 LUFS, -1 dBTP | |
@@ -137,20 +141,43 @@ What happens:
 
 1. The project is served on `127.0.0.1` (random port). One headless Chrome/Edge/Chromium per
    worker opens the page with the render-mode runtime (virtual clock, seeded randomness, network
-   blocked) and waits for `ST.ready()`.
-2. Frames are split into contiguous ranges. Each worker first replays (without capturing) the
-   second before its range, then seeks every frame in order and captures it with the Chrome
-   DevTools screenshot call. Missing or empty frames are captured again; a crashed browser is
-   restarted up to twice, with a screenshot, the DOM and the console saved to `work/diagnostics/`.
-3. One encode: H.264 High, yuv420p, BT.709 matrix with accurate rounding, BT.709/tv tags, no
-   B-frames (first frame never freezes in picky players), keyframe every 2 s, `+faststart`.
+   blocked) and waits for `ST.ready()`. The workers' browsers start while the first one loads the page.
+2. Frames are split into contiguous ranges, one per worker. Each worker first replays (without
+   capturing) the second before its range, then seeks every frame in order and captures it with the
+   Chrome DevTools screenshot call. A worker that is
+   done takes the back half of the largest range left (after its own one-second replay), so no
+   worker runs alone at the end; a worker whose page does not open in 5 minutes (scaled, see below) gets a new browser,
+   and its frames go to the others meanwhile. Missing or empty frames are captured again; a crashed
+   browser is restarted up to twice, with a screenshot, the DOM and the console saved to
+   `work/diagnostics/`.
+3. One encode, running during the capture: the frames go to disk as before and one ffmpeg reads
+   them in order as soon as each one and all before it are there, so the file is the same, byte
+   for byte, as an encode started after the capture (`SHOWTIME_PIPE_ENCODE=0` does that). With a GPU,
+  a frame where one worker handed frames to another can differ from a single-worker render by
+  antialiasing noise (a few levels on a few hundred pixels); two renders of a project can therefore
+  differ at those joins, which fall where the timing puts them. H.264 High,
+   yuv420p, BT.709 matrix with accurate rounding, BT.709/tv tags, no B-frames (first frame never
+   freezes in picky players), keyframe every 2 s, `+faststart`. A splice encodes its segments after
+   the capture.
 4. Audio, prepared while frames are captured: `ST.score` rendered offline in its own page, plus
    the showtime.json `audio` (a mix spec goes to `showtime audio mix`; if that module is missing,
-   a built-in mixer handles file tracks with start/offset/gain/fades/loop). Everything is cut to
+   a built-in mixer handles file tracks with start/offset/gain/fades/loop). A mix spec is made to be heard
+   on a phone speaker: a 40 Hz high-pass on everything but the voice and, on a bass-heavy bed, a low
+   shelf before the loudness normalisation (`audio.md` § Heard on a phone); an `ST.score` bed and the
+   built-in mixer are not filtered (turn a score's bass and kick down instead). `"master": {"speaker_safe":
+   false}` in showtime.json or the mix turns it off, for a video meant for headphones. Everything is cut to
    the rendered range, padded/trimmed to the exact video length, brought to the loudness target
    (plain gain when the peaks allow it, else gain into an oversampled limiter with at most 6 dB of
    limiting and a warning if the target is out of reach), encoded as AAC 256k in `.m4a` (keeps the
    encoder delay, so sync is exact), checked for true peak, and muxed without re-encoding video.
+   The result is kept in `~/.showtime/cache/render-audio/` (the newest 12, at most 1 GB) by a hash of
+   everything it is made from: the mix spec and every file it names with the sidecars beside it
+   (`.license.json`, beats, words, hit point), the project's non-picture files (showtime.json, voice
+   takes and their timings, music, sounds, question cues; not the page's HTML, JS, CSS, images, fonts or
+   videos the mix does not name), the music vetoes and look history when a track is a catalog query,
+   the score's samples, the range, the loudness settings, the ffmpeg binary, the library and catalog
+   settings, and the audio code. A render whose mix inputs did not change (a picture fix, a
+   `--from/--to` splice) reuses it and says so; `SHOWTIME_AUDIO_CACHE=0` mixes it again every time.
 5. Poster: with a `poster` time, that frame is saved as `poster.jpg` and copied over frame 0
    before the single encode (feeds and chat apps show frame 0), but only when it looks like the
    opening frame (`--poster-bake auto`). A poster over an opening that builds from empty would show
@@ -160,6 +187,14 @@ What happens:
    `showtime deliver poster` picks a sharp, representative frame for `poster.jpg` (not baked).
    qa WARNs `poster_flash` when frame 0 differs sharply from frame 1.
 6. The result is probed (frame count, duration) and a report is written.
+
+Waits are scaled to the page. Each wait (the page load, fonts, images, videos, `ST.waitFor` gates, every
+seek, the page becoming ready, a worker's page opening) has a fixed value that suits a normal machine (60 s
+for fonts and gates, 60 s per seek). The page measures its own cost while it gets ready: the gaps between its
+frames and the time its first seeks take. A slow machine without a GPU, a busy runner or a heavy page then
+gets each wait times a factor of up to 5; a fast machine keeps the fixed values, never less. render.json
+`pace` records the factor and what was measured (`frame_ms`, `seek_ms`), render.log says so when it is above
+1, and `showtime check` reports the same in its report (`pace`). `SHOWTIME_PACE=0` keeps the fixed waits.
 
 Output folder:
 
@@ -184,7 +219,8 @@ showtime-out/my-video-20260926-101500/
 A finished render removes its frames, the silent video copy and the WAV stems (together several
 times the size of the final); a failed or interrupted one (Ctrl-C, a host's SIGTERM) removes its
 frames and keeps its log and diagnostics. `showtime clean <job>` removes what renders from before
-0.4.0 left behind (`<stem>.work/video.mp4`, the WAV stems).
+0.4.0 left behind (`<stem>.work/video.mp4`, the WAV stems); `showtime clean <job> --frames` removes only
+the frame dumps, `--all` also the review packs and logs (the person's notes in `review/notes/` stay).
 
 The summary ends with the `output`, `poster`, `report` (render.json) and `log` paths; after a
 failed or odd render, read `render.log` first (`debugging-renders.md`). A render whose output is
@@ -201,18 +237,22 @@ exactly like the renderer and reports findings with the time they happen and a f
 |---|---|---|
 | `ready_failed`, `page_error`, `seek_error` | error | the page throws, or never becomes ready |
 | `network`, `missing_file` | error | remote request (blocked in renders) or 404 |
+| `request_failed` | warning | a local request failed (not a 404). A load cancelled while it ran (an image whose `src` changed again before it arrived, as when check's seeks swap pictures) is not a failure: report.json `cancelled_loads` counts those |
 | `unstable_frame` | error | pixels keep changing after a seek finished: something runs on real time |
 | `nondeterministic` | error | a frame differs when reached in another order (state kept between frames) |
 | `late_first_frame` | error | the first frame after a hard cut is drawn a frame late: the page draws a scene (a canvas, WebGL) from its own copy of the scene times, so the render shows that frame blank or stale while `snap` looks right. Check walks every cut on a fresh page in order, as a render does. Gate drawing on `ST.clips()` (frame-exact windows) |
 | `clip_timing`, `video` | error | bad `data-start`/`data-dur`, or a video that cannot be decoded/seeked |
 | `font_load_failed` | error | an `@font-face` file failed |
-| `low_contrast` | warning (error below 2:1) | WCAG contrast of text against the real pixels behind it: 4.5:1, or 3:1 for text >= 24px (>= 18.7px bold). Measured where each text is fully faded in, not blurred and outside scene transitions; a text seen only mid-transition gets an info note naming the transition. Large text (>= 4 % of the height) in the colours of the job's style reference (`reference-style.css`) at 3:1 or more is a note: the user asked for that look. |
+| `low_contrast` | error (warning under 1 % of the height) | WCAG contrast of text against the real pixels behind it: 4.5:1 for every size. Judged at the settled frame: a text a sample caught mid-fade, blurred or mid-entrance is measured again at the frame of its visible window where it is most opaque, and only fails when it is low there (the message gives that time and where it was first sampled). A text seen only mid-transition gets an info note naming the transition. Large text (>= 4 % of the height) in the colours of the job's style reference (`reference-style.css`) at 3:1 or more is a note: the user asked for that look. |
+| `caption_zone` | warning | with caption-karaoke captions: a visible element (text, image, SVG shape, a box with a fill) drawn where the caption cards sit while a caption shows. Names the element, the time and the overlap in px. Ignores full-frame backgrounds, full-width bands without text and anything under 10 % opacity; mark an intended overlap `data-st-caption-ok` |
+| `webgpu` | error / warning | the page asks for WebGPU (`navigator.gpu`, a `webgpu` canvas); the message names the file and line. Check loads the page again with WebGPU gone, as on a machine without a GPU (showtime never needs one): error when no WebGL or 2D canvas of the page draws in its place (the render would be a flat ground), warning when one does (frames differ with and without a GPU). Fix: WebGL or 2D, e.g. showtime's shader layer (`shaderLayer`, motion-craft.md) |
 | `font_not_embedded` | warning | text is painted with a system font (differs between Mac, Windows and Linux) |
 | `text_off_canvas`, `text_clipped` | error | readable text runs off the frame or is cut by a container at a sample time (decor: info) |
 | `text_overlap` | warning | layout problems at the sample times; overlaps are measured on the painted glyphs (not line boxes, so big display type with tall leading is not a false alarm) and say how deep they are; `text_overlap` also covers text hidden under a badge, callout or pill ("X is hidden under Y"), in canvas films too (an `F.callout` card over readable text drawn before it). Found only mid-transition, they are info notes naming the transition ("mid-transition: push into #demo; the settled frame at 0:04.43 is judged on its own"): check samples the settled frame 2 frames after every transition too |
 | `labels_crowded` | warning | SVG labels (chart values and axes, map names) whose painted glyphs touch or sit closer than 0.15em side by side or stacked (`label_gap_em` in `runtime/thresholds.json`); one finding per graphic naming the worst pair. While a chart is still growing or morphing it is an info note. Fix: fewer bars, the default `valueLabels` (auto-thinning), a larger plot, or a line chart |
 | `chart_labels_hidden` | warning | the project's CSS hides chart labels while the chart moves (`[data-st-moving] .st-chart-val { opacity: 0 }`): every number blinks off when an item is added and back when it settles. Fix: delete the rule; labels ride their marks through a morph, an added item fades its label in, `count: false` shows real values only |
 | `slow_scene` | warning | a scene holds on past its last change (a component or CSS animation ending) and past the reading time of its text by more than 2.5 s (4 s for the last scene, an end card): a slow push keeps it from counting as a still hold, but it plays slow. Fix: a beat about every 2 s (a chart state, a callout or reference line arriving, a highlight, a count-up, the next line), or shorten the scene. `report.pacing` lists them |
+| `blur_text`, `blur_slow`, `blur_container`, `blur_unsampled`, `blur_inline` | warning | shutter blur (`data-st-blur`, `F.motionBlur`; stage-api.md § Shutter blur), measured on every frame the element is on screen from its own motion: text the viewer reads is blurred (over 0.4 s in one run, on every frame it shows, or with a threshold under 6 px a frame, so it blurs while it moves slowly); the motion is too slow to need it (at its fastest frame under a quarter of its shorter side a frame, or never fast enough to blur); a scene, a container (more than 60 elements, a canvas or video inside, or a film draw that returns a point instead of a box) or a layer over half the frame; it moves from an `ST.onSeek` handler or a moving ancestor, which the blur cannot pose between frames (its copies never show); an inline box, which CSS never transforms. Numbers in `runtime/thresholds.json` "blur"; report.json `blur` lists each element's peak motion, size and blurred frames |
 | `same_frame_entrance` | warning | 3 or more sibling items whose CSS entrance (from opacity 0) starts on the same frame: nothing leads, they land as one block. The message names the frame; fix: stagger them 2-4 frames apart in reading order (`animation-delay: calc(var(--i) * 0.1s)`) |
 | `callout_off_target` | warning | canvas film: an `F.callout` card is on screen but its anchor is off the frame (the camera moved away from what it points at), or the card itself runs off the frame |
 | `safe_zone` | warning | vertical video: text outside the box that feed UIs leave free (x 64-916, y 220-1440 at 1080x1920); the message names the edge ("top at y 185 < 220") |
@@ -306,7 +346,11 @@ add `"fit": true` to its track. Never retime one scene by hand and leave the res
 
 A scene stretched more than 1.5x gets a warning: it now holds still after its last animation (check
 flags holds of 2.5 s or more), so give it another beat or motion; canvas cue tables warn too, since
-everything runs slower. Retimed transitions never shrink below 0.35 s.
+everything runs slower. Retimed transitions never shrink below 0.35 s. A scene marked
+`data-stretch="spread"` spreads instead when it gets longer: its component start times (`data-at`,
+`data-exit-at`, `"at"` in JSON times) and the poster in it scale with it, lengths stay, so the beats
+move apart at the same speed (the dom template's hero does this; its CSS delays follow through its
+`data-design-dur` script).
 
 `--from-voice <timeline.json>` (from `showtime voice script`; the `voice/` folder works too) sets
 the scene lengths from the narration instead of one length for all:
@@ -319,12 +363,20 @@ the scene lengths from the narration instead of one length for all:
   its lead-in: pinned 2.4 s into the voice (`at: 2.4` or `lead_in: 2.4`, a music-only opening), it starts
   at 2.4 s in the video and its scene grows by that much picture before it (never less than `--pad`).
   Scenes after the narration (an end card) keep their length; a scene with no line between narrated
-  scenes is an error.
+  scenes is an error unless it is marked `data-silent` (no line on purpose: a pause, a question beat).
   `--total 30` keeps the video 30 s long: the end card after the narration grows or shrinks to
   absorb the difference (a warning under 2.5 s, an error under 1 s), so you never hand-edit its
   `data-dur`. When every scene is narrated (a narrated close), the last scene's hold after its last
   line absorbs it instead; a `--total` that would cut into that line is an error that names the
   shortest length that works. The report counts only values that really changed.
+- Pins win over `data-silent` scenes. A silent scene keeps its length and moves the lines after it
+  later by that much, unless the next line is pinned (`{at=...}`) and the voice starts it on its
+  pin: then the voice already holds the silence, so the silent scene fills the gap from the end of
+  the line before it (plus its pause) to the pin, and the narrated scene before it keeps whatever is
+  left. A gap a little shorter than the silent scene wants shrinks it, with a note that says how
+  much later to pin the line. The silent scene keeps its length (with a note saying why) when the
+  voice ran past the pin (the line before it is too long), when it would drop under 1 s, and when the
+  pin comes from a 0.4.0 narration.md that left the silent shots out (regenerate it).
 - Every line becomes its own voice track in `audio/mix.json` (`vo-<id>`, file
   `voice/lines/NN-id.wav`) at scene start + pad; music without ducking gets `"duck": {"under":
   "voice"}`; music sections, sound effects and the poster move with their scenes. A project without
@@ -346,6 +398,34 @@ were running:
 | same, 1 worker | 19 fps (jpeg), 12 fps (png) |
 | 4 s 1280x720 template / canvas + offline score, 2 workers | 30-40 fps / 26-35 fps capture; A/V offset 0.02 ms |
 
+0.4.0 against 0.4.1 on the same machine (2026-10-07, 1080p30, automatic settings, best of 2 interleaved runs).
+Other jobs kept it very busy (load average 50-280 on 6 cores), so every number spreads widely; the encode and
+fix rows moved the most:
+
+| Workload (showreel 15 s / DOM page 15 s / launch film 30 s) | 0.4.0 | 0.4.1 |
+|---|---|---|
+| encode left after the capture | 21.8 / 25.1 / 56.6 s | 5.1 / 9.3 / 13.7 s |
+| whole render | 56.6 / 53.7 / 115.0 s | 56.1 / 58.9 / 80.5 s |
+| a 1 s fix spliced into the job's video | 54.4 / 30.9 / 31.9 s | 12.6 / 18.2 / 20.5 s |
+| file size; SSIM against the 0.4.0 file | 15.5 / 15.2 / 31.8 MB | 15.7 / 14.9 / 31.1 MB; 0.9976 / 0.9963 / 0.9978 |
+
+A 5 s span of a finished 150 s explainer took 56.6 s the first time and 22.4 s the next (mix reused).
+The showreel and launch frames were byte for byte the same as 0.4.0's; the DOM page differed by GPU
+antialiasing noise in 12 of 450 frames (at most 7 levels on a few hundred pixels), as two 0.4.0 runs of it do.
+
+The same three projects on a 64-core Linux machine with no GPU (2026-10-07, 1080p30, best of 2 interleaved runs,
+0.4.0 against 0.4.1):
+
+| Workload (showreel 15 s / DOM page 15 s / launch film 30 s) | 0.4.0 | 0.4.1 |
+|---|---|---|
+| automatic settings (0.4.0: 3 workers; 0.4.1: 8) | 25.3 / 31.8 / 42.0 s | 21.9 / 16.4 / 17.6 s |
+| 8 workers each | 22.5 / 20.2 / 22.8 s | 20.4 / 16.4 / 17.5 s |
+| 16 workers each | 27.4 / 18.7 / 18.2 s | 25.7 / 15.1 / 13.1 s |
+| encode left after the capture (automatic) | 2.2 / 2.0 / 4.5 s | 0.3 / 0.2 / 0.5 s |
+
+The launch film rendered 2.4x faster and the DOM page 1.9x, mostly from the worker count fitted to the machine
+and the encode during the capture; SSIM against the 0.4.0 file was 0.997-0.998 (`veryfast` against `medium`).
+
 Rules of thumb:
 
 - A final render takes about 1-2x the video length at 1080p on a mid-range laptop. `showtime check`
@@ -356,9 +436,28 @@ Rules of thumb:
   and building the scenes comes first. Say so plainly and offer the faster paths (preview, 1080p/30 fps,
   a shorter cut, the full render in the background).
 - Keep JPEG capture (default). PNG is only needed for `--alpha` (automatic) or pixel diffs.
-- 2-3 workers is the sweet spot on 4-8 cores; more workers fight over the CPU and the GPU.
+- Keep the automatic worker count. With a GPU, 3 browsers were fastest on a 6-core machine (4 and 6
+  were slower). Without one, every browser already spreads its drawing over the cores: on a 6-core
+  machine 1 browser beat 3 for a WebGL showreel (by about 10 %) but a DOM page was about 50 % slower
+  with 1 than with 3, and on a 64-core machine 4-16 were best, so the default is one per 8 CPU
+  threads, at least 3 and at most 8. On a 4-8 core machine without a GPU, WebGL scenes stay slow (about 0.5 s per frame
+  for a shader-heavy 1080p scene, measured): render them at half resolution.
+- What 0.4.1 made faster, with the same frames (except GPU antialiasing noise at hand-over joins):
+  x264 `veryfast` (2-3x faster encodes than `medium`
+  at the same size and look; `"render": {"x264_preset": "medium"}` keeps the old one), the encode
+  running during the capture, no worker left alone at the end, and the mix reused when its
+  inputs did not change. A 1 s `--from/--to` fix no longer waits for the whole mix to be built
+  again: it costs the start, the page load and the frames of the widened span.
 - `--preview` saves encode time and file size, not capture time: Chrome still draws each frame at
-  full size. For a fast first look use `showtime snap` (seconds) and `showtime preview` (real time).
+  full size. `--preview --fps 12` captures 40 % of the frames: the fastest whole-video first look
+  (layout, story, timing of cuts; not motion). For stills use `showtime snap` (seconds) and
+  `showtime preview` (real time).
+- The shutter blur (`data-st-blur`) costs only on the frames it draws (a snap: 4-7 frames). Measured on our
+  test machine (64 cores, no GPU: Chrome 154 rasterizing with SwiftShader, 1 worker, 1920x1080, 8 copies, median
+  of 3 renders while other jobs ran, load 7-40): a frame took 7.9 ms more with one blurred 150 px word, 13.9
+  ms with three and 26.7 ms with six (33-37 ms without); a card with a gradient and a shadow 10.7, 28.1 and
+  48.7 ms more. About 3 ms of each element is script (posing, copying, comparing styles), the rest is drawing
+  the copies. `samples` scales it; a whole-frame layer would cost a whole frame per copy (`blur_container`).
 - What is slow to draw: `backdrop-filter`, large `filter: blur()` (above ~20px), many large
   `box-shadow`s or masks, full-screen gradients with blur on top, thousands of DOM nodes, heavy
   WebGL shaders. `check` flags pages with many heavy effects. Blur a small layer and scale it up

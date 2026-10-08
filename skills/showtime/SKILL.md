@@ -1,6 +1,6 @@
 ---
 name: showtime
-description: "Use when the user wants a video made, edited or finished: a launch or promo, product demo, explainer, trailer or teaser, tutorial or walkthrough, a screen recording turned into a demo, social short, reel, TikTok or YouTube Short, photo slideshow, animated chart or data story, motion graphics or animation, an animated logo intro, outro or sting, lower thirds, an audiogram, music video; captions or subtitles for a video; a voice-over or narration; music or sound effects; a thumbnail or poster frame; footage edits such as cutting the ums, removing silences, tightening a talking head, podcast or interview clips; reframing to vertical; re-voicing or subtitling a video in another language; turning a repo, website, pull request or changelog into a video; or when they type /showtime. Load it before replying, even to push back (a claim the user's own data does not support, an impossible spec or deadline). Not for editing still images, writing a caption for a photo post, or code unrelated to a video."
+description: "Use when the user wants a video made, edited or finished: a launch or promo, product demo, explainer, trailer or teaser, tutorial or walkthrough, a screen recording turned into a demo, social short, reel, TikTok or YouTube Short, slideshow, animated chart or data story, motion graphics or animation, animated logo intro, outro or sting, lower thirds, audiogram, music video, Claude Design animation to MP4; captions or subtitles for a video; voice-over or narration; music or sound effects; thumbnail or poster frame; footage edits such as cutting the ums, removing silences, tightening a talking head, podcast or interview clips; reframing to vertical; re-voicing or subtitling a video in another language; turning a repo, website, pull request or changelog into a video; or when they type /showtime. Load it before replying, even to push back (a claim the user's own data does not support, an impossible spec or deadline). Not for editing still images, writing a caption for a photo post, or code unrelated to a video."
 compatibility: Any Agent Skills client with a shell, on macOS, Linux or Windows. Needs Python 3.8+ (or uv) and Node.js 20+; a one-time `showtime setup` downloads the local tools and models into ~/.showtime (or $SHOWTIME_HOME) and needs the network for that step.
 ---
 
@@ -16,8 +16,8 @@ local voices, music, sound effects, transcript-driven footage edits, captions, Q
 `showtime status <id> --wait 240`. Never call a bare `ffmpeg`.
 
 **`<job>`** is the folder `showtime job init` prints (`showtime-out/<slug>-<timestamp>/`) or its name
-(`launch` = the newest `launch-*`). Renders never overwrite (`final-2.mp4`); commands given `<job>`
-use its latest file and say which.
+(`launch` = the newest `launch-*`). Renders never overwrite; commands given `<job>`
+use its latest file.
 
 ## Modes
 
@@ -86,6 +86,7 @@ Log each stage boundary: `showtime job note <job> --stage <name> --verified ... 
 |---|---|
 | a video like one they give | `reference` |
 | a launch or promo from a repo, URL or site folder | `launch-video` |
+| a Claude Design export: `showtime adopt <zip>` | `adopt` |
 | an explainer or how-it-works film | `explainer` |
 | one that stops and asks the viewer: showtime.json `"questions"`; cold open, roadmap, tie-back | `explainer`, `html-export` |
 | another skill's storyboard table: `showtime new dom <dir> --from-storyboard <file>` | `explainer` |
@@ -94,11 +95,11 @@ Log each stage boundary: `showtime job note <job> --stage <name> --verified ... 
 | a tutorial, walkthrough, screen-recorded demo | `tutorial` |
 | a reel, TikTok, Short, audiogram, any vertical clip or explainer | `social-short` |
 | numbers or a chart that moves (a CSV: `showtime data import`) | `data-story` |
-| their footage cut, captioned, reframed, cleaned (even a reel) | `footage-edit` |
+| their footage cut, captioned, reframed, cleaned (even a reel), or a talking head with cards | `footage-edit` |
 | picture cut to a song | `music-video` |
-| a PR: `showtime pr-video <N>` (reads it itself) | `changelog-video` |
-| a release or changelog (notes, tags) | `changelog-video` |
+| a PR (`showtime pr-video <N>`), release or changelog | `changelog-video` |
 | a trailer, teaser | `trailer` |
+| a showreel, hype reel, "go all out" | `tones` |
 | photos, screenshots with music | `slideshow` |
 | narration over existing video | `voiceover-only` |
 | the same video, another language | `localize` |
@@ -116,9 +117,9 @@ Log each stage boundary: `showtime job note <job> --stage <name> --verified ... 
 | `voice`, `audio` | narration, music, effects, mixing |
 | `editing`, `captions` | real footage and captions |
 | `capture`, `brand-kit` | material from a repo, site, PDF or brand |
+| `color` | palettes, look signatures (§9) |
 | `qa`, `review` | verifying, critique, notes |
 | `looking` | before opening any image |
-| `crew` | handing work to crew sub-agents (studio, publish-bound, 6+ scenes) |
 | `debugging-renders`, `diagnosing` | a render is wrong / the user reports a problem |
 | `html-export` | a web page, artifact or embed; a video that stops and asks |
 
@@ -128,7 +129,7 @@ Log each stage boundary: `showtime job note <job> --stage <name> --verified ... 
 |---|---|
 | "The render exited 0, so it's fine" | Run `showtime qa <job>`; the log proves frames were written, not that the file is right |
 | "I'll wait for a yes before the final" (quick mode) | Show the first look and keep going; confirm only destructive or costly steps |
-| "The template is close enough" | `--duration <len>` (or `showtime retime`); no placeholder left (74 %, northwind.app) |
+| "The template is close enough" | `--duration <len>` (or `showtime retime`); no placeholder left (74 %, northwind.example) |
 | "check passed with warnings" | Read every WARN; `short_text`, still holds and `slow_scene` are real defects: fix them |
 | "I'll call ffmpeg directly" | `footage trim`, `snap <video>`, `deliver exports --max-mb` (or `--targets gif,webp`) |
 | "A stat or a plausible detail would help" | Only sourced specifics: docs or a saved run (`references/story.md` §6); label sample data |
@@ -140,7 +141,7 @@ Log each stage boundary: `showtime job note <job> --stage <name> --verified ... 
 | "Re-render everything for one fix" | `--from/--to --job`: splices the range; voice and transcripts are cached |
 | "I'll ask which colours and features to show" | Look them up (repo, site, brand kit); say what you found |
 | "The site blocked the capture; I'll work around it" | Exit code 3 is a bot wall: ask for screenshots, another URL or a local build |
-| "Skip `job init`/`job note`, it's bookkeeping" | The ledger is how qa and resuming find the latest files |
+| "Skip `job init`/`job note`, it's bookkeeping" | qa and resuming read the ledger |
 | "qa passed; skip the critic" | Quality mode runs it; lean only on request |
 | "They asked for that headline" | Check it against their data (52 s vs 40 s is 1.3x, not 5x); flag it, offer the true figure (`story` §6) |
 | "I'll take the spec and the deadline" | Say first what cannot be done, then what can, timed from `render` |
@@ -148,7 +149,7 @@ Log each stage boundary: `showtime job note <job> --stage <name> --verified ... 
 
 ## Rules
 
-- Nothing is uploaded (media search and site capture only fetch); each job has its own folder.
+- Nothing is uploaded (media search and site capture only fetch).
 - Never invent claims, numbers, quotes, logos or UI presented as real, nor pass on the user's own
   unsupported ones (`references/story.md` §6).
 - Prefer CC0/OFL assets; CC-BY needs its credit line shipped with the video.
@@ -159,9 +160,9 @@ Log each stage boundary: `showtime job note <job> --stage <name> --verified ... 
 Specialist sub-agents (`showtime:<role>`; elsewhere one told to read `references/crew/<role>.md`)
 get file pointers, never the chat. Quick mode: critic, researcher for factual claims, motion
 designers at 6+ scenes. Only you talk to the user, keep the ledger, merge and render
-(`references/crew.md`, phase by phase).
+(`references/crew.md`).
 
 ## Resuming
 
-If the folder has `showtime-out/` or a SHOWTIME.md: run `showtime status`, read SHOWTIME.md, and
-ask only its open questions. Never re-ask a logged decision.
+If the folder has `showtime-out/` or a SHOWTIME.md: run `showtime status <job>` first (changes since
+you last looked; keep hand edits), read SHOWTIME.md, ask only its open questions, never a logged decision.

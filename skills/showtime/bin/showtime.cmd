@@ -7,7 +7,10 @@ set "ST_LAUNCHER=%~dp0..\lib\st\launcher.py"
 set "ST_HOME=%USERPROFILE%\.showtime"
 if defined SHOWTIME_HOME set "ST_HOME=%SHOWTIME_HOME%"
 if defined SHOWTIME_PYTHON goto custom
+rem setup may rebuild the venv, and Windows cannot delete a running python.exe: run it with a Python outside the venv
+if /i "%~1"=="setup" goto findpy
 if exist "%ST_HOME%\venv\Scripts\python.exe" goto venv
+:findpy
 where py >nul 2>nul && py -3 -c "import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)" >nul 2>nul && goto pylauncher
 where python >nul 2>nul && python -c "import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)" >nul 2>nul && goto python
 where uv >nul 2>nul && goto uv
@@ -18,6 +21,7 @@ set "ST_UV=%USERPROFILE%\.cargo\bin\uv.exe"
 if exist "%ST_UV%" goto uvpath
 set "ST_UV=%LOCALAPPDATA%\Microsoft\WinGet\Links\uv.exe"
 if exist "%ST_UV%" goto uvpath
+if exist "%ST_HOME%\venv\Scripts\python.exe" goto venv
 echo showtime: no Python 3.8+ found. 1>&2
 echo   Install uv: powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex" 1>&2
 echo   or Python 3 from https://www.python.org/downloads/ , then run: showtime setup 1>&2

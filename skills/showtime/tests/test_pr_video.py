@@ -255,7 +255,7 @@ class TestBodyPlanPage(unittest.TestCase):
         p = pv.plan(meta, body, stats, pv.pick_hunks(files))
         self.assertEqual(p["budget"], pv.length_budget(6, 24))
         self.assertEqual([s["id"] for s in p["scenes"]], ["hook", "sum1", "files", "diff1", "end"])
-        self.assertEqual((p["shown"], p["more"]), (1, 3))                               # a small PR keeps one line
+        self.assertEqual((p["shown"], p["more"]), (1, 2))      # a small PR keeps one line; "+ 2 more": the list's items
         self.assertLessEqual(sum(s["dur"] for s in p["scenes"]), p["budget"])
         self.assertEqual((p["name"], p["version"], p["files"], p["additions"], p["deletions"]),
                          ("acme/tool", "#482", 6, 20, 4))
@@ -270,6 +270,36 @@ class TestBodyPlanPage(unittest.TestCase):
         self.assertGreater(big["budget"], 40)
         self.assertEqual(big["shown"], 4)                                               # a big PR has room for all
         self.assertLessEqual(sum(s["dur"] for s in big["scenes"]), 45.0)
+
+    def test_list_items_by_their_bold_leads(self):
+        """A fix-list PR (like showtime's PR #7): a long opening paragraph no longer takes four frames, each item shows
+        its bold lead (or its first sentence), a Checks section is left out, and "+ N more" counts the items."""
+        intro = ("Fixes found by running the tool in a locked-down sandbox (no writable HOME, no local listen, egress "
+                 "only through an HTTP proxy, env files unreadable), plus a Windows race the push CI caught.")
+        body = intro + "\n\n" + "\n".join(
+            ["- **Fix number %d was found and is now gone.** It used to fail when the folder was long, and the hint "
+             "said nothing useful; now it names the path length and the way out, and setup checks it too." % i
+             for i in range(1, 7)]
+            + ["- A plain item without a lead. Its second sentence is detail."]) + \
+            "\n\n## Checks\n- Every fix has a test that failed before.\n- Fast suite: 54/54.\n"
+        b = pv.parse_body(body)
+        self.assertEqual(len(b["items"]), 8)                                            # the intro + 7 items
+        self.assertEqual(b["items"][1]["show"], "Fix number 1 was found and is now gone.")
+        self.assertEqual(b["items"][-1]["show"], "A plain item without a lead.")
+        self.assertTrue(b["items"][1]["text"].startswith("Fix number 1 was found and is now gone. It used to fail"))
+        self.assertNotIn("Fast suite: 54/54.", b["summary"])                              # a Checks section is evidence
+        meta = pv.normalize_meta(dict(PR, body=body))
+        p = pv.plan(meta, b, [], [], max_items=4, max_seconds=45.0)
+        texts = [s["text"] for s in p["scenes"] if s["id"].startswith("sum")]
+        self.assertEqual(texts, ["Fix number %d was found and is now gone." % i for i in (1, 2, 3, 4)])
+        self.assertEqual((p["shown"], p["total"], p["more"]), (4, 7, 3))
+        self.assertEqual([s["more"] for s in p["scenes"] if s["id"].startswith("sum")][-1], 3)
+        # a short intro still opens the list (it fits one frame); a description without a list is unchanged
+        p2 = pv.plan(meta, pv.parse_body("Speeds up export.\n\n- **Faster seeks.** Details.\n- **Smaller files.** More."),
+                     [], [], max_seconds=45.0)
+        self.assertEqual([s["text"] for s in p2["scenes"] if s["id"].startswith("sum")],
+                         ["Speeds up export.", "Faster seeks.", "Smaller files."])
+        self.assertEqual(p2["more"], 0)
 
     def test_length_budget_and_holds(self):
         self.assertTrue(16 <= pv.length_budget(2, 18) <= 20)

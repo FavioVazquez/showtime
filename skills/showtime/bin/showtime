@@ -15,8 +15,11 @@ bin_dir=$(cd "$(dirname "$self")" && pwd -P)
 launcher="$bin_dir/../lib/st/launcher.py"
 st_home="${SHOWTIME_HOME:-$HOME/.showtime}"
 
-# Fast path: the showtime venv interpreter (Linux/macOS layout, then Git Bash on Windows).
-for py in "$SHOWTIME_PYTHON" "$st_home/venv/bin/python" "$st_home/venv/Scripts/python.exe"; do
+# Fast path: the showtime venv interpreter (Linux/macOS layout, then Git Bash on Windows). Not for
+# `setup` on Windows: setup may rebuild the venv, and Windows cannot delete a running python.exe.
+win_venv="$st_home/venv/Scripts/python.exe"
+[ "$1" = "setup" ] && win_venv=""
+for py in "$SHOWTIME_PYTHON" "$st_home/venv/bin/python" "$win_venv"; do
   if [ -n "$py" ] && [ -x "$py" ]; then
     exec "$py" "$launcher" "$@"
   fi
@@ -37,6 +40,10 @@ for uv in "$(command -v uv 2>/dev/null)" "${XDG_BIN_HOME:-}/uv" "$HOME/.local/bi
     exec "$uv" run --no-project --python 3.12 python "$launcher" "$@"
   fi
 done
+
+if [ -x "$st_home/venv/Scripts/python.exe" ]; then
+  exec "$st_home/venv/Scripts/python.exe" "$launcher" "$@"
+fi
 
 # the plugin's Stop hook (receipt --hook) must never fail a turn, even before Python is installed
 case " $* " in *" receipt "*" --hook "*) exit 0 ;; esac

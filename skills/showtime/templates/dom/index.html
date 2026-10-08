@@ -279,22 +279,23 @@
 <div class="stage">
 
   <!-- 1. HERO: the claim on frame 1, then the product doing its verb -->
-  <section class="scene hero" id="hero" data-start="0" data-dur="6.8" data-design-dur="6.8">
+  <section class="scene hero" id="hero" data-start="0" data-dur="6.8" data-design-dur="6.8" data-stretch="spread">
     <div class="bg"></div>
 
     <!-- SLOT: product mark + name (swap the SVG for the real logo file: <img class="mark" src="logo.svg">) -->
     <div class="brand"><svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect class="m-bg" width="32" height="32" rx="9"/><path class="m-fg" d="M9 23V9h3.2l7.6 9V9H23v14h-3.2L12.2 14v9z"/></svg>Northwind</div>
 
-    <!-- SLOT: the hook (the claim in the viewer's words, 3 short lines) and one supporting line -->
+    <!-- SLOT: the hook (the claim in the viewer's words, about 4 words) and one supporting line (about 3 words):
+         at 10 s they are on screen about 2 s and 1.7 s, the time a phone viewer needs to read that much -->
     <div class="hook">
-      <h1 class="t-hero headline" data-st="kinetic-type" data-style="mask" data-at="0.1" data-exit="mask" data-exit-at="2.2">Your launch<br>video, in one<br><em>sentence.</em></h1>
-      <p class="sub" data-st="kinetic-type" data-style="rise" data-at="0.5" data-exit="fade" data-exit-at="1.8">Scored, voiced and captioned.</p>
+      <h1 class="t-hero headline" data-st="kinetic-type" data-style="mask" data-at="0.1" data-exit="mask" data-exit-at="2.2">Prompt in,<br><em>video out.</em></h1>
+      <p class="sub" data-st="kinetic-type" data-style="rise" data-at="0.5" data-exit="fade" data-exit-at="2.1">Voiced and captioned.</p>
     </div>
 
     <div class="win">
       <div class="cam-a">
         <!-- data-zoom: push in on the prompt while it types, back out as the cut builds -->
-        <div class="frame" data-st="browser-frame" data-url="northwind.app" data-enter="none" data-drift="none"
+        <div class="frame" data-st="browser-frame" data-url="northwind.example" data-enter="none" data-drift="none"
              data-zoom='[{"at":3.25,"scale":1.32,"x":2,"y":30,"dur":0.75},{"at":5.0,"scale":1,"x":50,"y":50,"dur":0.75}]'>
           <div class="app" data-st-decor>
             <div class="bar">
@@ -342,24 +343,24 @@
   <section class="scene features" id="features" data-start="#hero" data-dur="3.0" data-design-dur="3.0" data-transition="push left 0.6">
     <div class="bg"></div>
     <!-- SLOT: section line (the accent word is the payoff) -->
-    <h2 class="t-display head" data-st="kinetic-type" data-style="mask" data-at="0.1">Everything it takes, <em>on your machine.</em></h2>
-    <!-- SLOT: three features. Title = the benefit (2-3 words), line = how (<= 6 words).
+    <h2 class="t-display head" data-st="kinetic-type" data-style="mask" data-at="0.1">Everything <em>stays local.</em></h2>
+    <!-- SLOT: three features. Title = the benefit (2-3 words), line = how (<= 4 words: it reads in time at 10 s).
          Icons: any path from /_lib/lucide-static/icons/ (inline the SVG, it takes the accent). -->
     <div class="cards">
       <div class="card">
         <div class="icon"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h13"/></svg></div>
         <div class="motif lines" data-st-decor><i style="animation-delay:0.7s"></i><i style="animation-delay:0.78s"></i><i style="animation-delay:0.86s"></i><i style="animation-delay:0.94s"></i></div>
-        <div class="txt"><h3>Script to cut</h3><p>One line becomes a timed edit.</p></div>
+        <div class="txt"><h3>Script to cut</h3><p>Lines become edits.</p></div>
       </div>
       <div class="card">
         <div class="icon"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></div>
         <div class="motif" data-st-decor><i style="height:40%;animation-delay:0.8s"></i><i style="height:75%;animation-delay:0.83s"></i><i style="height:55%;animation-delay:0.86s"></i><i style="height:95%;animation-delay:0.89s"></i><i style="height:62%;animation-delay:0.92s"></i><i style="height:84%;animation-delay:0.95s"></i><i style="height:38%;animation-delay:0.98s"></i><i style="height:70%;animation-delay:1.01s"></i><i style="height:50%;animation-delay:1.04s"></i><i style="height:88%;animation-delay:1.07s"></i><i style="height:45%;animation-delay:1.1s"></i><i style="height:66%;animation-delay:1.13s"></i></div>
-        <div class="txt"><h3>Voice and captions</h3><p>Narrated and subtitled offline.</p></div>
+        <div class="txt"><h3>Voice and captions</h3><p>Narrated offline.</p></div>
       </div>
       <div class="card">
         <div class="icon"><svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div>
         <div class="motif" data-st-decor><i style="height:30%;animation-delay:0.9s"></i><i style="height:55%;animation-delay:0.93s"></i><i style="height:30%;animation-delay:0.96s"></i><i style="height:55%;animation-delay:0.99s"></i><i style="height:30%;animation-delay:1.02s"></i><i style="height:55%;animation-delay:1.05s"></i><i style="height:30%;animation-delay:1.08s"></i><i style="height:55%;animation-delay:1.11s"></i><i style="height:30%;animation-delay:1.14s"></i><i style="height:55%;animation-delay:1.17s"></i><i style="height:30%;animation-delay:1.2s"></i><i style="height:55%;animation-delay:1.23s"></i></div>
-        <div class="txt"><h3>Scored on the beat</h3><p>Music and sound land on cuts.</p></div>
+        <div class="txt"><h3>Scored on the beat</h3><p>Music lands on cuts.</p></div>
       </div>
     </div>
     <div class="vig"></div>
@@ -383,7 +384,7 @@
   <section class="scene close" id="close" data-start="#formats" data-dur="3.0" data-design-dur="3.0" data-transition="sdf-iris 0.8" data-transition-options='{"a":0.5,"b":0.62}'>
     <div class="horizon"><div class="bg"></div></div>
     <!-- SLOT: name, tagline, CTA, URL; the child SVG is the mark (or data-logo="logo.svg") -->
-    <div data-st="end-card" data-text="Northwind" data-tagline="Your launch video, in one sentence." data-cta="Try it free" data-url="northwind.app" data-at="0.3" data-style="mask" data-dot="false">
+    <div data-st="end-card" data-text="Northwind" data-tagline="Your launch video, in one sentence." data-cta="Try it free" data-url="northwind.example" data-at="0.3" data-style="mask" data-dot="false">
       <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect class="m-bg" width="32" height="32" rx="9"/><path class="m-fg" d="M9 23V9h3.2l7.6 9V9H23v14h-3.2L12.2 14v9z"/></svg>
     </div>
     <div class="vig"></div>
@@ -396,17 +397,21 @@
   // Retime support: the CSS keyframe times above are written for each scene's designed length
   // (data-design-dur). When `showtime retime` / `new --duration` shortens a scene it scales the
   // component times inside it; this scales the scene's CSS animations by the same factor
-  // (longer scenes keep their speed and hold longer, like the components).
+  // (longer scenes keep their speed and hold longer, like the components). A longer scene marked
+  // data-stretch="spread" (the hero) spreads its component start times instead: this spreads the
+  // CSS start times (delays) by the same factor and keeps their lengths, so the beats move apart.
   (function () {
     var done = new WeakSet();
     ST.onSeek(function () {
       document.querySelectorAll('[data-design-dur]').forEach(function (s) {
-        var k = Math.min(1, parseFloat(s.getAttribute('data-dur')) / parseFloat(s.getAttribute('data-design-dur')));
-        if (!(k > 0) || k > 0.999) return;
+        var r = parseFloat(s.getAttribute('data-dur')) / parseFloat(s.getAttribute('data-design-dur'));
+        var spread = r > 1 && s.getAttribute('data-stretch') === 'spread';
+        var k = spread ? r : Math.min(1, r);
+        if (!(k > 0) || Math.abs(k - 1) < 0.001) return;
         s.getAnimations({ subtree: true }).forEach(function (a) {
           if (done.has(a) || !a.effect) return;
           var t = a.effect.getTiming();
-          a.effect.updateTiming({ delay: t.delay * k, duration: t.duration * k });
+          a.effect.updateTiming(spread ? { delay: t.delay * k } : { delay: t.delay * k, duration: t.duration * k });
           done.add(a);
         });
       });

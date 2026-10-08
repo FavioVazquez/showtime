@@ -53,13 +53,13 @@
    "id": "researcher",
    "name": "researcher",
    "line": "Checks every claim against its source and every asset's license.",
-   "when": "Publish-Bound"
+   "when": "Facts · Publish-Bound"
   },
   {
    "id": "critic",
    "name": "critic",
    "line": "Watches the draft like a stranger: blocker, should-fix, polish.",
-   "when": "Publish-Bound"
+   "when": "All Videos · Quality Mode"
   }
  ]
 }

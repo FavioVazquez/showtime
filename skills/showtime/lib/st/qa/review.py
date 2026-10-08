@@ -333,7 +333,7 @@ def open_round(root: Path, force_round: bool, video: Path, say: Any) -> Tuple[in
     pack = root / ("round-%d" % n)
     if rebuild:
         say("review-pack: round-%d has no FINDINGS.md yet, so it is rebuilt for %s (a critic that answered in chat: save "
-            "its answer as round-%d/FINDINGS.md first)" % (n, video.name, n))
+            "its answer first: showtime review-findings <job> --round %d < reply.txt)" % (n, video.name, n))
         shutil.rmtree(pack, ignore_errors=True)
     pack.mkdir(parents=True)
     # an interrupted pack stays marked, so nobody hands it to a critic; the next run rebuilds it
@@ -791,7 +791,8 @@ You cannot hear this video. {files} measure what an ear would catch: each voice 
 its words per minute, pauses and near silence, the level on both sides of every cut, each effect's timing and
 level, how the music ends, the peaks. `transcript.txt` has the words with their times. Judge **only what those
 numbers and the transcript support**, quote the numbers in the finding, and never guess at what they cannot
-show (how the voice sounds, a mispronounced word, harsh s sounds, whether the music fits the mood): list those
+show (how the voice sounds, a mispronounced word the read-back does not list, harsh s sounds, whether the music
+fits the mood): list those
 under DECLINED TO JUDGE. Write one line per check under HEARING (`- voice over music: ok -- every line 12-17 dB
 over the bed`, or `problem -- ...`); every problem is also a finding under the usual severities, with its time
 and `hearing.png`:
@@ -809,14 +810,25 @@ and `hearing.png`:
    one far over the programme (loud) startles (Should-fix).
 6. Ending: sound still playing on the last frame is music cut off (Should-fix); music that stops more than
    1 s before the picture without a reason is Polish.
-7. Peaks: clipping is a Blocker; a true peak over the ceiling is qa's finding to confirm."""
+7. Peaks: clipping is a Blocker; a true peak over the ceiling is qa's finding to confirm.
+8. Read-back: the voice-over was transcribed again and compared with the script; each word listed there
+   (`script: OpenAI / heard: OpenI`) is a name or number the voice said wrong (Should-fix; a Blocker for the
+   product, brand or title name). When the heard spelling is only another way to write the same sound, say so
+   (ok). "not run" means nobody checked: say that under DECLINED TO JUDGE.
+9. Heard on a phone: `audio.txt` says how loud the mix is above 300 Hz, all a phone or laptop speaker plays
+   ("on a phone speaker: -27.6 LUFS, 13.6 LU under the mix"). Over {speaker:g} LU under, most viewers hear the
+   video far quieter than its loudness says (Should-fix: the mixer's speaker-safe step, a bed with more in the
+   mids, a mid transient on sub hits); over {speaker_fail:g} LU it is close to silent there (Blocker for a video
+   posted to a feed). A sub-heavy effect alone on its hit is not heard on a phone (Polish, Should-fix when the
+   picture lands on it)."""
 
 def hearing_brief(files: str) -> str:
     """The hearing pass section of a critic brief, with the thresholds qa uses (runtime/thresholds.json)."""
     from .hearing import thresholds
     th = thresholds()
     return HEARING.format(files=files, masked=th["voice_over_bed_min_db"], fast=th["fast_wpm"],
-                          quiet=th["quiet_stretch_s"], jump=th["level_jump_lu"])
+                          quiet=th["quiet_stretch_s"], jump=th["level_jump_lu"], speaker=th["speaker_gap_lu"],
+                          speaker_fail=th["speaker_gap_fail_lu"])
 
 
 NO_HEARING = """## Hearing pass

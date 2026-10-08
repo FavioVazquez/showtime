@@ -23,11 +23,11 @@ short exchange: what is there, what is missing, one decision, then the install, 
 | Section | Lines |
 |---|---|
 | 1. Look before you talk | 32-43 |
-| 2. Tell the user in one table, then ask one thing | 45-62 |
-| 3. Install | 64-90 |
-| 4. What works now, what arrives later | 92-113 |
-| 5. Where things live | 115-119 |
-| 6. If setup fails | 121-126 |
+| 2. Tell the user in one table, then ask one thing | 45-63 |
+| 3. Install | 65-91 |
+| 4. What works now, what arrives later | 93-114 |
+| 5. Where things live | 116-120 |
+| 6. If setup fails | 122-127 |
 
 ## 1. Look before you talk
 
@@ -54,8 +54,9 @@ Group the rows into what they mean for videos, not into package names:
 
 Then one decision, with the default recommended:
 
-> showtime needs a one-time install into `~/.showtime`: about 0.6-0.9 GB of downloads, usually 2-6
-> minutes. Nothing outside that folder changes. Install the default now? (recommended)
+> showtime needs a one-time install into `~/.showtime`: about 0.5-0.75 GB of downloads (1.4-1.8 GB on
+> disk once installed), usually 2-6 minutes. Outside that folder only uv's and npm's download caches change.
+> Install the default now? (recommended)
 
 Use the numbers `setup --estimate` printed, not the ones in this file. Do not ask about tiers or extras
 up front: the default tier covers every workflow in SKILL.md, and extras are fetched when a feature
@@ -96,7 +97,7 @@ Say this in two or three lines so nothing surprises the user later:
 | Works right after the core install | Fetched automatically on first use (a one-line notice with the size) |
 |---|---|
 | HTML and canvas videos, all templates, preview, render, check, snap | the audio library's starter part (~41 MB) on first library use; category parts, produced-music tracks and extra SFX packs when a mix or search needs them; all of it: `showtime audio lib fetch` (~249 MB) |
-| generated music, all 56 effect types, mixing, mastering | the transcription model, Parakeet v3 (~465 MB), before the first transcription; the Whisper engine + a Whisper model only for languages outside Parakeet's 25; the vocal separator (67 MB) for speech under loud music |
+| generated music, all 56 effect types, mixing, mastering | the transcription model, Parakeet v3 (about 490 MB), before the first transcription; the Whisper engine + a Whisper model only for languages outside Parakeet's 25; the vocal separator (67 MB) for speech under loud music |
 | Kokoro voices (English, Spanish, more) with word timings | Manim (~60 MB) before the first Manim scene; icons one at a time (a few KB each) |
 | footage edits, captions (transcripts after the first-use fetch) | Piper voices, the English aligner, background removal outside macOS (rembg; its model is about 170 MB) |
 | site capture, demo recording, auto zoom, fonts, exports | a headed browser (`--headed` without Chrome/Edge: full Chromium, ~200 MB) |

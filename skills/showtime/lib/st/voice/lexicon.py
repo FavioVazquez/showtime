@@ -50,6 +50,9 @@ class Lexicon:
         if e.get("case"):
             self.exact[word] = e
         else:
+            # a later file wins: its entry replaces an earlier case-sensitive one for the same word
+            for k in [k for k in self.exact if k.casefold() == word.casefold()]:
+                del self.exact[k]
             self.folded[word.casefold()] = e
 
     def load(self, path: PathLike, key: Optional[str] = None) -> "Lexicon":

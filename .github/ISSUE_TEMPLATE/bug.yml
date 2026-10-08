@@ -1,0 +1,80 @@
+name: Bug
+description: Something does not work as the docs say.
+title: "[bug] "
+labels: ["type: bug", "status: triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Before you paste anything, remove private paths and any media you do not want public.
+        `showtime report` writes a bug-report.md with home paths, user names and tokens already redacted: read it, then attach it below.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: The command or request that triggered it
+      description: The showtime command you ran, or what you asked your agent.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `showtime doctor`
+      description: Every line, or at least the WARN and FAIL ones.
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: showtime version
+      description: "`showtime version`"
+      placeholder: "0.4.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS, Apple Silicon
+        - macOS, Intel
+        - Windows 10/11, x64
+        - Windows on Arm
+        - Linux
+    validations:
+      required: true
+  - type: dropdown
+    id: agent
+    attributes:
+      label: Agent
+      description: What ran showtime.
+      options:
+        - Claude Code
+        - Codex
+        - Cursor
+        - Devin
+        - OpenCode
+        - GitHub Copilot
+        - Gemini CLI
+        - Another MCP client
+        - The showtime command line (no agent)
+        - Other
+  - type: textarea
+    id: output
+    attributes:
+      label: Error text, bug-report.md, a contact sheet or a short clip (optional)
+      description: Drag files in. Run the command again with --debug for a traceback.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched the open issues and the FAQ (https://faviovazquez.github.io/showtime/).
+          required: true

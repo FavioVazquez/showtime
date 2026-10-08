@@ -1,0 +1,63 @@
+title: "[video] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Made something with showtime? Post it here. Only share media you have the right to share.
+  - type: textarea
+    id: video
+    attributes:
+      label: Your video
+      description: Drag in an MP4 or a GIF, or link a public post.
+    validations:
+      required: true
+  - type: textarea
+    id: request
+    attributes:
+      label: The request you typed
+      description: Roughly what you asked your agent for.
+    validations:
+      required: true
+  - type: dropdown
+    id: agent
+    attributes:
+      label: Agent
+      options:
+        - Claude Code
+        - Codex
+        - Cursor
+        - Devin
+        - OpenCode
+        - GitHub Copilot
+        - Gemini CLI
+        - Another MCP client
+        - The showtime command line (no agent)
+        - Other
+  - type: input
+    id: version
+    attributes:
+      label: showtime version
+      description: "`showtime version`"
+      placeholder: "0.4.1"
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS, Apple Silicon
+        - macOS, Intel
+        - Windows 10/11, x64
+        - Windows on Arm
+        - Linux
+  - type: input
+    id: render-time
+    attributes:
+      label: About how long it took (optional)
+      description: From the request to the finished file, or the render time if you know it.
+      placeholder: "12 min, 3 min of it rendering"
+  - type: checkboxes
+    id: consent
+    attributes:
+      label: Featuring
+      options:
+        - label: showtime may feature this video on its site and social accounts, credited to me.

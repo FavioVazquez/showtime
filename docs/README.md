@@ -21,6 +21,14 @@ the whole programme at a glance; the tables under it link every guide.
 > guide itself. Read them when you want to know **why** a video came out the way it did, change a
 > default, or build a project by hand.
 
+Written for people rather than for your agent:
+
+| Page | Read it when |
+|---|---|
+| [Task guides](guides/README.md) | you want a recipe: what to say, what your agent runs, what you get, how long it takes |
+| [What's new](whats-new.md) | you want each release's new features, one sentence each |
+| [Questions people ask](faq.md) | you want short answers: GPU, cost, agents, privacy, licences, disk, time, platforms, languages |
+
 <p align="center"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/diagrams/docs-map-dark.svg">
   <img alt="The documentation map: fourteen workflows, then five acts and a finale of guides, from onboarding to qa and review." src="../assets/readme/diagrams/docs-map-light.svg" width="100%">
@@ -44,7 +52,7 @@ What are you making? Each card opens the workflow guide your agent follows; the 
 <tr>
 <td width="33%" valign="top"><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/09-studio-trailer"><img src="../assets/readme/gallery/09-studio-trailer.webp" width="100%" alt="A preview of example 09"></a><br><sub>A trailer or teaser</sub><br><b><a href="../skills/showtime/references/workflows/trailer.md">trailer</a></b><br><sub>see it done: <a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/09-studio-trailer">09</a> <a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/18-book-trailer-war-of-the-worlds">18</a></sub></td>
 <td width="33%" valign="top"><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/08-beat-montage"><img src="../assets/readme/gallery/08-beat-montage.webp" width="100%" alt="A preview of example 08"></a><br><sub>A slideshow from photos</sub><br><b><a href="../skills/showtime/references/workflows/slideshow.md">slideshow</a></b><br><sub>see it done: <a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/08-beat-montage">08</a> <a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/19-travel-slideshow-iceland">19</a></sub></td>
-<td width="33%" valign="top"><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/15-oss-release-black"><img src="../assets/readme/gallery/15-oss-release-black.webp" width="100%" alt="A preview of example 15"></a><br><sub>A video for a release or changelog</sub><br><b><a href="../skills/showtime/references/workflows/changelog-video.md">changelog-video</a></b><br><sub>see it done: <a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/15-oss-release-black">15</a> · in CI: <a href="github-action.md">the GitHub Action</a></sub></td>
+<td width="33%" valign="top"><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/15-oss-release-black"><img src="../assets/readme/gallery/15-oss-release-black.webp" width="100%" alt="A preview of example 15"></a><br><sub>A video for a pull request, release or changelog</sub><br><b><a href="../skills/showtime/references/workflows/changelog-video.md">changelog-video</a></b><br><sub>see it done: <a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/15-oss-release-black">15</a> · a PR: <code>showtime pr-video</code> · in CI: <a href="github-action.md">the GitHub Action</a></sub></td>
 </tr>
 <tr>
 <td width="33%" valign="top"><a href="../skills/showtime/references/workflows/music-video.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/icons/music-dark.svg"><img src="../assets/readme/icons/music-light.svg" width="56" alt=""></picture></a><br><sub>A picture cut to a song</sub><br><b><a href="../skills/showtime/references/workflows/music-video.md">music-video</a></b><br><sub>see it done: no example yet</sub></td>
@@ -78,12 +86,12 @@ What are you making? Each card opens the workflow guide your agent follows; the 
 
 | Guide | Read it when |
 |---|---|
-| [story](../skills/showtime/references/story.md) | before any plan: angle, hook, structure, lines, and the honesty rules |
-| [tones](../skills/showtime/references/tones.md) | choosing a tone, or turning "make it feel premium" into choices |
+| [story](../skills/showtime/references/story.md) | before any plan: angle, hook, structure, lines, and the honesty rules; a video that stops and asks; a storyboard table from another tool (`showtime new dom <dir> --from-storyboard <file>`) |
+| [tones](../skills/showtime/references/tones.md) | choosing a tone, or turning "make it feel premium" into choices; a showreel or "go all out" brief (`showtime new showreel`) |
 | [pacing](../skills/showtime/references/pacing.md) | holds, cut rhythm, beat sync, narration word budgets, durations |
 | [motion-craft](../skills/showtime/references/motion-craft.md) | easing, timing, stagger and camera moves |
 | [typography](../skills/showtime/references/typography.md) | fonts, sizes, spacing and safe areas for type |
-| [color](../skills/showtime/references/color.md) | palettes, contrast, grading footage |
+| [color](../skills/showtime/references/color.md) | palettes, contrast, grading footage, and the look signatures new projects start in (`--look`, `showtime signature`) |
 | [brand-kit](../skills/showtime/references/brand-kit.md) | there is a brand, or a repo or site with a visual identity; launches start with `showtime brand capture` |
 | [reference](../skills/showtime/references/reference.md) | you want a video "like this one", or one that does not look like your last five (`showtime reference`, `showtime history`, `look_repeat`) |
 | [platforms](../skills/showtime/references/platforms.md) | delivery specs, safe zones, posters, thumbnails, README loops, cut-downs and share copy |
@@ -92,15 +100,15 @@ What are you making? Each card opens the workflow guide your agent follows; the 
 
 | Guide | Read it when |
 |---|---|
-| [render](../skills/showtime/references/render.md) | checking, snapping, previewing or rendering a project |
-| [stage-api](../skills/showtime/references/stage-api.md) | writing a page (`index.html` + `showtime.json`) and its time contract |
-| [components](../skills/showtime/references/components.md) | titles, captions, charts, frames, cursor, end card, logo stings and lower thirds |
+| [render](../skills/showtime/references/render.md) | checking, snapping, previewing or rendering a project; speed, workers, rendering without a GPU |
+| [stage-api](../skills/showtime/references/stage-api.md) | writing a page (`index.html` + `showtime.json`) and its time contract; the shutter blur on fast moves (`data-st-blur`) |
+| [components](../skills/showtime/references/components.md) | titles, captions, charts, frames, cursor, end card, logo stings and lower thirds; the WebGL looks (§7: fluted glass, tilt-shift, liquid metal, mesh gradient, god rays, marble, metaballs) |
 | [transitions](../skills/showtime/references/transitions.md) | scene handoffs, CSS and WebGL |
-| [adopt](../skills/showtime/references/adopt.md) | you already have a video written as code (a page with `seek(t)`, `draw(t)`, CSS animations or a Python frame script) and want checks, sound, qa and export without a rewrite |
+| [adopt](../skills/showtime/references/adopt.md) | you already have a video written as code (a page with `seek(t)`, `draw(t)`, CSS animations or a Python frame script) and want checks, sound, qa and export without a rewrite; a Claude Design export (`showtime adopt <export.zip>`) |
 | [film-api](../skills/showtime/references/film-api.md) | drawing a canvas film or tutorial with `Film` |
 | [series](../skills/showtime/references/series.md) | several episodes that share one look, sound and pacing |
 | [manim](../skills/showtime/references/manim.md) | equations, proofs, graphs and grid transforms with Manim |
-| [html-export](../skills/showtime/references/html-export.md) | a single-file interactive HTML video: player, chapters, keys, deep links |
+| [html-export](../skills/showtime/references/html-export.md) | a single-file interactive HTML video: player, chapters, keys, deep links, range links that loop a part, questions that pause and ask the viewer; link previews and GitHub Pages (`--share-url`, `--folder`) |
 | [debugging-renders](../skills/showtime/references/debugging-renders.md) | a render fails, flickers, shows black or frozen frames, or differs from the preview |
 
 ## Act IV · Sound and voice
@@ -117,9 +125,9 @@ What are you making? Each card opens the workflow guide your agent follows; the 
 
 | Guide | Read it when |
 |---|---|
-| [editing](../skills/showtime/references/editing.md) | editing real footage by transcript (the edit decision list and its rules) |
+| [editing](../skills/showtime/references/editing.md) | editing real footage by transcript (the edit decision list and its rules); cards over a talking head and a word behind the speaker (§9); a long recording's best moments as short clips (§10) |
 | [captions](../skills/showtime/references/captions.md) | caption styles, grouping, sizes and safe zones |
-| [footage-tools](../skills/showtime/references/footage-tools.md) | one footage tool: probe, scenes, reframe, denoise, stabilize, grade, views |
+| [footage-tools](../skills/showtime/references/footage-tools.md) | one footage tool: probe, scenes, reframe, cut out the speaker, denoise, stabilize, grade, views |
 | [capture](../skills/showtime/references/capture.md) | material from a repo, a running app, a website or a PDF |
 | [tutorial-recording](../skills/showtime/references/tutorial-recording.md) | scripting and recording an app demo, with auto zoom |
 | [assets](../skills/showtime/references/assets.md) | fonts, icons, emoji, stock photos and video, cutouts, credits, contact sheets |
@@ -128,8 +136,8 @@ What are you making? Each card opens the workflow guide your agent follows; the 
 
 | Guide | Read it when |
 |---|---|
-| [qa](../skills/showtime/references/qa.md) | the checklists, the `showtime qa` rules, the phone check and the `expect` block |
-| [review](../skills/showtime/references/review.md) | building a review pack, running the critic pass on publish-bound work, and judging a new render against the best so far (`review-pack --against`, `review-verdict`) |
+| [qa](../skills/showtime/references/qa.md) | the checklists, the `showtime qa` rules, the hearing pass (a voice under the music, quiet stretches, level jumps, an abrupt end), the phone check and the `expect` block |
+| [review](../skills/showtime/references/review.md) | building a review pack, running the critic pass on every finished video (quality mode, the default), judging a new render against the best so far (`review-pack --against`, `review-verdict`), clearing every finding before delivery (`review-respond`), and notes on the finished video (`showtime review open`), on a spot, a box or a stretch of time |
 | [receipt](../skills/showtime/references/receipt.md) | you want to know what a job took (rounds, renders, time, tokens, cost) and the format of `receipt.md` and `receipt.json` |
 
 These guides are also a searchable site: **[faviovazquez.github.io/showtime/docs](https://faviovazquez.github.io/showtime/docs/index.html)**.
@@ -143,7 +151,7 @@ These guides are also a searchable site: **[faviovazquez.github.io/showtime/docs
 | [CONTEXT.md](../CONTEXT.md) | the glossary: the words showtime uses and the ones it avoids |
 | [.out-of-scope/](../.out-of-scope/README.md) | what showtime deliberately does not do, and why |
 | [CONTRIBUTING.md](../CONTRIBUTING.md) | tests, release checks, how to send a change |
-| [CHANGELOG.md](../CHANGELOG.md) | what changed and why, so it also answers "where did X go?" |
+| [CHANGELOG.md](../CHANGELOG.md) | what changed and why, so it also answers "where did X go?" ([What's new](whats-new.md) is the short version) |
 | [showtime-examples](https://github.com/FavioVazquez/showtime-examples/blob/main/examples/README.md) | every example with its request, commands and review rounds, in its own repository |
 | [assets/brand/](../assets/brand/BRAND.md) | the Curtain Call brand: logo, colours, type, the sting and the sound logo |
 

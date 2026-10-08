@@ -41,7 +41,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from .. import captions_rules as R
 from ..common import ShowtimeError, warn
@@ -389,6 +389,19 @@ def _time_groups(out: List[Dict[str, Any]], st: Dict[str, Any]) -> None:
         g["end"] = max(end, g["words"][-1]["end"])
 
 
+def split_at(groups: List[Dict[str, Any]], times: List[float], least: float = 0.05) -> List[Dict[str, Any]]:
+    """Groups on screen across one of `times` become two events (the same words), split there."""
+    out: List[Dict[str, Any]] = []
+    for g in groups:
+        a = float(g["start"])
+        for t in times:
+            if a + least < t < float(g["end"]) - least:
+                out.append(dict(g, start=a, end=t))
+                a = t
+        out.append(dict(g, start=a) if a != float(g["start"]) else g)
+    return out
+
+
 def group_text(g: Dict[str, Any], st: Dict[str, Any]) -> str:
     """The group's text as displayed (case/punctuation rules applied; lines joined by a space)."""
     return " ".join(_word_text(w, st) for w in g["words"])
@@ -635,12 +648,51 @@ def to_ass(groups: List[Dict[str, Any]], st: Dict[str, Any], width: int, height:
     fade_in, fade_out = st.get("fade", (0, 0))
     blur = st.get("blur")
     hl = ass_color(st.get("highlight") or st["color"])
+    # emphasis: words marked "emph" (build(): captions.emphasis) keep an accent colour of their own
+    emph_c = ass_color(st.get("_emph_color")) if st.get("_emph_color") else None
+    zones = st.get("_zones") or []
+    zmeas: Optional[_Measure] = None
+    hard = sorted({float(t) for z in zones if z.get("cut") for t in (z["start"], z["end"])})
+    if hard:
+        # a zone that moves the speaker (a behind card's reframe) splits the captions on screen at its edges:
+        # the part before stays where it was, the part after moves with the face
+        groups = split_at(groups, hard)
+
     pop = float(st.get("pop", 1.0))
     meas = _Measure(font_path, size, spacing, bool(st.get("bold")) and st.get("_font_weight", 400) < 600) if plate else None
     # plate colour (&HBBGGRR&) and its transparency, the same as the style's BackColour
     plate_fill = "\\1c&H%s&\\1a&H%02X&" % (ass_color(st.get("back"))[4:],
                                             int(round(max(0.0, min(1.0, st.get("back_alpha", 0.5))) * 255)))
     text_layer = 1 if plate else 0
+    def place(z: Optional[Dict[str, Any]], layout: List[List[int]], texts: List[str]) -> Tuple[Any, ...]:
+        """(alignment, margin_v, dx, dy, \\pos prefix or "", (cx, cy)) for a caption in zone z (None: the style's)."""
+        nonlocal zmeas
+        if z is None:
+            return align, mv, 0, 0, "", None
+        # a zone moves this caption: off the face (below the chin), into a 9:16 panel just above the seam, or in
+        # 16:9 under the speaker's half ("x"); always kept inside the side margins
+        galign = int(z.get("align", align))
+        gmv = mv
+        dy = 0
+        cx0 = (ml + width - mr) / 2.0
+        cx = float(z["x"]) * width if z.get("x") is not None else cx0
+        zmeas = zmeas or _Measure(font_path, size, spacing, bool(st.get("bold")) and st.get("_font_weight", 400) < 600)
+        half = max(zmeas.width(" ".join(texts[j] for j in line)) for line in layout) / 2.0 + 0.3 * size
+        cx = min(max(cx, ml + half), width - mr - half) if width - mr - ml > 2 * half else cx0
+        if galign in (4, 5, 6):
+            gmv = 0
+            cy = float(z.get("y", 0.5)) * height
+            dy = int(round(cy - height / 2.0))
+        elif galign in (7, 8, 9):
+            cy = float(z["y"]) * height if z.get("y") is not None else mv
+            gmv = int(round(cy))
+        else:
+            cy = height - float(z["y"]) * height if z.get("y") is not None else mv
+            gmv = int(round(cy))
+            cy = height - cy
+        return (galign, gmv, int(round(cx - cx0)), dy, "{\\an%d\\pos(%d,%d)}" % (galign, int(round(cx)), int(round(cy))),
+                (cx, cy))
+
     for gi, g in enumerate(groups):
         ws = g["words"]
         texts = [_word_text(w, st) for w in ws]
@@ -648,50 +700,81 @@ def to_ass(groups: List[Dict[str, Any]], st: Dict[str, Any], width: int, height:
         gin = fade_in if gi == 0 or g["start"] - groups[gi - 1]["end"] >= 0.1 else 0
         gout = fade_out if gi == len(groups) - 1 or groups[gi + 1]["start"] - g["end"] >= 0.1 else 0
         layout = layout_lines(ws, texts, max_chars, int(st["max_lines"]))
-        prefix = "{\\blur%s}" % blur if blur else ""
-        if meas is not None:
-            shape = _plate([" ".join(texts[j] for j in line) for line in layout], meas, st, width, height, align, ml, mr, mv)
-            fad0 = "\\fad(%d,%d)" % (gin, gout) if (gin or gout) else ""
-            lines.append("Dialogue: 0,%s,%s,Cap,,0,0,0,,{\\an7\\pos(0,0)\\bord0\\shad0%s%s\\p1}%s{\\p0}" % (
-                _ass_time(g["start"]), _ass_time(g["end"]), plate_fill, fad0, shape))
-        if st.get("karaoke") and len(ws) >= 1:
-            # one event per group; each word turns to the highlight colour (and pops) while it is
-            # spoken, via \\t transforms timed from the event start (ms)
-            base_c = ass_color(st["color"])
-            span = g["end"] - g["start"]
+        blur_tag = "{\\blur%s}" % blur if blur else ""
+        # a caption that runs across a zone's edge (a split starting or ending, the face moving) is cut there:
+        # one event per stretch, each in its own place, so no caption stays where the frame no longer has room
+        cuts = sorted({float(t) for z in zones for t in (z["start"], z["end"])
+                       if g["start"] + 0.02 < float(t) < g["end"] - 0.02})
+        edges = [g["start"]] + cuts + [g["end"]]
+        pieces: List[List[Any]] = []
+        for ps, pe in zip(edges, edges[1:]):
+            mid = (ps + pe) / 2.0
+            z = next((z for z in zones if float(z["start"]) <= mid < float(z["end"])), None)
+            pl = place(z, layout, texts)
+            if pieces:
+                prev = pieces[-1][2]
+                same = (prev[0] == pl[0] and ((prev[5] is None and pl[5] is None) or (
+                    prev[5] is not None and pl[5] is not None and abs(prev[5][0] - pl[5][0]) < 0.02 * width
+                    and abs(prev[5][1] - pl[5][1]) < 0.02 * height)))
+                if same:
+                    pieces[-1][1] = pe
+                    continue
+            pieces.append([ps, pe, pl])
+        for pi, (ps, pe, pl) in enumerate(pieces):
+            galign, gmv, dx, dy, pos, _c = pl
+            pin = gin if pi == 0 else 0
+            pout = gout if pi == len(pieces) - 1 else 0
+            prefix = pos + blur_tag
+            if meas is not None:
+                shape = _plate([" ".join(texts[j] for j in line) for line in layout], meas, st, width, height, galign, ml, mr, gmv)
+                if dx or dy:
+                    shape = re.sub(r"(-?\d+) (-?\d+)", lambda m_: "%d %d" % (int(m_.group(1)) + dx, int(m_.group(2)) + dy), shape)
+                fad0 = "\\fad(%d,%d)" % (pin, pout) if (pin or pout) else ""
+                lines.append("Dialogue: 0,%s,%s,Cap,,0,0,0,,{\\an7\\pos(0,0)\\bord0\\shad0%s%s\\p1}%s{\\p0}" % (
+                    _ass_time(ps), _ass_time(pe), plate_fill, fad0, shape))
+            fad = "{\\fad(%d,%d)}" % (pin, pout) if (pin or pout) else ""
+            if st.get("karaoke") and len(ws) >= 1:
+                # each word turns to the highlight colour (and pops) while it is spoken, via \\t transforms timed
+                # from the event start (ms); a later piece starts with the words already said in their colour
+                base_c = ass_color(st["color"])
+                span = pe - ps
 
-            def ms(t: float) -> int:
-                return int(round(max(0.0, min(span, t - g["start"])) * 1000))
+                def ms(t: float) -> int:
+                    return int(round(max(0.0, min(span, t - ps)) * 1000))
 
-            tok: List[str] = []
-            for i in range(len(ws)):
-                a = 0 if i == 0 else ms(ws[i]["start"])
-                b = None if i == len(ws) - 1 else ms(ws[i + 1]["start"])
-                fx = "\\c%s" % base_c
-                if a <= 0:
-                    fx = "\\c%s" % hl
-                else:
-                    fx += "\\t(%d,%d,\\c%s)" % (a, a + 1, hl)
-                if b is not None:
-                    fx += "\\t(%d,%d,\\c%s)" % (b, b + 1, base_c)
-                if pop > 1.001:
-                    big, rest = int(round(pop * 100)) + 4, int(round(pop * 100))
-                    if a <= 0:
-                        fx += "\\fscx%d\\fscy%d\\t(0,70,\\fscx%d\\fscy%d)" % (big, big, rest, rest)
-                    else:
-                        fx += "\\fscx100\\fscy100\\t(%d,%d,\\fscx%d\\fscy%d)\\t(%d,%d,\\fscx%d\\fscy%d)" % (
-                            a, a + 1, big, big, a + 1, a + 71, rest, rest)
+                tok: List[str] = []
+                for i in range(len(ws)):
+                    w_start = g["start"] if i == 0 else float(ws[i]["start"])
+                    w_next = None if i == len(ws) - 1 else float(ws[i + 1]["start"])
+                    wc = emph_c if (emph_c and ws[i].get("emph")) else base_c
+                    if w_next is not None and w_next <= ps + 1e-6:          # said before this piece
+                        tok.append("{\\c%s%s}%s" % (wc, "\\fscx100\\fscy100" if pop > 1.001 else "", texts[i]))
+                        continue
+                    a = ms(w_start)
+                    b = None if w_next is None else ms(w_next)
+                    fx = "\\c%s" % hl if a <= 0 else "\\c%s\\t(%d,%d,\\c%s)" % (wc, a, a + 1, hl)
                     if b is not None:
-                        fx += "\\t(%d,%d,\\fscx100\\fscy100)" % (b, b + 1)
-                tok.append("{%s}%s" % (fx, texts[i]))
-            body = "\\N".join(" ".join(tok[j] for j in line) for line in layout)
-            fad = "{\\fad(%d,%d)}" % (gin, gout) if (gin or gout) else ""
-            lines.append("Dialogue: %d,%s,%s,Cap,,0,0,0,,%s%s%s" % (text_layer, _ass_time(g["start"]), _ass_time(g["end"]),
-                                                                   prefix, fad, body))
-        else:
-            body = "\\N".join(" ".join(texts[j] for j in line) for line in layout)
-            fad = "{\\fad(%d,%d)}" % (gin, gout) if (gin or gout) else ""
-            lines.append("Dialogue: %d,%s,%s,Cap,,0,0,0,,%s%s%s" % (text_layer, _ass_time(g["start"]), _ass_time(g["end"]),
+                        fx += "\\t(%d,%d,\\c%s)" % (b, b + 1, wc)
+                    if pop > 1.001:
+                        big, rest = int(round(pop * 100)) + 4, int(round(pop * 100))
+                        if a <= 0 and pi > 0 and w_start < ps:
+                            fx += "\\fscx%d\\fscy%d" % (rest, rest)          # already popped in the piece before
+                        elif a <= 0:
+                            fx += "\\fscx%d\\fscy%d\\t(0,70,\\fscx%d\\fscy%d)" % (big, big, rest, rest)
+                        else:
+                            fx += "\\fscx100\\fscy100\\t(%d,%d,\\fscx%d\\fscy%d)\\t(%d,%d,\\fscx%d\\fscy%d)" % (
+                                a, a + 1, big, big, a + 1, a + 71, rest, rest)
+                        if b is not None:
+                            fx += "\\t(%d,%d,\\fscx100\\fscy100)" % (b, b + 1)
+                    tok.append("{%s}%s" % (fx, texts[i]))
+                body = "\\N".join(" ".join(tok[j] for j in line) for line in layout)
+            else:
+                shown = list(texts)
+                if emph_c:
+                    base_c = ass_color(st["color"])
+                    shown = ["{\\c%s}%s{\\c%s}" % (emph_c, t, base_c) if w.get("emph") else t for t, w in zip(texts, ws)]
+                body = "\\N".join(" ".join(shown[j] for j in line) for line in layout)
+            lines.append("Dialogue: %d,%s,%s,Cap,,0,0,0,,%s%s%s" % (text_layer, _ass_time(ps), _ass_time(pe),
                                                                    prefix, fad, body))
     return "\n".join(header + lines) + "\n"
 
@@ -848,6 +931,11 @@ def build(words: List[Dict[str, Any]], out_path, *, style: str = "bold-pop", wid
     position = opts.pop("position", "bottom")
     keep_fillers = bool(opts.pop("fillers", False))
     font_name = opts.pop("font", None)
+    emphasis = opts.pop("emphasis", None) or []
+    if isinstance(emphasis, str):
+        emphasis = [x.strip() for x in emphasis.split(",") if x.strip()]
+    emph_color = opts.pop("emphasis_color", None)
+    zones = opts.pop("zones", None) or []
     st = get_style(style, {k: v for k, v in opts.items() if k in STYLES["bold-pop"] or k in ("blur", "min_show")})
     base_style = get_style(style)
     if "size" in opts and "chars" not in opts:
@@ -861,6 +949,13 @@ def build(words: List[Dict[str, Any]], out_path, *, style: str = "bold-pop", wid
     dw = display_words(words, lang, keep_fillers)
     font, dw, glyph_notes = _fit_glyphs(font, dw, st, keep_emoji=bool(opts.get("emoji")))
     st["_font_weight"] = font.weight
+    emph = mark_emphasis(dw, emphasis)
+    if emphasis:
+        st["_emph_color"] = emph_color or (st.get("highlight") if not st.get("karaoke") else None) or "#FFE500"
+        if st.get("karaoke") and st["_emph_color"].lower() == str(st.get("highlight") or "").lower():
+            st["_emph_color"] = "#7CF3FF" if st["_emph_color"].upper() != "#7CF3FF" else "#FFE500"
+    if zones:
+        st["_zones"] = zones
     orient = orientation(width, height)
     line_cap = R.max_line_chars(width, height)
     st["chars"] = min(int(_pick(st["chars"], orient)), line_cap)
@@ -893,6 +988,10 @@ def build(words: List[Dict[str, Any]], out_path, *, style: str = "bold-pop", wid
         Path(vtt).write_text(to_vtt(sub, line_cap), encoding="utf-8")
         rep["vtt"] = str(vtt)
     rep["timing"] = check_timing(groups, dw)
+    if emphasis:
+        rep["emphasis"] = emph
+    if zones:
+        rep["zones"] = len(zones)
     rep.update(glyph_notes)
     out_res = out.resolve()
     if burned_note is None:
@@ -905,6 +1004,27 @@ def build(words: List[Dict[str, Any]], out_path, *, style: str = "bold-pop", wid
                  "keep an .srt only for platforms that take a caption upload (YouTube, LinkedIn, X); "
                  "Reels, TikTok and Shorts need nothing more" % where)
     return rep
+
+
+def mark_emphasis(words: List[Dict[str, Any]], terms: List[str]) -> Dict[str, Any]:
+    """Mark every occurrence of each emphasis term (a word or a phrase; case, punctuation and number words do
+    not matter, as for cards) with "emph": True. Returns {"terms", "said" (occurrences), "words", "missing"}."""
+    if not terms:
+        return {"terms": 0, "said": 0, "words": 0, "missing": []}
+    from .cards import Matcher
+    m = Matcher(words)
+    hits, said, missing = 0, 0, []
+    for t in terms:
+        found = m.find_all(str(t))
+        if not found:
+            missing.append(str(t))
+        said += len(found)
+        for a, b in found:
+            for k in range(a, b + 1):
+                if not m.words[k].get("emph"):
+                    m.words[k]["emph"] = True
+                    hits += 1
+    return {"terms": len(terms), "said": said, "words": hits, "missing": missing}
 
 
 def _span(lo: int, hi: int) -> str:

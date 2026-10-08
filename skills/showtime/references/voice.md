@@ -25,6 +25,8 @@ Everything runs locally. Kokoro is the default engine. It gives exact word timin
   a line faster than x1.1, cut words rather than accept it (§ Choosing a voice, § Script → timeline → scenes)
 - Wrong word: `showtime voice ipa "Word" [--lang es]`, then a `lexicon.json` entry (`ipa` Kokoro only, `say`
   every engine) or inline `[SQL](sequel)` (§ Pronunciation fixes)
+- Read-back: `voice script` and `voice say` transcribe what they wrote and WARN when a name, acronym or number
+  is heard differently ("OpenAI" heard as "OpenI"). Fix it and rerun until it passes (§ Pronunciation fixes)
 - Spanish voices read English names with Spanish rules: add the product name to the lexicon in every Spanish
   video. `--lang es` is Castilian, `--lang es-419` Latin American (§ Pronunciation fixes, § Choosing a voice)
 - Supertonic is not reproducible: keep its WAVs and `timeline.json`. You cannot listen: compare candidates
@@ -38,18 +40,18 @@ Everything runs locally. Kokoro is the default engine. It gives exact word timin
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| Commands | 54-66 |
-| Choosing a voice | 68-107 |
-| Writing for the ear | 109-120 |
-| Word budgets | 122-133 |
-| Script → timeline → scenes (timing-driven editing) | 135-188 |
-| Captions from TTS timings | 190-196 |
-| Pronunciation fixes | 198-220 |
-| Aligning a recorded voice (or another engine's output) | 222-237 |
-| Mastering | 239-255 |
-| Engines and licensing | 257-267 |
-| Performance (measured on a 6-core Intel i5-8500, CPU only, load ~3) | 269-284 |
-| Platform notes and troubleshooting | 286-299 |
+| Commands | 56-68 |
+| Choosing a voice | 70-109 |
+| Writing for the ear | 111-122 |
+| Word budgets | 124-135 |
+| Script → timeline → scenes (timing-driven editing) | 137-190 |
+| Captions from TTS timings | 192-198 |
+| Pronunciation fixes | 200-242 |
+| Aligning a recorded voice (or another engine's output) | 244-259 |
+| Mastering | 261-277 |
+| Engines and licensing | 279-289 |
+| Performance (measured on a 6-core Intel i5-8500, CPU only, load ~3) | 291-306 |
+| Platform notes and troubleshooting | 308-321 |
 
 ## Commands
 
@@ -57,7 +59,7 @@ Everything runs locally. Kokoro is the default engine. It gives exact word timin
 |---|---|
 | `showtime voice list [--lang es] [--json]` | Lists voices with language, gender, quality grade, notes and whether each is installed. |
 | `showtime voice say "text" -v af_heart -o vo.wav` | Writes `vo.wav` (48 kHz, −16 LUFS) and `vo.words.json` (start and end time of every word). |
-| `showtime voice script narration.md -o voice/` | Writes per-line clips, `vo.wav`, `timeline.json`, `vo.words.json` and `vo.srt`. `--fit 15` lands the whole narration on 15 s. |
+| `showtime voice script narration.md -o voice/` | Writes per-line clips, `vo.wav`, `timeline.json`, `vo.words.json`, `vo.srt` and `readback.json` (the read-back, § Pronunciation fixes). `--fit 15` lands the whole narration on 15 s. |
 | `showtime voice align take.wav -f script.txt -o take.words.json` | Gives word timings for a recording and its known text. |
 | `showtime voice master raw.wav -o vo.wav [--preset podcast]` | Runs high-pass, de-ess and gentle compression, then two-pass loudness normalization. |
 | `showtime voice ipa "Kubernetes" [--lang es]` | Shows the phonemes espeak-ng produces, so you can write a pronunciation fix. |
@@ -176,7 +178,7 @@ When the fit leaves any line faster than x1.1 (its own speed times the fit facto
 | File | Contents |
 |---|---|
 | `vo.wav` | All lines placed with their pauses, mastered to −16 LUFS, 48 kHz. Use it as the `voice` track in `audio/mix.json`. |
-| `timeline.json` | `duration`, `loudness` and `lines[]`. Each line has `id`, `text`, `voice`, `start`, `end`, `speech_start`, `speech_end`, `slot {start, end, duration}`, `pause_after`, `file`, `timing`, `wps` and `words[]` (absolute seconds). A flat `words[]` has a `line` id on each word. |
+| `timeline.json` | `duration`, `loudness` and `lines[]`. Each line has `id`, `text`, `voice`, `start`, `end`, `speech_start`, `speech_end`, `slot {start, end, duration}`, `pause_after`, `at` (when pinned), `file`, `timing`, `wps` and `words[]` (absolute seconds). A flat `words[]` has a `line` id on each word. |
 | `vo.words.json` | Every word in the shared transcript format (`text`, `start`, `end`, `type: "word"`), ready for `showtime captions`. |
 | `vo.srt` | Captions of at most 32 characters per line (fits vertical video too), balanced, no one-word orphans, readable at 20 characters/s or slower. |
 | `lines/NN-id.wav` | Each line alone, plus `.words.json` with line-relative times. Use these when scenes are rendered separately. |
@@ -218,6 +220,26 @@ Kokoro's word times come straight from the model's phoneme durations. The wavefo
 The lexicons merge in this order, and later ones win: the built-in list (`lib/st/voice/lexicon.json`, tech words espeak gets wrong such as CLI, JSON, kubectl, Redis, and English brand names for Spanish voices such as GitHub, YouTube, Claude), then `$SHOWTIME_LEXICON`, then the project's `lexicon.json` or `brand.json`, then `--lexicon FILE`.
 
 For Spanish voices, English brand names need a lexicon entry; otherwise espeak reads them with Spanish rules ("Showtime" comes out as "show-TEE-meh"). The built-in list covers common ones. Add the product name for every Spanish video.
+
+**Read-back.** The script can spell a name right and the voice still say it wrong. So `voice script` and `voice say` transcribe every line they wrote with the local recognizer (the one `showtime transcribe` uses, cached by the line's audio: an unchanged line costs nothing, a 60 s narration adds a few seconds). The heard words are lined up with the script sound by sound. Every word that matters and was heard differently is a WARN with the fix to try. Words that matter are names (capitalised inside a sentence, camelCase, acronyms), numbers, and words with a lexicon entry or an inline fix. Case, punctuation, other spellings of the same sound (colour, color) and digits against number words ("68", "sixty-eight") pass.
+
+```
+read-back: 1 word heard differently in 7 lines ("Open A I" as "OpenI")
+  WARN  26.66s  shot-6: "Open A I" heard as "OpenI"
+        fix: the voice reads a lone "A" as the article ("uh") and swallows it: write the name as one word (OpenAI) ...
+```
+
+The recognizer can also respell a rare name the voice said right (Parakeet writes "JSO" for a good "JSON"). So a line with a flagged word is heard once more by a second recognizer when one is installed (Whisper small.en for English; it never downloads one). The note after the word says what it heard: `Whisper small.en hears it as written` (the voice is likely right) or `also hears "JSO"`.
+
+What to do with a WARN:
+- Do not ship a line it flags until someone listened to it. The clip is `lines/NN-id.wav`.
+- If it sounds wrong, run `showtime voice ipa "Word"` to see what the voice is told. Fix the word with a lexicon `say` or `ipa` entry, or write it the way the voice reads it right, then rerun `voice script` until the read-back passes.
+- If it sounds right, clear the word in the project's `showtime.json`: `"readback": {"ok": ["JSON"]}`. `voice script`, `voice say` and qa then list it as cleared, not as a WARN. Clear only words someone listened to.
+- Do not spell names letter by letter with a lone "A" ("Open A I"): espeak reads it as the article and the voice swallows it. Write the name as one word ("OpenAI"), or give it a lexicon entry.
+- `readback.json` (next to `vo.wav`) has each line's script and heard text, and for each flagged word what the voice was told (`said`), what was heard (`heard_sounds`) and the second recognizer's verdict (`confirmed`, `second`).
+- qa checks the same thing on the project's `voice/vo.wav` (the `readback` item, § Hearing in qa.md), and review-pack puts the table into the critic's `audio.txt`. qa FAILs a word only when it is a name in the title, the brand or the project lexicon and the second recognizer also heard it differently; otherwise it is a WARN.
+
+It runs for the 25 languages of the local recognizer (Parakeet v3, English and Spanish included) when that recognizer is installed: it arrives with the first transcription, or `showtime setup --fetch parakeet-tdt-0.6b-v3-int8` (about 490 MB; the read-back never downloads it on its own). Without it the read-back is skipped with a note. `--no-readback` or `SHOWTIME_READBACK=0` turns it off, for example when a flag is wrong and you cannot clear the word in `showtime.json`.
 
 ## Aligning a recorded voice (or another engine's output)
 

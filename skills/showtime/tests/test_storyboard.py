@@ -239,8 +239,12 @@ class TestProject(unittest.TestCase):
         def line(lid, start, end, nxt):
             return {"id": lid, "text": lid, "file": "lines/%s.wav" % lid, "start": start, "end": end,
                     "slot": {"start": start, "end": nxt, "duration": round(nxt - start, 3)}, "words": []}
-        tl = {"duration": 20.9, "lines": [line("shot-1", 0, 2.5, 4.7), line("shot-2", 4.7, 11.9, 12.6),
-                                          line("shot-3", 12.6, 15.8, 17.1), line("shot-5", 17.1, 20.3, 20.9)]}
+        if "at" in lines[1]:
+            # the pin after the silent shot counts its 4 s (pins win over data-silent: no drift)
+            self.assertEqual([ln["at"] for ln in lines], [0, 4.7, 11.4, 21.1])
+        tl = {"duration": 24.9, "lines": [line("shot-1", 0, 2.5, 4.7), line("shot-2", 4.7, 11.9, 12.6),
+                                          line("shot-3", 12.6, 15.8, 21.1), line("shot-5", 21.1, 24.3, 24.9)]}
+        tl["lines"][3]["at"] = 21.1
         (out / "voice").mkdir()
         (out / "voice" / "timeline.json").write_text(json.dumps(tl), encoding="utf-8")
         rep = json.loads(showtime("retime", out, "--from-voice", out / "voice" / "timeline.json", "--json").stdout)
@@ -251,9 +255,143 @@ class TestProject(unittest.TestCase):
         self.assertAlmostEqual(durs[1], 8.2, places=1)   # outgrew its 7 s
         self.assertAlmostEqual(durs[2], 4.8, places=1)   # started late, ends on its pin
         self.assertEqual(durs[3], 4)                     # silent: kept
+        mapping = {m["line"]: m["at"] for m in rep["voice"]["mapping"]}
+        self.assertAlmostEqual(mapping["shot-5"], 22.3, places=2)       # on the plan: shot 5 starts at 22
         notes = " ".join(rep["notes"])
         self.assertIn("the voice outgrew 1 shot(s): shot-2 8.2 s (planned 7 s, 8 words)", notes)
         self.assertIn("shot-3 4.8 s (planned 6 s)", notes)
+
+
+QUESTION = """| Shot | Length | Visual | Narration |
+|---|---|---|---|
+| 1 | 5 s | Title card: "Which plane is red?" | Three planes take off. |
+| 2 | 3.5 s | The three planes, a question mark | (pause) |
+| 3 | 6 s | The red plane lit | *(silence)* |
+| 4 | 5 s | The answer | The red one flies lowest. |
+| 5 | 3 s | End card | — |
+"""
+
+
+def _line(lid, start, end, nxt, at=None):
+    """A voice timeline line as `voice script` writes it (no TTS here)."""
+    d = {"id": lid, "text": lid, "file": "lines/%s.wav" % lid, "start": start, "end": end,
+         "duration": round(end - start, 3), "pause_after": 0.35,
+         "slot": {"start": start, "end": nxt, "duration": round(nxt - start, 3)}, "words": []}
+    if at is not None:
+        d["at"] = at
+    return d
+
+
+class TestSilentShots(unittest.TestCase):
+    """A narration cell that is a direction ("(pause)") is a silent shot, and pins win over data-silent."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="st-sb-silent-"))
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+
+    def test_directions_are_silence(self):
+        for cell in ("(pause)", "*(silence)*", "[beat]", "(pause) (music swells)", "（停顿）", "—", "", " - "):
+            self.assertTrue(sb.stage_direction(cell), cell)
+        for cell in ("Wait (pause) for it.", "Pause.", "1/n", "Is it red? (Yes.) It is."):
+            self.assertFalse(sb.stage_direction(cell), cell)
+        p = sb.plan(sb.parse_markdown(QUESTION))
+        self.assertEqual([s["narration"] for s in p["shots"]],
+                         ["Three planes take off.", "", "", "The red one flies lowest.", ""])
+        self.assertEqual(p["shots"][1]["direction"], "(pause)")
+        self.assertEqual([s["dur"] for s in p["shots"]], [5, 3.5, 6, 5, 3])           # the table's lengths
+        nm = sb.narration_md(p)
+        self.assertNotIn("pause", nm.split("-->")[1].lower())                         # never voiced
+        lines = voice_lines(nm)
+        self.assertEqual([ln["id"] for ln in lines], ["shot-1", "shot-4"])
+        if "at" in lines[1]:
+            # shot 4 starts at 14.5 s; one narrated shot before it gives 0.3 s of picture
+            self.assertEqual([ln["at"] for ln in lines], [0, 14.2])
+        self.assertIn("| (pause) |", sb.storyboard_md(p))
+        self.assertEqual(sb.storyboard_json(p)["rows"][1]["direction"], "(pause)")
+        # a silent opening shot: the first line's pin is a video time (its shot's start + the pad)
+        p2 = sb.plan(sb.parse_markdown("| Shot | Length | Visual | Narration |\n|---|---|---|---|\n"
+                                       "| 1 | 3 s | Logo | (music only) |\n| 2 | 4 s | A | One. |\n"
+                                       "| 3 | 4 s | B | Two. |\n"))
+        lines2 = voice_lines(sb.narration_md(p2))
+        if "at" in lines2[0]:
+            self.assertEqual([ln["at"] for ln in lines2], [3.3, 7])
+
+    def _project(self):
+        out = self.tmp / "planes"
+        showtime("new", "dom", out, "--from-storyboard", "-", stdin=QUESTION)
+        page = (out / "index.html").read_text(encoding="utf-8")
+        self.assertIn('id="shot-2" data-start="#shot-1" data-dur="3.50" data-storyboard-shot="2" data-silent', page)
+        (out / "voice").mkdir()
+        return out
+
+    def _retime(self, out, tl):
+        (out / "voice" / "timeline.json").write_text(json.dumps(tl), encoding="utf-8")
+        rep = json.loads(showtime("retime", out, "--from-voice", out / "voice" / "timeline.json", "--json").stdout)
+        return rep, [g[1] for g in scenes((out / "index.html").read_text(encoding="utf-8"))]
+
+    def test_pins_win_over_silent_shots(self):
+        out = self._project()
+        # line 2 pinned at 14.2 (as narration.md says): the two silent shots fill the gap, no drift
+        rep, durs = self._retime(out, {"duration": 19.2, "lines": [
+            _line("shot-1", 0, 2.4, 14.2), _line("shot-4", 14.2, 16.6, 17.2, at=14.2)]})
+        self.assertEqual(durs[:3], [5, 3.5, 6])
+        at = {m["line"]: m["at"] for m in rep["voice"]["mapping"]}
+        self.assertAlmostEqual(at["shot-4"], 14.8, places=2)            # shot 4 starts at 14.5, + the pad
+        self.assertFalse([n for n in rep["notes"] if "pinned" in n], rep["notes"])
+
+    def test_short_gap_shrinks_the_silent_shots_with_a_note(self):
+        out = self._project()
+        # pinned 10 s in after a 2.4 s line: 7.25 s of gap for 9.5 s of silent shots; the pin still wins
+        rep, durs = self._retime(out, {"duration": 13, "lines": [
+            _line("shot-1", 0, 2.4, 10.0), _line("shot-4", 10.0, 12.4, 13.0, at=10.0)]})
+        at = {m["line"]: m["at"] for m in rep["voice"]["mapping"]}
+        self.assertAlmostEqual(at["shot-4"], 10.6, places=1)            # 10.0 + 2 pads
+        self.assertAlmostEqual(sum(durs[1:3]), 7.25, delta=0.05)
+        self.assertTrue(all(d >= 1.0 for d in durs[1:3]), durs)
+        notes = " ".join(rep["notes"])
+        self.assertIn("line shot-4 is pinned at 10.00s, which leaves 7.25s", notes)
+        self.assertIn("shot-2, shot-3 (they want 9.50s)", notes)
+
+    def test_a_gap_too_short_keeps_the_silent_shots(self):
+        out = self._project()
+        # pinned 5 s in: 2.25 s for 9.5 s would leave shot-2 under 1 s, so both keep their lengths
+        rep, durs = self._retime(out, {"duration": 8, "lines": [
+            _line("shot-1", 0, 2.4, 5.0), _line("shot-4", 5.0, 7.4, 8.0, at=5.0)]})
+        self.assertEqual(durs[1:3], [3.5, 6])
+        notes = " ".join(rep["notes"])
+        self.assertIn("line shot-4 is pinned at 5.00s, which leaves 2.25s", notes)
+        self.assertIn("so they keep their lengths", notes)
+
+    def test_a_pin_the_voice_ran_past_keeps_the_silent_shots(self):
+        # the reviewer's repro: shot-1's line is 14.5 s, so voice script starts shot-4 at 14.85, past its 14.2 pin;
+        # the silent shots were squeezed to 0 s (the question beat vanished)
+        out = self._project()
+        rep, durs = self._retime(out, {"duration": 17.85, "lines": [
+            _line("shot-1", 0, 14.5, 14.85), _line("shot-4", 14.85, 17.25, 17.85, at=14.2)]})
+        self.assertEqual(durs[1:3], [3.5, 6])
+        notes = " ".join(rep["notes"])
+        self.assertIn("line shot-4 is pinned at 14.20s, but the voice starts it at 14.85s", notes)
+        self.assertFalse([n for n in rep["notes"] if "only 0.00s" in n], rep["notes"])
+
+    def test_040_pins_keep_the_silent_shots(self):
+        # a narration.md from 0.4.0 pinned shot-4 at 4.7 (the silent shots left out), voiced again with 0.4.1
+        out = self._project()
+        rep, durs = self._retime(out, {"duration": 7.7, "lines": [
+            _line("shot-1", 0, 2.4, 4.7), _line("shot-4", 4.7, 7.1, 7.7, at=4.7)]})
+        self.assertEqual(durs[1:3], [3.5, 6])
+        notes = " ".join(rep["notes"])
+        self.assertIn("by a narration.md from showtime 0.4.0", notes)
+        self.assertIn("Regenerate narration.md", notes)
+        self.assertTrue(sb.legacy_pin(out, "shot-4", 4.7))
+        self.assertFalse(sb.legacy_pin(out, "shot-4", 14.2))       # the 0.4.1 pin
+
+    def test_unpinned_line_after_a_silent_shot_keeps_its_length(self):
+        out = self._project()
+        rep, durs = self._retime(out, {"duration": 6, "lines": [
+            _line("shot-1", 0, 2.4, 2.75), _line("shot-4", 2.75, 5.15, 5.75)]})
+        self.assertEqual(durs[1:3], [3.5, 6])                           # added on top, as before
+        at = {m["line"]: m["at"] for m in rep["voice"]["mapping"]}
+        self.assertAlmostEqual(at["shot-4"], 0.3 + 2.75 + 9.5 + 0.3, places=1)
 
 
 @unittest.skipIf(FAST, "--fast (needs a browser)")

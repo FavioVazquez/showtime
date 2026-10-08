@@ -28,6 +28,8 @@ and `footage view`. `--edit-dir` picks any folder, e.g. next to the footage when
   every cut (§ Timeline views)
 - Reframe: `showtime footage reframe <file> --aspect 9:16` (face-tracked); screen recordings and slides use
   `--fit blur` (cropping cuts off UI); enlarging over 1.5x looks soft (§ Reframe)
+- Cut out the speaker: `showtime footage cutout <file> --from 12 --to 18`: VP9 with alpha (or `--format prores`,
+  `png`), a matte file, a sheet to look at; people only; on the CPU (§ Cut out the speaker)
 - Denoise: `showtime footage denoise <file> -o ...` (`--strength` below 1 keeps room tone); never on clean
   studio audio; before loudness mastering; in an EDL `"audio": {"denoise": "auto"}` (§ Denoise speech)
 - Stabilise: `showtime footage stabilize <file> --strength 0.7 -o ...`; no `--compare`: judge by watching, or
@@ -41,15 +43,16 @@ and `footage view`. `--edit-dir` picks any folder, e.g. next to the footage when
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| Inventory: probe and scenes | 54-71 |
-| Trim and proxies | 73-85 |
-| Timeline views (self-review) | 87-96 |
-| Reframe (16:9 -> 9:16, 1:1, 4:5) | 98-115 |
-| Denoise speech | 117-135 |
-| Stabilise | 137-149 |
-| Colour: correction and looks | 151-169 |
-| Screen recordings: auto zoom | 171-174 |
-| Platform notes | 176-185 |
+| Inventory: probe and scenes | 57-74 |
+| Trim and proxies | 76-88 |
+| Timeline views (self-review) | 90-99 |
+| Reframe (16:9 -> 9:16, 1:1, 4:5) | 101-118 |
+| Cut out the speaker | 120-146 |
+| Denoise speech | 148-166 |
+| Stabilise | 168-180 |
+| Colour: correction and looks | 182-200 |
+| Screen recordings: auto zoom | 202-205 |
+| Platform notes | 207-216 |
 
 ## Inventory: probe and scenes
 
@@ -113,6 +116,34 @@ with `"fit": "reframe"` (or `auto`), and `zoom` > 1 punches in around the face.
 Use `blur` (or `contain`) for screen recordings and slides: cropping cuts off UI. A crop that enlarges
 the source more than 1.5x (a 1280x720 clip cropped to 9:16 and scaled to 1080x1920 is 2.67x) looks
 soft: the command warns and suggests a smaller standard size (720x1280, else 540x960) or `--fit blur`.
+
+## Cut out the speaker
+
+```bash
+showtime footage cutout talk.mp4                               # -> talk.cutout.webm + talk.matte.mp4 + talk.cutout-sheet.jpg
+showtime footage cutout talk.mp4 --from 12 --to 18 --format prores -o talk-cut.mov   # ProRes 4444 for an editor
+showtime footage cutout talk.mp4 --format png --no-audio      # a numbered RGBA PNG folder
+showtime footage cutout talk.mp4 --matte-only --size 384       # the matte alone, about twice as fast
+```
+
+A person matte per frame from MODNet (portrait matting, Apache-2.0, code and weights; 26 MB, fetched on first
+use and sha256-checked, `showtime setup --fetch modnet` up front) on onnxruntime's CPU provider: no GPU, no
+account. The frame is scaled to a 512 px short side for the network (`--size`), the matte is smoothed over time
+where the picture is still (hair and edges stop shimmering; motion lets the new estimate through at once; every
+cut starts afresh) and refined at full size with a guided filter against the frame itself. Measured on a 1080p
+interview (x64 Linux), the whole command with the VP9 cut-out: 17-23 fps on 64 cores (80-105 s per minute of
+footage), 5.2 fps on 6 cores (about 6 minutes per minute; `--size 384` 8.1 fps, under 4 minutes); the matte
+alone (as a behind card makes it) 25 fps on 64 cores, 6.7 on 6. The report gives the speed and `flicker` (the
+share of the person's area whose matte jumps on a still picture; a warning over 2 %: a busy or dark background).
+
+- `<name>.cutout.webm`: VP9 with alpha and Opus sound; browsers play it with its alpha, EDL `overlays[]` and
+  `<video>` layers composite it. ffmpeg's own VP9 decoder and most players show it without the alpha: look at
+  `<name>.cutout-sheet.jpg` (three frames over a checkerboard, their mattes under them).
+- `--format prores`: ProRes 4444 with 16-bit alpha and PCM sound, for an editor. `png`: RGBA frames.
+- `<name>.matte.mp4`: the matte alone (white = person), H.264: a luma or track matte in any editor.
+- The colour of the frames is kept as recorded (BT.709 in, BT.709 out). It cuts out people, not objects;
+  frames with no person come out empty (the report counts them).
+- In an edit, a `behind` card does all of this itself on the render's own frames (`editing.md` section 9).
 
 ## Denoise speech
 
@@ -179,7 +210,7 @@ showtime footage luts --preview take1.mp4 --at 5               # every look on o
   build; every optional filter has a fallback (vid.stab -> deshake, arnndn -> afftdn,
   zscale missing -> HDR shown without tone mapping plus a warning, lut3d missing -> look skipped
   with a warning). `showtime doctor` lists what your ffmpeg has.
-- Speech recognition, diarization, events and face tracking run on the CPU through
+- Speech recognition, diarization, events, face tracking and the speaker cutout run on the CPU through
   CTranslate2 / ONNX Runtime; no GPU or account is needed.
 - Heavy steps (transcription, renders) use all cores: run them one after another, not in parallel
   with browser captures.

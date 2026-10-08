@@ -39,10 +39,10 @@ folder (`board.json`, `brief.md`, `decisions.md`), the main project's `index.htm
 | 1. When to use it | 47-61 |
 | 2. The roster | 63-82 |
 | 3. How to dispatch | 84-119 |
-| 4. Patterns | 121-165 |
-| 5. Merging results | 167-186 |
-| 6. CPU budget | 188-202 |
-| 7. Cost | 204-216 |
+| 4. Patterns | 121-167 |
+| 5. Merging results | 169-188 |
+| 6. CPU budget | 190-204 |
+| 7. Cost | 206-218 |
 
 ## 1. When to use it
 
@@ -73,7 +73,7 @@ line may say that studio uses the crew and takes longer.
 | `voice-director` | casting, pronunciation, the VO render, localized reads | `project/voice/` | sonnet |
 | `editor` | footage cut by transcript, captions, reframes | `<job>/edit/` | sonnet |
 | `researcher` | fact check of every claim and license audit of every asset, before the final | its task folder | session |
-| `critic` | the `review-pack` round (`references/review.md`) | `FINDINGS.md` only | session |
+| `critic` | the `review-pack` round (`references/review.md`) | `FINDINGS.md` only (or its text in the reply: `showtime review-findings`) | session |
 
 "Session" means the agent inherits your model; the Agent tool's `model` parameter overrides any row
 (use the session model for a voice director translating a script). Mechanical roles run on Sonnet in
@@ -151,7 +151,9 @@ the motion designers and the sound designer.
 **D. Critic.** Publish-bound studio: round 1 on the first look (a `--preview` render), where fixes are
 cheap; round 2 on the final candidate, paired against the best so far (`review-pack --against best`, two
 critics, one per order, then `review-verdict`). Quick (quality review, or lean and publish-bound): one round, on the final. Dispatch
-each critic with only its `CRITIC.md` path (`references/review.md`).
+each critic with only its `CRITIC.md` path (`references/review.md`). A critic whose Write was denied returns
+the findings in its reply: save them with `showtime review-findings <job> < reply.txt` (`--order N` for a
+pairwise brief), never by retyping them.
 
 **E. Fix loop.** A finding or user note about one scene goes back to that scene's motion designer;
 audio notes to the sound designer; claim notes to the scriptwriter and researcher. Re-merge only what

@@ -1,5 +1,5 @@
 """Footage commands: transcribe, pack, edit (cut/check/render/view), captions,
-footage (scenes/reframe/denoise/stabilize/view/grade/luts/probe/autozoom).
+footage (scenes/reframe/cutout/denoise/stabilize/view/grade/luts/probe/autozoom).
 
 Heavy imports happen inside the handlers so `showtime --help` stays fast.
 """
@@ -17,9 +17,9 @@ from .common import ShowtimeError, info, parse_time, print_json, write_json
 COMMANDS = {
     "transcribe": "Word-level local transcription of video/audio (fillers kept, cached)",
     "pack": "Pack transcripts into takes_packed.md (phrase-level, for reading a shoot)",
-    "edit": "Edit footage by transcript: cut (EDL from a transcript), check, render, view",
+    "edit": "Edit footage by transcript: cut (EDL from a transcript), check, render, view, moments, clips",
     "captions": "Captions from a transcript: ASS styles (bold-pop, clean, ...) + SRT/VTT",
-    "footage": "Footage tools: scenes, reframe, denoise, stabilize, view, grade, luts, probe",
+    "footage": "Footage tools: scenes, reframe, cutout, denoise, stabilize, view, grade, luts, probe",
 }
 
 _F = argparse.RawDescriptionHelpFormatter
@@ -121,7 +121,8 @@ def cmd_transcribe(args) -> int:
         st = doc.get("stats") or {}
         results.append({"source": str(f), "transcript": str(path), "duration": doc.get("duration"),
                         "range": doc.get("range"),
-                        "language": doc.get("language"), "model": doc.get("model"), "words": st.get("words"),
+                        "language": doc.get("language"), "language_source": doc.get("language_source"),
+                        "model": doc.get("model"), "words": st.get("words"),
                         "fillers": st.get("fillers"), "filler_scan": st.get("gap_scan"), "events": st.get("events"),
                         "audio_from": doc.get("audio_from"), "separation": st.get("separation"),
                         "speakers": (st.get("diarize") or {}).get("speakers", 1),
@@ -206,7 +207,10 @@ def _register_edit(sub) -> None:
                                    "  cut     build an EDL from transcript(s): drop fillers, long pauses, word ranges\n"
                                    "  check   validate an EDL and print the frame-exact plan (no rendering)\n"
                                    "  render  render an EDL to video (segments, overlays, music, captions, loudness)\n"
-                                   "  view    PNG timeline views around every cut of a rendered edit\n\n"
+                                   "  view    PNG timeline views around every cut of a rendered edit (and every card)\n"
+                                   "  cards   suggest moments for talking-head cards (lower third, stat, quote, list ...)\n"
+                                   "  moments rank a long recording's best moments for short clips (local signals)\n"
+                                   "  clips   picked moments -> finished clips, rendered in parallel, each through qa\n\n"
                                    "EDL format: references/editing.md",
                        epilog="Typical flow:\n"
                               "  showtime transcribe raw/take1.mp4\n"
@@ -325,6 +329,86 @@ def _register_edit(sub) -> None:
     p.add_argument("--window", type=float, default=1.5, help="seconds each side of a cut (1.5)")
     _add_json(p)
     p.set_defaults(func=cmd_edit_view)
+
+    p = s.add_parser("cards", help="talking-head cards: suggest moments for them", formatter_class=_F,
+                     description="Cards are designed overlays anchored to the words (EDL \"cards\": title, lower-third, "
+                                 "quote, stat, chapter, list, panel; references/editing.md, Cards).\n\n"
+                                 "  suggest   list candidate moments from a transcript (numbers with units, names, list "
+                                 "markers, quotable lines, topic shifts, stressed words), with paste-ready card JSON. "
+                                 "Suggestions only: pick the few that carry the story. Local; no model calls.",
+                     epilog="Examples:\n"
+                            "  showtime edit cards suggest edit/edl.json          # output times of this edit\n"
+                            "  showtime edit cards suggest edit/transcripts/take1.json --json\n"
+                            "  showtime edit cards suggest talk-edit              # a job: its latest EDL")
+    p.add_argument("action", choices=["suggest"], help="suggest")
+    p.add_argument("target", nargs="?", help="a transcript JSON, an EDL, or a job folder/name (its latest EDL)")
+    p.add_argument("--no-audio", action="store_true", help="skip the stressed-word measure (reads the source audio)")
+    p.add_argument("--max", type=int, default=6, help="suggestions per kind (6)")
+    _add_json(p)
+    p.set_defaults(func=cmd_edit_cards)
+
+    p = s.add_parser("moments", help="rank a long recording's best moments for short clips", formatter_class=_F,
+                     description="Find candidate moments for short clips in a long recording (podcast, talk, panel, "
+                                 "interview, stream): runs of whole sentences that would last --min..--max s once "
+                                 "fillers and long pauses are trimmed, ranked by local signals: a hook in the first 3 s "
+                                 "(question, number, strong claim, contrast, story opener), a complete thought (clean "
+                                 "start and end), speaker energy (level, level and pitch spread, pace against the "
+                                 "speaker's own median), laughter or applause (the transcript's audio events), one topic "
+                                 "(lexical cohesion), no long pauses. Prints a table and writes moments.json: start/end "
+                                 "on word boundaries, the opening line, why it ranks, a suggested title (the speaker's "
+                                 "own words), the full text. Suggestions only: read them, keep the ones that stand "
+                                 "alone, move edges if needed, then `showtime edit clips`. Local; no model calls.",
+                     epilog="Examples:\n"
+                            "  showtime edit moments <job>                          # its transcripts\n"
+                            "  showtime edit moments edit/transcripts/ep12.json --count 10 --min 30 --max 60\n"
+                            "  showtime edit moments day1.json day2.json --no-audio --json\n"
+                            "Then: showtime edit clips <job> --moments <job>/edit/moments.json --pick m1,m4,m5")
+    p.add_argument("transcripts", nargs="*", help="transcript JSON file(s), a transcripts/ folder, or a job folder/name "
+                                                  "(its edit/transcripts); default: the current or newest job")
+    p.add_argument("--count", "-n", type=int, default=8, help="how many moments to list (8)")
+    p.add_argument("--min", dest="min_len", type=float, default=20.0, help="shortest clip, in seconds (20)")
+    p.add_argument("--max", dest="max_len", type=float, default=60.0, help="longest clip, in seconds (60)")
+    p.add_argument("--no-audio", action="store_true", help="skip the speaker-energy measure (it reads the source audio)")
+    p.add_argument("-o", "--output", help="moments JSON (default <edit dir>/moments.json; moments-2.json ... when it "
+                                          "exists, unless --overwrite)")
+    p.add_argument("--overwrite", action="store_true", help="replace an existing moments file at -o")
+    _add_json(p)
+    p.set_defaults(func=cmd_edit_moments)
+
+    p = s.add_parser("clips", help="picked moments -> finished clips (parallel renders, qa each)", formatter_class=_F,
+                     description="Turn moments (from `edit moments`, picked and edited by you) into finished short "
+                                 "clips in one go: one EDL per moment in <job>/edit/clips/ (edges snapped to whole "
+                                 "words, a tight start on the first real word, a clean end, fillers out, pauses over "
+                                 "0.5 s down to 0.3 s, the aspect with the face-tracked reframe, captions kept off the "
+                                 "face, optional cards), rendered in parallel with the EDL renderer, each checked by "
+                                 "qa, then one contact sheet of every clip. Writes <job>/clips/<NN>-<title>.mp4 (drafts "
+                                 "with --preview in <job>/clips/preview/), clips.json and sheet.jpg. Which moments: "
+                                 "--pick, else the ones with \"pick\": true in the file, else the best --count. A clip's "
+                                 "EDL can be edited and rendered on its own: showtime edit render <edl> -o <video>.",
+                     epilog="Examples:\n"
+                            "  showtime edit clips <job> --count 3 --preview          # drafts of the top 3\n"
+                            "  showtime edit clips <job> --moments <job>/edit/moments.json --pick m1,m4,m5\n"
+                            "  showtime edit clips <job> --pick m2 --aspect 1:1 --captions clean --cards\n"
+                            "  showtime edit clips <job> --platform shorts --background   # long batch: a background run")
+    p.add_argument("job", nargs="?", help="job folder or name (default: the moments file's job, else the current or "
+                                          "newest job)")
+    p.add_argument("--moments", "-m", help="moments JSON (default: the job's newest edit/moments*.json)")
+    p.add_argument("--pick", help="moment ids or ranks to make, in order, e.g. m1,m4,m5")
+    p.add_argument("--count", "-n", type=int, default=3, help="without --pick or \"pick\": true: the best N (3)")
+    p.add_argument("--aspect", default="9:16", help="output aspect (9:16 default; 1:1, 4:5, 16:9, or 'source')")
+    p.add_argument("--captions", help="caption style (default bold-pop in tall frames, clean in wide ones; 'none')")
+    p.add_argument("--cards", action="store_true", help="add a title card with the moment's title, and a data callout "
+                                                        "when the speaker says a number with a unit")
+    p.add_argument("--keep-fillers", action="store_true", help="do not remove um/uh or a lead-in")
+    p.add_argument("--max-pause", type=float, default=0.5, help="shorten pauses longer than this (0.5 s) to 0.3 s")
+    p.add_argument("--preview", "-p", action="store_true", help="fast drafts (<= 1280 px) in <job>/clips/preview/")
+    p.add_argument("--parallel", type=int, help="clips rendered at once (default: by CPU count, at most the clips)")
+    p.add_argument("--jobs", "-j", type=int, help="segment encodes per clip (default 1-3 by CPU count)")
+    p.add_argument("--no-qa", action="store_true", help="skip qa on each clip")
+    p.add_argument("--platform", help="qa platform (default: the job's); reels, tiktok, shorts, youtube ...")
+    p.add_argument("--overwrite", action="store_true", help="replace existing clip files instead of writing name-2.mp4")
+    _add_json(p)
+    p.set_defaults(func=cmd_edit_clips)
 
 
 def _rel(p: Path, base: Path) -> str:
@@ -543,7 +627,8 @@ def _view_target(edl_arg: Optional[str], video: Optional[str]):
 def cmd_edit_check(args) -> int:
     from .footage import edl as E
     from .footage import util as U
-    ed = E.load(_edl_arg(args.edl))
+    edl_path = Path(_edl_arg(args.edl))
+    ed = E.load(edl_path)
     segs = E.plan(ed)
     summ = E.summary(ed, segs)
     trs = E.load_transcripts(ed)
@@ -553,6 +638,52 @@ def cmd_edit_check(args) -> int:
     joins = E.join_problems(segs, ed["output"]["fps"]) + E.punch_bounce(segs, ed["output"]["fps"])
     if joins:
         summ["problems"] = summ.get("problems", []) + joins
+    cards_rows: List[Dict[str, Any]] = []
+    emph = (ed["captions"] or {}).get("emphasis")
+    if ed.get("cards") or emph or (ed["captions"] or {}).get("avoid_face"):
+        from .footage import cards as CD
+        missing = [k for k in {s["source"] for s in segs} if k not in trs]
+        if missing:
+            raise ShowtimeError("cards and caption emphasis need the transcript of every source; none found for %s"
+                                % ", ".join(sorted(missing)), hint="run `showtime transcribe` on it, or set \"transcripts\" in the EDL")
+        words = E.map_words(segs, trs, include_events=False)
+        if ed.get("cards"):
+            cwork = ed["dir"] / "work" / edl_path.stem / "cards"
+            look = CD.look_peek(ed, cwork) if any(c["type"] == "behind" for c in ed["cards"]) else None
+            cards = CD.resolve(ed, segs, words, trs, look=look)   # raises when a phrase is not found
+            cards_rows = CD.summary_rows(cards)
+            measured: Dict[int, Dict[str, Any]] = {}
+            if any(c["type"] == "behind" for c in cards):
+                from .footage import behind as BH
+                for c in cards:
+                    m = BH.last_measured(cwork, c) if c["type"] == "behind" else None
+                    if m:
+                        measured[c["index"]] = m
+                for r in cards_rows:
+                    if r["i"] in measured:
+                        m = measured[r["i"]]
+                        r["measured"] = {k: m.get(k) for k in ("hidden", "hidden_max", "hidden_run", "flicker",
+                                                                "flicker_p95", "coverage", "video", "preview")}
+            summ["cards"] = cards_rows
+            cp = CD.problems(cards, ed, measured=measured)
+            if cp:
+                summ["problems"] = summ.get("problems", []) + ["cards: " + p for p in cp]
+        elif (ed["captions"] or {}).get("avoid_face"):
+            ed["caption_plan"] = CD.caption_plan(ed, segs, ed["output"]["width"], ed["output"]["height"])
+            summ["problems"] = summ.get("problems", []) + [p["message"] for p in ed["caption_plan"]["problems"]]
+        if ed.get("caption_plan"):
+            summ["caption_moves"] = [{"start": round(z["start"], 2), "end": round(z["end"], 2), "y": z["y"],
+                                      "align": z["align"]} for z in ed["caption_plan"]["zones"]]
+        if emph:
+            from .footage import captions as CAP
+            terms = [emph] if isinstance(emph, str) else list(emph)
+            rep = CAP.mark_emphasis([dict(w) for w in words], terms)
+            summ["emphasis"] = rep
+            ep = CD.emphasis_problems(rep["terms"], rep["said"], summ["duration"])
+            if rep["missing"]:
+                ep.append("captions.emphasis: never said in this edit: %s" % ", ".join(rep["missing"]))
+            if ep:
+                summ["problems"] = summ.get("problems", []) + ep
     if args.json:
         print_json(summ)
         return 0
@@ -571,6 +702,35 @@ def cmd_edit_check(args) -> int:
         extras.append("%d audio track(s)" % summ["music_tracks"])
     if extras:
         print("  " + ", ".join(extras))
+    if cards_rows:
+        print("  cards (output times; they move with the words when the cut changes):")
+        for c in cards_rows:
+            extra = "  items at %s" % ", ".join("%.2f" % it["at"] for it in c["items"]) if c["items"] else ""
+            print("    #%-2d %-11s %7.2f-%7.2f  %-5s \"%s\"%s" % (c["i"], c["type"], c["start"], c["end"],
+                                                              "split" if c.get("split") else (c.get("side") or ""),
+                                                              c["said"][:48], extra))
+            if c["type"] == "behind":
+                m = c.get("measured")
+                how = ("measured at the last render (%s): %.0f %% of the word hidden, matte flicker %.2f %%" % (
+                    Path(str(m.get("video"))).name, 100 * (m.get("hidden") or 0.0), 100 * (m.get("flicker") or 0.0))
+                       if m and m.get("hidden") is not None else
+                       ("about %.0f %% of the word behind the speaker (estimated from the face; the render measures "
+                        "it)" % (100 * c["est_hidden"]) if c.get("est_hidden") is not None else
+                        "no face found: the word is centred"))
+                print("        \"%s\" %s, on %s%s; %s" % (
+                    c.get("text"), {"right": "ends behind the speaker", "left": "starts behind the speaker"}.get(
+                        c.get("align"), "centred behind the speaker"),
+                    {"footage": "the shot", "dim": "the shot dimmed", "blur": "the shot blurred",
+                     "ground": "the look's ground", "color": "a colour", "image": "an image"}.get(c.get("plate"), "?"),
+                    ", the speaker moves down (%.0f %% of the frame)" % (100 * c["speaker"]["y"]) if c.get("moved")
+                    and c.get("speaker") else "", how))
+    if summ.get("caption_moves"):
+        mv = summ["caption_moves"]
+        print("  captions moved off the face in %d stretch(es) (%s)" % (
+            len(mv), ", ".join("%.1f-%.1fs" % (z["start"], z["end"]) for z in mv[:6]) + (" ..." if len(mv) > 6 else "")))
+    if summ.get("emphasis"):
+        e = summ["emphasis"]
+        print("  caption emphasis: %d term(s), said %d time(s), %d word(s) coloured" % (e["terms"], e["said"], e["words"]))
     for p in summ.get("problems", []):
         print("  problem: " + p)
     return 0
@@ -660,6 +820,134 @@ def cmd_edit_view(args) -> int:
         for p in pages:
             print(p)
     return 0
+
+
+def cmd_edit_cards(args) -> int:
+    from .footage import card_suggest as S
+    tgt = Path(args.target).expanduser() if args.target else None
+    doc = None
+    if tgt is not None and tgt.is_file():
+        try:
+            doc = json.loads(tgt.read_text(encoding="utf-8", errors="replace"))
+        except ValueError:
+            doc = None     # an .srt/.vtt or another transcript form: U.load_transcript reads it
+    is_edl = isinstance(doc, dict) and isinstance(doc.get("ranges") or doc.get("segments"), list) and "sources" in doc
+    if tgt is not None and tgt.is_file() and not is_edl:
+        rep = S.from_transcript(tgt, audio=not args.no_audio, limit=args.max)
+    else:
+        rep = S.from_edl(_edl_arg(args.target), audio=not args.no_audio, limit=args.max)
+    if args.json:
+        print_json(rep)
+        return 0
+    print(S.format_text(rep))
+    return 0
+
+
+def _transcript_args(items: List[str]) -> List[Path]:
+    """Transcript files from files, transcripts/ folders, job folders or job names (default: the current or newest
+    job). A range transcript (`transcribe --from/--to`) is skipped when the full one of the same media is there."""
+    from .common import read_json
+    from .job import ledger
+    found: List[Path] = []
+    for it in items or [None]:
+        p = Path(it).expanduser() if it else None
+        if p is not None and p.is_file():
+            found.append(p.resolve())
+            continue
+        d = None
+        if p is not None and p.is_dir():
+            d = next((c for c in (p / "edit" / "transcripts", p / "transcripts", p) if c.is_dir() and
+                      any(c.glob("*.json"))), None)
+        if d is None:
+            job = ledger.resolve(it) if it else (ledger.enclosing_job(Path.cwd()) or ledger.latest())
+            if job is None:
+                raise ShowtimeError("no transcripts given and no job here",
+                                    hint="showtime edit moments <job>/edit/transcripts/<name>.json (transcribe first: "
+                                         "showtime transcribe <media>)")
+            d = job / "edit" / "transcripts"
+        files = sorted(f for f in d.glob("*.json") if not f.name.startswith("."))
+        if not files:
+            raise ShowtimeError("no transcripts in %s" % d, hint="showtime transcribe <media> --edit-dir %s" % d.parent)
+        docs = {f: read_json(f, {}) for f in files}
+        full = {str(v.get("source")) for v in docs.values() if isinstance(v, dict) and not v.get("range")}
+        found += [f.resolve() for f, v in docs.items()
+                  if isinstance(v, dict) and (not v.get("range") or str(v.get("source")) not in full)]
+    return list(dict.fromkeys(found))
+
+
+def cmd_edit_moments(args) -> int:
+    from .footage import moments as M
+    from .footage import util as U
+    trs = _transcript_args(args.transcripts)
+    first = trs[0]
+    ed = first.parent.parent if first.parent.name == "transcripts" else first.parent
+    out = Path(args.output).expanduser().resolve() if args.output else ed / "moments.json"
+    if out.exists() and not args.overwrite:
+        wanted, out = out, U.unique_path(out)
+        info("%s exists; writing %s (pass --overwrite to replace it)" % (wanted.name, out.name))
+    info("ranking moments in %s (%s, %g-%g s clips)" % (", ".join(t.name for t in trs), "%d wanted" % args.count,
+                                                         args.min_len, args.max_len))
+    doc = M.rank(trs, count=args.count, min_len=args.min_len, max_len=args.max_len, audio=not args.no_audio)
+    write_json(out, doc)
+    doc["file"] = str(out)
+    job = _record(out, [], event="edit moments -> %s (%d moment(s))" % (out.name, len(doc["moments"])))
+    if args.json:
+        print_json(doc)
+        return 0
+    print(M.format_text(doc))
+    print(out)
+    sys.stdout.flush()
+    tgt = job.name if job else "<job>"
+    print("next: read the moments' text in %s, keep the ones that stand alone, then: showtime edit clips %s "
+          "--moments %s --pick %s --preview" % (out.name, tgt, out, ",".join(m["id"] for m in doc["moments"][:3])),
+          file=sys.stderr)
+    return 0
+
+
+def _moments_file(job: Path) -> Path:
+    cands = sorted((job / "edit").glob("moments*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if not cands:
+        raise ShowtimeError("job %s has no moments file (edit/moments*.json)" % job.name,
+                            hint="showtime edit moments %s, or pass --moments <file>" % job.name)
+    return cands[0]
+
+
+def cmd_edit_clips(args) -> int:
+    from .footage import clips as K
+    from .job import ledger
+    mp = Path(args.moments).expanduser().resolve() if args.moments else None
+    if mp is not None and not mp.is_file():
+        raise ShowtimeError("moments file not found: %s" % mp)
+    if args.job:
+        job = ledger.resolve(args.job)
+    elif mp is not None:
+        job = ledger.enclosing_job(mp) or ledger.enclosing_job(Path.cwd()) or ledger.latest()
+    else:
+        job = ledger.enclosing_job(Path.cwd()) or ledger.latest()
+    if job is None:
+        raise ShowtimeError("no job for the clips", hint="showtime job init <name>-clips, then pass it: "
+                                                         "showtime edit clips <job> --moments <file>")
+    if mp is None:
+        mp = _moments_file(job)
+        info("using %s (newest moments file of %s)" % (mp, job.name))
+    aspect = None if str(args.aspect).lower() in ("source", "none", "") else args.aspect
+    rep = K.make(job, mp, pick=args.pick, count=args.count, aspect=aspect, captions=args.captions, cards=args.cards,
+                 fillers=not args.keep_fillers, max_pause=args.max_pause, preview=args.preview, parallel=args.parallel,
+                 jobs=args.jobs, qa=not args.no_qa, platform=args.platform, overwrite=args.overwrite)
+    bad = [c for c in rep["clips"] if c.get("error") or (c.get("qa") or {}).get("verdict") == "FAIL"]
+    if args.json:
+        print_json(rep)
+    else:
+        print(K.format_text(rep))
+        sys.stdout.flush()
+        if rep["preview"]:
+            nxt = "look at the sheet and each draft (showtime snap <clip> --at <t>), then the finals: showtime edit " \
+                  "clips %s --moments %s%s" % (job.name, mp, " --pick %s" % args.pick if args.pick else "")
+        else:
+            nxt = "look at the sheet and each clip (showtime snap <clip> --at <t>), read every qa finding above; a " \
+                  "fix: edit the clip's EDL, then showtime edit render <edl> -o <clip>"
+        print("next: %s" % nxt, file=sys.stderr)
+    return 1 if bad else 0
 
 
 # --------------------------------------------------------------------------
@@ -862,6 +1150,7 @@ def _register_footage(sub) -> None:
                                    "  trim       cut a range out of a clip; seek-friendly proxies for <video> layers\n"
                                    "  scenes     shot detection + contact sheet (or --every N s)\n"
                                    "  reframe    face-tracked crop to 9:16 / 1:1 / 4:5 (or blur-pad)\n"
+                                   "  cutout     cut the speaker out: a video with alpha + a matte (CPU, open model)\n"
                                    "  denoise    clean speech audio (DeepFilterNet / RNNoise / FFT)\n"
                                    "  stabilize  two-pass stabilisation\n"
                                    "  view       filmstrip + waveform + words PNG for a time range\n"
@@ -943,6 +1232,43 @@ def _register_footage(sub) -> None:
     p.add_argument("-o", "--output")
     _add_json(p)
     p.set_defaults(func=cmd_reframe)
+
+    p = s.add_parser("cutout", help="cut the speaker out: alpha video + matte", formatter_class=_F,
+                     description="Cut the person out of a clip, frame by frame, on the CPU: MODNet portrait matting "
+                                 "(Apache-2.0, 26 MB, fetched on first use) through onnxruntime, smoothed over time "
+                                 "(steady edges where the picture is still, reset at cuts) and refined at full size "
+                                 "with a guided filter. Writes three files:\n\n"
+                                 "  <name>.cutout.webm   VP9 with alpha: plays in browsers, composites in showtime\n"
+                                 "                       (EDL overlays, <video> layers); --format prores: ProRes 4444\n"
+                                 "                       .mov for an editor; --format png: a numbered PNG folder\n"
+                                 "  <name>.matte.mp4     the matte alone (white = person), H.264: a luma/track matte in\n"
+                                 "                       any editor\n"
+                                 "  <name>.cutout-sheet.jpg  three frames cut out over a checkerboard, their mattes under\n"
+                                 "                       them: look at it (most players show a VP9 cut-out without alpha)\n\n"
+                                 "It cuts out people (portraits, talking heads), not objects. The report gives the speed "
+                                 "and a flicker measure (share of the person's area whose matte jumps on a still "
+                                 "picture); for a talking-head edit, the EDL card \"behind\" does all of this itself "
+                                 "(references/editing.md, Cards). Output never goes beside your media: <job>/work/footage/ "
+                                 "by default; -o picks a path.",
+                     epilog="Examples:\n  showtime footage cutout talk.mp4\n"
+                            "  showtime footage cutout talk.mp4 --from 12 --to 18 --format prores -o talk-cut.mov\n"
+                            "  showtime footage cutout talk.mp4 --matte-only --json")
+    p.add_argument("video")
+    p.add_argument("--from", dest="t_from", type=float, default=0.0, help="start time in seconds (default 0)")
+    p.add_argument("--to", dest="t_to", type=float, help="end time in seconds (default: the end)")
+    p.add_argument("--format", choices=["webm", "prores", "png"], default="webm",
+                   help="the cut-out video: webm (VP9 + alpha, default), prores (ProRes 4444 .mov) or png (sequence)")
+    p.add_argument("--matte-only", action="store_true", help="write only the matte (<name>.matte.mp4)")
+    p.add_argument("--matte", help="matte file path (default: beside the output, <name>.matte.mp4)")
+    p.add_argument("--size", type=int, default=512, help="the network's short side in px (default 512; 384 is "
+                                                          "faster and softer, 640 sharper and slower)")
+    p.add_argument("--no-smooth", action="store_true", help="no temporal smoothing (each frame on its own)")
+    p.add_argument("--no-refine", action="store_true", help="no guided-filter edge refinement (plain upscale)")
+    p.add_argument("--no-audio", action="store_true", help="leave the sound out of the cut-out video")
+    p.add_argument("--threads", type=int, help="CPU threads to use (default: all cores)")
+    p.add_argument("-o", "--output", help="cut-out video (default <job>/work/footage/<name>.cutout.webm)")
+    _add_json(p)
+    p.set_defaults(func=cmd_cutout)
 
     p = s.add_parser("denoise", help="clean speech audio", formatter_class=_F,
                      description="Reduce background noise in speech. auto = DeepFilterNet when installed, else "
@@ -1206,6 +1532,41 @@ def _adhoc_render_range(args, extra: Dict[str, Any], rng: Dict[str, Any]) -> Dic
     return _adhoc_render(args.video, args.output, "." + args.aspect.replace(":", "x"), extra, args.preview)
 
 
+def cmd_cutout(args) -> int:
+    from .footage import cutout as CO
+    from .footage import util as U
+    src = Path(args.video).resolve()
+    if not src.is_file():
+        raise ShowtimeError("video not found: %s" % src)
+    ext = {"webm": ".cutout.webm", "prores": ".cutout.mov", "png": ".cutout"}[args.format]
+    out = Path(args.output).expanduser().resolve() if args.output else footage_out(src, src.stem + ext)
+    out = U.unique_path(out) if out.exists() else out
+    out.parent.mkdir(parents=True, exist_ok=True)
+    base = out.name.split(".cutout")[0] if ".cutout" in out.name else (out.stem if args.format != "png" else out.name)
+    matte = Path(args.matte).expanduser().resolve() if args.matte else out.with_name(base + ".matte.mp4")
+    matte = U.unique_path(matte) if matte.exists() else matte
+    rep = CO.cutout_video(src, out=out, matte_out=matte, fmt=args.format, start=args.t_from, end=args.t_to,
+                          short=max(128, min(1024, int(args.size))), smooth=not args.no_smooth,
+                          refine_edges=not args.no_refine, audio=not args.no_audio, matte_only=args.matte_only,
+                          threads=args.threads)
+    if args.json:
+        print_json(rep)
+        return 0
+    info("%d frames in %.1f s (%.1f fps: %.0f ms per 1080p frame, about %.0f s per minute of footage; %d sessions); "
+         "flicker %.2f %% of the person's area per still frame" % (
+             rep["frames"], rep["seconds"], rep["fps"], rep["per_1080p_frame_ms"], rep["seconds_per_minute"],
+             rep["sessions"], 100 * rep["flicker"]))
+    for k in ("warning", "warning_empty"):
+        if rep.get(k):
+            info("warning: " + rep[k])
+    if rep.get("sheet"):
+        info("look at %s (three frames cut out over a checkerboard, their mattes under them)" % rep["sheet"])
+    if rep.get("output"):
+        print(rep["output"])
+    print(rep["matte"])
+    return 0
+
+
 def cmd_denoise(args) -> int:
     from .footage import denoise as D
     from .footage import util as U
@@ -1313,6 +1674,8 @@ def cmd_grade(args) -> int:
         out.parent.mkdir(parents=True, exist_ok=True)
         vf = ("split=2[a][b];[b]%s[g];[a]scale=960:-2,drawbox=w=iw:h=ih:c=black@0:t=0[a2];[g]scale=960:-2[g2];"
               "[a2][g2]hstack" % (chain or "null"))
+        if out.suffix.lower() in (".jpg", ".jpeg"):
+            vf += "," + ff.JPEG_VF                    # JPEG's own colours (BT.601 full range), as posters
         ff.run_ffmpeg(["-ss", "%.3f" % t, "-i", str(src), "-frames:v", "1", "-filter_complex", vf, str(out)])
         if args.json:
             print_json({"png": str(out), "filter": chain})

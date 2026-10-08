@@ -5,6 +5,177 @@ All notable changes to showtime. Each entry says what changed and why, so this f
 `skills/showtime/lib/st/__init__.py` and `python3 scripts/check_release.py` keeps the plugin manifests, the registry files and
 `setup/package.json` in sync with it.
 
+## 0.4.1 (2026-10-08)
+
+- **Renders are faster, most of all without a GPU.** Measured on a 64-core Linux machine with no GPU, default
+  settings, best of 2 interleaved runs against 0.4.0: a 30 s launch film (900 frames) went from 42.0 s to 17.6 s
+  (2.4x), a 15 s DOM page from 31.8 s to 16.4 s (1.9x), a 15 s WebGL showreel from 25.3 s to 21.9 s. With the same
+  worker count the DOM page and the launch film are still 12-28 % faster (launch on 8 workers 22.8 -> 17.5 s, on 16
+  workers 18.2 -> 13.1 s); the picture matches 0.4.0 at SSIM 0.997-0.998 and files are about the same size. On a
+  busy 6-core Intel Mac a 1 s fix spliced into a 15-30 s video went from 31-54 s to 13-21 s. `references/render.md`
+  Speed.
+  - The encoder runs during the capture: one ffmpeg reads the frames in order as they land (the same file byte for
+    byte as encoding afterwards; `SHOWTIME_PIPE_ENCODE=0` goes back), so on the launch film 0.5 s of encoding was
+    left after the capture instead of 4.5 s. x264 `veryfast` is the default (`--x264-preset medium` or
+    `"render": {"x264_preset": "medium"}` for the old one); a splice reuses its base render's preset.
+  - Without a GPU the automatic worker count follows the cores: one browser per 8 CPU threads, at least 3 from 6
+    threads up, at most 8 (8 on the 64-core machine, where 0.4.0 used 3); a container's memory limit caps it.
+    `render.json` and the log say how many and why. With a GPU it stays 3.
+  - A finished worker takes over the back half of the largest part left, and the other browsers start while the
+    first loads the page. Render's browsers draw a frame when asked instead of on the next 60 Hz tick.
+  - An unchanged soundtrack is reused from `~/.showtime/cache/render-audio` (12 newest, 1 GB); the key covers the
+    mix, every file it names and their licence and beat sidecars, the music vetoes and look history for catalog
+    queries, and the audio code. `SHOWTIME_AUDIO_CACHE=0` turns it off.
+  - A stuck browser or encoder no longer hangs a render: a page that does not open gets a new browser, a frozen
+    browser is dropped and its frames retried on a fresh one, an encoder that exits or a frame write that fails no
+    longer leaves the render waiting, and every ffmpeg call around the poster and the mux has a time limit. Waits
+    (load, fonts, images, videos, `ST.waitFor` gates, seeks) scale with the page's measured pace, up to 5x and never
+    below the fixed values, so heavy pages on a busy runner or a machine without a GPU no longer time out (`pace` in
+    `render.json` and check's report; `ST.pace()`; `SHOWTIME_PACE=0` keeps fixed waits).
+- **Designed cards over a talking head, timed to the words.** An EDL's `cards` put a title, lower third, pull-quote,
+  data callout, chapter, a list that builds as each item is said, or a side panel over real footage, anchored to a
+  phrase (`say`) or a word, so a re-cut moves them. They take the job's brand kit or look signature and render once
+  as an alpha clip under the captions. `references/editing.md` section 9.
+  - Captions never cover the speaker's face (tracked eyes to chin: moved below the chin, else above the eyes;
+    `captions.avoid_face` for edits without cards; qa `caption_face`). `captions.emphasis` colours key terms.
+  - A panel frames the speaker into one half; a 9:16 card with no room beside the face becomes a split, and a
+    caption crossing a split's edge is cut there. A range `hold` freezes its last frame with the sound faded, for an
+    ending with air. Spoken numbers fold as said (2.5, years), and a stat takes its figure only from one clean
+    number.
+  - `showtime edit cards suggest` lists card moments in a transcript, locally; `edit check`, `edit view` and qa
+    (`card_problem`) know cards, and `edit check` flags list items said after their card leaves.
+- **A word behind the speaker, cut out on the CPU.** `showtime footage cutout <clip> [--from A --to B] [-o out]`
+  cuts a person out with MODNet portrait matting (Apache-2.0, 26 MB, fetched on first use), smoothed over time and
+  reset at every cut, as VP9 with alpha (`--format prores` or `png`), a matte file and a contact sheet. About
+  1.3-1.8 min per minute of 1080p on a 64-core Linux machine with no GPU, about 5.7 min when held to 6 of its cores
+  (3.7 with `--size 384`). The EDL card `"type": "behind"` puts a big word between the background (`dim`, `blur`, `ground`, a colour
+  or an image) and the speaker; qa warns `behind_hidden` and `matte_flicker`.
+- **A long recording to its best short clips.** `showtime edit moments <transcripts | folder | job>` ranks
+  whole-sentence moments of `--min`..`--max` seconds by local signals (a hook in the first 3 s, a complete thought,
+  speaker energy, laughter and applause, one topic; introductions and logistics rank lower) into `moments.json` with
+  a reason and a suggested title. `showtime edit clips [job] --pick m1,m4 | --count 3` makes them finished clips:
+  tight whole-word starts and clean ends, fillers and pauses trimmed, face-tracked 9:16, captions off the face,
+  optional `--cards`, rendered in parallel, each through qa, with a contact sheet. A 58-minute panel took about 7
+  minutes end to end on a 64-core Linux machine with no GPU (example 24).
+  - Edit renders no longer let the sound drift ahead of the picture at cuts (62 ms by the end of a 9-segment clip);
+    EDL ranges take `fade_out`.
+- **Claude Design to MP4: `showtime adopt <export.zip>`.** A Claude Design HTML export (the zip or its folder) is
+  unpacked into the project's `src/`; the artboard fills a frame of 1080 on its short side (1280x720 -> 1920x1080,
+  540x960 -> 1080x1920) with sharp text, its Google Fonts are copied in with their licences, the length comes from
+  the animation's own clock or its CSS loops, and a looping design renders exactly one seamless loop (`loop_seam`
+  otherwise). `references/adopt.md` From Claude Design, example 28.
+  - New `showtime assets font --css <Google Fonts link> --copy-to <dir>`: the files a browser gets, with each
+    family's licence; non-OFL/Apache/MIT/UFL families need `--allow-license`. https only, files only from
+    fonts.gstatic.com; an offline `--refresh` keeps the fonts already copied (checked by sha256).
+  - An artboard larger than the frame is no longer cropped, a cursor blink is not taken as the loop, and
+    `adopt.json` keeps paths relative to the project.
+- **Seven looks in showtime's own WebGL, no GPU needed**: `fluted-glass`, `tilt-shift`, `liquid-metal`,
+  `mesh-gradient`, `god-rays`, `marble` and `metaballs`, each with presets built from the theme tokens, the same
+  frames with any worker count, and a designed fallback where WebGL is missing. At its default size each adds less
+  than 50 ms to a 1080p frame without a GPU (one browser on the 64-core machine; `references/components.md` section
+  7 has the table). A look holds a WebGL context only while its clip is on screen, so twenty looks on one page no
+  longer go blank, and on a GPU each look reads its frame back before the screenshot (no stale frames).
+  `showtime check` prints each look's estimated cost and warns `look_budget` (over 50 ms), `look_fallback`, `look_contexts`
+  (over 8 on screen at once, an error over 14) and `look_lost`. `examples/_looks`.
+- **Shutter blur on chosen elements.** `data-st-blur` (or `ST.blur(el, {pose})`) smears an element as a 180° shutter
+  would, only on the frames it moves fast, and lands it sharp; options `shutter`, `samples`, `threshold`, `max`;
+  `F.motionBlur` for canvas films. About 8 ms more per blurred word per frame at 1080p without a GPU (one browser on the 64-core Linux machine). check warns
+  `blur_text`, `blur_slow`, `blur_container`, `blur_unsampled` and `blur_inline`. The showreel template's flash
+  words are now snaps under the blur. `examples/_blur`.
+- **qa hears the mix as a phone speaker does, and the mixer is speaker-safe by default.** The first mix of the 0.4.1
+  showreel was almost inaudible on a phone: above 300 Hz it sat 13.6 LU under the full mix. `speaker_loudness`
+  measures the mix above 300 Hz and 1 kHz against the full mix: WARN over 10 LU, FAIL over 18 (posted films measure
+  0.7-8.2 LU; a soundtrack showtime did not mix, such as your own song or a footage edit's sound, stays a WARN). `showtime audio mix` (so also `render` of a showtime.json `"audio"` mix; not an `ST.score` bed or the
+  built-in fallback mixer) puts a 40 Hz high-pass on everything but the voice and, on a bass-heavy mix, a low shelf on
+  the bed; voice-led films change by 0.01 LU. `"master": {"speaker_safe": false}` or
+  `--no-speaker-safe` turns it off. The mix report gives each effect its speaker gap and notes a sub hit with
+  nothing in the mids (`sub_alone`).
+- **The voice-over is heard back.** `voice script` and `voice say` transcribe what they wrote with the local
+  recognizer and compare it with the script sound by sound, so a name, acronym or number said wrong ("Open A I"
+  heard as "OpenI") is a WARN with its fix; cached by each line's audio and recognizer. It runs when the local
+  recognizer is installed: it arrives with the first transcription, or `showtime setup --fetch
+  parakeet-tdt-0.6b-v3-int8`. A flagged line is heard again by a second recognizer when one is installed (Whisper
+  small.en for English), and a word someone listened to is cleared with `"readback": {"ok": ["JSON"]}` in
+  showtime.json. `--no-readback` or `SHOWTIME_READBACK=0`. qa adds a `readback` hearing item (FAIL only for a title,
+  brand or lexicon name the second recognizer also hears differently), review-pack's `audio.txt` lists every
+  line as scripted and as heard, the critic checks it and the receipt names the words. A lone "A" spelled inside a
+  name is flagged; the lexicon gains LaTeX, TeX, arXiv, Nvidia, sudo, and Python and PyTorch for Spanish.
+- **Notes name what they point at, and cover a stretch of time.** `showtime review notes` resolves each spot or box
+  to the scene and the elements under it (`--no-elements`; `--json` `on_screen`); a note can span `t` to `to`
+  (Shift + drag on the bar, `[` and `]`, Mark stretch on a phone, `--add ... --at T --to T2`), shown as a band with Play
+  stretch and counted at delivery.
+- **Since you last looked.** `showtime status <job>` lists what the person changed while the agent was away (project
+  files edited by hand, unread notes, new board picks and comments, open findings), then marks it seen; job commands
+  end with one line pointing to it (`--json`: `since_last_looked`). `SHOWTIME_AWAY_MIN`, `SHOWTIME_CATCHUP=0`.
+  `job init` writes `AGENTS.md` and `CLAUDE.md` into the job folder for a resumed agent.
+- **HTML exports that are whole, small and shareable.**
+  - Every file the page needs is packed or the export stops with the list (a large minify outlasted the local
+    server's keep-alive, and a Physics explainer lost every scene after shot 7). Sound files only a data file names
+    stay out: that export went from 25.3 MB to 4.1 MB.
+  - Link previews: `--share-url` / `--share-image` or `"share"` in showtime.json add the tags that show a title, a
+    description and the poster frame when the link is pasted. `--folder` writes `.nojekyll`, so GitHub Pages serves
+    it as is (#19). `showtime export html <job>` takes a job.
+  - The player no longer stalls after a seek on a server without Range requests (`python -m http.server`; when
+    reading the soundtrack whole fails, the next seek tries again), and
+    `--max-mb` re-encodes a footage clip that needs a second pass from the original, once, on at most 8 threads
+    (x264's rate control overshot on 64).
+- **`showtime check` catches more.** Text is judged for contrast at its most opaque frame (long fades no longer fail
+  `low_contrast`); `caption_zone` warns about an element where the captions sit while one shows
+  (`data-st-caption-ok` to opt out); `webgpu` checks a page again without WebGPU (an error when nothing draws in its
+  place); `same_frame_entrance` starts an entrance where its keyframes leave opacity 0; image loads cancelled by
+  check's own seeks are counted apart (`cancelled_loads`).
+- **Clean installs on macOS, Windows and Ubuntu, fixed from what fresh machines found.** `setup` checks uv and
+  Node.js before any download and prints each system's install line (also in `--estimate`, which now gives the disk
+  each part takes); on Windows a missing Visual C++ 2015-2022 runtime is named with its download link in setup,
+  doctor and any DLL load error, `setup --force` no longer fails replacing its own venv, and `job init` warns when a
+  job folder is deep enough to pass the 260-character path limit. An ffmpeg without the options showtime uses
+  (Ubuntu 22.04's 4.4.2) is refused by setup and warned by doctor, and a loudness reading that failed is never
+  recorded as 0 LUFS. The preview window opens Chrome with its device discovery (Cast) turned off. The test suite skips
+  the site tests without the examples checkout. `check_release.py --mirror` checks every model and audio mirror
+  asset, and a failed model download names the missing mirror file.
+- **Docs for people.** An FAQ (GPU, cost, agents, privacy, licences, disk, time, platforms, languages, hand edits,
+  the critic, questions, notes) and What's new, first in the site's Start group; ten task guides in `docs/guides/`
+  (a talking head with cards, Claude Design to MP4, a long recording to clips, a launch video from a repo, another
+  language, a PR video, an explainer that asks, going all out, notes and fixes, a slow machine), each with what to
+  say, what you get, measured times naming the machine and the limits, in their own sidebar group after Start. The README, the docs
+  maps, SKILL.md, SECURITY and PRIVACY catch up with 0.4.0 and 0.4.1. Site search finds hyphenated names
+  (`pr-video`) and opens the matching section; pages get share tags and a canonical link, and the site has
+  `sitemap.xml`, `robots.txt` and `llms.txt`.
+- **Examples for 0.4.0 and 0.4.1 (#18).** 23, a NASA interview dressed with cards and a word behind the speaker, at
+  16:9 and 9:16; 24, a 58-minute panel into three vertical clips; 25, a Nobel Physics explainer whose HTML video
+  stops at three questions; 26, a Nobel Chemistry explainer in English and Spanish; 28, two Claude Design exports
+  adopted as they are; 29, `showtime pr-video` on showtime's own PR; 30, the showreel template in four shapes with
+  no edits; 32, one project in all twelve look signatures. The gallery gets a Looks and motion group with the looks
+  and shutter blur demos. Examples made before look signatures say `--look template` in their rebuild steps.
+- **GitHub as the public tracker.** Issue forms (bug, feature idea, example request, docs problem), a Show and tell
+  discussion form, a code of conduct (Contributor Covenant 2.1) and release notes categories. The nightly reports
+  its own failures: a failed run comments its failed jobs and tests on the open nightly issue or opens one, and a
+  green run on every system closes it (#15).
+- **Fixes.**
+  - `new --from-storyboard` keeps a "(pause)" narration cell (or another direction, or a dash) as a silent shot
+    instead of voicing it (#17); `retime --from-voice` lets a pinned line win over a silent scene before it, which
+    fills the gap instead of adding its length on top, and never shrinks under 1 s.
+  - `audio music search` never cuts a track id, and an unknown id names the closest one (#16).
+  - New `showtime review-findings <job> < reply`: a critic that cannot write files returns its answer as text, and
+    this saves it as the round's FINDINGS.md after checking its shape (#20).
+  - Posters, thumbnails, qa frames and snaps pulled into a JPEG convert the video's colours properly (a saturated
+    poster was about 6 levels darker than its frame), and qa compares the poster with its exact frame.
+  - A file that reads above the -1 dBTP ceiling at all after the AAC encode is re-encoded (a GitHub copy read -0.9).
+  - `pr-video` shows a description's list item by item ("+ N more" for the rest) instead of the opening paragraph
+    cut into frames; the showreel template's data shot fits 1:1 and 4:5; a mix track's `"ending": "song"` keeps the
+    song's own ending; a span render with `-o <own name>.mp4` and no `--job` writes that file and never splices into the job's final
+    (with `--job` the fix is spliced as before and `-o` is ignored); two renders
+    started in the same second no longer share a folder; a scene marked `data-stretch="spread"` spreads its beats
+    when it gets longer (the dom template's hero no longer holds still at `--duration 24`).
+  - Transcripts say where their language came from (`language_source`), Parakeet v3's language guess works again (it
+    always said English), a soft first word is kept and a music intro is not transcribed.
+  - `guide --find` takes several words unquoted; the templates' sample URL is a reserved `.example` name; the site
+    shows a stray placeholder tag as text instead of hiding the page; the critic is described as reviewing every
+    video in quality mode; `history clear` also removes the signature picks.
+  - A browser that stops answering no longer hangs a command: every page showtime opens has a deadline (5 minutes,
+    longer for slow pages) and one retry in a new browser, and check exits with an error naming the step; a 3D look
+    whose WebGL context is lost stays in check's report with its fallback.
+
 ## 0.4.0 (2026-10-05)
 
 - **Videos that stop and ask.** showtime.json `"questions"` lists stop-and-ask questions: `{id, at, prompt, choices,

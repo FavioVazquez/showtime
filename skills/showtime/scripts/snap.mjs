@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { startServer } from './server.mjs';
-import { parseCli, runMain, info, c, fmtTime, parseTimes, parseTime, jobDir, workName, UserError } from './lib/cli.mjs';
+import { parseCli, runMain, info, c, fmtTime, parseTimes, parseTime, jobDir, workName, UserError, sinceLastLooked, printSince } from './lib/cli.mjs';
 import { openBrowser, openLab, parseSize } from './lib/stagehost.mjs';
 import { enclosingJob } from './lib/studio/paths.mjs';
 import { VIDEO_EXT, openSource } from './lib/frames.mjs';
@@ -123,7 +123,7 @@ async function main() {
     const all = [...new Set([...atTimes.map(q), ...sheetTimes].map((x) => +x.toFixed(6)))].sort((x, y) => x - y);
     // the lab page (sheets, resizing) is served by the project server, or a tiny one for video files
     if (!shared.serverUrl) { labServer = await startServer({ root: tmpRoot, port: 0 }); shared.serverUrl = labServer.url; }
-    lab = await openLab((await shared.browser()).browser, shared.serverUrl);
+    lab = await openLab(await shared.browser(), shared.serverUrl);
     const shots = new Map();
     // keys are rounded to 6 decimals; seek the exact frame time (k / fps): a rounded time can fall a hair
     // before the frame boundary, and the stage floors it to the previous frame
@@ -182,14 +182,18 @@ async function main() {
       fs.writeFileSync(compare, buf);
     }
     const errs = src.kind === 'project' ? src.sess.log.errors : [];
+    const sinceJob = enclosingJob(src.kind === 'project' ? src.dir : src.file);   // a snap on a job
+    const since = sinceJob ? await sinceLastLooked(sinceJob) : null;
     if (a.json) {
-      process.stdout.write(JSON.stringify({ source: src.kind === 'project' ? src.dir : src.file, kind: src.kind, stills, sheet, compare, notes, pageErrors: errs.map((e) => e.message) }, null, 2) + '\n');
+      process.stdout.write(JSON.stringify({ source: src.kind === 'project' ? src.dir : src.file, kind: src.kind, stills, sheet, compare, notes, pageErrors: errs.map((e) => e.message),
+        ...(sinceJob ? { since_last_looked: since } : {}) }, null, 2) + '\n');
     } else {
       for (const s of stills) console.log(`still  ${fmtTime(s.at)}  ${s.file}`);
       for (const n of notes) console.log(c.dim(`  ${n}`));
       if (sheet) console.log(`sheet  ${sheetTimes.length} frames  ${sheet}`);
       if (compare) console.log(`compare  ${atTimes.length} pair(s)  ${compare}`);
       if (errs.length) console.log(c.yellow(`  ${errs.length} page error(s), first: ${errs[0].message} (run \`showtime check\`)`));
+      printSince(since);
     }
     return 0;
   } finally {

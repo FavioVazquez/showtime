@@ -19,6 +19,9 @@ Component options: `references/components.md`. Scene handoffs: `references/trans
   the cut, hero visible by 0.5 s (§3)
 - Animate transforms only (`translate`, `scale`, `rotate`, `opacity`, `filter`, `clip-path`); scale in from
   0.94-0.98, travel 16-40 px; only the final scene exits on its own (§5)
+- Motion blur (`data-st-blur`) only on 1-3 snap beats a video (a whip, a slam, a scale punch: the move in 6-9
+  frames, most of it in the first 2-3), on the element that snaps; never on text being read, a slow drift or a
+  whole scene (§5)
 - Camera: push 1.00 -> 1.04-1.08 over a shot; punch-ins never in launch, promo or explainer films nor on every
   jump cut; UI zoom 1.5-2x (max ~2.8x); drift on the background layer only (§6)
 - Headlines ≥7 % of the frame height; body ≥36 px at 1080p landscape, 48 px at 1080x1920; text-only hold
@@ -33,17 +36,17 @@ Component options: `references/components.md`. Scene handoffs: `references/trans
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| 1. The five rules that matter most | 48-68 |
-| 2. Easing by character | 70-86 |
-| 3. Durations | 88-103 |
-| 4. Stagger | 105-116 |
-| 5. Entrances and exits | 118-130 |
-| 6. Camera moves | 132-155 |
-| 7. Type in motion | 157-165 |
-| 8. Rhythm and sound sync | 167-173 |
-| 9. Anti-patterns (and the fix) | 175-190 |
-| 10. Determinism rules (why frames match every time) | 192-201 |
-| 11. Showreel: go all out | 203-254 |
+| 1. The five rules that matter most | 51-71 |
+| 2. Easing by character | 73-89 |
+| 3. Durations | 91-106 |
+| 4. Stagger | 108-119 |
+| 5. Entrances and exits | 121-150 |
+| 6. Camera moves | 152-190 |
+| 7. Type in motion | 192-200 |
+| 8. Rhythm and sound sync | 202-208 |
+| 9. Anti-patterns (and the fix) | 210-227 |
+| 10. Determinism rules (why frames match every time) | 229-238 |
+| 11. Showreel: go all out | 240-291 |
 
 ## 1. The five rules that matter most
 
@@ -129,6 +132,23 @@ short-short-long, with the longest hold on the key message).
 - Scene phases: build (0-30 %: staggered entrances) -> breathe (30-70 %: one small ambient motion,
   or stillness) -> resolve (70-100 %: the decisive last element, then a still hold).
 
+**Snap beats and motion blur.** A snap is the exception to the small moves above: a word whipped in from the
+side, a title slammed down, a logo punched in from 2-3x, the whole distance in 6-9 frames on a hard ease-out
+(`expo.out`, `cubic-bezier(0.16, 1, 0.3, 1)`): most of it in the first 2-3 frames, the rest a settle (shorter,
+and qa calls the landing a `dead_stop`). At that speed a sharp element strobes (it jumps its own size
+between frames) and reads cheap; `data-st-blur` on it (stage-api.md § Shutter blur) smears it only on its
+fast frames, like a camera shutter, and it lands sharp. Taste:
+
+- One to three snaps a video, on the beat, where the energy peaks: the showreel's flash words, a launch title's
+  arrival. A blur on every move reads as a filter, not as speed.
+- Never on text the viewer is reading: it snaps in blurred, lands, then holds sharp for its reading time. A
+  ticker or a line that drifts while it is read gets no blur (`check`: `blur_text`).
+- Never on slow motion: entrances of 16-40 px, drifts, pushes and gentle slides already read smooth; blurring
+  them only softens them (`check` warns `blur_slow` under about a quarter of the element's size a frame).
+- Never on a scene, a container or a full-frame layer: a whole-frame smear reads as a broken frame and costs
+  copies of the whole page (`blur_container`). Scene-to-scene moves are transitions: `push` with `blur: true`,
+  `whip-pan`, `whip-blur` (transitions.md).
+
 ## 6. Camera moves
 
 | move | numbers |
@@ -153,6 +173,21 @@ Text-only scenes longer than ~2.5 s need some motion or `check`/`qa` flag a stil
 pulse, a grey label) do not count as change, and a small restyle (a 3 cqh bold label made 2.4 cqh grey)
 can drop a scene back under the threshold; re-run `check` after type changes. On dark frames a slow
 push changes few pixels, so give it 7-8 % or pair it with another beat.
+
+**Looks** (`fluted-glass`, `tilt-shift`, `liquid-metal`, `mesh-gradient`, `god-rays`, `marble`, `metaballs`;
+`components.md` §7) are seasoning: one per scene, and only where it says something. In an explainer or tutorial
+two fit. `tilt-shift` with the `focus` preset points at the region the narration is about, then moves with it
+(a 1-1.5 s `sine.inOut` key), and the rest stays legible enough to keep the viewer oriented. `mesh-gradient`
+`calm` is the ground under words (a chapter card, a definition, a quote): it should be felt more than seen, so
+keep its intensity low and its drift slow, never key it to the narration, and keep `vivid` for a title. Glass,
+metal, rays and marble are hero looks: a launch title over `fluted-glass`, a metal object on the end card with
+the product name in its reflection, the name revealed by `god-rays` (the light comes up over about 1 s, then
+holds), a quote or an end card on `marble` (`nero` or `carrara`; `ink` is loud and wants a plate under the
+text), a reel shot. Let them form on screen (depth, `in` or strength easing up over about 1 s) and then hold
+quietly while the text reads; never put moving glass behind body text, and never run the same look in two
+scenes of one film. `metaballs` are for play: a merge on the beat where two ideas become one (`spread` keyed
+to 0), a count that splits, a gooey `wipe` on a cut in a reel; not in a serious or sad film, and never as
+filler behind words.
 
 ## 7. Type in motion
 
@@ -187,6 +222,8 @@ push changes few pixels, so give it 7-8 % or pair it with another beat.
 | pure #000 / #fff, rainbow accents | theme tokens; one accent colour |
 | centred-everything web layout | anchor to edges, asymmetric splits, 3 depth layers |
 | text shake / wiggle / rainbow | emphasis by weight, colour or scale, one at a time |
+| a fast snap that strobes (a sharp word jumping 200 px a frame) | `data-st-blur` on that element: smeared only while fast, sharp when it lands (§5) |
+| motion blur on every move | only the 1-3 snap beats; entrances, drifts and pushes stay sharp (§5) |
 | more than 3 flashes per second | at most one flash per ~0.33 s, small area when faster (photosensitivity) |
 
 ## 10. Determinism rules (why frames match every time)
@@ -229,7 +266,7 @@ the name (13.75-15).
 |---|---|
 | shader ground | a full-frame WebGL fragment shader (`shaderLayer(canvas, frag, {scale: 0.75})`): domain-warped value noise (`fbm(p + 2.6 * fbm2(p + t))`), read as a height field, its normal reflecting a two-colour sky gives liquid chrome; feed `u_t` from the clip's local time, darken a pool under the type (contrast), 4 octaves at 0.75 scale renders fast; `preserveDrawingBuffer: true` |
 | particle burst on a beat | seeded once (`ST.rand('drop')`), positions closed-form: distance `v (1 - e^(-k τ)) / k` with drag k 2-3, an angle that swirls by `s (1 - e^(-1.2 τ))`; draw each as a streak from its position 0.07 s earlier, additive (`lighter`), fading over 1.7-3.3 s so the shot never ends in dust; the hit's core glow stays under a quarter of the frame (flash limit) |
-| kinetic type | flash words on the beat (one per 2/3 beat, `data-st-flash`, on screen from their first frame); bands of 1-3 word repeats in opposite directions with `x = (1 - e^(-2.2 u)) × 46 cqw` (fast in, easing out), a full-bleed colour band behind one row (`box-shadow: 0 0 0 100cqw; clip-path: inset(0 -100cqw)`); an outline stack in a static face (a variable font's outlines show their overlapping contours); glitch as `::before`/`::after` slices of `attr(data-text)` plus an RGB-split `text-shadow`, both from CSS variables set per frame, bursting in the first 0.16 s of each beat (the word is audited once) |
+| kinetic type | flash words on the beat (one per 2/3 beat, `data-st-flash`, on screen from their first frame), each a snap (a whip, a slam, a scale punch in 6 frames) under a shutter blur (`data-st-blur` on the word, not its full-frame wrapper); bands of 1-3 word repeats in opposite directions with `x = (1 - e^(-2.2 u)) × 46 cqw` (fast in, easing out), a full-bleed colour band behind one row (`box-shadow: 0 0 0 100cqw; clip-path: inset(0 -100cqw)`); an outline stack in a static face (a variable font's outlines show their overlapping contours); glitch as `::before`/`::after` slices of `attr(data-text)` plus an RGB-split `text-shadow`, both from CSS variables set per frame, bursting in the first 0.16 s of each beat (the word is audited once) |
 | 3D object turn | three.js from `/_lib/three` through an import map, lit by `RoomEnvironment` through a PMREM (sigma 0.12: nothing fetched, soft reflections), `MeshPhysicalMaterial` metal 1, roughness about 0.22, iridescence 1, 96+ radial segments (lower roughness and segments read as specks), two coloured point lights; `ST.three(renderer, scene, camera, fn)` turns it and dollies the camera in from local time |
 | live data / counter | `chart(canvas, {value, label})`: hairlines draw out, bars rise on a damped spring (`1 - e^(-6p) cos 9p`) staggered 45 ms, a line draws on with a pulsing head, a ring gauge closes, and an odometer rolls to the number (each wheel turns only while the one below passes 9 -> 0); land it by ~1.25 s and keep a slow push so the settled chart never sits still. Drawn on the canvas, the number is texture; a figure the viewer must read goes in the DOM, held its reading time |
 | words over a liquid shader | the hook: the chrome shader under one display word landed at frame 0; or type as a mask: the shader canvas under a full-frame `var(--ink)` layer with `mix-blend-mode: multiply` and the word in white, so the liquid shows only inside the letters; fly through a letter's counter (`scale` to 60 about the counter's centre, measured with a DOM `Range`, `inExpo` over the last 0.45 s) into the next ground |

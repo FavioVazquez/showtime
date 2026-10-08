@@ -16,6 +16,9 @@ Everything runs locally. Every command has `--help` with examples, and most acce
   run `showtime audio mix audio/mix.json -o audio/mix.wav` alone, then `showtime audio meter`: verify, never
   guess (§1)
 - The mix masters to -14 LUFS / -1 dBTP by default (`master.lufs`, `master.true_peak`) (§5)
+- The mix is made to be heard on a phone speaker: a high-pass at 40 Hz on everything but the voice, and a
+  low shelf on a bass-heavy bed before the loudness normalisation (`master.speaker_safe`, on by default; off
+  for a video meant for headphones) (§5)
 - Each track has exactly one source: `file`, `lib`, `catalog` (pair it with `"fit": true`), `synth` or
   `compose` (§5)
 - Levels (`"level": "auto"`, the default): voice -16 LUFS, music -20, ambience -32, sfx by category; `gain_db`
@@ -36,20 +39,20 @@ Everything runs locally. Every command has `--help` with examples, and most acce
   warns (§4, §5)
 - Library: `showtime audio lib search --kind music --mood calm --min-dur 60`; the starter part (~41 MB) is
   fetched on first use, `showtime audio lib fetch` gets the whole ~249 MB (§4)
-- `audio beats`: with `phrase_flow` the grid is fictional, cut on phrases and energy changes (§6)
+- `showtime audio beats`: with `phrase_flow` the grid is fictional, cut on phrases and energy changes (§6)
 - Master to WAV and encode once at the end (AAC and MP3 add up to about 0.5 dB of overshoot) (§6)
 - MusicGen weights are CC-BY-NC: never use its output in a commercial video (§2, §7)
 
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| 1. The five-minute path | 54-68 |
-| 2. Music | 70-125 |
-| 3. Sound effects | 127-143 |
-| 4. Library | 145-192 |
-| 5. The mix spec (audio/mix.json): Credits | 194-298 |
-| 6. Analysis and delivery | 300-325 |
-| 7. Platform notes | 327-337 |
+| 1. The five-minute path | 57-71 |
+| 2. Music | 73-128 |
+| 3. Sound effects | 130-146 |
+| 4. Library | 148-196 |
+| 5. The mix spec (audio/mix.json): Heard on a phone, Credits | 198-340 |
+| 6. Analysis and delivery | 342-368 |
+| 7. Platform notes | 370-380 |
 
 ## 1. The five-minute path
 
@@ -64,45 +67,45 @@ showtime audio meter audio/mix.wav                          # verify, never gues
 ```
 
 When a project's `showtime.json` has `"audio": "audio/mix.json"`, `showtime render` runs the mix
-itself. Run `audio mix` on its own while iterating: it takes seconds, and the report shows what
+itself. Run `showtime audio mix` on its own while iterating: it takes seconds, and the report shows what
 changed.
 
 ## 2. Music
 
 | Need | Command |
 |---|---|
-| A produced track for a launch, trailer or emotional piece | `audio music pick --for launch --dur D` (or `search`, `info <id>`), then `"catalog": "<id>"` in the mix |
-| Music cut exactly to the edit, with section changes on picture changes | `audio compose --style S --dur D --sections "t:name,..."` |
-| A real recording from the library | `audio lib search --kind music --mood calm --min-dur 60` |
-| A library track at exactly the video's length | `audio fit track.opus --dur 42.5 -o bed.wav` (bar-aligned loop or musical ending; `--ending song` keeps the track's own ending) |
-| A short film cut to a produced track: the excerpt and scene changes on its phrases | `audio cuts --for launch --dur 30 --scenes 5` (`--apply <project>` retimes the scenes and sets the track) |
-| The beat grid of any track | `audio beats track.mp3` (writes `track.beats.json`) |
-| Temp music from a text prompt (non-commercial) | `audio musicgen "prompt" --dur 20 -o draft.wav` (optional tier) |
+| A produced track for a launch, trailer or emotional piece | `showtime audio music pick --for launch --dur D` (or `search`, `info <id>`), then `"catalog": "<id>"` in the mix |
+| Music cut exactly to the edit, with section changes on picture changes | `showtime audio compose --style S --dur D --sections "t:name,..."` |
+| A real recording from the library | `showtime audio lib search --kind music --mood calm --min-dur 60` |
+| A library track at exactly the video's length | `showtime audio fit track.opus --dur 42.5 -o bed.wav` (bar-aligned loop or musical ending; `--ending song` keeps the track's own ending) |
+| A short film cut to a produced track: the excerpt and scene changes on its phrases | `showtime audio cuts --for launch --dur 30 --scenes 5` (`--apply <project>` retimes the scenes and sets the track) |
+| The beat grid of any track | `showtime audio beats track.mp3` (writes `track.beats.json`) |
+| Temp music from a text prompt (non-commercial) | `showtime audio musicgen "prompt" --dur 20 -o draft.wav` (optional tier) |
 
 **The produced-music catalog** (`lib/st/audio/music_catalog.json`, nearly 300 tracks: Scott Buckley and
 Kevin MacLeod under CC BY 4.0, composers on OpenGameArt under CC BY 3.0/4.0 or CC0, CC0 and public-domain
 recordings; every track was downloaded, measured
 and passed a quality gate: no muffled old transfers, hiss, crackle, clipping, mono, dead gaps or wild
 loudness swings, thresholds in `music.py`):
-- `audio music search [words] --for USE --shelf S --mood M --energy 0.2-0.5 --dur D --vocals none`
+- `showtime audio music search [words] --for USE --shelf S --mood M --energy 0.2-0.5 --dur D --vocals none`
   ranks tracks; `pick` returns the best one (`--n 1` the next); `presets` lists the uses; `stats` counts.
   Shelves: cinematic, inspiring, ambient, corporate-tech, upbeat, documentary, tension, playful, lofi,
   piano, orchestral.
-- Nothing is bundled. A mix (or `audio music fetch <id>`, or `setup --full`) downloads the file from the
+- Nothing is bundled. A mix (or `showtime audio music fetch <id>`, or `setup --full`) downloads the file from the
   creator's site on first use, announces it with its size, checks the pinned sha256 and caches it in
   `~/.showtime/music` (`$SHOWTIME_MUSIC_CACHE`). Cached tracks work with `SHOWTIME_OFFLINE=1`;
   `--seed DIR` copies from a folder of earlier downloads.
 - A catalog track skips its near-silent lead-in by default. For a short cut of a long track that builds
   slowly, `"offset": "highlight"` starts at its loudest sustained stretch (on a downbeat; `music info`
   shows where), or give seconds.
-- `audio music veto <id>` hides a track from `pick` (`--undo`, `--import vetoes.json`).
-- `audio music openverse <words>` is a live CC BY / CC0 search of Freesound and Wikimedia Commons beyond
+- `showtime audio music veto <id>` hides a track from `pick` (`--undo`, `--import vetoes.json`).
+- `showtime audio music openverse <words>` is a live CC BY / CC0 search of Freesound and Wikimedia Commons beyond
   the catalog (about 20 searches a minute, 200 a day); `--fetch openverse:<id> -o <dir>` saves one with its
   `.license.json`. Jamendo is left out unless you pass `--source jamendo`: its own terms add conditions to
   commercial use and its licensing program can claim videos, so check the artist's terms first.
 
-`audio compose` details:
-- `--style` is one of 18 styles (`audio styles`; default `underscore`). `--bpm` and `--key` default to the style's own.
+`showtime audio compose` details:
+- `--style` is one of 18 styles (`showtime audio styles`; default `underscore`). `--bpm` and `--key` default to the style's own.
 - `--sections "0:intro,8:build,16:drop,26:outro"`. Names: intro, verse, build, drop, chorus, break,
   bridge, outro. Every marker lands exactly on a downbeat. The tempo is nudged per section (usually
   under 2 %, up to about 6-7 % for very short sections) and a section may get a 2-beat bar to make
@@ -126,13 +129,13 @@ loudness swings, thresholds in `music.py`):
 
 ## 3. Sound effects
 
-- `audio sfx-types` lists 56 procedural types in 7 categories, with their hit kind:
+- `showtime audio sfx-types` lists 56 procedural types in 7 categories, with their hit kind:
   - `onset`: the sound hits at its start (impacts, clicks, bells).
   - `peak`: the loudest moment (whooshes, sparkles).
   - `end`: the build-up lands on the last sample (risers, reverse cymbals, swells, sparkle-up).
-- `audio sfx <type> [--dur --key --intensity 0..1 --seed N] -o file.wav` writes `file.wav` and
+- `showtime audio sfx <type> [--dur --key --intensity 0..1 --seed N] -o file.wav` writes `file.wav` and
   `file.sfx.json`, and prints the JSON: `hit` (seconds), `hit_frame_30fps`, `category`, and the level.
-  `audio mix` reads the sidecar, so `"align": "hit"` uses the true hit automatically.
+  `showtime audio mix` reads the sidecar, so `"align": "hit"` uses the true hit automatically.
 - Tonal types (riser, swell, notification, success, bell, logo-sting, drone, and others) take
   `--key`. Give them the music's key so effects sit in the harmony.
 - Output is loudness-matched per category (`sound-design.md` §2), so `gain_db: 0` in a mix is a
@@ -170,7 +173,7 @@ showtime audio lib index ~/Sounds/MyPack --name mypack --license "vendor-license
     sources are not pinned yet, so their sha256 is recorded in `state.json` on the first download and
     every re-download must match it (trust on first use). Maintainers pin them with
     `showtime audio lib pin --tier extended`.
-- **Licenses:** CC0 and generated items need no credit. **CC-BY items must be credited**. `audio mix`
+- **Licenses:** CC0 and generated items need no credit. **CC-BY items must be credited**. `showtime audio mix`
   writes `CREDITS.txt` next to its output and lists the credits in the report; `showtime render`
   copies them into `credits.txt` beside the final, which is the file that ships. Paste them into the
   video description. `--license cc0` avoids the question entirely.
@@ -185,10 +188,11 @@ showtime audio lib index ~/Sounds/MyPack --name mypack --license "vendor-license
     or tagged as a loop, such as a 7 s water loop in a foley pack), ranked below real ambience items
     and marked "an sfx loop (catalogued as sfx)".
 - **Moving the library:** set `SHOWTIME_LIBRARY=/path` to keep it elsewhere, for example on an external disk.
-- **Extra sound packs** (`audio packs list`): about 25 more CC0 packs (paper, keyboards, a typewriter,
-  cloth, coins, UI, impacts, sci-fi, whooshes, city and crowd ambiences) that are not in the core tier.
+- **Extra sound packs** (`showtime audio packs list`): 35 more packs, 34 CC0 and one CC BY 4.0 (paper,
+  keyboards, a typewriter, cloth, coins, UI, impacts, sci-fi, whooshes, city and crowd ambiences) that are not
+  in the core tier.
   A mix naming one of their items (`"lib": "oga-keyboard-typing/..."`) fetches the pack first;
-  `audio lib search` says when an uninstalled pack matches; `audio packs fetch <id> | --category C | --all`
+  `showtime audio lib search` says when an uninstalled pack matches; `showtime audio packs fetch <id> | --category C | --all`
   installs ahead of time. Licenses and sources: `lib/st/audio/sfx_packs.json`.
 
 ## 5. The mix spec (`audio/mix.json`)
@@ -214,8 +218,8 @@ showtime audio lib index ~/Sounds/MyPack --name mypack --license "vendor-license
   - `lib`: a library id, or `{"search": {...}, "pick": 0}`.
   - `catalog`: a produced-music id (`"buckley-with-these-hands"`), or `{"use": "launch", "mood": "hopeful",
     "pick": 0}`. Fetched on first use and credited; pair it with `"fit": true`.
-  - `synth`: an `audio sfx` spec.
-  - `compose`: an `audio compose` spec. The duration defaults to the rest of the mix, and the result
+  - `synth`: a `showtime audio sfx` spec.
+  - `compose`: a `showtime audio compose` spec. The duration defaults to the rest of the mix, and the result
     is cached by content hash.
 - **Levels:** `level: "auto"` is the default. Each track is first brought to its kind's reference:
   voice -16 LUFS, music -20 LUFS, ambience -32 LUFS, sfx by category. `gain_db` is then relative to
@@ -226,6 +230,8 @@ showtime audio lib index ~/Sounds/MyPack --name mypack --license "vendor-license
     track overrides the measured hit (seconds from the file start).
 - **Length:** `loop: true` or `fit: true` fills the window. Music loops on bar lines when a beat grid
   is known (a `.beats.json` sidecar, a composed track, or a library item), and ends musically.
+  `"ending": "song"` keeps the track's own ending (its last bars spliced in at a downbeat, as
+  `audio fit --ending song`); `"fade"` fades out instead.
 - **Shape:** `fade_in` and `fade_out`, plus `pan` from -1 to 1. Every clip edge gets at least 3–5 ms
   of fade, so there are no clicks.
 - **Ducking:** `duck: {"under": "voice" | ["voice", "sfx"] | [track ids], "depth_db": 12, "attack": 0.08,
@@ -265,12 +271,48 @@ showtime audio lib index ~/Sounds/MyPack --name mypack --license "vendor-license
 - **`master`:**
   - `lufs` (default -14) and `true_peak` (default -1).
   - `engine` is `st` (exact, the default), `loudnorm` (ffmpeg two-pass) or `none`.
+  - `speaker_safe` (default `true`): the mix is heard on a phone speaker, not only on headphones. See
+    "Heard on a phone" below. `false` here, `"master": {"speaker_safe": false}` in showtime.json or
+    `showtime audio mix --no-speaker-safe` turns it off.
   - Output formats are `.wav` (24-bit), `.flac`, `.m4a`, `.mp3` and `.opus`.
 - **Paths** resolve against the mix.json folder, then the project root (the folder with
   `showtime.json`), then the current directory. `--root` overrides.
 
+### Heard on a phone
+
+Phone and laptop speakers play little under ~300 Hz. Loudness (LUFS) counts the bass, so a mix whose energy is
+kick, bass line and sub reaches -14 LUFS and still plays quiet on a phone. The measure is the mix's loudness
+above 300 Hz (`ffmpeg -af "highpass=f=300,highpass=f=300,ebur128"`, the same numbers) and its gap to the full
+mix. Measured on 7 Oct 2026: the posted films sit 0.7-8.2 LU under the mix (voice-led films 1-6); a music-led
+showreel with 75 % of its weighted energy at 80-160 Hz sat 13.6 LU under, so on a phone it played about 9 dB
+quieter than the voice-led films at the same -14 LUFS.
+
+The speaker-safe step of `showtime audio mix` (and so of `showtime render` with a showtime.json `"audio"` mix spec; not
+an `ST.score` bed or render's built-in fallback mixer), on by default:
+1. A 2-pole high-pass at 40 Hz on the music, ambience and effects: nothing a speaker plays, only headroom.
+2. When the mix is still more than 10 LU under above 300 Hz, a low shelf at 160 Hz on the bed and on the
+   sub-heavy effects, as deep as it takes to reach 8 LU (at most -12 dB), before the loudness
+   normalisation, which then lifts the whole mix back to the target with the mids where a phone hears them.
+3. The voice is never touched. The step is deterministic; the render's audio cache keys on the setting and
+   on the audio code.
+
+On the showreel's own mix: -27.6 to -22.4 LUFS above 300 Hz (13.6 to 8.3 LU under, the shelf at its -12 dB
+limit), -33.9 to -27.5 above 1 kHz. On two posted voice-led films (4.7 and 5.8 LU under) only the 40 Hz
+high-pass acts: the speaker numbers move by 0.01 LU and the difference is 30-33 LU under the mix.
+
+A bed with nothing above 400 Hz cannot be fixed by the shelf alone: pick one with more in the mids, or raise
+its mid parts. `mix.report.json` `speaker` has the numbers (`gap_300_lu_before`, `shelf_db`, `capped`,
+`above_300_lufs`, `gap_300_lu`, `above_1k_lufs`), and each effect its `speaker_gap_lu` (its loudest moment
+in full over its loudest above 300 Hz). An effect over 15 LU (`boom`, `impact`, `sub-drop`, `punch`,
+`reverse-hit`, `heartbeat`: 17-30 LU) is sub-heavy; one that lands with no mid sound on its hit (another
+effect within 60 ms, a `layer`, or the crash of a composed bed) is listed as `sub_alone` with a note:
+layer a mid transient on the same hit (`static-burst`, `glitch` or `tick` at -8 to -12 dB: 0-3 LU, so a phone plays
+them; not a pitched hit such as `metal-hit`, which reads as a bell, nor `thock`, 9-10 LU). A riser
+ends on the hit, so it does not count.
+
 `mix.report.json` contains:
 - integrated LUFS, true peak and LRA, plus the pre-master levels
+- `speaker`: the speaker-safe step and how loud the mix is above 300 Hz and 1 kHz (above)
 - per section: LUFS, RMS and the RMS of each bus
 - `voice_to_music_db`: how far the voice sits above the music and ambience while speaking (aim for 10–20)
 - per track: gain, level reference and alignment, plus duck and carve statistics; for a music bed
@@ -299,7 +341,7 @@ Smart Content ID claims YouTube videos whose description lacks the credit. By ha
 
 ## 6. Analysis and delivery
 
-- **`audio beats file`** writes `bpm`, `bpm_confidence`, `beats`, `downbeats`, `onsets` (each tagged
+- **`showtime audio beats file`** writes `bpm`, `bpm_confidence`, `beats`, `downbeats`, `onsets` (each tagged
   kick/snare/hat), an `energy` curve (0.5 s), `sections` (energy phases VOID/LOW/MEDIUM/HIGH),
   `moments` (SURGE/DROP) and `key`.
   - **Trust `rhythmic`/`pacing`:** with `beat_cut`, hard cuts may sit on beats. With `phrase_flow`
@@ -308,7 +350,7 @@ Smart Content ID claims YouTube videos whose description lacks the credit. By ha
   - The tempo usually matches metadata within 1–3 %. On-beat vs off-beat phase can still be wrong
     on dense dance music with offbeat bass, so check the first downbeats on a waveform view when a
     hard sync matters.
-- **`audio meter file [--windows 1] [--ffmpeg]`** gives integrated, short-term max, momentary max,
+- **`showtime audio meter file [--windows 1] [--ffmpeg]`** gives integrated, short-term max, momentary max,
   LRA, true peak (8x oversampled), sample peak, RMS, clipped runs and DC. `--ffmpeg` cross-checks
   with ffmpeg's ebur128.
 - **The hearing checks of `showtime qa`** run on the delivered file. Render keeps the mix's narration stem
@@ -317,10 +359,11 @@ Smart Content ID claims YouTube videos whose description lacks the credit. By ha
   and the AAC encode. WARNs: `voice_masked` (a line under 8 dB over the music: deepen the duck, `carve`, or
   `gain_points` under that line), `quiet_stretch` (near silence over 2 s mid-video: carry it with the bed),
   `level_jump` (over 6 LU at a cut: even it with `section_gain`/`gain_points`, or make it a designed drop on a
-  section change), `abrupt_end` (the bed still playing on the last frame: `fade_out` or end on `end_hit`).
-  Thresholds: `runtime/thresholds.json` `hearing`. `review-pack` writes all of it for the critic as `audio.txt`
+  section change), `abrupt_end` (the bed still playing on the last frame: `fade_out` or end on `end_hit`),
+  `speaker_loudness` (the mix above 300 Hz over 10 LU under the full mix, FAIL over 18: see "Heard on a
+  phone" in §5; an INFO when the mix turned speaker-safe off on purpose). Thresholds: `runtime/thresholds.json` `hearing`. `review-pack` writes all of it for the critic as `audio.txt`
   and `hearing.png`, with each effect's timing against its cut or CUE (`review.md` §1).
-- **`audio master in -o out [--target youtube|podcast|broadcast|...] [--preset mix|music|voice|none]`**
+- **`showtime audio master in -o out [--target youtube|podcast|broadcast|...] [--preset mix|music|voice|none]`**
   normalises to within 0.05 LU with true peak at or below the ceiling. Master to WAV and encode once
   at the end: AAC and MP3 add up to about 0.5 dB of overshoot.
 

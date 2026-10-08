@@ -5,7 +5,7 @@
 // every ffmpeg on PATH that answers `-version`.
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { showtimeHome } from './deps.mjs';
 import { IS_WIN, runProc, venvPython, pyEnv, UserError } from './cli.mjs';
 
@@ -98,6 +98,45 @@ export async function ffmpeg(args, { timeout = 0, loglevel = 'error', onStderr, 
   return r;
 }
 
+/**
+ * ffmpeg reading its input from stdin (`-i -` in args): -> {stdin, done: Promise<{code, stderr}>, kill()}.
+ * The command and its stderr go to the log file like ffmpeg()'s. kill() ends it (SIGKILL if it hangs).
+ */
+export function ffmpegPipe(args, { loglevel = 'error', onStderr } = {}) {
+  const { ffmpeg: bin } = resolveFF();
+  const full = ['-hide_banner', '-nostdin', '-loglevel', loglevel, '-y', ...args.map(String)];
+  // -nostdin only stops ffmpeg reading keys from the terminal: `-i -` still reads the pipe
+  const child = spawn(bin, full, { windowsHide: true, stdio: ['pipe', 'ignore', 'pipe'] });
+  let err = '';
+  child.stderr.on('data', (d) => { err += d; if (err.length > 4e6) err = err.slice(-2e6); if (onStderr) onStderr(String(d)); });
+  child.stdin.on('error', () => { /* a dead encoder: done says why */ });
+  const done = new Promise((resolve) => {
+    let settled = false;
+    const end = (code, extra = '') => {
+      if (settled) return;
+      settled = true;
+      if (LOG_FILE) {
+        const q = (x) => (/[\s"'$;&|<>()]/.test(x) ? JSON.stringify(x) : x);
+        const lines = (err + extra).split('\n').filter((l) => l && !/^(frame|fps|stream_\d|bitrate|total_size|out_time|dup_frames|drop_frames|speed|progress)=/.test(l));
+        logLine(`$ ffmpeg ${full.map(q).join(' ')}  (frames on stdin)\n  exit ${code}${lines.length ? '\n' + lines.slice(-60).map((l) => '  ' + l).join('\n') : ''}`);
+      }
+      resolve({ code, stderr: err + extra });
+    };
+    child.on('error', (e) => end(127, String(e.message || e)));
+    child.on('close', (code) => end(code === null ? 128 : code));
+  });
+  return {
+    stdin: child.stdin,
+    done,
+    kill() {
+      try { child.stdin.destroy(); } catch { /* gone */ }
+      try { child.kill(); } catch { /* gone */ }
+      const k = setTimeout(() => { try { child.kill('SIGKILL'); } catch { /* gone */ } }, 3000);
+      if (k.unref) k.unref();
+    },
+  };
+}
+
 /** ffprobe JSON (format + streams), falling back to `ffmpeg -i` parsing without ffprobe. */
 export async function probe(file) {
   const ff = resolveFF();
@@ -166,6 +205,13 @@ export function writeWavFloat(file, channels, sampleRate) {
   fs.writeFileSync(file, Buffer.concat([h, data]));
 }
 
+/** Stills from a video (the same as ff.py STILL_FLAGS and JPEG_VF). The conversion out of 4:2:0 runs with exact
+ *  rounding and full chroma interpolation (ffmpeg's default drew a saturated gradient 1-2 levels darker), and a
+ *  JPEG gets BT.601 full range, what every viewer decodes: a BT.709 tv-range video frame kept its own matrix
+ *  under JPEG's BT.601 tag (saturated colours ~6 levels darker than the video). */
+export const STILL_VF = 'scale=flags=accurate_rnd+full_chroma_int';
+export const JPEG_VF = `${STILL_VF}:out_color_matrix=bt601:out_range=pc,format=yuvj420p`;
+
 /** "30" or "30000/1001" for ffmpeg -r / -framerate. */
 export function fpsArg(fps) {
   if (Number.isInteger(fps)) return String(fps);
@@ -176,16 +222,43 @@ export function fpsArg(fps) {
   return String(fps);
 }
 
-/** EBU R128 integrated loudness, loudness range and true peak. -> {I, LRA, TP} (I = null when silent) */
-export async function ebur128(file) {
-  const r = await ffmpeg(['-i', file, '-vn', '-af', 'ebur128=peak=true:framelog=quiet', '-f', 'null', '-'], { loglevel: 'info', allowFail: true });
-  const t = String(r.stderr || '');
-  const tail = t.slice(t.lastIndexOf('Summary:'));
+// `framelog=quiet` keeps the per-frame lines out of the log, but builds before it existed (ffmpeg 4.x) reject the
+// option; `metadata=1` moves those lines to the verbose level instead, which older builds accept. A rejected option
+// still prints a Summary of zeros, which was read as 0 LUFS.
+const EBUR128_FILTERS = ['ebur128=peak=true:framelog=quiet', 'ebur128=peak=true:metadata=1'];
+let ebur128Pick = 0;
+
+/** Parse ebur128's Summary block. -> {I, LRA, TP} or null when there is none. */
+export function parseEbur128(stderr) {
+  const t = String(stderr || '');
+  const at = t.lastIndexOf('Summary:');
+  if (at < 0) return null;
+  const tail = t.slice(at);
   const num = (re) => { const m = re.exec(tail); return m ? Number(m[1]) : null; };
   let I = num(/\bI:\s*(-?[\d.]+|-inf)\s*LUFS/);
   if (I === null || !isFinite(I) || I < -70) I = null;
   const TP = num(/True peak:\s*[\r\n]+\s*Peak:\s*(-?[\d.]+)/);
   return { I, LRA: num(/LRA:\s*(-?[\d.]+)\s*LU\b/), TP: TP === null || !isFinite(TP) ? -120 : TP };
+}
+
+/**
+ * EBU R128 integrated loudness, loudness range and true peak. -> {I, LRA, TP} (I = null when silent).
+ * A reading that failed is never a number: -> {I: null, LRA: null, TP: null, error} (the callers warn).
+ */
+export async function ebur128(file) {
+  let last = null;
+  for (let k = ebur128Pick; k < EBUR128_FILTERS.length; k++) {
+    const r = await ffmpeg(['-i', file, '-vn', '-af', EBUR128_FILTERS[k], '-f', 'null', '-'], { loglevel: 'info', allowFail: true });
+    // a filter that failed to start still prints a Summary, of zeros ("I: 0.0 LUFS"): only a run that ended well counts
+    const m = r.code === 0 ? parseEbur128(r.stderr) : null;
+    if (m) { ebur128Pick = k; return m; }
+    last = r;
+    // only an option this build does not know moves on to the next form; a bad input fails the same way in both
+    if (!/framelog|Unable to parse option value|Error (initializing|applying option)|Option not found/i.test(String(r.stderr || ''))) break;
+  }
+  const lines = String((last && last.stderr) || '').split('\n').map((l) => l.trim()).filter(Boolean);
+  const why = (lines.filter((l) => /error|invalid|unable|not found|failed/i.test(l)).pop() || lines.pop() || `exit ${last ? last.code : '?'}`).slice(0, 200);
+  return { I: null, LRA: null, TP: null, error: `the loudness meter (ffmpeg ebur128) failed on ${path.basename(String(file))}: ${why}` };
 }
 
 let encCache = null;
@@ -208,7 +281,7 @@ export async function grayThumb(file, { t = null, w = 64, h = 36 } = {}) {
   const tmp = path.join(path.dirname(String(file)), `.gray-${process.pid}-${Math.random().toString(36).slice(2)}.raw`);
   try {
     await ffmpeg([...(t !== null ? ['-ss', String(t)] : []), '-i', String(file), '-frames:v', '1',
-      '-vf', `scale=${w}:${h}:flags=area,format=gray`, '-f', 'rawvideo', tmp]);
+      '-vf', `scale=${w}:${h}:flags=area,format=gray`, '-f', 'rawvideo', tmp], { timeout: 60000 });   // one tiny frame
     return fs.readFileSync(tmp);
   } finally { fs.rmSync(tmp, { force: true }); }
 }

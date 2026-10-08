@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import math
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Sequence
 
 import numpy as np
 from scipy import signal
@@ -83,6 +83,43 @@ def integrated(x: np.ndarray, fs: int = SR) -> float:
     """Integrated loudness in LUFS (-inf for silence)."""
     z = k_weight(x, fs)
     return integrated_from_power(_block_power(z, fs, 0.4, 0.1))
+
+
+def _highpass2(x: np.ndarray, fc: float, fs: int) -> np.ndarray:
+    """Two 2-pole RBJ high-passes (Q 0.707) in a row: ffmpeg's `highpass=f=fc,highpass=f=fc`."""
+    w0 = 2 * math.pi * fc / fs
+    cw, alpha = math.cos(w0), math.sin(w0) / (2 * 0.707)
+    b = np.array([(1 + cw) / 2, -(1 + cw), (1 + cw) / 2]) / (1 + alpha)
+    a = np.array([1 + alpha, -2 * cw, 1 - alpha]) / (1 + alpha)
+    sos = np.vstack([np.concatenate([b, a])] * 2)
+    return signal.sosfilt(sos, np.asarray(x, dtype=np.float64), axis=0)
+
+
+SPEAKER_BANDS = {"300": 300.0, "1k": 1000.0}
+# the speaker gap (full mix minus the mix above 300 Hz, both integrated): measured on the posted films (2026-10-07)
+# 0.7-8.2 LU, a music-led showreel whose energy was kick and sub 13.6 LU (it played ~9 dB quieter on a phone
+# than the voice-led films at the same -14 LUFS). qa warns over SPEAKER_GAP_LU, fails over SPEAKER_GAP_FAIL_LU
+# (runtime/thresholds.json "hearing" can move qa's); the mixer's speaker-safe step brings a mix over
+# SPEAKER_GAP_LU down to SPEAKER_TARGET_LU.
+SPEAKER_GAP_LU = 10.0
+SPEAKER_GAP_FAIL_LU = 18.0
+SPEAKER_TARGET_LU = 8.0
+
+
+def speaker_loudness(x: np.ndarray, fs: int = SR, integrated_lufs: Optional[float] = None,
+                     bands: Sequence[str] = ("300", "1k")) -> Dict[str, Optional[float]]:
+    """How loud the mix is on a phone or laptop speaker, which plays little under ~300 Hz: the integrated
+    loudness (gated like LUFS) of the mix high-passed at 300 Hz and at 1 kHz, next to the full mix's, and the
+    gaps. The same numbers as `ffmpeg -af "highpass=f=300,highpass=f=300,ebur128"` (within ~0.1 LU).
+    {integrated_lufs, above_300_lufs, gap_300_lu, above_1k_lufs, gap_1k_lu} (None for silence)."""
+    x = np.asarray(x)
+    I = integrated_lufs if integrated_lufs is not None else (integrated(x, fs) if x.size else float("-inf"))
+    out: Dict[str, Optional[float]] = {"integrated_lufs": _r(I)}
+    for key in bands:
+        v = integrated(_highpass2(x, SPEAKER_BANDS[key], fs), fs) if x.size else float("-inf")
+        out["above_%s_lufs" % key] = _r(v)
+        out["gap_%s_lu" % key] = _r(I - v) if (math.isfinite(v) and I is not None and math.isfinite(I)) else None
+    return out
 
 
 def curves(x: np.ndarray, fs: int = SR, hop: float = 0.1) -> Dict[str, np.ndarray]:
@@ -204,6 +241,8 @@ def ffmpeg_ebur128(path) -> Dict[str, Optional[float]]:
     cp = ff.run_ffmpeg(["-nostats", "-i", str(path), "-vn", "-af", "ebur128=peak=true", "-f", "null", "-"],
                        loglevel="info", overwrite=False, check=False)
     e = cp.stderr or ""
+    if cp.returncode != 0:      # a failed run still prints a Summary of zeros (I: 0.0 LUFS)
+        return {"integrated_lufs": None, "lra": None, "true_peak_dbtp": None}
     summary = e[e.rfind("Summary:"):] if "Summary:" in e else e
 
     def g(pat: str) -> Optional[float]:

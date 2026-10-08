@@ -6,7 +6,8 @@
 //     frames/           the frame of each note with its spot or box marked (+ a crop of a box), for the agent
 //     .state/           never served: session (port + key), server-info, server-stopped, log, read marks, lock
 //
-// A note: {id: "n3", t (s), region: {x, y, w, h} | {x, y} | null (0-1 frame units), text,
+// A note: {id: "n3", t (s), to (s, only on a note about a stretch of time: from t to `to`),
+//   region: {x, y, w, h} | {x, y} | null (0-1 frame units), text,
 //   author: "person" | "agent", status: "open" | "done" | "wontfix", reply, replied, created, updated, video}
 // `updated` moves only on a change by the person (or an agent edit); a reply sets `reply`/`replied`/status
 // and leaves it alone, so `notes --new` shows the person's changes and never the agent's own answers.
@@ -186,7 +187,7 @@ export async function mutate(dir, fn, { job = null, video = null } = {}) {
   fs.mkdirSync(L.dir, { recursive: true });
   return withLock(L, async () => {
     const d = isFile(L.file) ? load(dir) : emptyNotes(job, video);
-    if (job && !d.job) d.job = job;
+    if (job) d.job = job;   // the job folder's name now: a renamed job keeps its notes (catch-up matches it)
     if (video) d.video = video;
     const out = await fn(d);
     d.updated = new Date().toISOString();
@@ -211,6 +212,16 @@ export function cleanTime(v, duration) {
   if (!Number.isFinite(t) || t < 0) throw new NotesError('t must be a time in seconds (0 or more)');
   if (duration > 0 && t > duration + 0.5) throw new NotesError(`t ${t} is past the end of the video (${duration.toFixed(2)} s)`);
   return Math.round(Math.min(t, duration > 0 ? duration : t) * 1000) / 1000;
+}
+export const MIN_STRETCH = 0.1;
+/** The end of a stretch (a note from t to `to`): after t by MIN_STRETCH s or more, inside the video. */
+export function cleanTo(v, t, duration) {
+  const to = Number(v);
+  if (!Number.isFinite(to) || to < 0) throw new NotesError('to must be a time in seconds (the end of the stretch)');
+  if (duration > 0 && to > duration + 0.5) throw new NotesError(`to ${to} is past the end of the video (${duration.toFixed(2)} s)`);
+  const end = Math.round(Math.min(to, duration > 0 ? duration : to) * 1000) / 1000;
+  if (!(end - t >= MIN_STRETCH - 1e-9)) throw new NotesError(`a stretch ends after it starts (from ${t} s, to ${end} s; at least ${MIN_STRETCH} s)`);
+  return end;
 }
 /** {x, y} (a spot) or {x, y, w, h} (a box), all in 0-1 frame units; null for the whole frame. */
 export function cleanRegion(v) {
@@ -252,7 +263,9 @@ export async function apply(dir, input, { by = 'person', duration = 0, job = nul
     if (op === 'add') {
       if (d.notes.length >= MAX_NOTES) throw new NotesError(`too many notes on one video (${MAX_NOTES})`, 429);
       const author = by === 'person' ? 'person' : (AUTHORS.includes(input.author) ? input.author : 'agent');
-      note = { id: `n${d.next}`, t: cleanTime(input.t, duration), region: cleanRegion(input.region), text: cleanText(input.text),
+      const t = cleanTime(input.t, duration);
+      note = { id: `n${d.next}`, t, ...(input.to !== undefined && input.to !== null ? { to: cleanTo(input.to, t, duration) } : {}),
+        region: cleanRegion(input.region), text: cleanText(input.text),
         author, status: 'open', reply: '', replied: null, created: now, updated: now, video: video ? path.basename(video) : (d.video || null) };
       d.next += 1;
       d.notes.push(note);
@@ -262,6 +275,9 @@ export async function apply(dir, input, { by = 'person', duration = 0, job = nul
       if (input.text !== undefined) note.text = cleanText(input.text);
       if (input.region !== undefined) note.region = cleanRegion(input.region);
       if (input.t !== undefined) note.t = cleanTime(input.t, duration);
+      if (input.to === null) delete note.to;   // a stretch back to one frame
+      else if (input.to !== undefined) note.to = cleanTo(input.to, note.t, duration);
+      else if (note.to !== undefined && input.t !== undefined) cleanTo(note.to, note.t, duration);   // a start moved past the end
       if (by === 'person' && note.status !== 'open') note.status = 'open';   // an edited note needs another look
       note.updated = now;
     } else if (op === 'delete') {
@@ -310,6 +326,10 @@ export function unread(dir, d = load(dir)) {
 export function fmtT(t) {
   const m = Math.floor(t / 60), s = t - m * 60;
   return `${m}:${s < 10 ? '0' : ''}${s.toFixed(2)}`;
+}
+/** "at 0:12.40" for a frame, "from 0:12.00 to 0:20.00 (8.0 s)" for a stretch. */
+export function spanText(n) {
+  return n.to !== undefined && n.to !== null ? `from ${fmtT(n.t)} to ${fmtT(n.to)} (${(n.to - n.t).toFixed(1)} s)` : `at ${fmtT(n.t)}`;
 }
 export function regionText(r) {
   if (!r) return 'whole frame';

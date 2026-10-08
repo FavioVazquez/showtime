@@ -159,7 +159,8 @@ export async function simpleMix(spec, dir, duration, out, addWarn) {
  * Master a WAV to a loudness target: exact linear gain when the peaks allow it, otherwise gain into an
  * oversampled limiter (at most `maxLimitDb` of limiting, up to 3 passes). The audio module's
  * `showtime audio master` is used instead when it is installed.
- * -> { mode: 'linear'|'limited'|'audio-module'|'silent', lufs, true_peak, gain_db, reached }
+ * -> { mode: 'linear'|'limited'|'audio-module'|'silent'|'unmeasured', lufs, true_peak, gain_db, reached, error? }
+ * ('unmeasured': the meter failed, the sound is kept as mixed and `error` says why)
  */
 export async function master(inWav, outWav, { target = -14, tp = -1, maxLimitDb = 6, useModule = true } = {}) {
   const { ebur128: meter } = await import('./ff.mjs');
@@ -167,10 +168,13 @@ export async function master(inWav, outWav, { target = -14, tp = -1, maxLimitDb 
     const r = await runPyCli(['audio', 'master', inWav, '-o', outWav, '--lufs', String(target), '--tp', String(tp)]);
     if (r.code === 0 && fs.existsSync(outWav)) {
       const m = await meter(outWav);
-      return { mode: 'audio-module', lufs: m.I, true_peak: m.TP, gain_db: null, reached: m.I !== null && Math.abs(m.I - target) <= 1 };
+      return { mode: 'audio-module', lufs: m.I, true_peak: m.TP, gain_db: null, reached: m.I !== null && Math.abs(m.I - target) <= 1,
+        ...(m.error ? { error: m.error } : {}) };
     }
   }
   const m0 = await meter(inWav);
+  // a reading that failed is not silence and not 0 LUFS: keep the sound as mixed and say why
+  if (m0.error) { fs.copyFileSync(inWav, outWav); return { mode: 'unmeasured', lufs: null, true_peak: null, gain_db: 0, reached: null, error: m0.error }; }
   if (m0.I === null) { fs.copyFileSync(inWav, outWav); return { mode: 'silent', lufs: null, true_peak: m0.TP, gain_db: 0, reached: false }; }
   const want = target - m0.I;
   const headroom = tp - m0.TP;

@@ -348,7 +348,7 @@ def record_pick(sig_id: str, project: Path) -> None:
     rows = [x for x in (d or {}).get("picks", []) if isinstance(x, dict)] if isinstance(d, dict) else []
     rows = [x for x in rows if x.get("project") != str(project)]
     rows.append({"id": sig_id, "project": str(project), "at": time.strftime("%Y-%m-%dT%H:%M:%S")})
-    write_json(_picks_file(), {"about": "look signatures picked by `showtime new` on this machine (local only)",
+    write_json(_picks_file(), {"about": "look signatures picked by `showtime new` (and `edit render` for cards) on this machine (local only)",
                                "picks": rows[-MAX_PICKS:]})
 
 

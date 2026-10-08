@@ -439,6 +439,9 @@ def write_json(path: PathLike, data: Any, indent: int = 2) -> Path:
     return p
 
 
+_WINDOWS = os.name == "nt"
+
+
 def part_path(path: PathLike) -> Path:
     """A temporary sibling for writing `path` and then os.replace-ing it into place.
 
@@ -447,7 +450,11 @@ def part_path(path: PathLike) -> Path:
     kept last so tools that infer the format from it (ffmpeg, soundfile) still work."""
     import uuid
     p = Path(path)
-    return p.with_name(".%s.%d-%s.part%s" % (p.stem, os.getpid(), uuid.uuid4().hex[:8], p.suffix))
+    tmp = p.with_name(".%s.%d-%s.part%s" % (p.stem, os.getpid(), uuid.uuid4().hex[:8], p.suffix))
+    if _WINDOWS and len(str(tmp)) >= 255:
+        # Windows with long paths off (LongPathsEnabled=0) cannot open a path of 260 characters or more
+        tmp = p.with_name(".%d-%s.part%s" % (os.getpid(), uuid.uuid4().hex[:8], p.suffix))
+    return tmp
 
 
 @contextlib.contextmanager
@@ -537,14 +544,21 @@ def output_dir(name: str, base: Optional[PathLike] = None, create: bool = True) 
     if root.name != "showtime-out":
         root = root / "showtime-out"
     stem = "%s-%s" % (slugify(name), timestamp())
-    d = root / stem
-    n = 2
-    while d.exists():
-        d = root / ("%s-%d" % (stem, n))
-        n += 1
     if create:
-        d.mkdir(parents=True, exist_ok=False)
-    return d
+        root.mkdir(parents=True, exist_ok=True)
+    n = 1
+    while True:
+        d = root / (stem if n == 1 else "%s-%d" % (stem, n))
+        n += 1
+        if not create:
+            if not d.exists():
+                return d
+            continue
+        try:
+            d.mkdir()          # claimed by an exclusive mkdir: two runs in the same second never share a folder
+            return d
+        except FileExistsError:
+            continue
 
 
 # --------------------------------------------------------------------------

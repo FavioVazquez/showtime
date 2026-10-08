@@ -32,11 +32,15 @@ replaces `TASK.md` for you: it names the video, the pack's images and what to an
    punctuation. Measure offsets in pixels on the crop and quote them in the finding.
 4. **Hearing pass.** You cannot listen, so `audio.txt` measures what an ear would catch and `hearing.png`
    plots it: each voice line's level over the music and its words per minute, pauses and near silence, the
-   level on both sides of every cut, each effect's timing and level, how the music ends, the peaks. Go
+   level on both sides of every cut, each effect's timing and level, how the music ends, the peaks, how
+   loud it is heard on a phone (the mix above 300 Hz: `on a phone speaker: -27.6 LUFS, 13.6 LU under the
+   mix` is a video most viewers hear far too quiet), and the read-back (each name or number the voice-over
+   was heard saying differently from the script). Go
    through the checks `CRITIC.md` lists and write one line per check under `HEARING` (`- voice over music:
    problem -- line 4 sits 5 dB over the bed`). Judge only what the numbers and `transcript.txt` support and
    quote them; every problem is also a finding with its time and `hearing.png`. What numbers cannot show (how
-   the voice sounds, a mispronounced word, harsh s sounds, whether the music fits) goes under `DECLINED TO
+   the voice sounds, a mispronounced word the read-back does not list, harsh s sounds, whether the music fits)
+   goes under `DECLINED TO
    JUDGE`, never a guess.
 5. Answer the eight questions in `CRITIC.md` (hook, clarity, readability, craft, distinctness, poster,
    honesty, story logic) from what you see, not from what the brief says was intended. A launch film's
@@ -70,6 +74,11 @@ replaces `TASK.md` for you: it names the video, the pack's images and what to an
 
 Done when: `FINDINGS.md` exists in the round folder, it has a `FIRST VIEWER` line per part and a `HEARING` line
 per check, and every finding has a timestamp and a frame path (or `hearing.png`).
+
+If writing `FINDINGS.md` fails (some hosts deny Write to sub-agents), do not shorten anything: put the whole
+answer, exactly as the file would hold it, in your last message inside one ``` block, after the return contract
+(the 20-line limit does not apply to that block), with `STATUS: DONE_WITH_NOTES` and the note "FINDINGS.md not
+written (Write denied): the answer is below". The director saves it with `showtime review-findings`.
 
 ## Pairwise rounds
 

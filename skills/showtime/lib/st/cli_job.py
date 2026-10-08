@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import List
@@ -14,7 +15,8 @@ COMMANDS = {
     "review-pack": "Build a critic packet for a render: contact sheets, key frames, loudness graph, CRITIC.md",
     "review-verdict": "Decide a pairwise review round: the new render wins only if preferred in both orders",
     "review-respond": "Mark critic findings fixed or waived (with a reason); without flags, list them and what is open",
-    "job": "Job ledger: showtime job init|note|discard|list|show (job.json + SHOWTIME.md)",
+    "review-findings": "Save a critic's answer (text on stdin or --file) as the round's FINDINGS.md, after checking its shape",
+    "job": "Job ledger: showtime job init|note|discard|list|show|catchup (job.json + SHOWTIME.md)",
     "status": "Where the latest (or given) job stands, in three lines",
     "clean": "Remove intermediates showtime created in a job or project (frames, scratch); asks first",
     "brand": "Brand kit: showtime brand capture|init|apply|show|css|skip (brand.json + brand.md)",
@@ -196,6 +198,33 @@ def register(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--json", action="store_true", help="print the findings and their state as JSON")
     p.set_defaults(func=cmd_review_respond)
 
+    p = sub.add_parser("review-findings", help=COMMANDS["review-findings"], formatter_class=RAW, description=(
+        "A critic sub-agent that cannot write files (the host denies Write to sub-agents) returns its answer\n"
+        "in its reply. Pipe that reply here and it becomes the round's FINDINGS.md, as if the critic had\n"
+        "written it: never retype or summarise it. A reply that wraps the answer in a ``` block, or opens\n"
+        "with a sentence, is cut to the answer (from its SELF-REVIEW, VERDICT or PREFERENCE line).\n\n"
+        "The shape is checked first, against CRITIC.md's format; nothing is written when the answer has\n"
+        "no readable VERDICT line (pairwise: PREFERENCE), no answered WOULD I POST line (pairwise: one per\n"
+        "video), or no BLOCKERS, SHOULD-FIX or POLISH section (`- none` when empty): ask the critic to\n"
+        "send it again in the format. A finding without a timestamp, or a pairwise finding that names no\n"
+        "video, is saved with a warning. An answered round is never overwritten without --replace.\n\n"
+        "The round: --round N, else the newest round of the job's review folder (<job>/review/round-N).\n"
+        "A pairwise round (review-pack --against) needs --order 1 or 2: the brief the critic answered."),
+        epilog=("examples:\n"
+                "  showtime review-findings my-job < critic-reply.txt\n"
+                "  showtime review-findings my-job --round 2 --file critic-reply.txt\n"
+                "  showtime review-findings showtime-out/my-job/review/round-2 --order 1 < order-1-reply.txt\n"
+                "  showtime review-findings my-job --check < critic-reply.txt      # check the shape, write nothing"))
+    p.add_argument("target", nargs="?", help="job folder or name, its review folder, or a round folder (default: the "
+                                             "current or newest job)")
+    p.add_argument("--round", type=int, help="round number (default: the newest round)")
+    p.add_argument("--order", type=int, choices=(1, 2), help="pairwise round: which brief the critic answered")
+    p.add_argument("--file", "-f", metavar="FILE", help="read the answer from FILE instead of stdin")
+    p.add_argument("--replace", action="store_true", help="overwrite a FINDINGS.md that is already saved")
+    p.add_argument("--check", action="store_true", help="check the shape only; write nothing")
+    p.add_argument("--json", action="store_true", help="print the result as JSON")
+    p.set_defaults(func=cmd_review_findings)
+
     # ------------------------------------------------------------------ job
     j = sub.add_parser("job", help=COMMANDS["job"], formatter_class=RAW, description=(
         "One folder per job: showtime-out/<slug>-<timestamp>/ with job.json (machine ledger) and\n"
@@ -294,12 +323,30 @@ def register(sub: argparse._SubParsersAction) -> None:
     q.add_argument("job", nargs="?", help="job folder or slug (default: latest)")
     q.add_argument("--json", action="store_true", help="print job.json instead")
     q.set_defaults(func=cmd_job_show)
+    q = js.add_parser("catchup", help="what changed since the agent last looked (showtime status shows it too)",
+                      formatter_class=RAW, description=(
+                          "Files edited by hand since the agent's last step (a content hash, so a touch is not an edit),\n"
+                          "the person's unread notes on the video, new studio board events and open critic findings.\n"
+                          "Without --footer it prints them and marks them seen, as `showtime status <job>` does.\n"
+                          "--footer is the one line a job-scoped command ends with (render, check, snap and look call\n"
+                          "it); it marks nothing seen. A file changed just before the command is taken as the\n"
+                          "agent's own (SHOWTIME_AWAY_MIN, default 10); SHOWTIME_CATCHUP=0 turns this off."),
+                      epilog="examples:\n  showtime job catchup launch-teaser\n"
+                             "  showtime job catchup launch-teaser --footer --json")
+    q.add_argument("job", nargs="?", help="job folder or slug (default: latest)")
+    q.add_argument("--footer", action="store_true", help="only the one line (or nothing); marks nothing seen")
+    q.add_argument("--started", type=float, metavar="EPOCH", help="with --footer: when the calling command started")
+    q.add_argument("--json", action="store_true")
+    q.set_defaults(func=cmd_job_catchup)
     j.set_defaults(func=lambda a: _group_help(j))
 
     # ------------------------------------------------------------------ status
     p = sub.add_parser("status", help=COMMANDS["status"], formatter_class=RAW, description=(
         "Three lines: which job and stage, what is verified/assumed/open, and the next command.\n"
-        "Without an argument: the newest job under ./showtime-out (or $SHOWTIME_OUT).\n\n"
+        "Without an argument: the newest job under ./showtime-out (or $SHOWTIME_OUT).\n"
+        "Then, when there is any, a \"since you last looked\" block: project files edited by hand since the\n"
+        "agent's last step, the person's unread notes on the video, new studio board events, open critic\n"
+        "findings. They are marked seen once shown (--json: \"since_last_looked\"). Run it first on resuming.\n\n"
         "Background runs: any command takes --background (it starts detached and prints a run id at once);\n"
         "`showtime status <run-id>` then says whether it still runs, its latest progress line, and at the\n"
         "end its exit code and last lines of output. --wait S watches it for up to S seconds (a line every\n"
@@ -323,7 +370,8 @@ def register(sub: argparse._SubParsersAction) -> None:
         "             project (manim.json, e.g. <job>/manim/) its build/ scene cache and out/*-draft* renders\n"
         "  --all      also review packs and logs\n"
         "Never touched: final/preview videos, poster, exports/, credits, share text, job.json, render.json,\n"
-        "SHOWTIME.md, studio/, and any file showtime did not create."),
+        "SHOWTIME.md, studio/, the person's notes on the video (review/notes/, also with --all), and any\n"
+        "file showtime did not create."),
         epilog="examples:\n  showtime clean --dry-run\n  showtime clean showtime-out/launch-20260926-101500 --frames\n  showtime clean my-video --yes")
     p.add_argument("target", nargs="?", help="job folder, slug, project or Manim project folder (default: latest job)")
     g = p.add_mutually_exclusive_group()
@@ -408,11 +456,13 @@ def cmd_qa(args: argparse.Namespace) -> int:
     review = _review_of(_job, video)   # the job's critic round (quality mode); never changes the video's verdict
     if review is not None:
         rep["review"] = review
+    since = _since(_job, rep if args.json else None)
     if args.json:
         print_json(rep)
     else:
         print(qa.format_text(rep, verbose=args.verbose, brief=brief))
         _print_review(review)
+        _since_line(since)
     if rep["verdict"] == "FAIL" or (args.strict and rep["verdict"] == "WARN"):
         return 1
     return 0
@@ -447,6 +497,30 @@ def _print_review(review, stream=None) -> None:
         out.write("review: %s%s\n" % (review["message"], ("; next: " + review["next"]) if review.get("next") else ""))
 
 
+def _since(job, out=None):
+    """A job-scoped command's "since you last looked" summary (st.job.catchup), or None: nothing unseen, no
+    job, or a command another showtime command ran (SHOWTIME_INTERNAL). With `out` (a --json result) it goes
+    in as the field "since_last_looked"; otherwise print it last with _since_line."""
+    s = None
+    if job is not None and os.environ.get("SHOWTIME_INTERNAL") != "1":
+        from .job import catchup
+        try:
+            started = float(os.environ.get("SHOWTIME_CMD_STARTED") or 0) or None
+        except ValueError:
+            started = None
+        s = catchup.after_command(job, started=started)
+    if out is not None:
+        out["since_last_looked"] = s
+    return s
+
+
+def _since_line(s) -> None:
+    """The one line a job-scoped command ends with (stderr: stdout stays the command's own output)."""
+    if s and s.get("line"):
+        sys.stdout.flush()
+        sys.stderr.write(s["line"] + "\n")
+
+
 def cmd_review_pack(args: argparse.Namespace) -> int:
     from .qa import review
     if args.against:
@@ -454,10 +528,14 @@ def cmd_review_pack(args: argparse.Namespace) -> int:
         m = pairwise.build(args.target, args.against, out=args.out, project=args.project, expect_file=args.expect,
                            platform=args.platform, force_round=args.force_round, every=args.every, quiet=args.json,
                            lufs=args.lufs)
+        since = _since(_pack_job(m), m if args.json else None)
         print_json(m) if args.json else pairwise.print_pack(m)
+        if not args.json:
+            _since_line(since)
         return 0
     m = review.build(args.target, out=args.out, project=args.project, expect_file=args.expect, platform=args.platform,
                      force_round=args.force_round, every=args.every, quiet=args.json, lufs=args.lufs)
+    since = _since(_pack_job(m), m if args.json else None)
     if args.json:
         print_json(m)
         return 0
@@ -477,11 +555,21 @@ def cmd_review_pack(args: argparse.Namespace) -> int:
     for other in m.get("not_in_pack") or []:
         print("  not in this pack: %s  (review it with: showtime review-pack %s)" % (other, other))
     print("  brief     %s" % m["critic"])
-    print("  next: give a fresh sub-agent only the brief's path and ask for FINDINGS.md in that folder. "
+    print("  next: give a fresh sub-agent only the brief's path and ask for FINDINGS.md in that folder (if it cannot "
+          "write files, save its reply: showtime review-findings <job> < reply.txt). "
           "No sub-agent tool? Answer CRITIC.md yourself into FINDINGS.md, say it was a self-review, and ask the "
           "user for a second look before calling it shipped.")
     print(m["dir"])
+    _since_line(since)
     return 0
+
+
+def _pack_job(m):
+    """The job a review pack belongs to (its "job", else the job its folder is in), or None."""
+    from .job import ledger
+    if m.get("job"):
+        return Path(m["job"])
+    return ledger.enclosing_job(m["dir"]) if m.get("dir") else None
 
 
 def cmd_review_verdict(args: argparse.Namespace) -> int:
@@ -528,6 +616,8 @@ def cmd_review_respond(args: argparse.Namespace) -> int:
         for ln in lines:
             log("recorded in %s: %s" % (resp, ln[2:]))
         g = findings.collect(job)
+    from .job import catchup
+    catchup.mark_findings_seen(job)          # listed here: no longer "since you last looked"
     if args.json:
         print_json(g)
         return 0
@@ -548,6 +638,125 @@ def cmd_review_respond(args: argparse.Namespace) -> int:
                                                         findings.how_to(job.name, [f["id"] for f in g["open"]])))
     else:
         print("delivery: clear (%d fixed, %d waived)" % (len(g["fixed"]), len(g["waived"])))
+    return 0
+
+
+def _findings_round(target, rnd):
+    """(job or None, review root, round number, round folder) for review-findings."""
+    import re
+    from .job import ledger
+    t = Path(str(target)).expanduser() if target else None
+    job = None
+    if t is not None and t.is_dir() and re.fullmatch(r"round-\d+", t.name):
+        root = t.resolve().parent
+        rnd = rnd or int(t.name.split("-")[1])
+    elif t is not None and t.is_dir() and any(t.glob("round-*")) and not ledger.is_job(t.resolve()):
+        root = t.resolve()
+    else:
+        job = ledger.resolve(target)
+        root = job / "review"
+    if job is None:
+        job = ledger.enclosing_job(root)
+    rounds = sorted(int(d.name.split("-")[1]) for d in root.glob("round-*")
+                    if d.is_dir() and re.fullmatch(r"round-\d+", d.name)) if root.is_dir() else []
+    if not rounds:
+        raise ShowtimeError("no review round in %s" % root,
+                            hint="build one first: showtime review-pack %s" % (job.name if job else "<job>"))
+    n = rnd or rounds[-1]
+    d = root / ("round-%d" % n)
+    if not d.is_dir():
+        raise ShowtimeError("%s has no round-%d (rounds: %s)" % (root, n, ", ".join(map(str, rounds))))
+    return job, root, n, d
+
+
+def cmd_review_findings(args: argparse.Namespace) -> int:
+    from .job import findings
+    job, root, n, d = _findings_round(args.target, args.round)
+    pairwise = (root / findings.KEYS / ("round-%d.json" % n)).is_file() or (d / "order-1").is_dir()
+    if pairwise and not args.order:
+        raise ShowtimeError("round-%d is a pairwise round: say which brief the critic answered" % n,
+                            hint="--order 1 (order-1/CRITIC.md) or --order 2 (order-2/CRITIC.md)")
+    if args.order and not pairwise:
+        raise ShowtimeError("round-%d is a single round; --order is for pairwise rounds (review-pack --against)" % n)
+    if (d / "INCOMPLETE").exists():
+        raise ShowtimeError("round-%d's pack was not finished (%s), so no critic judged it" % (n, d / "INCOMPLETE"),
+                            hint="run showtime review-pack again, then hand the new brief to a critic")
+    dest = (d / ("order-%d" % args.order) if pairwise else d) / "FINDINGS.md"
+    if args.file:
+        src = Path(args.file).expanduser()
+        if not src.is_file():
+            raise ShowtimeError("no such file: %s" % src)
+        raw = src.read_bytes()
+    else:
+        if is_terminal(sys.stdin):
+            raise ShowtimeError("no answer on stdin",
+                                hint="save the critic's reply and pipe it: showtime review-findings %s < reply.txt "
+                                     "(or --file reply.txt)" % (job.name if job else d))
+        raw = sys.stdin.buffer.read()
+    text, dropped = findings.extract(raw.decode("utf-8-sig", errors="replace"))
+    if not text.strip():
+        raise ShowtimeError("the answer is empty", hint="pass the critic's whole reply")
+    problems, warnings = findings.shape(text, n, args.order if pairwise else None)
+    items = findings.parse(text, "r%d" % n if not pairwise else "r%do%d" % (n, args.order))
+    exists = dest.is_file() and dest.stat().st_size > 0
+    res = {"file": str(dest), "round": n, "order": args.order if pairwise else None, "saved": False,
+           "problems": problems, "warnings": warnings, "dropped_lines": dropped,
+           "findings": [{"id": f["id"], "severity": f["severity"], "text": f["text"]} for f in items]}
+    if problems:
+        if args.json:
+            print_json(res)
+        raise ShowtimeError("the critic's answer is not in CRITIC.md's format, so %s was not written:\n  - %s"
+                            % (dest, "\n  - ".join(problems)),
+                            why="review-pack, review-verdict and the delivery gate read these lines",
+                            hint="ask the critic to send its whole answer again in the format of %s (do not fill "
+                                 "the lines in yourself)" % (dest.parent / "CRITIC.md"))
+    if exists and not args.replace and not args.check:
+        raise ShowtimeError("%s is already saved" % dest,
+                            hint="--replace overwrites it (a new critic answer for the same pack)")
+    if not args.check:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        with open(str(dest), "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(text)
+        res["saved"] = True
+        if job is not None:
+            try:
+                from .job import ledger
+                ledger.note(job, event="critic findings saved: %s" % dest.relative_to(job).as_posix())
+            except Exception:  # noqa: BLE001 - the file is what counts
+                pass
+            from .job import catchup
+            catchup.mark_findings_seen(job)  # printed below: no longer "since you last looked"
+    if pairwise:
+        other = d / ("order-%d" % (3 - args.order)) / "FINDINGS.md"
+        res["next"] = ("showtime review-verdict %s" % d if other.is_file() and other.stat().st_size > 0 else
+                       "the other order still needs its critic: %s" % (other.parent / "CRITIC.md"))
+    else:
+        gating = [f["id"] for f in items if f["severity"] in ("blocker", "should-fix")]
+        jn = job.name if job else "<job>"
+        res["next"] = (findings.how_to(jn, gating) if gating else
+                       "no blockers or should-fix: qa the final, then deliver")
+    if args.json:
+        print_json(res)
+        return 0
+    counts = {s: sum(1 for f in items if f["severity"] == s) for s in ("blocker", "should-fix")}
+    polish = 0
+    sev = None
+    for raw_line in text.splitlines():           # polish never gates, so findings.parse leaves it out
+        h = findings._HEAD.match(raw_line.strip().strip("`").strip())
+        if h and not findings._BULLET.match(raw_line.strip()):
+            sev = h.group(1).upper()
+        elif sev == "POLISH" and findings._BULLET.match(raw_line.strip()) and \
+                not findings._EMPTY.match(findings._BULLET.match(raw_line.strip()).group(1)):
+            polish += 1
+    print("%s %s: %d blocker%s, %d should-fix, %d polish%s" % (
+        "saved" if res["saved"] else "checked (not written)", dest, counts["blocker"],
+        "" if counts["blocker"] == 1 else "s", counts["should-fix"], polish,
+        (" (ids %s)" % ", ".join(f["id"] for f in items)) if items else ""))
+    if dropped:
+        print("  left out %d line%s around the answer (chat before it, or a code fence)" % (dropped, "" if dropped == 1 else "s"))
+    for w in warnings:
+        print("  warning: %s" % w)
+    print("  next: %s" % res["next"])
     return 0
 
 
@@ -625,6 +834,9 @@ def cmd_job_init(args: argparse.Namespace) -> int:
                           request=args.request, review_mode=review)
     if data.get("gitignore_written"):
         log("showtime-out/ is inside a git repo: wrote showtime-out/.gitignore so renders are never committed")
+    long_path = ledger.windows_path_warning(d, data["slug"])   # Windows only; also in the ledger's warnings
+    if long_path:
+        warn(long_path)
     setup = None if args.no_check else _setup_check()
     from . import review_mode as rmode
     from . import showreel
@@ -632,8 +844,11 @@ def cmd_job_init(args: argparse.Namespace) -> int:
     reel = showreel.resolve({}, data)      # a showreel / "go all out" brief: the showreel tone (references/tones.md)
     if args.json:
         out = {"job": str(d), "ledger": str(d / "job.json"), "notes": str(d / "SHOWTIME.md"), "mode": data["mode"],
+               "agent_notes": [str(d / n) for n in ledger.AGENT_FILES if (d / n).is_file()],
                "review_mode": {"mode": rv, "source": rmode.SOURCES.get(rv_src, rv_src), "summary": rmode.SUMMARY[rv]},
                "showreel": reel}
+        if long_path:
+            out["path_warning"] = long_path
         if setup is not None:
             out["setup"] = {"ok": setup.get("ok"), "counts": setup.get("counts"),
                             "problems": [r for r in setup.get("checks") or [] if r.get("status") in ("warn", "fail")]}
@@ -686,6 +901,7 @@ def cmd_job_note(args: argparse.Namespace) -> int:
             from .job import review_state
             sys.stderr.write(review_state.pending_line(rv) + "  (delivered without the quality-mode critic round)\n")
         _notes_warning(job)
+    since = _since(job, data if args.json else None)
     if args.json:
         print_json(data)
     else:
@@ -696,6 +912,7 @@ def cmd_job_note(args: argparse.Namespace) -> int:
         for line in ledger.status_lines(job, data):
             print(line)
         print(str(job / "SHOWTIME.md"))
+        _since_line(since)
     return 0
 
 
@@ -799,16 +1016,43 @@ def cmd_status(args: argparse.Namespace) -> int:
     job = ledger.resolve(args.job)
     data = ledger.load(job)
     lines = ledger.status_lines(job, data)
+    from .job import catchup
+    # what changed since the agent last looked (hand edits, unread notes, board picks, open findings),
+    # shown here and then marked seen; nothing is printed when nothing is new
+    since = catchup.catch_up(job, data)
     if args.json:
         open_q = [q["text"] for q in data.get("questions", []) if not q.get("answer")]
         print_json({"job": str(job), "lines": lines, "stage": data.get("stage"), "qa": data.get("qa"),
                     "open_questions": open_q, "next": ledger.suggest_next(job, data),
                     "outputs": ledger.outputs_view(job, data), "platform": data.get("platform"),
                     "mode": data.get("mode", "quick"), "review": _review_of(job),
-                    "notes": str(job / "SHOWTIME.md") if (job / "SHOWTIME.md").is_file() else None})
+                    "notes": str(job / "SHOWTIME.md") if (job / "SHOWTIME.md").is_file() else None,
+                    "since_last_looked": since})
     else:
         for line in lines:
             print(line)
+        if since:
+            for line in catchup.block(since, job.name):
+                print(line)
+    return 0
+
+
+def cmd_job_catchup(args: argparse.Namespace) -> int:
+    """`showtime job catchup <job> --footer`: the line the Node commands (render, check, snap, look) end with."""
+    from .job import catchup, ledger
+    job = ledger.resolve(args.job)
+    if args.footer:
+        s = catchup.after_command(job, started=args.started)
+    else:
+        s = catchup.catch_up(job)
+    if args.json:
+        print_json(s)
+    elif s:
+        if args.footer:
+            print(s["line"])
+        else:
+            for line in catchup.block(s, job.name):
+                print(line)
     return 0
 
 

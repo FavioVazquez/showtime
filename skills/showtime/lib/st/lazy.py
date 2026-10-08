@@ -182,7 +182,7 @@ def ensure_item(item_id: str, feature: str, allow_download: bool = True) -> Path
             msg = str(e)
             if offline() or "urlopen error" in msg or "Name or service not known" in msg or "timed out" in msg:
                 raise missing_error(item_id, label, nbytes, feature, cause="the download failed (%s)" % msg[:200])
-            raise ShowtimeError("could not fetch %s: %s" % (item_id, msg[:400]),
+            raise ShowtimeError("could not fetch %s: %s" % (item_id, msg[:900]),   # every source and its answer
                                 hint="run the command again (downloads resume), or `showtime setup --fetch %s`; "
                                      "`showtime doctor` checks the install" % item_id)
         bar.close(ok=True)

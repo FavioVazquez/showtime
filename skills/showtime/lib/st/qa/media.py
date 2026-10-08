@@ -207,15 +207,13 @@ def extract_frames(video: PathLike, times: Sequence[float], out_dir: PathLike, *
         if stale:
             dest.unlink()
         if not dest.is_file():
-            vf = "scale=%d:-2:flags=lanczos" % width if width else "null"
-            args: List[str] = ["-ss", "%.6f" % tt, "-i", os.fspath(video), "-frames:v", "1", "-vf", vf]
-            if dest.suffix.lower() in (".jpg", ".jpeg"):
-                args += ["-q:v", "3"]
+            still = ff.still_args(dest, width, q=3)   # a .jpg in JPEG's colours (BT.601 full range)
+            args: List[str] = ["-ss", "%.6f" % tt, "-i", os.fspath(video), "-frames:v", "1"] + still
             cp = ff.run_ffmpeg(args + ["-update", "1", os.fspath(dest)], check=False)
             if cp.returncode != 0 or not dest.is_file():
                 # accurate seek can land past the last decodable frame: step back once
-                ff.run_ffmpeg(["-sseof", "-0.2", "-i", os.fspath(video), "-frames:v", "1", "-vf", vf,
-                               "-update", "1", os.fspath(dest)], check=False)
+                ff.run_ffmpeg(["-sseof", "-0.2", "-i", os.fspath(video), "-frames:v", "1"] + still +
+                              ["-update", "1", os.fspath(dest)], check=False)
         if dest.is_file():
             paths.append(dest)
         else:
@@ -236,12 +234,11 @@ def extract_run(video: PathLike, first_frame: int, count: int, fps: float, out_d
     if count <= 0:
         return []
     stem = "f%06d" % first_frame
-    vf = ("scale=%d:-2:flags=lanczos" % width) if width else "null"
     # seek a little before the first frame and select by frame number from there
     t0 = max(0.0, (first_frame - 0.5) / fps)
     pattern = out / (stem + "-%02d.jpg")
-    ff.run_ffmpeg(["-ss", "%.6f" % t0, "-i", os.fspath(video), "-frames:v", str(count), "-vf", vf, "-q:v", "3",
-                   "-start_number", "0", os.fspath(pattern)], check=False)
+    ff.run_ffmpeg(["-ss", "%.6f" % t0, "-i", os.fspath(video), "-frames:v", str(count)] + ff.still_args(pattern, width, q=3) +
+                  ["-start_number", "0", os.fspath(pattern)], check=False)
     res = []
     for i in range(count):
         p = out / ("%s-%02d.jpg" % (stem, i))
@@ -269,18 +266,27 @@ def opening_diffs(video: PathLike, n: int = 3, size: Tuple[int, int] = (64, 36))
 
 def mean_luma(path: PathLike, at: Optional[float] = None, size: Tuple[int, int] = (64, 36)) -> Optional[float]:
     """Mean grey level (0-255) of an image, or of a video's frame at `at` seconds, on a tiny copy decoded by
-    ffmpeg (which ignores PNG colour chunks, as a video player does). None when it cannot be decoded."""
+    ffmpeg (which ignores PNG colour chunks, as a video player does). None when it cannot be decoded.
+    Both are decoded to RGB first (each by its own matrix: BT.709 for the video, BT.601 for a JPEG) and weighed
+    the same way, so the same picture gives the same level: grey straight from each file's Y channel differed by
+    3-4 levels on saturated colours (601 vs 709 luma), a false poster_mismatch on a colourful frame.
+    The seek is the one the poster was taken with (deliver poster's extract_frame, "%.6f"): a poster time on the
+    frame grid (render.json's frame/fps, 2/30 = 0.0667) rounded to 3 places (0.067) landed on the next frame."""
     import subprocess
     w, h = size
-    pre = ["-ss", "%.3f" % max(0.0, float(at))] if at is not None else []
+    pre = ["-ss", "%.6f" % max(0.0, float(at))] if at is not None else []
     try:
         cp = subprocess.run([ff.ffmpeg_path(), "-hide_banner", "-nostdin", "-loglevel", "error"] + pre +
-                            ["-i", os.fspath(path), "-frames:v", "1", "-vf", "scale=%d:%d:flags=area,format=gray" % (w, h),
+                            ["-i", os.fspath(path), "-frames:v", "1", "-vf",
+                             "scale=flags=accurate_rnd+full_chroma_int,format=rgb24,scale=%d:%d:flags=area" % (w, h),
                              "-f", "rawvideo", "-"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
     except (OSError, subprocess.SubprocessError):
         return None
-    buf = (cp.stdout or b"")[:w * h]
-    return sum(buf) / float(len(buf)) if len(buf) == w * h else None
+    buf = (cp.stdout or b"")[:w * h * 3]
+    if len(buf) != w * h * 3:
+        return None
+    r, g, b = sum(buf[0::3]), sum(buf[1::3]), sum(buf[2::3])
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b) / float(w * h)
 
 
 PNG_COLOUR_CHUNKS = (b"gAMA", b"cHRM", b"cICP", b"iCCP")

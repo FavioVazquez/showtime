@@ -11,7 +11,7 @@
 // Landing on showtime's own preview player (/_st/...) or on a directory listing is an error.
 import fs from 'node:fs';
 import path from 'node:path';
-import { launchBrowser } from './lib/chrome.mjs';
+import { launchGuarded, openGuarded, closeSoon } from './lib/stagehost.mjs';
 import { parseCli, runMain, UserError, info, warn, c, jobDir, freshPath, fmtBytes, fmtDuration, printHelp, Progress } from './lib/cli.mjs';
 import {
   aspectViewport, newCaptureContext, installConsent, waitConsent, cleanupOverlays, robustGoto, detectBotWall,
@@ -138,10 +138,17 @@ async function guardLanding(page, o, warnings) {
   throw new UserError(`wrong page: ${p.reason}`, p.hint);
 }
 
-async function openPage(browser, vp, o, url, { dark = false } = {}) {
-  const ctx = await newCaptureContext(browser, vp, { dark, locale: o.locale, userAgent: o['user-agent'] });
-  const consent = o['no-consent'] ? [] : await installConsent(ctx);
-  const page = await ctx.newPage();
+async function openPage(B, vp, o, url, { dark = false } = {}) {
+  // the context and the tab under the page-open deadline (once more in a new browser); the site's own load
+  // has --timeout
+  const { ctx, consent, page } = await openGuarded(B, async (browser, track) => {
+    track.step = 'creating the browser context';
+    const ctx = await newCaptureContext(browser, vp, { dark, locale: o.locale, userAgent: o['user-agent'] });
+    track.step = 'setting up the consent clicker';
+    const consent = o['no-consent'] ? [] : await installConsent(ctx);
+    track.step = 'opening a tab';
+    return { ctx, consent, page: await ctx.newPage(), close: () => ctx.close() };
+  }, { label: 'opening a tab for the site' });
   const responses = [];
   page.on('response', (r) => {
     try {
@@ -224,7 +231,7 @@ async function captureRun(o, tgt) {
 
   info(`${c.bold('site capture')} ${url}`);
   info(c.dim(`  output ${out}`));
-  let { browser } = await launchBrowser({ gpu: o.gpu, headless: !o.headed });
+  const B = await launchGuarded({ gpu: o.gpu, headless: !o.headed });
   const result = {
     url, finalUrl: null, served: tgt.server ? tgt.server.root : null, status: null, capturedAt: new Date().toISOString(), aspects: aspects.map((a) => a.spec),
     shots: {}, sections: [], full: null, dark: null, consent: [], overlays: null, warnings,
@@ -235,13 +242,13 @@ async function captureRun(o, tgt) {
     phase(1, 7, `loading (${vp.spec}, ${vp.css.width}x${vp.css.height} @${vp.dpr}x)`);
     let opened;
     try {
-      opened = await openPage(browser, vp, o, url);
+      opened = await openPage(B, vp, o, url);
     } catch (e) {
       if (/Timeout|crash|closed/i.test(String(e.message)) && o.gpu !== 'off') {
         warn('page load failed; retrying once with GPU/WebGL off');
-        await browser.close().catch(() => {});
-        ({ browser } = await launchBrowser({ gpu: 'off', headless: !o.headed, args: ['--disable-webgl', '--disable-3d-apis'] }));
-        opened = await openPage(browser, vp, o, url);
+        await closeSoon(B.browser.close());
+        Object.assign(B, await launchGuarded({ gpu: 'off', headless: !o.headed, args: ['--disable-webgl', '--disable-3d-apis'] }));
+        opened = await openPage(B, vp, o, url);
         warnings.push('loaded with WebGL disabled after a first failed attempt');
       } else throw e;
     }
@@ -312,7 +319,7 @@ async function captureRun(o, tgt) {
     if (wantDark && o.dark !== 'off') {
       phase(5, 7, 'dark-mode variant');
       try {
-        const d = await openPage(browser, vp, o, url, { dark: true });
+        const d = await openPage(B, vp, o, url, { dark: true });
         await cleanupOverlays(d.page, { hide: !o['keep-overlays'] });
         await lazyScroll(d.page, { budgetMs: 8000 });
         const lumDark = await d.page.evaluate(() => {
@@ -336,7 +343,7 @@ async function captureRun(o, tgt) {
     for (const avp of aspects.slice(1)) {
       info(c.dim(`        ${avp.spec}: ${avp.css.width}x${avp.css.height} @${avp.dpr}x${avp.mobile ? ' (phone layout)' : ''}`));
       try {
-        const a = await openPage(browser, avp, o, url);
+        const a = await openPage(B, avp, o, url);
         await cleanupOverlays(a.page, { hide: !o['keep-overlays'] });
         await lazyScroll(a.page, { budgetMs: 10000 });
         result.shots[avp.name] = await viewportSeries(a.page, avp, path.join(out, 'shots', avp.name), Number(o['max-shots']), fmt, shotOpts, out);
@@ -376,11 +383,11 @@ async function captureRun(o, tgt) {
     for (const [name, list] of Object.entries(result.shots)) for (const s of list) sheetItems.push({ file: s.file, label: `${name} ${s.label}` });
     for (const s of result.sections) sheetItems.push({ file: s.file, label: `section: ${s.label}` });
     if (result.dark) for (const s of result.dark.shots) sheetItems.push({ file: s.file, label: `dark ${s.label}` });
-    const sheet = await contactSheet(browser, sheetItems.slice(0, 36), path.join(out, 'contact-sheet.jpg'), { title: `${data.meta.title || host} - screens`, dir: out });
+    const sheet = await contactSheet(B.browser, sheetItems.slice(0, 36), path.join(out, 'contact-sheet.jpg'), { title: `${data.meta.title || host} - screens`, dir: out });
     const assetItems = assets.files.filter((f) => /\.(png|jpe?g|webp|gif|svg|avif|ico)$/i.test(f.file))
       .sort((a, b) => (b.kind === 'logo') - (a.kind === 'logo')).slice(0, 36)
       .map((f) => ({ file: f.file, label: `${f.kind}: ${path.basename(f.file)}` }));
-    const aSheet = await contactSheet(browser, assetItems, path.join(out, 'assets-sheet.jpg'), { title: `${data.meta.title || host} - assets`, dir: out, cols: 4, cell: 360 });
+    const aSheet = await contactSheet(B.browser, assetItems, path.join(out, 'assets-sheet.jpg'), { title: `${data.meta.title || host} - assets`, dir: out, cols: 4, cell: 360 });
     fs.writeFileSync(path.join(out, 'inventory.md'), inventory(out, url, siteJson, { sheet, aSheet, seconds: (Date.now() - t0) / 1000 }));
     const summary = {
       ok: true, url, finalUrl: result.finalUrl, served: tgt.server ? tgt.server.root : null, title: data.meta.title || null,
@@ -403,7 +410,7 @@ async function captureRun(o, tgt) {
     }
     return 0;
   } finally {
-    await browser.close().catch(() => {});
+    await closeSoon(B.browser.close());
   }
 }
 
@@ -637,9 +644,9 @@ async function component(argv) {
     throw new UserError('missing <selector>', 'example: showtime site component https://example.com "#pricing"');
   }
   const vp = aspectViewport(String(o.aspect).split(',')[0], { dpr: o.dpr ? Number(o.dpr) : undefined, width: o.width ? Number(o.width) : undefined });
-  const { browser } = await launchBrowser({ gpu: o.gpu, headless: !o.headed });
+  const B = await launchGuarded({ gpu: o.gpu, headless: !o.headed });
   try {
-    const { page, nav } = await openPage(browser, vp, o, url, { dark: !!o.dark });
+    const { page, nav } = await openPage(B, vp, o, url, { dark: !!o.dark });
     await guardLanding(page, o, null);
     const wall = await detectBotWall(page, nav.status);
     if (wall.blocked) {
@@ -688,7 +695,7 @@ async function component(argv) {
     else { info(`${c.green('done')}: ${files.length} of ${n} match(es)`); for (const f of files) console.log(f.file); }
     return files.length ? 0 : 1;
   } finally {
-    await browser.close().catch(() => {});
+    await closeSoon(B.browser.close());
     if (tgt.server) await tgt.server.close().catch(() => {});
   }
 }
@@ -738,9 +745,9 @@ async function record(argv) {
   info(`${c.bold('site record')} ${url}`);
   info(c.dim(`  output ${out}`));
   const t0 = Date.now();
-  const { browser } = await launchBrowser({ gpu: o.gpu, headless: !o.headed });
+  const B = await launchGuarded({ gpu: o.gpu, headless: !o.headed });
   try {
-    const { page, nav } = await openPage(browser, vp, o, url, { dark: !!o.dark });
+    const { page, nav } = await openPage(B, vp, o, url, { dark: !!o.dark });
     await guardLanding(page, o, null);
     const wall = await detectBotWall(page, nav.status);
     if (wall.blocked) {
@@ -786,7 +793,7 @@ async function record(argv) {
     else { info(`${c.green('done')}: ${total} frames (${rec.duration.toFixed(1)} s) in ${fmtDuration(Date.now() - t0)}`); console.log(out); if (mp4) console.log(mp4); console.log(path.join(out, 'record.json')); }
     return 0;
   } finally {
-    await browser.close().catch(() => {});
+    await closeSoon(B.browser.close());
     if (tgt.server) await tgt.server.close().catch(() => {});
   }
 }

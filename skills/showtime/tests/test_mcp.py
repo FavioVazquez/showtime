@@ -95,6 +95,31 @@ def poll_task(task, cwd, env, tries=30):
     raise AssertionError("task %s still running after %d status calls" % (task, tries))
 
 
+def result_of(step, out=None, cwd=None) -> dict:
+    """The step's JSON-RPC result. A step without one fails the test with what came instead: the error body, or
+    the test client's own deadline (its {"timeout": true}) with the progress the server sent until then, the
+    server's stderr and the tail of the background run's log (runs started in `cwd`)."""
+    res = step["response"].get("result")
+    if res is not None:
+        return res
+    lines = ["%s returned no result: %s" % (step.get("method"), json.dumps(step["response"])[:2000])]
+    if step.get("progress"):
+        lines.append("progress: " + "; ".join(p.get("message", "") for p in step["progress"][-12:]))
+    if out and out.get("stderr"):
+        lines.append("server stderr:\n" + out["stderr"][-2500:])
+    if cwd is not None:
+        for d in sorted((HOME / "runs").glob("*/run.json"), key=lambda p: p.stat().st_mtime)[-20:]:
+            try:
+                run = json.loads(d.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if Path(run.get("cwd") or "/nonexistent").resolve() == Path(cwd).resolve():
+                log = d.parent / "output.log"
+                tail = log.read_text(encoding="utf-8", errors="replace")[-3000:] if log.is_file() else "(no output.log)"
+                lines.append("run %s (%s, state %s):\n%s" % (run.get("id"), run.get("command"), run.get("state"), tail))
+    raise AssertionError("\n".join(lines))
+
+
 def text_of(step) -> str:
     res = step["response"].get("result") or {}
     return "\n".join(c.get("text", "") for c in res.get("content", []))
@@ -344,23 +369,27 @@ class TestFlow(unittest.TestCase):
         ready = plat.venv_python(HOME / "venv").exists() and (HOME / "node" / "node_modules" / "playwright").is_dir()
         steps = [call("doctor", {}), call("new_project", {"template": "dom", "dir": "tiny", "duration": 2, "size": "640x360"})]
         if ready:
-            steps.append(call("render", {"project": "tiny", "preview": True}, progress=True))
-        out = mcp(steps, self.tmp, env=self.env)
+            # the call waits as long as render's own recovery from a browser that stops answering (it gives a page
+            # 5 minutes to open, then a new browser; once on the macOS runner this call ran out of its 4 minutes,
+            # where unknown): the render still has to finish OK, only a stuck one is no longer cut off by the test
+            # first, and a call without a result says what came instead (result_of)
+            steps.append(call("render", {"project": "tiny", "preview": True}, progress=True, timeout_ms=600000))
+        out = mcp(steps, self.tmp, env=self.env, timeout=700)
         doctor, new = out["results"][1:3]
         dt = text_of(doctor)
         self.assertIn("showtime doctor", dt)
         self.assertRegex(dt, r"\d+ pass")
-        self.assertIn("--quick", doctor["response"]["result"]["_meta"]["showtime/result"]["command"])
+        self.assertIn("--quick", result_of(doctor)["_meta"]["showtime/result"]["command"])
         if not ready:
-            self.assertTrue(doctor["response"]["result"]["isError"] or "setup" in dt)
+            self.assertTrue(result_of(doctor)["isError"] or "setup" in dt)
             print("  (render + qa skipped: run `showtime setup` for the browser tools)", file=sys.stderr)
             return
-        self.assertFalse(new["response"]["result"]["isError"], text_of(new))
+        self.assertFalse(result_of(new)["isError"], text_of(new))
         proj = self.tmp / "tiny"
         cfg = json.loads((proj / "showtime.json").read_text(encoding="utf-8"))
         self.assertEqual((cfg["width"], cfg["height"], cfg["duration"]), (640, 360, 2.0))
         render = out["results"][3]
-        res = render["response"]["result"]
+        res = result_of(render, out, self.tmp)
         self.assertFalse(res["isError"], text_of(render))
         self.assertTrue(text_of(render).startswith("OK: showtime render"))
         self.assertNotIn("structuredContent", res, "the text summary is what the model should see")
@@ -380,12 +409,12 @@ class TestFlow(unittest.TestCase):
         qt = text_of(qa)
         self.assertIn("verdict:", qt)
         self.assertNotIn("verdict: FAIL", qt)
-        self.assertTrue(any(f.endswith("qa.json") for f in qa["response"]["result"]["_meta"]["showtime/result"]["files"]), qt)
+        self.assertTrue(any(f.endswith("qa.json") for f in result_of(qa)["_meta"]["showtime/result"]["files"]), qt)
 
         # README loops through the tool: from/to/width/fps reach `deliver exports`
         lp = mcp([call("deliver_exports", {"video": str(video), "targets": ["gif-small"], "from": 0.5, "to": 1.5,
                                            "width": 160, "fps": 10})], self.tmp, env=self.env)["results"][1]
-        self.assertFalse(lp["response"]["result"]["isError"], text_of(lp))
+        self.assertFalse(result_of(lp)["isError"], text_of(lp))
         gif = video.parent / "exports" / (video.stem + ".loop-small.gif")
         self.assertTrue(gif.is_file(), text_of(lp))
         self.assertEqual(int.from_bytes(gif.read_bytes()[6:8], "little"), 160)
@@ -393,11 +422,11 @@ class TestFlow(unittest.TestCase):
         # the same render as a task: a task id at once, then status until the result (any host)
         first = mcp([call("render", {"project": "tiny", "preview": True, "background": True}, progress=True)],
                     self.tmp, env=self.env)["results"][1]
-        res = first["response"]["result"]
+        res = result_of(first)
         self.assertTrue(text_of(first).startswith("RUNNING: showtime render"), text_of(first))
         task = res["_meta"]["showtime/result"]["task"]
         final = poll_task(task, self.tmp, self.env)
-        fres = final["response"]["result"]
+        fres = result_of(final)
         self.assertFalse(fres["isError"], text_of(final))
         self.assertTrue(text_of(final).startswith("OK: showtime render"), text_of(final))
         self.assertEqual(fres["_meta"]["showtime/result"]["task"], task)

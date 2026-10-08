@@ -12,6 +12,11 @@ Modules (import lazily; heavy dependencies load on first use):
     edl          the edit decision list: schema, validation, frame-exact plan
     render_edl   EDL -> finished video (segments, concat, overlays, audio, captions)
     captions     ASS captions in several styles + SRT / VTT export
+    cards        talking-head cards anchored to the words (EDL "cards"): resolve, layout,
+                 check, the alpha card reel, panel framing
+    card_suggest candidate moments for cards (`edit cards suggest`)
+    moments      a long recording's best moments for short clips, ranked by local signals (`edit moments`)
+    clips        picked moments -> one EDL, render and qa each, in parallel, and a contact sheet (`edit clips`)
     grade, luts  colour correction, original .cube looks
     reframe      face-tracked crop for 9:16 / 1:1
     denoise      speech denoise (DeepFilterNet / RNNoise / FFT fallback)
@@ -21,7 +26,8 @@ Modules (import lazily; heavy dependencies load on first use):
 
 Transcript format (every tool reads and writes it):
 
-    {"source": "/abs/clip.mp4", "duration": 42.1, "language": "en", "model": "...",
+    {"source": "/abs/clip.mp4", "duration": 42.1, "language": "en", "language_source": "detected",
+     "model": "...",
      "words": [{"id": "w0", "text": "Hello", "start": 0.52, "end": 0.81, "type": "word",
                 "speaker": "S0", "conf": 0.93},
                {"text": " ", "start": 0.81, "end": 1.2, "type": "spacing"},

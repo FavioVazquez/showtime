@@ -220,6 +220,9 @@ def register(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--report", help="report path (default mix.report.json beside the output)")
     p.add_argument("--root", help="base folder for relative paths (default: spec folder, project root, cwd)")
     p.add_argument("--check", action="store_true", help="also measure with ffmpeg ebur128")
+    p.add_argument("--no-speaker-safe", action="store_true",
+                   help="leave the lows as mixed: no high-pass under 40 Hz and no low shelf on a bass-heavy bed (for a "
+                        "video meant for headphones; the same as \"master\": {\"speaker_safe\": false})")
     p.add_argument("--json", action="store_true", help="print the full report")
     p.set_defaults(func=cmd_mix)
 
@@ -785,7 +788,8 @@ def cmd_mix(args) -> int:
         raise ShowtimeError("mix spec not found: %s" % spec)
     out = Path(args.output) if args.output else spec.with_name("mix.wav")
     rep = mix.render(spec, out, root=Path(args.root) if args.root else None,
-                     report_path=Path(args.report) if args.report else None, ffmpeg_check=args.check)
+                     report_path=Path(args.report) if args.report else None, ffmpeg_check=args.check,
+                     speaker_safe_on=False if args.no_speaker_safe else None)
     if args.json:
         print_json(rep)
         return 0
@@ -793,6 +797,12 @@ def cmd_mix(args) -> int:
                                                    rep["true_peak_dbtp"], rep["lra"]))
     if rep.get("voice_to_music_db") is not None:
         print("  voice sits %.1f dB above music/ambience while speaking" % rep["voice_to_music_db"])
+    sp = rep.get("speaker") or {}
+    if sp.get("above_300_lufs") is not None:
+        print("  on a phone speaker (above 300 Hz): %.1f LUFS, %.1f LU under the mix%s" % (
+            sp["above_300_lufs"], sp["gap_300_lu"],
+            "; speaker-safe: low shelf %g dB on %s" % (sp["shelf_db"], ", ".join(sp.get("shelved") or []))
+            if sp.get("shelf_db") else "" if sp.get("on") else "; speaker-safe off"))
     for sct in rep["sections"]:
         print("  %-12s %6.2f-%6.2f  %s LUFS  rms %.1f dBFS" % (sct["name"][:12], sct["start"], sct["end"], sct["lufs"], sct["rms_dbfs"]))
     if rep.get("ffmpeg_ebur128"):
@@ -1008,13 +1018,15 @@ def _fmt_dur(sec: float) -> str:
     return "%d:%02d" % (int(sec) // 60, int(round(sec)) % 60)
 
 
-def _music_row(t: dict, score=None) -> str:
+def _music_row(t: dict, score=None, width: int = 40) -> str:
+    """One search result. The id is never cut (it is what `music info` and mix.json take): the column is as
+    wide as the longest id shown, and only the moods are shortened."""
     from .audio import music
     cached = "cached" if music.is_cached(t) else "%.0f MB" % (t["bytes"] / 1e6)
     lic = music.LICENSES[t["license"]][1]
-    return "%-40s %5s  %-14s e%.2f %-6s %-9s %-30s %s" % (
-        t["id"][:40], _fmt_dur(t["duration"]), t["shelf"], t["energy"], t["tempo"], lic, ", ".join(t["moods"][:3])[:30],
-        cached)
+    return "%-*s %5s  %-14s e%.2f %-6s %-9s %-30s %s" % (
+        width, t["id"], _fmt_dur(t["duration"]), t["shelf"], t["energy"], t["tempo"], lic,
+        ", ".join(t["moods"][:3])[:30], cached)
 
 
 def cmd_music_search(args) -> int:
@@ -1027,8 +1039,9 @@ def cmd_music_search(args) -> int:
     if not res:
         print("no matches (loosen the filters; `showtime audio music presets` lists the uses)", file=sys.stderr)
         return 1
+    width = max([40] + [len(r["track"]["id"]) for r in res])
     for r in res:
-        print(_music_row(r["track"]))
+        print(_music_row(r["track"], width=width))
     print("%d shown. Details and the exact credit: showtime audio music info <id>" % len(res))
     return 0
 

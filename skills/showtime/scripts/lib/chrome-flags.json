@@ -1,5 +1,5 @@
 {
-  "_comment": "Chrome/Chromium launch flags for showtime capture. Read by scripts/lib/chrome.mjs and lib/st/platform.py. 'common' always applies; 'gpu' is per OS for the hardware path; 'software' replaces it when GPU is off.",
+  "_comment": "Chrome/Chromium launch flags for showtime capture. Read by scripts/lib/chrome.mjs and lib/st/platform.py. 'common' always applies; 'gpu' is per OS for the hardware path; 'software' replaces it when GPU is off. 'render' is added for showtime render only (0.4.1: --disable-frame-rate-limit draws a frame when asked, not on the next 60 Hz tick; renders 0-9 % faster with the same frames in the 0.4.1 measurements on macOS with a GPU and Linux with SwiftShader; not for live playback, where it broke the HTML video's audio start in the export tests; empty the list to go back).",
   "common": [
     "--force-color-profile=srgb",
     "--font-render-hinting=none",
@@ -28,6 +28,7 @@
     "windows": ["--use-angle=d3d11", "--enable-gpu-rasterization", "--ignore-gpu-blocklist"],
     "linux": ["--enable-gpu-rasterization", "--ignore-gpu-blocklist", "--enable-unsafe-swiftshader"]
   },
+  "render": ["--disable-frame-rate-limit"],
   "software": [
     "--use-gl=angle",
     "--use-angle=swiftshader",

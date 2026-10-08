@@ -861,6 +861,33 @@ class ExportTest(unittest.TestCase):
         self.assertNotEqual(cp.returncode, 0)
         self.assertIn("inside the job folder", cp.stderr)
 
+    def test_job_argument(self):
+        """`export html <job>` exports the job's project/ (as qa and review take a job), into the job folder; with
+        `--folder out` the word after --folder is the output folder (was: "expected one project"). A job without a
+        project/ says so and never suggests starting a new project."""
+        job = TMP / "job-arg"
+        (job / "project").mkdir(parents=True, exist_ok=True)
+        (job / "job.json").write_text(json.dumps({"schema": "showtime.job/1", "slug": "job-arg"}), encoding="utf-8")
+        for f in Path(self.fixture).iterdir():
+            dst = job / "project" / f.name
+            if f.is_dir():
+                shutil.copytree(str(f), str(dst), dirs_exist_ok=True)
+            else:
+                shutil.copy2(str(f), str(dst))
+        out = TMP / "job-arg-out"
+        rep = json.loads(showtime("export", "html", job, "--folder", out, "--audio", "none", "--json", "-q").stdout)
+        self.assertEqual(Path(rep["output"]).resolve().parent, out.resolve(), rep["output"])
+        self.assertTrue((out / "index.html").is_file())
+        rep = json.loads(showtime("export", "html", job, "--audio", "none", "--json", "-q").stdout)
+        self.assertEqual(Path(rep["output"]).resolve().parent, job.resolve(), "default output: inside the job")
+        bare = TMP / "job-no-project"
+        bare.mkdir(exist_ok=True)
+        (bare / "job.json").write_text(json.dumps({"schema": "showtime.job/1", "slug": "job-no-project"}), encoding="utf-8")
+        cp = showtime("export", "html", bare, check=False)
+        self.assertNotEqual(cp.returncode, 0)
+        self.assertIn("has no project/index.html", cp.stderr)
+        self.assertNotIn("showtime new", cp.stderr)
+
     def test_audio_file(self):
         """--audio-file embeds exactly the given sound (a shipped MP4's soundtrack) instead of the score and
         the mix: one command for a project whose voice WAVs are gone."""
@@ -1154,6 +1181,135 @@ class RangeLinkTest(unittest.TestCase):
         self.assertIn("#t=1:05-1:20", s["help"])
 
 
+NO_RANGE_DRIVER = r"""
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+const { launchBrowser } = await import(pathToFileURL(path.join(process.argv[2], 'scripts', 'lib', 'chrome.mjs')).href);
+const { browser } = await launchBrowser({ gpu: 'auto', headless: true });
+try {
+  const page = await (await browser.newContext({ viewport: { width: 640, height: 360 } })).newPage();
+  const refused = process.argv[4] === 'refused';
+  if (refused) {
+    // the first whole-file read of the soundtrack fails (a network error); later ones go through
+    await page.addInitScript(() => {
+      const f = window.fetch.bind(window);
+      window.__reads = 0;
+      window.fetch = (u, o) => {
+        if (String(u).includes('/media/') && ++window.__reads === 1) return Promise.reject(new Error('refused once'));
+        return f(u, o);
+      };
+    });
+  }
+  await page.goto(process.argv[3], { waitUntil: 'load' });
+  await page.evaluate(() => window.showtimePlayer.ready);
+  if (refused) {
+    // the element can only seek inside its first second (what a server without Range requests leaves it)
+    await page.evaluate(() => Object.defineProperty(window.showtimePlayer.audio, 'seekable',
+      { get: () => ({ length: 1, start: () => 0, end: () => 1 }) }));
+  }
+  await page.mouse.click(320, 180);
+  await page.waitForTimeout(200);
+  const st = () => page.evaluate(() => { const p = window.showtimePlayer, A = p.audio;
+    return { t: p.currentTime, a: A.currentTime, apaused: A.paused, src: String(A.src).split(':')[0], reads: window.__reads }; });
+  await page.evaluate(() => { window.showtimePlayer.currentTime = 30; });
+  const out = { at300: await page.waitForTimeout(300).then(st) };
+  if (refused) {
+    // the first whole-file read fails (the server refuses it once): the next seek reads it again and the
+    // sound comes back in sync
+    await page.waitForTimeout(1700);
+    out.first = await st();
+    await page.evaluate(() => { window.showtimePlayer.currentTime = 45; });
+    await page.waitForTimeout(5000);
+    out.second = await st();
+  } else {
+    await page.waitForTimeout(3700);
+    out.at4000 = await st();
+  }
+  console.log(JSON.stringify(out));
+} finally { await browser.close(); }
+"""
+
+
+@unittest.skipIf(FAST, "needs a browser")
+class NoRangeSeekTest(unittest.TestCase):
+    """A --folder export served without HTTP Range requests (python -m http.server), slowly: a seek right after the
+    start used to leave the clock stuck at the seek target while the soundtrack played on from 0 (the element
+    cannot seek past what it has downloaded). Now the picture plays on by the wall clock, the soundtrack is read
+    whole into a blob and comes back in sync at the film's time."""
+
+    def serve_and_play(self, tmp, mode=""):
+        class Slow(http.server.SimpleHTTPRequestHandler):     # no Range support, 0.6 MB/s for the media
+            def log_message(self, *a):
+                pass
+
+            def copyfile(self, src, dst):
+                slow = "/media/" in self.path
+                while True:
+                    b = src.read(32768)
+                    if not b:
+                        break
+                    try:
+                        dst.write(b)
+                    except OSError:
+                        return
+                    if slow:
+                        time.sleep(0.05)
+        srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Slow, directory=str(tmp / "www")))
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            drv = tmp / "norange.mjs"
+            drv.write_text(NO_RANGE_DRIVER, encoding="utf-8")
+            node = shutil.which("node", path=ENV.get("PATH")) or "node"
+            cp = subprocess.run([node, str(drv), str(SKILL), "http://127.0.0.1:%d/site/index.html" % srv.server_address[1],
+                                 mode], env=ENV, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8",
+                                timeout=180)
+        finally:
+            srv.shutdown()
+            srv.server_close()
+        self.assertEqual(cp.returncode, 0, cp.stderr[-2000:])
+        return json.loads(cp.stdout.strip().splitlines()[-1])
+
+    def make_site(self, tmp):
+        proj = tmp / "long"
+        (proj / "audio").mkdir(parents=True)
+        ff.run_ffmpeg(["-f", "lavfi", "-i", "anoisesrc=d=60:c=pink:a=0.2:r=48000", "-ac", "2", str(proj / "audio" / "bed.wav")])
+        (proj / "showtime.json").write_text(json.dumps({"title": "No range", "width": 640, "height": 360, "fps": 30,
+                                                        "duration": 60, "audio": "audio/bed.wav"}), encoding="utf-8")
+        (proj / "index.html").write_text('<!doctype html><html><head><script src="/_st/stage.js"></script></head>'
+                                          '<body style="margin:0;background:#123"></body></html>', encoding="utf-8")
+        export(proj, tmp / "www" / "site", "--folder")
+
+    def test_failed_whole_read_does_not_silence_later_seeks(self):
+        tmp = Path(tempfile.mkdtemp(prefix="st-norange-fail-"))
+        try:
+            self.make_site(tmp)
+            r = self.serve_and_play(tmp, mode="refused")
+            self.assertGreater(r["first"]["t"], 31.0, r)            # the picture plays on by the wall clock
+            self.assertTrue(r["first"]["apaused"], r)               # the sound waits: it cannot get there
+            # the seek after the failed read reads it again (it used to wait on the failed one for good, the
+            # soundtrack detached and paused for the rest of the session)
+            self.assertEqual(r["second"]["reads"], 2, r)
+            self.assertEqual(r["second"]["src"], "blob", r)
+            self.assertFalse(r["second"]["apaused"], "the soundtrack stayed detached after a failed read: %s" % r)
+            self.assertLess(abs(r["second"]["a"] - r["second"]["t"]), 0.3, r)
+        finally:
+            shutil.rmtree(str(tmp), ignore_errors=True)
+
+    def test_seek_without_range_requests(self):
+        tmp = Path(tempfile.mkdtemp(prefix="st-norange-"))
+        try:
+            self.make_site(tmp)
+            r = self.serve_and_play(tmp)
+            self.assertGreater(r["at300"]["t"], 30.05, "the clock stopped at the seek target: %s" % r)
+            self.assertGreater(r["at4000"]["t"], 33.0, r)
+            # either the element can seek by now (the early read filled the cache) or the blob was swapped in
+            self.assertIn(r["at4000"]["src"], ("http", "blob"), r)
+            self.assertFalse(r["at4000"]["apaused"], r)
+            self.assertLess(abs(r["at4000"]["a"] - r["at4000"]["t"]), 0.3, "the sound is back in sync: %s" % r)
+        finally:
+            shutil.rmtree(str(tmp), ignore_errors=True)
+
+
 class DeliverExportsTest(unittest.TestCase):
     """`showtime deliver exports` arguments (batch 2): a small master is never inflated toward a size cap,
     a bare --max-mb leaves the upload platforms alone (per-target caps with target:MB), x/linkedin keep a
@@ -1214,6 +1370,184 @@ class DeliverExportsTest(unittest.TestCase):
         self.assertTrue(any("-16.0 LUFS" in n for n in r["notes"]), r["notes"])
         r = self.run_exports("--targets", "youtube", "--preview", "--lufs", "-14", "--out-dir", self.tmp / "yt2")[0]
         self.assertAlmostEqual(r["loudness"]["output_lufs"], -14.0, delta=1.0)
+
+
+# collect.mjs against a server whose kept-alive sockets die (what minifying a large script between two
+# batches of requests did to the export's own server), and the share-tag helpers (share.mjs).
+COLLECT_DRIVER = r"""
+import fs from 'node:fs';
+import http from 'node:http';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+const SKILL = process.argv[2], TMPD = process.argv[3];
+const imp = (p) => import(pathToFileURL(path.join(SKILL, 'scripts', 'lib', 'export', p)).href);
+const { collectFiles, fetchFile } = await imp('collect.mjs');
+const S = await imp('share.mjs');
+const out = {};
+// any second request on a connection is dropped without an answer; /data/flaky.json loses its first one too
+const perSock = new WeakMap();
+const drops = { '/data/flaky.json': 1 };
+const srv = http.createServer((req, res) => {
+  const n = (perSock.get(req.socket) || 0) + 1; perSock.set(req.socket, n);
+  const p = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+  if (n > 1 || drops[p]) { if (drops[p]) drops[p]--; req.socket.destroy(); return; }
+  const js = (t) => { res.writeHead(200, { 'content-type': 'text/javascript' }); res.end(t); };
+  const m = /^\/scenes\/s(\d+)\.js$/.exec(p);
+  if (p === '/main.js') return js(Array.from({ length: 40 }, (_, i) => `import './scenes/s${i}.js';`).join('\n') + "\nfetch('data/flaky.json'); new Audio('sfx/click.wav');");
+  if (m) return js(`export const s${m[1]} = ${m[1]};`);
+  if (p === '/data/flaky.json') { res.writeHead(200, { 'content-type': 'application/json' }); return res.end('{"file": "../voice/vo.wav", "click": "../sfx/click.wav"}'); }
+  if (/\.wav$/.test(p)) { res.writeHead(200, { 'content-type': 'audio/wav' }); return res.end(Buffer.alloc(1000)); }
+  res.writeHead(404); res.end();
+});
+await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+const base = `http://127.0.0.1:${srv.address().port}`;
+const r = await collectFiles({ serverUrl: base, pagePath: '/index.html', pageHtml: '<script type="module" src="main.js"></script>',
+  requests: ['/main.js', '/data/flaky.json', '/sfx/click.wav', '/gone.js'], allFonts: true, fetchOptions: { delayMs: 5 } });
+out.collect = { files: [...r.files.keys()].sort(), failures: r.failures };
+out.dead = await fetchFile('http://127.0.0.1:9', '/x.js', { tries: 2, delayMs: 5 });
+srv.close();
+// share tags
+const poster = Buffer.from('JPEG');
+const fresh = (f) => f;
+fs.writeFileSync(path.join(TMPD, 'card.png'), 'PNG');
+const cfg = { title: 'T', share: { url: 'https://example.org/films/launch', description: 'A <b>"quoted"</b> one' } };
+out.folderUrl = S.resolveShare({ cfg, folder: true, out: path.join(TMPD, 'site'), poster, width: 1920, height: 1080, fresh });
+out.folderNoUrl = S.resolveShare({ cfg: {}, folder: true, out: path.join(TMPD, 'site'), poster, width: 1920, height: 1080, fresh });
+out.fileUrl = S.resolveShare({ cfg: {}, flags: { url: 'https://example.org/v/launch.html' }, folder: false, out: path.join(TMPD, 'launch.html'), poster, width: 1280, height: 720, fresh });
+out.fileNoUrl = S.resolveShare({ cfg: {}, folder: false, out: path.join(TMPD, 'launch.html'), poster, fresh });
+out.localImage = S.resolveShare({ cfg: { share: { image: 'card.png' } }, flags: { url: 'https://example.org/v/' }, folder: true, out: path.join(TMPD, 'site'), dirs: [TMPD], poster, fresh });
+out.remoteImage = S.resolveShare({ cfg: {}, flags: { image: 'https://cdn.example.org/c.jpg' }, folder: false, out: path.join(TMPD, 'a.html'), poster, fresh });
+try { S.resolveShare({ cfg: {}, flags: { url: 'example.org/x' } }); out.badUrl = 'accepted'; } catch (e) { out.badUrl = e.user ? e.message : 'not a user error'; }
+for (const k of ['folderUrl', 'folderNoUrl', 'fileUrl', 'fileNoUrl', 'localImage', 'remoteImage']) {
+  const v = out[k];
+  out[k] = { ...v, files: v.files.map((f) => f.rel), beside: v.beside ? path.basename(v.beside.file) : null };
+}
+out.meta = S.shareMeta({ title: 'A & B', ...S.resolveShare({ cfg, folder: true, out: 'x', poster, width: 10, height: 20 }) });
+out.titles = ['Project', 'project', 'Untitled', 'Film Template', 'A telescope made of ice', 'Projections'].map(S.genericTitle);
+out.chapters = [
+  [{ t: 0, label: 'Shot 1' }, { t: 3, label: 'Shot 2' }, { t: 6, label: 'Shot 3' }],
+  [{ t: 0, label: 'Intro' }, { t: 3, label: 'Scene 2' }, { t: 6, label: 'How it works' }],
+  [{ t: 0, label: '' }, { t: 3, label: 'S 2' }],
+  [{ t: 0, label: 'Shot 1' }],
+].map(S.genericChapters);
+console.log(JSON.stringify(out));
+"""
+
+SHARE_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8"><script src="/_st/stage.js"></script>
+<style>body{margin:0;background:#101418;color:#fff;font:700 40px sans-serif}section{position:absolute;inset:0;padding:40px}</style>
+</head><body>
+<section id="shot-1" data-start="0" data-dur="1">One</section>
+<section id="shot-2" data-start="#shot-1" data-dur="1">Two</section>
+<script>fetch('data/timeline.json').then(function (r) { return r.json(); }).then(function (j) { document.body.dataset.t = j.title; });</script>
+</body></html>
+"""
+
+
+@needs_listen
+class ExportFilesTest(unittest.TestCase):
+    """Every file the page needs is packed or the export stops; sound files only data names stay out;
+    link-preview tags; .nojekyll in a folder."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = Path(tempfile.mkdtemp(prefix="st-export-files-"))
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def project(self, name, cfg, html, files=None):
+        d = self.tmp / name
+        d.mkdir(parents=True)
+        (d / "showtime.json").write_text(json.dumps(dict({"width": 640, "height": 360, "fps": 30, "duration": 2}, **cfg)),
+                                         encoding="utf-8")
+        (d / "index.html").write_text(html, encoding="utf-8")
+        for rel, data in (files or {}).items():
+            (d / rel).parent.mkdir(parents=True, exist_ok=True)
+            (d / rel).write_bytes(data if isinstance(data, bytes) else data.encode("utf-8"))
+        return d
+
+    def test_collect_and_share_helpers(self):
+        drv = self.tmp / "collect.mjs"
+        drv.write_text(COLLECT_DRIVER, encoding="utf-8")
+        node = shutil.which("node", path=ENV.get("PATH")) or "node"
+        cp = subprocess.run([node, str(drv), str(SKILL), str(self.tmp)], env=ENV, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            encoding="utf-8", errors="replace", timeout=120)
+        self.assertEqual(cp.returncode, 0, cp.stderr[-3000:])
+        r = json.loads(cp.stdout)
+        files = r["collect"]["files"]
+        # dead keep-alive sockets and a dropped first answer: every file arrives (the old code lost a batch of 16)
+        self.assertEqual(len([f for f in files if f.startswith("/scenes/")]), 40, files)
+        self.assertIn("/data/flaky.json", files)
+        # a sound the page plays is packed; one that only a data file names is not
+        self.assertIn("/sfx/click.wav", files)
+        self.assertNotIn("/voice/vo.wav", files)
+        self.assertEqual([(f["path"], f["status"]) for f in r["collect"]["failures"]], [("/gone.js", 404)])
+        self.assertEqual(r["dead"]["status"], 0)
+        self.assertTrue(r["dead"]["err"])
+        # share tags: a folder with a page URL gets the poster as an absolute image
+        fu = r["folderUrl"]
+        self.assertEqual(fu["image"]["href"], "https://example.org/films/launch/assets/poster.jpg")
+        self.assertEqual(fu["files"], ["assets/poster.jpg"])
+        self.assertEqual(fu["card"], "summary_large_image")
+        self.assertEqual(fu["description"], 'A <b>"quoted"</b> one')
+        # without a URL the image stays relative, and the export says previews need an absolute one
+        self.assertEqual(r["folderNoUrl"]["image"]["href"], "assets/poster.jpg")
+        self.assertTrue(any("absolute" in n for n in r["folderNoUrl"]["notes"]), r["folderNoUrl"]["notes"])
+        # one file with a URL: the poster beside it, resolved against the page's folder
+        self.assertEqual(r["fileUrl"]["beside"], "launch.share.jpg")
+        self.assertEqual(r["fileUrl"]["image"]["href"], "https://example.org/v/launch.share.jpg")
+        # one file without a URL: no image (data: URIs are no use to link previews), a summary card
+        self.assertIsNone(r["fileNoUrl"]["image"])
+        self.assertEqual(r["fileNoUrl"]["card"], "summary")
+        self.assertEqual(r["localImage"]["files"], ["assets/share.png"])
+        self.assertEqual(r["localImage"]["image"]["href"], "https://example.org/v/assets/share.png")
+        self.assertEqual(r["remoteImage"]["image"]["href"], "https://cdn.example.org/c.jpg")
+        self.assertIn("https://", r["badUrl"])
+        meta = r["meta"]
+        for tag in ('property="og:title" content="A &amp; B"', 'property="og:url" content="https://example.org/films/launch"',
+                    'property="og:description" content="A &lt;b&gt;&quot;quoted&quot;&lt;/b&gt; one"',
+                    'property="og:image:width" content="10"', 'name="twitter:card" content="summary_large_image"'):
+            self.assertIn(tag, meta)
+        self.assertEqual(r["titles"], [True, True, True, True, False, False])
+        self.assertEqual(r["chapters"], [True, False, True, False])
+
+    def test_folder_share_tags_nojekyll_and_warnings(self):
+        d = self.project("shared", {"title": "Project", "share": {"url": "https://example.org/films/demo/",
+                                                                   "description": "Two scenes, one test."}},
+                         SHARE_PAGE, {"data/timeline.json": '{"title": "x", "file": "vo.wav"}', "data/vo.wav": os.urandom(200_000)})
+        out = self.tmp / "out" / "shared"
+        rep = export(d, out, "--folder", "--audio", "none")
+        html = (out / "index.html").read_text(encoding="utf-8")
+        self.assertIn('<meta property="og:title" content="Project">', html)
+        self.assertIn('<meta property="og:description" content="Two scenes, one test.">', html)
+        self.assertIn('<meta property="og:url" content="https://example.org/films/demo/">', html)
+        self.assertIn('<meta property="og:image" content="https://example.org/films/demo/assets/poster.jpg">', html)
+        self.assertIn('<meta name="twitter:card" content="summary_large_image">', html)
+        self.assertTrue((out / "assets" / "poster.jpg").stat().st_size > 1000)
+        self.assertTrue((out / ".nojekyll").is_file(), "a folder export needs .nojekyll for GitHub Pages")
+        self.assertEqual(rep["share"]["image"], "https://example.org/films/demo/assets/poster.jpg")
+        # the page fetched the JSON; the WAV it names is never played, so it is not packed
+        vfs = (out / "assets" / "vfs.js").read_text(encoding="utf-8")
+        self.assertIn("/data/timeline.json", vfs)
+        self.assertNotIn("/data/vo.wav", vfs)
+        self.assertFalse((out / "assets" / "media" / "data" / "vo.wav").exists())
+        w = " | ".join(rep["warnings"])
+        self.assertIn('the title is "Project"', w)
+        self.assertIn('"Shot 1"', w)
+        self.assertIn('"chapters"', w)
+
+    def test_missing_project_file_stops_the_export(self):
+        page = SHARE_PAGE.replace("</body>", '<script type="module">import "./scenes/gone.js";</script></body>')
+        d = self.project("gone", {"title": "Gone file", "chapters": [[0, "One"], [1, "Two"]]}, page,
+                         {"data/timeline.json": '{"title": "x"}'})
+        cp = showtime("export", "html", d, "-o", self.tmp / "out" / "gone.html", "--audio", "none", check=False)
+        self.assertNotEqual(cp.returncode, 0, cp.stdout[-2000:])
+        self.assertIn("/scenes/gone.js", cp.stderr)
+        self.assertIn("could not be packed", cp.stderr)
+        self.assertFalse((self.tmp / "out" / "gone.html").exists())
+        self.assertNotIn("the title is", cp.stderr)
+        self.assertNotIn('"Shot 1"', cp.stderr)
 
 
 if __name__ == "__main__":

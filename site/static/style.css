@@ -120,9 +120,12 @@ p{margin:0}
 .copy button{position:absolute;top:8px;right:8px;appearance:none;border:0;background:var(--raise);color:var(--muted);border-radius:6px;font:600 .74rem var(--sans);padding:5px 9px;cursor:pointer;opacity:0;transition:opacity .15s}
 .copy:hover button,.copy button:focus-visible{opacity:1}
 @media (hover:none){.copy button{opacity:1}}
-.facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:32px;margin-top:48px;padding-top:32px;border-top:1px solid var(--line)}
+.facts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:32px;margin-top:48px;padding-top:32px;border-top:1px solid var(--line)}
 .facts h3{font-size:1rem;margin-bottom:6px}
 .facts p{color:var(--muted);font-size:.95rem}
+.facts .new{grid-column:1/-1;padding-top:24px;border-top:1px solid var(--line)}
+.facts .new p{max-width:var(--read)}
+@media (max-width:1100px){.facts{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:760px){.facts{grid-template-columns:1fr;gap:20px}}
 .more{margin-top:40px}
 

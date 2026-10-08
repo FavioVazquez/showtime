@@ -1,4 +1,4 @@
-"""Model files for transcription and speech separation, fetched on first use.
+"""Model files for transcription, speech separation and the speaker cutout, fetched on first use.
 
 Every entry lives in setup/manifest.json (id, url, size, sha256, licence; "tier": "lazy"),
 so `showtime setup --full` installs the same files up front and a seed folder
@@ -37,6 +37,7 @@ ITEMS: Dict[str, Dict[str, Any]] = {
                    "label": "Silero VAD v5"},
     "mdx-voc-ft": {"item": "uvr-mdx-net-voc-ft", "path": "models/separate/UVR-MDX-NET-Voc_FT.onnx",
                    "label": "UVR MDX-Net vocal separator"},
+    "modnet": {"item": "modnet", "path": "models/matte/modnet.onnx", "label": "MODNet portrait matting"},
 }
 
 

@@ -5,7 +5,7 @@ and no agent. It installs showtime on the runner, turns the notes into a project
 `showtime qa` on the finished file, exports a single-file HTML video, and uploads the result.
 
 ```yaml
-- uses: FavioVazquez/showtime/.github/actions/showtime-video@v0.3.0
+- uses: FavioVazquez/showtime/.github/actions/showtime-video@v0.4.1
 ```
 
 The complete workflow to copy is [`examples/showtime-release-video.yml`](examples/showtime-release-video.yml).

@@ -1,0 +1,22 @@
+name: Docs problem
+description: Something in the docs, the site or a command's help is wrong, missing or unclear.
+title: "[docs] "
+labels: ["type: docs", "status: triage"]
+body:
+  - type: input
+    id: where
+    attributes:
+      label: Page or command
+      placeholder: "https://faviovazquez.github.io/showtime/... or showtime edit --help"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What is wrong or missing
+    validations:
+      required: true
+  - type: textarea
+    id: better
+    attributes:
+      label: What it should say (optional)

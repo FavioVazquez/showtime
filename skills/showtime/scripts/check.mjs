@@ -7,14 +7,15 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { startServer } from './server.mjs';
-import { parseCli, runMain, resolveProject, info, c, fmtTime, fmtDuration, parseTimes, parseTime, UserError, cpuCount, workName, briefOutput, runPyCli, hasPyModule } from './lib/cli.mjs';
-import { openBrowser, openStage, openLab, parseSize } from './lib/stagehost.mjs';
-import { textSnapshot, hideText, fontInfo } from './lib/audit.mjs';
+import { parseCli, runMain, failNow, resolveProject, info, c, fmtTime, fmtDuration, parseTimes, parseTime, UserError, cpuCount, workName, briefOutput, runPyCli, hasPyModule, sinceLastLooked, printSince } from './lib/cli.mjs';
+import { openBrowser, openPage, openLab, parseSize, paceSummary, watchBrowser, closeSoon, STUCK_HINT } from './lib/stagehost.mjs';
+import { textSnapshot, hideText, fontInfo, leafAlpha, captionCollisions, gpuProbeScript } from './lib/audit.mjs';
 import { phoneConfig, createPhone, readNeed, readingRate, ptOf, phoneLine } from './lib/phone.mjs';
 import { brandFindings } from './lib/brandcheck.mjs';
 import { uncovered, loadedFaces, glyphFix } from './lib/glyphs.mjs';
 import { timeIssues } from './lib/questions.mjs';
 import { resolveShowreel, showreelConfig, flashVerdict, flashNote } from './lib/showreel.mjs';
+import { blurConfig, blurFindings, blurSummary } from './lib/blurcheck.mjs';
 import { enclosingJob, readJSON } from './lib/studio/paths.mjs';
 
 const PROBES = ['black', 'frozen', 'nondeterministic', 'error'];
@@ -51,6 +52,9 @@ const TINY = Number(TH.tiny_text_frac) || 0.022;
 const PH = phoneConfig(TH);
 // The showreel tone (scripts/lib/showreel.mjs): flash words may leave before their reading time; the hero line may not.
 const SR = showreelConfig(TH);
+// Shutter blur on chosen elements (data-st-blur; scripts/lib/blurcheck.mjs): text being read, motion too slow to
+// blur, containers and full-frame layers, motion the blur cannot pose between frames.
+const BL = blurConfig(TH);
 // SVG labels (chart values, axes, map names) side by side closer than this many em are crowded
 const LABEL_GAP = Number.isFinite(Number(TH.label_gap_em)) ? Number(TH.label_gap_em) : 0.15;
 const MOVING_NOTE = ' (mid-animation: the chart is still growing or morphing; its settled frame is judged on its own)';
@@ -65,7 +69,18 @@ const SPEC = {
     'determinism (frames re-captured after a delay and in shuffled order must match; Math.random during',
     'playback); text that is off-canvas, clipped or overlapping (SVG labels such as chart values and axes are',
     'compared one by one: touching, or closer than 0.15em side by side or stacked, they are labels_crowded); WCAG contrast of text against the real',
-    'pixels behind it (4.5:1 for every size: an ERROR below that for text >= 1% of the frame height);',
+    'pixels behind it (4.5:1 for every size: an ERROR below that for text >= 1% of the frame height; a text sampled mid-fade',
+    'is judged at the frame of its visible window where it is most opaque, and the message names both times);',
+    'caption_zone (with caption-karaoke captions: a visible element drawn where the caption cards sit while a caption shows;',
+    'data-st-caption-ok marks an intended overlap); webgpu (a page that asks for WebGPU is loaded again with WebGPU gone,',
+    'as on a machine without a GPU: an ERROR when no WebGL or 2D canvas draws in its place, else a warning);',
+    'look_budget (a WebGL look such as tilt-shift whose passes cost more per frame without a GPU than runtime/thresholds.json',
+    '"look_budget_ms"), look_fallback (a look that drew its still fallback because WebGL is missing), look_lost (a look whose',
+    'context the browser took back) and look_contexts (more than 8 looks on screen at once: a warning; over 14: an ERROR);',
+    'shutter blur (data-st-blur, F.motionBlur): blur_text (text the viewer reads is blurred: over 0.4 s in one run, on every',
+    'frame it shows, or while it moves slowly), blur_slow (at its fastest it moves under a quarter of its shorter side a frame,',
+    'or never fast enough to blur), blur_container (a scene, a container or a full-frame layer), blur_unsampled (it moves from',
+    'an onSeek handler or a moving ancestor, which the blur cannot pose between frames) and blur_inline (an inline box);',
     'tiny_text (readable text under 2.2% of the frame height; UI mockups marked data-st-decor, or drawn in F.decor on canvas, are exempt);',
     'design notes for flat, unlit backgrounds and sparse, mostly empty frames; vertical safe zones; whether text stays on screen long enough to read (0.3 s + the longer of characters/17 and words/3, per language); stretches',
     'with no motion; blank frames; and whether the fonts in use are embedded files (not system fonts).',
@@ -150,6 +165,18 @@ function blend(fg, a, bg) { return fg.map((v, i) => Math.round(v * a + bg[i] * (
 const hex = (c3) => '#' + c3.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('');
 const snip = (s, n = 40) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
 
+/** "fluted-glass 25.8 ms, metaballs 14.2 ms per frame without a GPU (budget 50 ms)" from report.looks, or ''. */
+export function looksLine(looks) {
+  const items = (looks && looks.items) || [];
+  if (!items.length) return '';
+  // a look that lost its WebGL context after it set up keeps its passes' cost, and says it fell back here
+  const one = (lk) => `${lk.look}${items.filter((x) => x.look === lk.look).length > 1 && lk.sel ? ` ${lk.sel}` : ''} ` +
+    ((lk.gl || Number(lk.ms) > 0) && Number.isFinite(Number(lk.ms))
+      ? `${Number(lk.ms)} ms${Number(lk.ms) > looks.budget_ms ? ' (over)' : ''}${lk.gl ? '' : ' (WebGL lost: fallback here)'}`
+      : 'fallback (no WebGL)');
+  return `${items.map(one).join(', ')} per frame without a GPU (budget ${looks.budget_ms} ms)`;
+}
+
 async function main() {
   const a = parseCli(SPEC);
   const T0 = Date.now();
@@ -165,13 +192,21 @@ async function main() {
   const add = (sev, code, message, extra = {}) => findings.push({ severity: sev, code, message, ...extra });
   const quiet = !!a.quiet;
   const talk = !quiet && !a.json && !briefOutput();   // progress steps: terminals and --verbose only
-  const step = (m) => { if (talk) info(c.dim(`  ${m}`)); };
+  let doing = 'opening the page';   // check's last step (the watchdog's error names it)
+  const step = (m) => { doing = m; if (talk) info(c.dim(`  ${m}`)); };
   if (talk) info(`${c.bold('showtime check')} ${proj.dir}`);
 
   const server = await startServer({ root: proj.dir, port: 0 });
   const b = await openBrowser({ gpu: a.gpu || 'auto' });
-  const cleanup = async () => { await b.browser.close().catch(() => {}); await server.close().catch(() => {}); };
+  // every page opens under the page-open deadline (stagehost openGuarded: once more in a new browser, then an
+  // error naming the step), and a browser that stops answering at any other step ends check with an error
+  // instead of a check that never returns (a macOS CI runner's check once outlived its caller's 5 minutes)
+  const stopWatch = watchBrowser(b, (m, hint) => failNow(`${m}; check's last step: ${doing}`, hint));
+  const cleanup = async () => { stopWatch(); await closeSoon(b.browser.close()); await server.close().catch(() => {}); };
   let sess, lab, sess2;
+  // once the first page is open, a later open that finds the browser stuck must not go on in a new one (the open
+  // page belongs to the old browser): end with the error
+  const noRelaunch = { onRetry: (m, what) => failNow(`the browser stopped answering: ${what}; check's last step: ${doing}`, STUCK_HINT) };
   let phone = null, floorPx = TINY * 1080, ranTimeline = false;   // the phone check's collector; smallest readable size in frame px
   let reel = { on: false, source: 'default', detail: '' };          // the showreel tone (showtime.json tone, the job's tone or its brief)
   const report = { project: proj.dir, page: proj.page, ok: false, findings, timings: {}, samples: [] };
@@ -188,11 +223,13 @@ async function main() {
     // ---------------------------------------------------------- load
     let t = Date.now();
     try {
-      sess = await openStage(b.browser, { url: server.url, page: proj.page, config: proj.config, size });
+      sess = await openPage(b, { url: server.url, page: proj.page, config: proj.config, size, init: gpuProbeScript(false) });
     } catch (e) {
+      if (e && e.browserStuck) throw e;   // the browser, not the page: an error, not a finding
       add('error', 'ready_failed', String(e.message || e), { fix: e.hint || 'open the page with `showtime preview` and look at the console' });
-      return finish();
+      return await finish();
     }
+    doing = 'opened the page; reading its timeline and text';
     const inf = sess.info;
     // an overlay page (rendered with --alpha over other footage: lower thirds, step chips) is empty
     // between its elements on purpose: <body data-overlay> or showtime.json "overlay": true
@@ -218,7 +255,9 @@ async function main() {
       .map((e) => (e.closest('[data-storyboard-shot]') || e.closest('[id]') || {}).id || '?'))]).catch(() => []);
     if (briefs.length) add('warning', 'storyboard_brief', `${briefs.length} shot(s) still show their storyboard brief instead of a picture: ${briefs.slice(0, 8).join(', ')}${briefs.length > 8 ? ', ...' : ''}`,
       { fix: 'build each shot in its <section> from its brief (storyboard.json has every row), then delete the [data-storyboard-brief] elements' });
-    lab =await openLab(b.browser, server.url);
+    doing = 'opening the image lab page';
+    lab = await openLab(b, server.url, noRelaunch);
+    doing = 'opened the image lab page; sampling the frames';
     const D = inf.duration, fps = inf.fps, W = inf.width, H = inf.height;
     // language of the on-screen text (sets the reading speed): showtime.json "lang", else <html lang>, else en
     const pageLang = await sess.page.evaluate(() => document.documentElement.getAttribute('lang') || '').catch(() => '');
@@ -461,6 +500,66 @@ async function main() {
         });
       }
     };
+    // Contrast of the text leaves in a snapshot at time st (only: a Set of leaf ids to measure, else all):
+    // the text paint is hidden to sample what is really behind each box. Each text keeps its most settled
+    // measurement in contrastWorst (fully faded in, not blurred, outside a scene transition).
+    const measureContrast = async (snap, st, only = null) => {
+      const leaves = snap.leaves.filter((l) => (!only || only.has(l.lid)) && l.opacity * l.color[3] >= 0.3 && !l.clipText && l.rect.w > 1 && l.rect.h > 1 &&
+        l.rect.x < W && l.rect.y < H && l.rect.x + l.rect.w > 0 && l.rect.y + l.rect.h > 0);
+      if (!leaves.length) return [];
+      await sess.page.evaluate(hideText, true);
+      const bg = await sess.shot({ format: 'png' });
+      await sess.page.evaluate(hideText, false);
+      const boxes = leaves.map((l) => l.rect);
+      const cols = await lab.boxColors(bg, boxes);
+      const fg = await sess.shot({ format: 'png' });
+      const moved = await lab.boxDiff(fg, bg, boxes);
+      const done = [];
+      leaves.forEach((l, i) => {
+        const s = cols[i];
+        if (!s) return;
+        // hiding the text changed nothing here: the glyphs are pixels of a canvas, image or
+        // transition layer, so their contrast cannot be measured this way
+        if (moved[i] !== null && moved[i] < 1.5) { unmeasured.add(l.bid); return; }
+        const alpha = (l.readOpacity ?? l.opacity) * l.color[3];
+        const fgMed = blend(l.color.slice(0, 3), alpha, s.median);
+        const ratio = contrast(fgMed, s.median);
+        const worst = Math.min(ratio, contrast(blend(l.color.slice(0, 3), alpha, s.p10), s.p10), contrast(blend(l.color.slice(0, 3), alpha, s.p90), s.p90));
+        // video text is read at a distance on a phone: 4.5:1 for every size (no large-text discount)
+        const need = MIN_CONTRAST;
+        const eff = l.fontSize * (l.scale || 1);
+        // judge each text at its most settled sample: fully faded in, not blurred, and outside a scene
+        // transition (two scenes overlap there, so the ground behind the text is not its own)
+        const tw = inTx(st);
+        const settled = Math.round(alpha * 20) / 20 - (l.blurred ? 1 : 0) - (tw ? 0.5 : 0) - (l.entering ? 0.4 : 0);
+        const prev = contrastWorst.get(l.lid);
+        if (!prev || settled > prev.settled || (settled === prev.settled && ratio < prev.ratio)) contrastWorst.set(l.lid, { settled, entering: !!l.entering, blurred: !!l.blurred, bid: l.bid, ratio, worst, need, t: st, tx: tw, fg: hex(l.color.slice(0, 3)), alpha, shown: hex(fgMed), bg: hex(s.median), sel: l.sel, text: blockSeen.get(l.bid) ? blockSeen.get(l.bid).text : '', own: l.own || '', outlined: l.outlined, size: eff, decor: l.decor, ...(prev && prev.settle ? { settle: prev.settle } : {}) });
+        done.push(l.lid);
+      });
+      return done;
+    };
+    // Caption zone (caption-karaoke): while a caption card shows, nothing else may sit where the cards go.
+    // One warning per element; frames inside a scene transition are skipped (two scenes overlap there).
+    const capSeen = new Set();
+    let hasCaptions = null;
+    const auditCaptionZone = async (st) => {
+      if (hasCaptions === false || inTx(st)) return;
+      const cz = await sess.page.evaluate(captionCollisions, { width: W, height: H }).catch(() => null);
+      if (!cz) return;
+      hasCaptions = cz.captions > 0;
+      if (!cz.captioned || !cz.zone) return;
+      const z = rnd(cz.zone);
+      report.caption_zone = z;
+      for (const hit of cz.hits) {
+        if (capSeen.has(hit.key)) continue;
+        capSeen.add(hit.key);
+        const what = hit.text ? `"${snip(hit.text)}" (${hit.sel})` : `${hit.kind === 'media' ? 'the image' : hit.kind === 'graphic' ? 'the graphic' : 'the box'} ${hit.sel}`;
+        const o = hit.overlap;
+        add('warning', 'caption_zone', `${what} is drawn in the caption zone at ${fmtTime(st)} while a caption shows: it overlaps the area the caption cards use (x ${z.x}-${z.x + z.w}, y ${z.y}-${z.y + z.h}) by ${o.w}x${o.h}px (x ${o.x}-${o.x + o.w}, y ${o.y}-${o.y + o.h})`,
+          { t: st, selector: hit.sel, text: hit.text ? snip(hit.text, 40) : undefined, rect: hit.rect, overlap: o, zone: z,
+            fix: `move it out of the caption band (${z.y >= H / 2 ? `above y ${Math.max(0, z.y - 8)}` : `below y ${z.y + z.h + 8}`}), show it before or after the captions, or mark an intended overlap data-st-caption-ok` });
+      }
+    };
     for (const st of sampleTimes) {
       const t1 = Date.now();
       if (!(await trySeek(st))) continue;
@@ -613,37 +712,8 @@ async function main() {
         add('warning', 'animated_gif', `animated GIF ${g.replace(server.url, '')} plays in real time and will not match between renders`, { t: st, fix: 'convert it to a VP9 <video> or an image sequence' });
       }
       // contrast: hide text paint, sample what is really behind each text box
-      const leaves = snap.leaves.filter((l) => l.opacity * l.color[3] >= 0.3 && !l.clipText && l.rect.w > 1 && l.rect.h > 1 &&
-        l.rect.x < W && l.rect.y < H && l.rect.x + l.rect.w > 0 && l.rect.y + l.rect.h > 0);
-      if (leaves.length) {
-        await sess.page.evaluate(hideText, true);
-        const bg = await sess.shot({ format: 'png' });
-        await sess.page.evaluate(hideText, false);
-        const boxes = leaves.map((l) => l.rect);
-        const cols = await lab.boxColors(bg, boxes);
-        const fg = await sess.shot({ format: 'png' });
-        const moved = await lab.boxDiff(fg, bg, boxes);
-        leaves.forEach((l, i) => {
-          const s = cols[i];
-          if (!s) return;
-          // hiding the text changed nothing here: the glyphs are pixels of a canvas, image or
-          // transition layer, so their contrast cannot be measured this way
-          if (moved[i] !== null && moved[i] < 1.5) { unmeasured.add(l.bid); return; }
-          const alpha = (l.readOpacity ?? l.opacity) * l.color[3];
-          const fgMed = blend(l.color.slice(0, 3), alpha, s.median);
-          const ratio = contrast(fgMed, s.median);
-          const worst = Math.min(ratio, contrast(blend(l.color.slice(0, 3), alpha, s.p10), s.p10), contrast(blend(l.color.slice(0, 3), alpha, s.p90), s.p90));
-          // video text is read at a distance on a phone: 4.5:1 for every size (no large-text discount)
-          const need = MIN_CONTRAST;
-          const eff = l.fontSize * (l.scale || 1);
-          // judge each text at its most settled sample: fully faded in, not blurred, and outside a scene
-          // transition (two scenes overlap there, so the ground behind the text is not its own)
-          const tw = inTx(st);
-          const settled = Math.round(alpha * 20) / 20 - (l.blurred ? 1 : 0) - (tw ? 0.5 : 0) - (l.entering ? 0.4 : 0);
-          const prev = contrastWorst.get(l.lid);
-          if (!prev || settled > prev.settled || (settled === prev.settled && ratio < prev.ratio)) contrastWorst.set(l.lid, { settled, entering: !!l.entering, bid: l.bid, ratio, worst, need, t: st, tx: tw, fg: hex(l.color.slice(0, 3)), alpha, shown: hex(fgMed), bg: hex(s.median), sel: l.sel, text: blockSeen.get(l.bid) ? blockSeen.get(l.bid).text : '', own: l.own || '', outlined: l.outlined, size: eff, decor: l.decor });
-        });
-      }
+      await measureContrast(snap, st);
+      await auditCaptionZone(st);
       // fonts actually used to paint text (CDP asks the renderer, so fallbacks are visible)
       const todo = snap.leaves.filter((l) => !fontChecked.has(l.lid)).slice(0, 40);
       if (todo.length) {
@@ -681,6 +751,64 @@ async function main() {
     }
     report.timings.samples = Date.now() - t;
     step(`sampled ${sampleTimes.length} times (layout, contrast, fonts) in ${fmtDuration(report.timings.samples)}`);
+    // ---------------------------------------------------------- contrast at the settled opacity
+    // A text that fails only because a sample caught it mid-fade (or blurred, or mid-entrance) is judged
+    // again at the frame inside its visible window where it is most opaque: the window is walked from the
+    // sample time both ways (0.2 s steps, up to 8 s, until the text is gone) with a cheap opacity probe,
+    // then the contrast is measured at the middle of the most settled stretch. A text that is faint at
+    // its most opaque frame still fails there.
+    t = Date.now();
+    const fadedLow = [...contrastWorst.entries()].filter(([, v]) => v.ratio < v.need && !v.tx && (v.alpha < 0.98 || v.entering || v.blurred)).slice(0, 24);
+    if (fadedLow.length) {
+      const stepW = Math.max(1 / fps, 0.2), SPAN = 8;
+      const byT = new Map();
+      for (const [lid, v] of fadedLow) { if (!byT.has(v.t)) byT.set(v.t, []); byT.get(v.t).push(lid); }
+      const score = (p, x) => Math.round(p.alpha * 20) / 20 - (p.blurred ? 1 : 0) - (inTx(x) ? 0.5 : 0) - (p.entering ? 0.4 : 0);
+      const plan = new Map();   // time to measure at -> lids
+      for (const [t0, lids] of byT) {
+        const obs = new Map(lids.map((l) => [l, []]));   // lid -> [[time, score, alpha]]
+        for (const dir of [1, -1]) {
+          let live = new Set(lids);
+          for (let k = dir > 0 ? 0 : 1; live.size && k * stepW <= SPAN + 1e-9; k++) {
+            const raw = t0 + dir * k * stepW;
+            const x = q(Math.max(0, Math.min(lastT, raw)));
+            if (!(await trySeek(x))) break;
+            const pr = await sess.page.evaluate(leafAlpha, [...live]).catch(() => ({}));
+            for (const lid of [...live]) {
+              const p = pr[lid];
+              if (!p || !p.on || p.alpha < 0.05) { live.delete(lid); continue; }   // the end of its visible window
+              obs.get(lid).push([x, score(p, x), p.alpha]);
+            }
+            if (raw <= 0 || raw >= lastT) break;
+          }
+        }
+        for (const [lid, list] of obs) {
+          if (!list.length) continue;
+          list.sort((u, v) => u[0] - v[0]);
+          const best = Math.max(...list.map((o) => o[1]));
+          // the longest run of frames at the best score; its middle is the settled frame
+          let run = null, cur = null;
+          for (let i = 0; i < list.length; i++) {
+            if (list[i][1] < best - 1e-9) { cur = null; continue; }
+            if (cur && i > 0 && list[i][0] - list[i - 1][0] <= stepW * 1.5) cur.e = i; else cur = { s: i, e: i };
+            if (!run || cur.e - cur.s > run.e - run.s) run = cur;
+          }
+          const tm = list[Math.floor((run.s + run.e) / 2)][0];
+          const v = contrastWorst.get(lid);
+          v.settle = { from: t0, alpha0: +v.alpha.toFixed(2), window: [list[0][0], list[list.length - 1][0]] };
+          if (Math.abs(tm - t0) < 1e-6) continue;   // the sample was already its most opaque frame
+          if (!plan.has(tm)) plan.set(tm, new Set());
+          plan.get(tm).add(lid);
+        }
+      }
+      for (const [tm, lids] of [...plan].sort((x, y) => x[0] - y[0])) {
+        if (!(await trySeek(tm))) continue;
+        const snap = await sess.page.evaluate(textSnapshot, { width: W, height: H, full: true, labelGapEm: LABEL_GAP });
+        await measureContrast(snap, tm, lids);
+      }
+      report.timings.settle = Date.now() - t;
+      step(`contrast of ${fadedLow.length} faded text(s) judged at their most opaque frame in ${fmtDuration(report.timings.settle)}`);
+    }
     const perBlock = new Map();
     for (const [, v] of contrastWorst) {
       const k = v.bid;
@@ -709,11 +837,14 @@ async function main() {
       const sev = v.tx || v.outlined || v.decor || v.entering ? 'info' : v.size >= 0.01 * H ? 'error' : 'warning';
       // name the failing span when it is only part of the line (a line number, a diff gutter, one token)
       const what = v.own && v.own !== v.text && v.own.length < v.text.length ? `"${snip(v.own, 30)}" in "${snip(v.text)}"` : `"${snip(v.text)}"`;
-      add(sev, 'low_contrast', `contrast ${v.ratio.toFixed(2)}:1 (needs ${v.need}:1) for ${what} at ${fmtTime(v.t)}: ${fgOf(v)} on ${v.bg}${v.outlined ? ' (has an outline/shadow)' : ''}${v.tx ? txNote(v.tx) : ''}${v.entering ? ' (measured only while its entrance animation runs; check the settled frame with showtime snap --at)' : ''}`,
-        { t: v.t, selector: v.sel, ratio: +v.ratio.toFixed(2), fix: v.ratio < v.need ? `${faded(v) && contrast(hexToRgb(v.fg), hexToRgb(v.bg)) >= v.need ? 'draw it at full opacity, ' : ''}use a ${srgbLum(hexToRgb(v.bg)) < 0.18 ? 'lighter' : 'darker'} text colour, or put a scrim/plate behind the text` : '' });
+      // judged at its most opaque frame (the settle pass above): say where it was first caught and the window
+      const settledNote = v.settle ? ` (its most opaque frame on screen ${fmtTime(v.settle.window[0])}-${fmtTime(v.settle.window[1])}${Math.abs(v.settle.from - v.t) > 1e-6 ? `; first sampled at ${fmtTime(v.settle.from)} at ${Math.round(v.settle.alpha0 * 100)}% opacity` : ''})` : '';
+      add(sev, 'low_contrast', `contrast ${v.ratio.toFixed(2)}:1 (needs ${v.need}:1) for ${what} at ${fmtTime(v.t)}${settledNote}: ${fgOf(v)} on ${v.bg}${v.outlined ? ' (has an outline/shadow)' : ''}${v.tx ? txNote(v.tx) : ''}${v.entering ? ' (measured only while its entrance animation runs; check the settled frame with showtime snap --at)' : ''}`,
+        { t: v.t, selector: v.sel, ratio: +v.ratio.toFixed(2), ...(v.settle ? { settled: { sampled: v.settle.from, sampled_opacity: v.settle.alpha0, window: v.settle.window } } : {}), fix: v.ratio < v.need ? `${faded(v) && contrast(hexToRgb(v.fg), hexToRgb(v.bg)) >= v.need ? 'draw it at full opacity, ' : ''}use a ${srgbLum(hexToRgb(v.bg)) < 0.18 ? 'lighter' : 'darker'} text colour, or put a scrim/plate behind the text` : '' });
     }
     if (unmeasured.size) add('info', 'contrast_unmeasured', `contrast of ${unmeasured.size} text block(s) could not be measured (drawn on a canvas, image or transition layer at the sampled times)`);
-    report.contrast = [...perBlock.values()].map((v) => ({ text: snip(v.text, 50), ratio: +v.ratio.toFixed(2), worst: +v.worst.toFixed(2), need: v.need, t: v.t, fg: v.fg, bg: v.bg, ...(faded(v) ? { opacity: +v.alpha.toFixed(2) } : {}) }));
+    report.contrast = [...perBlock.values()].map((v) => ({ text: snip(v.text, 50), ratio: +v.ratio.toFixed(2), worst: +v.worst.toFixed(2), need: v.need, t: v.t, fg: v.fg, bg: v.bg, ...(faded(v) ? { opacity: +v.alpha.toFixed(2) } : {}),
+      ...(v.settle ? { sampled: v.settle.from, sampled_opacity: v.settle.alpha0 } : {}) }));
     for (const v of canvasContrast.values()) {
       report.contrast.push({ text: snip(v.text, 50), ratio: +v.ratio.toFixed(2), need: v.need, t: v.t, fg: v.fg, bg: v.bg, source: 'canvas' });
       if (v.ratio >= v.need) continue;
@@ -806,7 +937,7 @@ async function main() {
         const hashes = [];
         const cross = [];
         try {
-          sess2 = await openStage(b.browser, { url: server.url, page: proj.page, config: proj.config, size });
+          sess2 = await openPage(b, { url: server.url, page: proj.page, config: proj.config, size }, noRelaunch);
           for (let i = uniq.length - 1; i >= 0; i--) {
             if (!A[i]) continue;
             await sess2.seek(uniq[i]);
@@ -820,8 +951,9 @@ async function main() {
             }
           }
         } catch (e) {
+          if (e && e.browserStuck) throw e;
           add('warning', 'determinism_incomplete', `the second page load failed: ${String(e.message || e).split('\n')[0]}`);
-        } finally { if (sess2) { await sess2.close(); sess2 = null; } }
+        } finally { if (sess2) { await closeSoon(sess2.close()); sess2 = null; } }
         hashes.sort((x, y) => x.t - y.t);
         report.determinism.hashes = hashes;
         report.determinism.cross = cross;
@@ -889,6 +1021,7 @@ async function main() {
         okGrid.push(gt);
         tiny.push(await sess.shot({ format: 'jpeg', quality: 70, scale: Math.min(1, 192 / W) }));
         activeClips.push(await sess.page.evaluate(() => document.querySelectorAll('[data-start][data-active]').length));
+        await auditCaptionZone(gt);
         let anyText = false;
         const snap = await sess.page.evaluate(textSnapshot, { width: W, height: H, full: false });
         for (const blk of snap.blocks) {
@@ -1196,6 +1329,8 @@ async function main() {
     const dg = await sess.diag();
     dg.timers.where = dg.timers.where.map((w) => w.split(server.url + '/').join(''));
     report.diag = dg;
+    // how much the waits were scaled for this page's measured cost (1: the fixed values; stagehost.mjs pace)
+    report.pace = paceSummary([sess]);
     const randCalls = (dg.random || 0) - random0, nSeeks = Math.max(1, (dg.seeks || 0) - seeks0);
     if (randCalls > 0) {
       add('warning', 'unseeded_random', `Math.random() was called ${randCalls} time(s) during ${nSeeks} seeks; the renderer reseeds it every frame, so whatever it drives jumps from frame to frame and will not match the preview`,
@@ -1223,6 +1358,110 @@ async function main() {
         }
       } catch { /* a probe only */ }
     }
+    // WebGPU: showtime never needs a GPU (the test machine has none), and without one a WebGPU page gets no
+    // adapter and draws nothing (a flat ground; the render only warns). A page that asks for WebGPU is
+    // loaded again with WebGPU gone, as on such a machine: when no WebGL or 2D canvas of the page draws
+    // in its place, that is an error; when one does, a warning (frames differ with and without a GPU).
+    try {
+      const rec = await sess.page.evaluate(() => window.__stGpu || null).catch(() => null);
+      const rel = (u) => String(u || '').split(server.url + '/').join('');
+      // reads of navigator.gpu by showtime's runtime or its bundled libraries are not the page asking
+      const own = (w) => !!w && !/\/_st\/|\/_lib\//.test(w);
+      const runtimeWhere = rec ? [...rec.adapters.map((x) => ['navigator.gpu.requestAdapter()', x.where]), ...rec.contexts.map((w) => ["getContext('webgpu')", w]),
+        ...rec.reads.filter(own).map((w) => ['navigator.gpu', w])] : [];
+      const staticHits = webgpuSources(proj.dir, sess.log.requests, server.url);
+      const asks = runtimeWhere.length > 0 || staticHits.some((h) => h.asks);
+      if (asks) {
+        t = Date.now();
+        const gpuSels = await sess.page.evaluate(() => [...document.querySelectorAll('canvas[data-st-ctx~="webgpu"]')].map((c) => (c.id ? '#' + c.id : null)).filter(Boolean)).catch(() => []);
+        const noGpu = await probeNoGpu({ b, url: server.url, proj, size, lab, times: sampleTimes, gpuSels, noRelaunch });
+        // name the calls that ask (requestAdapter, a 'webgpu' context) first; a bare navigator.gpu test only when nothing else shows
+        const named = [...runtimeWhere.map(([what, w]) => ({ what, at: rel(w) || 'an unknown line' })), ...staticHits.map((h) => ({ what: h.what, at: `${h.file}:${h.line}` }))];
+        const strong = named.filter((n) => n.what !== 'navigator.gpu');
+        const where = [...new Set((strong.length ? strong : named).map((n) => `${n.what} at ${n.at}`))].slice(0, 3);
+        const hasAdapter = rec && rec.adapters.length ? rec.adapters.some((x) => x.got) : null;   // null: never asked here
+        const adapterGot = hasAdapter === null ? '' : hasAdapter ? 'this machine has a WebGPU adapter' : 'this machine has none';
+        report.webgpu = { where, adapter: adapterGot || null, fallback: noGpu.drew, probed: noGpu.probed, page_errors: noGpu.errors };
+        const fix = "draw it with WebGL or a 2D canvas, which render with or without a GPU: showtime's own shader layer (shaderLayer in templates/showreel/reel.js, references/motion-craft.md) runs a GLSL fragment shader on WebGL";
+        if (noGpu.drew) {
+          add('warning', 'webgpu', `the page asks for WebGPU (${where.join('; ')}); without a GPU it falls back to ${noGpu.drew.ctx} (${noGpu.drew.sel} draws at ${fmtTime(noGpu.drew.t)}), so renders differ between machines with and without a GPU${adapterGot ? ` (${adapterGot})` : ''}`,
+            { t: noGpu.drew.t, where, fix });
+        } else {
+          add('error', 'webgpu', `the page asks for WebGPU (${where.join('; ')}) and has no WebGL or 2D fallback that draws: without a GPU (a render box has none; showtime never needs one) it gets no adapter and the picture stays a flat ground${hasAdapter ? ' (this machine has a WebGPU adapter, so the preview here looks right)' : ''}${noGpu.probed ? ` (checked at ${noGpu.probed} frame(s) with WebGPU turned off)` : ''}${noGpu.errors.length ? `; with WebGPU off the page throws: ${noGpu.errors[0]}` : ''}`,
+            { where, fix });
+        }
+        report.timings.webgpu = Date.now() - t;
+      } else if (staticHits.length) {
+        report.webgpu = { where: staticHits.map((h) => `${h.what} at ${h.file}:${h.line}`).slice(0, 4), asked: false };
+      }
+    } catch (e) {
+      if (e && e.browserStuck) throw e;
+      add('info', 'webgpu_probe_failed', `the WebGPU probe did not run: ${String(e.message || e).split('\n')[0]}`);
+    }
+    // WebGL looks (fluted-glass, tilt-shift, liquid-metal, mesh-gradient, god-rays, marble, metaballs;
+    // runtime/effects/gl.js): each one records its size, its passes and what they cost per frame without a GPU
+    // (the test machine's SwiftShader timings). Over the budget is a warning with the knob that brings it back; a look
+    // that drew its fallback (no WebGL here) is a warning too.
+    try {
+      const looks = await sess.page.evaluate(() => (window.__stLooks || []).map((x) => JSON.parse(JSON.stringify(x)))).catch(() => []);
+      if (looks.length) {
+        const budget = Number(TH.look_budget_ms) || 50;
+        report.looks = { budget_ms: budget, items: looks };
+        const KNOB = {
+          'tilt-shift': 'keep the blur passes at data-scale="0.35" (the default) or lower, or blur a smaller box',
+          'fluted-glass': 'data-scale="0.75" (the pane renders smaller and is scaled up), or a smaller box',
+          'liquid-metal': 'data-shape="sphere" (an analytic sphere, the cheapest shape) or data-scale="0.75"',
+          'mesh-gradient': 'data-scale="0.35" (the field is smooth: a smaller canvas scaled up looks the same) or data-points="4"',
+          'god-rays': 'data-scale="0.35" (the light is soft; the shape on top stays sharp)',
+          marble: 'data-scale="0.5" (softer veins) or a smaller box',
+          metaballs: 'data-scale="0.5" (the edge stays a pixel soft at that size, so slightly softer at the frame size) or fewer balls (data-count)',
+        };
+        for (const lk of looks) {
+          if (lk.lost) {
+            add('warning', 'look_lost', `${lk.look} ${lk.sel} lost its WebGL context ${lk.lost === 1 ? 'once' : lk.lost + ' times'} (the browser takes contexts back past about 16 at once, or after a GPU reset)${lk.gl ? '; it drew again on a new one' : ' and drew its still fallback'}`,
+              { fix: 'fewer looks on screen at once (see look_contexts); a look holds a context only while its clip shows' });
+          } else if (!lk.gl) {
+            // most fallbacks are still; one that moves (metaballs) says so in its note
+            const moves = /still move/.test(lk.note || ''), what = String(lk.note || '').replace(/^no WebGL:\s*(drew\s+)?/, '');
+            add('warning', 'look_fallback', `${lk.look} ${lk.sel} drew its ${moves ? '' : 'still '}fallback${what ? ` (${what})` : ''}: WebGL is not available in this browser, so ${moves ? 'the look is drawn flat' : 'the look does not move'} here and this render will differ from one made where WebGL works`,
+              { fix: 'render where Chrome has WebGL (with or without a GPU: SwiftShader is enough); `showtime doctor` shows the browser' });
+          }
+          // a look that lost its context after it set up still knows its passes: what it costs where WebGL works
+          if (lk.ms > budget) {
+            const passes = (lk.passes || []).map((p) => `${p.kind} ${p.w}x${p.h}`).join(' + ');
+            add('warning', 'look_budget', `${lk.look} ${lk.sel} costs about ${lk.ms} ms per frame without a GPU (${passes}; budget ${budget} ms): on a machine without a GPU every frame it shows renders that much slower`,
+              { fix: KNOB[lk.look] || 'render the look at a smaller data-scale' });
+          }
+        }
+        // each look holds a WebGL context while its clip shows, and Chrome keeps about 16 per page: count the
+        // most looks on screen at one time (their clip windows, end null = to the end of the video)
+        const live = looks.filter((lk) => lk.gl && lk.clip);
+        const edges = live.flatMap((lk) => [[lk.clip[0], 1], [lk.clip[1] == null ? Infinity : lk.clip[1], -1]]).sort((p, q) => p[0] - q[0] || p[1] - q[1]);
+        let now = 0, peak = 0, at = 0;
+        for (const [x, d] of edges) { now += d; if (now > peak) { peak = now; at = x; } }
+        report.looks.peak = { looks: peak, t: at };
+        const warnAt = Number(TH.look_live_warn) || 8, maxAt = Number(TH.look_live_max) || 14;
+        if (peak > warnAt) {
+          add(peak > maxAt ? 'error' : 'warning', 'look_contexts', `${peak} WebGL looks are on screen at once at ${fmtTime(at)}: each holds a WebGL context, and Chrome keeps about 16 per page (with transitions and other canvases), dropping the oldest, so tiles can go blank${peak > maxAt ? '' : ' on a busy page'}; keep it to ${warnAt} or fewer`,
+            { t: at, fix: 'fewer looks per scene (one is the rule), or plain images and CSS for the small tiles; looks in different scenes do not count together' });
+        }
+      }
+    } catch { /* a probe only */ }
+    // Shutter blur (data-st-blur, ST.blur; runtime/stage.js): every blurred element's motion on every frame it is on
+    // screen, computed from its own motion sources (no capture), plus a few real seeks that catch motion those sources
+    // miss. The rules (scripts/lib/blurcheck.mjs, runtime/thresholds.json "blur") flag blur on text being read, on
+    // motion too slow to need it, on containers and full-frame layers, and motion the blur cannot pose.
+    try {
+      t = Date.now();
+      const items = await sess.page.evaluate(async () => [...(window.__stBlur ? await window.__stBlur.scan() : []),
+        ...(window.Film && typeof window.Film.blurScan === 'function' ? window.Film.blurScan() : [])]).catch(() => []);
+      if (items.length) {
+        report.blur = { items: items.map((it) => { const { frames, probes, ...rest } = it; return { ...rest, ...blurSummary(it, fps), probes }; }) };
+        for (const it of items) for (const f of blurFindings(it, BL, { fps })) add(f.severity, f.code, f.message, { fix: f.fix, ...(f.t != null ? { t: f.t } : {}) });
+        report.timings.blur = Date.now() - t;
+        step(`shutter blur: ${items.length} element(s) checked in ${fmtDuration(report.timings.blur)}`);
+      }
+    } catch { /* a probe only */ }
     // the first frame of every hard cut: the stage shows a scene from its first frame, but a page that
     // draws it from its own clock (canvas or WebGL drawn in onSeek "while active", tested against a time
     // typed again in the script, or one written a hair after the frame) draws it one frame later. That
@@ -1230,7 +1469,7 @@ async function main() {
     if (lab && !overlayPage) {
       t = Date.now();
       try {
-        sess2 = await openStage(b.browser, { url: server.url, page: proj.page, config: proj.config, size });
+        sess2 = await openPage(b, { url: server.url, page: proj.page, config: proj.config, size }, noRelaunch);
         report.cuts = await cutFrames({ sess: sess2, lab, fps, W, lastT, txWin });
         const late = report.cuts.filter((x) => x.late);
         if (late.length) {
@@ -1238,8 +1477,9 @@ async function main() {
             { t: late[0].t, times: late.map((c) => c.t), fix: 'decide what a scene draws from the stage\'s own clip windows: ST.clips() is frame-exact (on screen while t >= start && t < end); do not compare t with scene times typed again in the script or read from data-start yourself' });
         }
       } catch (e) {
+        if (e && e.browserStuck) throw e;
         add('info', 'cut_probe_failed', `the first frames after the cuts were not probed: ${String(e.message || e).split('\n')[0]}`);
-      } finally { if (sess2) { await sess2.close(); sess2 = null; } }
+      } finally { if (sess2) { await closeSoon(sess2.close()); sess2 = null; } }
       report.timings.cuts = Date.now() - t;
     }
     const log = sess.log;
@@ -1253,6 +1493,9 @@ async function main() {
     for (const u of log.blocked.slice(0, 5)) add('error', 'network', `the page requests ${u}; renders are offline, so this will be missing`, { fix: 'download it into the project (fonts: /_lib/@fontsource/..., libraries: /_lib/<package>/...)' });
     const missing = log.http.filter((h) => h.status === 404);
     for (const m of missing.slice(0, 8)) add('error', 'missing_file', `missing file: ${m.url.replace(server.url, '')}`, { fix: 'fix the path (paths are relative to the project folder; /_lib/... and /_st/... are built in)' });
+    // a load cancelled while it ran (ERR_ABORTED: an image whose src changed again during check's scrubbing, a
+    // fetch the page aborted) is not a broken file: the stage host counts it apart, never a finding
+    report.cancelled_loads = log.cancelled || 0;
     for (const f of log.failed.filter((x) => !/ERR_BLOCKED_BY_CLIENT|ERR_ABORTED/.test(x.error)).slice(0, 5)) add('warning', 'request_failed', `request failed: ${f.url.replace(server.url, '')} (${f.error})`);
     if (dg.timers.setTimeout + dg.timers.setInterval > 0) {
       add('warning', 'timers', `setTimeout/setInterval ran ${dg.timers.setTimeout + dg.timers.setInterval} time(s) during playback; they run in real time, so the render may not match the preview`,
@@ -1296,7 +1539,16 @@ async function main() {
           const kf = an.effect.getKeyframes ? an.effect.getKeyframes() : [];
           if (!kf.length || kf[0].opacity === undefined || !(parseFloat(kf[0].opacity) < 0.05)) continue;   // an entrance from invisible
           if (!(tg.textContent || '').trim() && !tg.querySelector('img, svg, video, canvas')) continue;
-          const f = Math.round((startOf(tg) + (Number(an.effect.getTiming().delay) || 0) / 1000) * fps);
+          // the entrance starts where the opacity leaves 0: the last invisible keyframe before the first visible
+          // one (keyframes that hold 0 until 40 % enter at 40 % of the duration, not at the animation's start)
+          let hold = 0;
+          for (const k of kf) {
+            if (k.opacity === undefined) continue;
+            if (parseFloat(k.opacity) >= 0.05) break;
+            hold = Number(k.computedOffset ?? k.offset) || 0;
+          }
+          const dur = Number(an.effect.getComputedTiming().duration) || 0;
+          const f = Math.round((startOf(tg) + ((Number(an.effect.getTiming().delay) || 0) + hold * dur) / 1000) * fps);
           const par = tg.parentElement;
           if (!groups.has(par)) groups.set(par, new Map());
           const byF = groups.get(par);
@@ -1357,10 +1609,10 @@ async function main() {
       fs.writeFileSync(report.sheet, sheet);
     }
     await lookHistory();
-    return finish();
+    return await finish();
   } finally {
-    if (lab) await lab.close();
-    if (sess) await sess.close();
+    if (lab) await closeSoon(lab.close());
+    if (sess) await closeSoon(sess.close());
     await cleanup();
   }
 
@@ -1378,7 +1630,7 @@ async function main() {
     } catch { /* no verdict */ }
   }
 
-  function finish() {
+  async function finish() {
     // many tiny labels are one warning (listing them), so the other findings stay visible
     const tinies = findings.filter((f) => f.code === 'tiny_text' && f.severity === 'warning');
     if (tinies.length > 4) {
@@ -1411,6 +1663,9 @@ async function main() {
     const file = path.join(outDir, 'report.json');
     fs.writeFileSync(file, JSON.stringify(report, null, 2));
     report.report = file;
+    const sinceJob = enclosingJob(proj.dir);           // a project inside a job: what the person changed meanwhile
+    const since = sinceJob ? await sinceLastLooked(sinceJob) : null;
+    if (sinceJob) report.since_last_looked = since;
     if (a.json) {
       process.stdout.write(JSON.stringify(report, null, 2) + '\n');
     } else {
@@ -1443,6 +1698,9 @@ async function main() {
       if (report.sheet) tail.push(`  sheet   ${report.sheet}`);
       tail.push(`  report  ${file}`);
       if (report.estimate) tail.push(`  estimate: a full render takes about ${fmtDuration(report.estimate.seconds * 1000)} here (${report.estimate.frames} frames, ~${report.estimate.msPerFrame} ms/frame, ${report.estimate.workers} workers${report.estimate.note ? `; ${report.estimate.note}` : ''})`);
+      const looksTxt = looksLine(report.looks);
+      if (looksTxt) tail.push(`  looks   ${looksTxt}`);
+      if (report.pace && report.pace.factor > 1) tail.push(`  waits: x${report.pace.factor} for this page's pace (frames ${report.pace.frame_ms ?? '-'} ms apart while it got ready, seeks ${report.pace.seek_ms ?? '-'} ms); render scales its waits the same way`);
       const textFile = path.join(outDir, 'report.txt');
       try { fs.writeFileSync(textFile, [...fileLines, ...tail, ''].join('\n').replace(/\x1b\[[0-9;]*m/g, '')); } catch { /* the summary still prints */ }
       if (quiet) { /* summary line only */ } else if (!briefOutput()) {
@@ -1476,11 +1734,13 @@ async function main() {
         out.push(`  look    showtime look ${/\s/.test(rel) ? JSON.stringify(rel) : rel}   (one small image of the key frames; sheet.jpg is for reviewers)`);
         out.push(`  report  ${textFile} (full), report.json`);
         if (report.estimate) out.push(`  estimate: full render ~${fmtDuration(report.estimate.seconds * 1000)}`);
+        if (looksTxt) out.push(`  looks   ${looksTxt}`);
         for (const l of out) console.log(l);
       }
       if (report.phone && !quiet) console.log(`  ${report.phone.ok ? c.green('PASS') : c.yellow('WARN')}  ${phoneLine(report.phone)}`);
       const verdict = errors ? c.red('FAIL') : warnings ? c.yellow('PASS with warnings') : c.green('PASS');
       console.log(`result: ${verdict} (${errors} error(s), ${warnings} warning(s), ${report.summary.infos} note(s)) in ${fmtDuration(report.timings.total)}`);
+      printSince(since);
     }
     return report.ok ? 0 : 1;
   }
@@ -1587,6 +1847,98 @@ async function cutFrames({ sess, lab, fps, W, lastT, txWin }) {
     out.push({ frame: f, t: f / fps, scene, d: +d.toFixed(2), late: d >= 1.5 });
   }
   return out;
+}
+
+/**
+ * WebGPU in the project's own files that the page loaded (HTML and scripts; showtime's /_st/ and /_lib/
+ * are not scanned): -> [{file, line, what, asks}] (asks: requestAdapter or a 'webgpu' canvas context,
+ * not only a navigator.gpu feature test). At most 8, one per kind and file.
+ */
+function webgpuSources(dir, requests, base) {
+  const files = new Set();
+  for (const u of requests || []) {
+    if (!String(u).startsWith(base + '/')) continue;
+    const p = decodeURIComponent(String(u).slice(base.length + 1).split(/[?#]/)[0]);
+    if (!p || /^_(st|lib)\//.test(p) || !/\.(html?|m?js)$/i.test(p)) continue;
+    files.add(p);
+  }
+  const KINDS = [[/getContext\(\s*['"`]webgpu['"`]/, "getContext('webgpu')", true], [/\brequestAdapter\s*\(/, 'navigator.gpu.requestAdapter()', true], [/\bnavigator\s*\.\s*gpu\b/, 'navigator.gpu', false]];
+  const out = [];
+  for (const rel of files) {
+    let text;
+    try {
+      const abs = path.resolve(dir, rel);
+      if (!abs.startsWith(path.resolve(dir) + path.sep) || fs.statSync(abs).size > 8e6) continue;
+      text = fs.readFileSync(abs, 'utf8');
+    } catch { continue; }
+    if (!/webgpu|requestAdapter|navigator\s*\.\s*gpu/i.test(text)) continue;
+    const lines = text.split('\n');
+    for (const [re, what, asks] of KINDS) {
+      const i = lines.findIndex((l) => re.test(l));
+      if (i >= 0) out.push({ file: rel, line: i + 1, what, asks });
+    }
+    if (out.length >= 8) break;
+  }
+  return out;
+}
+
+/**
+ * The page loaded again with WebGPU gone (navigator.gpu undefined, no 'webgpu' context), as on a machine
+ * without a GPU. At the sample times where one of the page's canvases (or the WebGPU canvas, by id) is on
+ * screen, the page's own WebGL / 2D canvases are hidden for a moment: when that changes the pixels under
+ * them, the fallback draws. -> { drew: {t, sel, ctx} | null, probed: n, errors: [page errors] }
+ */
+async function probeNoGpu({ b, url, proj, size, lab, times, gpuSels, noRelaunch }) {
+  let s2 = null;
+  const res = { drew: null, probed: 0, errors: [] };
+  try {
+    s2 = await openPage(b, { url, page: proj.page, config: proj.config, size, init: gpuProbeScript(true) }, noRelaunch);
+    // the middle of every clip that holds a canvas first, then the sample times
+    const mids = await s2.page.evaluate(() => {
+      const all = [...document.querySelectorAll('[data-start]')], cl = window.ST.clips(), out = [];
+      all.forEach((el, i) => { const c = cl[i]; if (c && c.end != null && el.querySelector('canvas')) out.push((c.start + c.end) / 2); });
+      return out;
+    }).catch(() => []);
+    const order = [...new Set([...mids, ...times].map((x) => +x.toFixed(3)))].slice(0, 24);
+    for (const x of order) {
+      if (res.drew || res.probed >= 4) break;
+      try { await s2.seek(x); } catch { continue; }
+      const cand = await s2.page.evaluate((sels) => {
+        const vis = (el) => {
+          const r = el.getBoundingClientRect();
+          if (!(r.width > 2 && r.height > 2) || r.right <= 0 || r.bottom <= 0 || r.left >= innerWidth || r.top >= innerHeight) return null;
+          let op = 1;
+          for (let e = el; e && e.nodeType === 1; e = e.parentElement) { const s = getComputedStyle(e); if (s.display === 'none' || s.visibility === 'hidden') return null; op *= parseFloat(s.opacity) || 0; }
+          return op >= 0.1 ? { x: Math.max(0, r.left), y: Math.max(0, r.top), w: Math.min(innerWidth, r.right) - Math.max(0, r.left), h: Math.min(innerHeight, r.bottom) - Math.max(0, r.top) } : null;
+        };
+        const targets = sels.map((q) => document.querySelector(q)).filter(Boolean).map(vis).filter(Boolean);
+        const over = (a, b) => { const ix = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x), iy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y); return ix > 0 && iy > 0 && ix * iy >= 0.5 * Math.min(a.w * a.h, b.w * b.h); };
+        const out = [];
+        document.querySelectorAll('canvas[data-st-ctx-page]').forEach((c, i) => {
+          const ctx = (c.getAttribute('data-st-ctx') || '').split(' ').find((k) => /^(webgl2?|experimental-webgl|2d|bitmaprenderer)$/.test(k));
+          const r = ctx ? vis(c) : null;
+          if (!r || (targets.length && !targets.some((t) => over(t, r)))) return;
+          c.setAttribute('data-st-gpu-probe', String(i));
+          out.push({ i, ctx, rect: r, sel: c.id ? '#' + c.id : 'canvas' + (c.className && typeof c.className === 'string' ? '.' + c.className.trim().split(/\s+/)[0] : '') });
+        });
+        return out;
+      }, gpuSels).catch(() => []);
+      if (!cand.length) continue;
+      res.probed++;
+      const a = await s2.shot({ format: 'png' });
+      await s2.page.evaluate(async () => { document.querySelectorAll('[data-st-gpu-probe]').forEach((c) => { c.style.setProperty('visibility', 'hidden', 'important'); }); if (window.ST && ST._paint) await ST._paint(); });
+      const bimg = await s2.shot({ format: 'png' });
+      await s2.page.evaluate(async () => { document.querySelectorAll('[data-st-gpu-probe]').forEach((c) => { c.style.removeProperty('visibility'); c.removeAttribute('data-st-gpu-probe'); }); if (window.ST && ST._paint) await ST._paint(); });
+      const d = await lab.boxDiff(a, bimg, cand.map((c) => c.rect));
+      const k = d.findIndex((v) => v !== null && v >= 1.5);
+      if (k >= 0) res.drew = { t: x, sel: cand[k].sel, ctx: /webgl/.test(cand[k].ctx) ? 'WebGL' : '2D' };
+    }
+    res.errors = s2.log.errors.slice(0, 3).map((e) => String(e.message).split('\n')[0]);
+  } catch (e) {
+    if (e && e.browserStuck) throw e;
+    res.errors.push(String(e.message || e).split('\n')[0]);
+  } finally { if (s2) await closeSoon(s2.close()); }
+  return res;
 }
 
 /**

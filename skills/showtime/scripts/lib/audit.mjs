@@ -22,11 +22,13 @@ export function textSnapshot(o) {
   const csCache = new Map();
   const cs = (el) => { let s = csCache.get(el); if (!s) { s = getComputedStyle(el); csCache.set(el, s); } return s; };
   const blurCache = new Map();
+  // a CSS blur filter, or a shutter blur on this frame (data-st-blurring: the element is hidden and its copies,
+  // smeared, are drawn in its place; it is on screen, judged at a sharp frame)
   function blurred(el) {
     if (!el || el.nodeType !== 1) return false;
     if (blurCache.has(el)) return blurCache.get(el);
     const f = cs(el).filter;
-    const v = (f && f !== 'none' && /blur\((?!0px)/.test(f)) || blurred(el.parentElement);
+    const v = el.hasAttribute('data-st-blurring') || (f && f !== 'none' && /blur\((?!0px)/.test(f)) || blurred(el.parentElement);
     blurCache.set(el, v);
     return v;
   }
@@ -154,7 +156,7 @@ export function textSnapshot(o) {
     }
     if (!box) continue;
     const op = opacity(p);
-    if (op <= 0.02 || cs(p).visibility !== 'visible') continue;
+    if (op <= 0.02 || (cs(p).visibility !== 'visible' && !p.closest('[data-st-blurring]'))) continue;
     let leaf = leafMap.get(p);
     if (!leaf) { leaf = { el: p, box: null, ink: null, chars: 0 }; leafMap.set(p, leaf); }
     leaf.box = union(leaf.box, box);
@@ -306,8 +308,10 @@ export function textSnapshot(o) {
         // container whose projected rect differs from its layout size is not a false alarm)
         if (e.scrollWidth <= e.clientWidth + 2 && e.scrollHeight <= e.clientHeight + 2) continue;
         const c = e.getBoundingClientRect();
-        const bl = parseFloat(s.borderLeftWidth) || 0, bt = parseFloat(s.borderTopWidth) || 0;
-        const cx = c.left + bl, cy = c.top + bt, cr = c.left + bl + e.clientWidth, cb = c.top + bt + e.clientHeight;
+        // CSS zoom (an adopted artboard scaled to the frame): the rect is zoomed, client sizes and borders are not
+        const z = e.currentCSSZoom || 1;
+        const bl = (parseFloat(s.borderLeftWidth) || 0) * z, bt = (parseFloat(s.borderTopWidth) || 0) * z;
+        const cx = c.left + bl, cy = c.top + bt, cr = c.left + bl + e.clientWidth * z, cb = c.top + bt + e.clientHeight * z;
         const over = Math.max(cx - r.x, cy - r.y, r.r - cr, r.b - cb);
         if (over > 2) {
           const vis = Math.max(0, Math.min(r.r, cr) - Math.max(r.x, cx)) * Math.max(0, Math.min(r.b, cb) - Math.max(r.y, cy));
@@ -418,9 +422,479 @@ export async function hideText(on) {
   await painted();
 }
 
+/**
+ * How opaque each text leaf ([data-st-lid], set by textSnapshot) is at the current frame, measured as the
+ * contrast pass measures it: the element's opacity times its ancestors', times the alpha of its colour
+ * (a caption-karaoke word at its caption's opacity, without the card fade or the karaoke dim).
+ * lids: ['12', ...] -> { [lid]: { alpha, blurred, entering, on } | null (gone from the page) }
+ *   on = the leaf has a box on the frame; entering = a short entrance animation (<= 1.5 s) runs on it
+ */
+export function leafAlpha(lids) {
+  const out = {};
+  const cnv = document.createElement('canvas'); cnv.width = cnv.height = 1;
+  const g = cnv.getContext('2d', { willReadFrequently: true });
+  const alphaOf = (str) => { g.clearRect(0, 0, 1, 1); g.fillStyle = '#000'; g.fillStyle = str; g.fillRect(0, 0, 1, 1); return g.getImageData(0, 0, 1, 1).data[3] / 255; };
+  const opacity = (el) => {
+    let v = 1;
+    for (let e = el; e && e.nodeType === 1; e = e.parentElement) {
+      const s = getComputedStyle(e);
+      if (s.display === 'none') return 0;
+      const o = parseFloat(s.opacity);
+      v *= Number.isFinite(o) ? o : 1;
+      if (v <= 0) return 0;
+    }
+    return v;
+  };
+  const ENTER = /^(opacity|color|filter|backdropFilter|clipPath|mask|maskImage|webkitMaskImage|backgroundColor|background)$/;
+  const entering = (el) => {
+    for (let e = el; e && e !== document.body && e !== document.documentElement; e = e.parentElement) {
+      for (const a of (e.getAnimations ? e.getAnimations() : [])) {
+        const ct = a.effect && a.effect.getComputedTiming ? a.effect.getComputedTiming() : null;
+        if (!ct || ct.iterations === Infinity || ct.progress === null || !(ct.progress > 0.001 && ct.progress < 0.999)) continue;
+        if (!(Number(ct.activeDuration) <= 1500)) continue;
+        let props = [];
+        try { props = (a.effect.getKeyframes() || []).flatMap((k) => Object.keys(k)); } catch { props = []; }
+        if (props.some((k) => ENTER.test(k))) return true;
+      }
+    }
+    return false;
+  };
+  const blurred = (el) => { for (let e = el; e && e.nodeType === 1; e = e.parentElement) { if (e.hasAttribute('data-st-blurring')) return true; const f = getComputedStyle(e).filter; if (f && f !== 'none' && /blur\((?!0px)/.test(f)) return true; } return false; };
+  for (const lid of lids) {
+    const el = document.querySelector(`[data-st-lid="${lid}"]`);
+    if (!el) { out[lid] = null; continue; }
+    const s = getComputedStyle(el);
+    const svgFill = typeof SVGElement !== 'undefined' && el instanceof SVGElement && s.fill && s.fill !== 'none' && !/url\(/.test(s.fill) ? s.fill : null;
+    const col = svgFill || (s.webkitTextFillColor && s.webkitTextFillColor !== s.color && !/rgba\(0, 0, 0, 0\)/.test(s.webkitTextFillColor) ? s.webkitTextFillColor : s.color);
+    const cap = el.closest && el.closest('.st-cap[data-caption]');
+    const r = el.getBoundingClientRect();
+    const on = r.width > 1 && r.height > 1 && r.right > 0 && r.bottom > 0 && r.left < innerWidth && r.top < innerHeight &&
+      (s.visibility === 'visible' || !!el.closest('[data-st-blurring]'));
+    out[lid] = { alpha: on ? +(opacity(cap || el) * alphaOf(col)).toFixed(3) : 0, blurred: blurred(el), entering: entering(el), on };
+  }
+  return out;
+}
+
+/**
+ * Caption-zone collisions at the current frame. The zone is where caption-karaoke's cards sit (every
+ * card measured once at rest, unioned; the block is placed by the component: bottom band on wide and
+ * square frames, from 62 % of the height on tall ones). While a caption card shows, any other visible
+ * element that paints inside the zone is a hit: text, images, video, canvas, boxes with a background
+ * or border, SVG shapes (reported per <svg>). Ignored: the captions, full-frame backgrounds (>= half
+ * the frame, or full-width bands without text), anything under 10 % opacity, [data-st-ignore], and
+ * intentional overlaps marked [data-st-caption-ok] (on the element or an ancestor).
+ * o: { width, height, minOpacity?: 0.1 } -> { captions: n, captioned: bool, zone: {x,y,w,h}|null,
+ *   hits: [{key, sel, text, kind, rect:{x,y,w,h}, overlap:{x,y,w,h}}] }
+ */
+export function captionCollisions(o) {
+  const W = o.width, H = o.height, minOp = Number.isFinite(o.minOpacity) ? o.minOpacity : 0.1;
+  const caps = [...document.querySelectorAll('.st-cap[data-caption]')];
+  const res = { captions: caps.length, captioned: false, zone: null, hits: [] };
+  if (!caps.length) return res;
+  const csCache = new Map();
+  const cs = (el) => { let s = csCache.get(el); if (!s) { s = getComputedStyle(el); csCache.set(el, s); } return s; };
+  const opCache = new Map();
+  const opacity = (el) => {
+    if (!el || el.nodeType !== 1) return 1;
+    if (opCache.has(el)) return opCache.get(el);
+    const s = cs(el);
+    let v = s.display === 'none' ? 0 : parseFloat(s.opacity);
+    if (!Number.isFinite(v)) v = 1;
+    if (v > 0) v *= opacity(el.parentElement);
+    opCache.set(el, v);
+    return v;
+  };
+  // the zone: measured once per caption block (cards are laid out at rest, one at a time, then restored)
+  const cache = window.__stCapZone || (window.__stCapZone = new WeakMap());
+  let zone = null;
+  const union = (a, b) => (!a ? { ...b } : { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), r: Math.max(a.r, b.r), b: Math.max(a.b, b.b) });
+  for (const cap of caps) {
+    let z = cache.get(cap);
+    if (!z) {
+      const cards = [...cap.querySelectorAll('.st-cap-card')];
+      const saved = cards.map((c) => [c.style.display, c.style.transform]);
+      for (const c of cards) c.style.display = 'none';
+      for (const c of cards) {
+        c.style.display = ''; c.style.transform = 'none';
+        const line = c.querySelector('.st-cap-line') || c;
+        const r = line.getBoundingClientRect();
+        if (r.width > 1 && r.height > 1) z = union(z, { x: r.left, y: r.top, r: r.right, b: r.bottom });
+        c.style.display = 'none';
+      }
+      cards.forEach((c, i) => { c.style.display = saved[i][0]; c.style.transform = saved[i][1]; });
+      if (z) cache.set(cap, z);
+    }
+    if (z) zone = union(zone, z);
+    // a captioned moment: a card of this block is on screen
+    if (opacity(cap) >= minOp && cs(cap).visibility === 'visible' &&
+        [...cap.querySelectorAll('.st-cap-card')].some((c) => c.style.display !== 'none' && opacity(c) >= minOp)) res.captioned = true;
+  }
+  if (!zone) return res;
+  zone = { x: Math.max(0, zone.x), y: Math.max(0, zone.y), r: Math.min(W, zone.r), b: Math.min(H, zone.b) };
+  res.zone = { x: zone.x, y: zone.y, w: zone.r - zone.x, h: zone.b - zone.y };
+  if (!res.captioned) return res;
+  const sel = (el) => {
+    if (el.id) return '#' + el.id;
+    const parts = [];
+    let e = el;
+    for (let i = 0; e && e.nodeType === 1 && i < 3; i++, e = e.parentElement) {
+      let p = e.tagName.toLowerCase();
+      if (e.id) { parts.unshift('#' + e.id + ' ' + p); break; }
+      if (e.classList && e.classList.length) p += '.' + [...e.classList].slice(0, 2).join('.');
+      parts.unshift(p);
+    }
+    return parts.join(' > ');
+  };
+  // the visible part of an element: clipped by overflow/clip ancestors and the frame
+  const clipOf = (el, r) => {
+    let v = { x: Math.max(0, r.x), y: Math.max(0, r.y), r: Math.min(W, r.r), b: Math.min(H, r.b) };
+    for (let e = el.parentElement; e && e !== document.body && e !== document.documentElement; e = e.parentElement) {
+      if (!/(hidden|clip)/.test(cs(e).overflowX + ' ' + cs(e).overflowY)) continue;
+      const c = e.getBoundingClientRect();
+      v = { x: Math.max(v.x, c.left), y: Math.max(v.y, c.top), r: Math.min(v.r, c.right), b: Math.min(v.b, c.bottom) };
+    }
+    return v;
+  };
+  const inter = (a) => ({ x: Math.max(a.x, zone.x), y: Math.max(a.y, zone.y), r: Math.min(a.r, zone.r), b: Math.min(a.b, zone.b) });
+  const SHAPES = /^(path|rect|circle|ellipse|line|polyline|polygon|text|image|use)$/i;
+  const range = document.createRange();
+  const textRect = (el) => {
+    let box = null;
+    for (const n of el.childNodes) {
+      if (n.nodeType !== 3 || !n.nodeValue.trim()) continue;
+      range.selectNodeContents(n);
+      for (const r of range.getClientRects()) if (r.width > 0.5 && r.height > 0.5) box = union(box, { x: r.left, y: r.top, r: r.right, b: r.bottom });
+    }
+    return box;
+  };
+  const isSvg = (el) => typeof SVGElement !== 'undefined' && el instanceof SVGElement;
+  const found = new Map();   // element (or its <svg>) -> hit
+  for (const el of document.body.querySelectorAll('*')) {
+    if (/^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE|LINK|META|BR|svg)$/i.test(el.tagName)) continue;
+    if (el.closest('.st-cap[data-caption], [data-st-caption-ok], [data-st-ignore], [data-st-audit]')) continue;
+    if (caps.some((c) => el.contains(c))) continue;
+    const br = el.getBoundingClientRect();
+    if (!(br.width > 0.5 && br.height > 0.5) || br.right <= zone.x || br.left >= zone.r || br.bottom <= zone.y || br.top >= zone.b) continue;
+    const svg = isSvg(el);
+    let kind = null, rect = null;
+    const box = { x: br.left, y: br.top, r: br.right, b: br.bottom };
+    if (svg) {
+      const t = /^(text|tspan|textPath)$/i.test(el.tagName) ? textRect(el) : null;
+      if (t) { kind = 'text'; rect = t; } else {
+        if (!SHAPES.test(el.tagName)) continue;
+        const s = cs(el);
+        const fills = s.fill && s.fill !== 'none' && parseFloat(s.fillOpacity) !== 0;
+        const strokes = s.stroke && s.stroke !== 'none' && parseFloat(s.strokeWidth) > 0 && parseFloat(s.strokeOpacity) !== 0;
+        if (!fills && !strokes && !/^(image|use)$/i.test(el.tagName)) continue;
+        kind = 'graphic'; rect = box;
+      }
+    } else if (/^(IMG|VIDEO|CANVAS|PICTURE|IFRAME|OBJECT|EMBED)$/.test(el.tagName)) { kind = 'media'; rect = box; }
+    else {
+      const s = cs(el);
+      const bgA = (() => { const m = /rgba?\(([^)]+)\)/.exec(s.backgroundColor); if (!m) return 0; const p = m[1].split(/[\s,/]+/).filter(Boolean); return p.length > 3 ? parseFloat(p[3]) : 1; })();
+      const bdr = ['Top', 'Right', 'Bottom', 'Left'].some((k) => parseFloat(s['border' + k + 'Width']) > 0 && s['border' + k + 'Style'] !== 'none' && !/rgba\([^)]*,\s*0\)|transparent/.test(s['border' + k + 'Color']));
+      const paints = bgA >= 0.1 || (s.backgroundImage && s.backgroundImage !== 'none') || bdr;
+      const t = textRect(el);
+      if (!paints && !t) continue;
+      kind = t ? 'text' : 'box'; rect = paints ? box : t;
+    }
+    const v = clipOf(el, rect);
+    if (!(v.r - v.x > 0.5 && v.b - v.y > 0.5)) continue;
+    // full-frame backgrounds and full-width bands with no text of their own (a scrim, a ground, a rule)
+    if ((v.r - v.x) * (v.b - v.y) >= 0.5 * W * H || (kind !== 'text' && kind !== 'media' && v.r - v.x >= 0.9 * W)) continue;
+    if (opacity(el) < minOp || cs(el).visibility !== 'visible') continue;
+    const ov = inter(v);
+    if (!(ov.r - ov.x >= 4 && ov.b - ov.y >= 4)) continue;
+    let owner = el;
+    if (svg) { let s = el.ownerSVGElement; while (s && s.ownerSVGElement) s = s.ownerSVGElement; owner = s || el; }
+    const cur = found.get(owner);
+    if (cur) {
+      cur.overlap = union(cur.overlap, ov);
+      cur.rect = union(cur.rect, v);
+      if (kind === 'text' && cur.kind !== 'text') cur.kind = 'text';
+      continue;
+    }
+    found.set(owner, { el: owner, kind: owner !== el ? (kind === 'text' ? 'text' : 'graphic') : kind, rect: v, overlap: ov });
+  }
+  // one hit per thing on screen: an element whose ancestor is a hit too is part of it (a card and its label)
+  const els = [...found.keys()];
+  for (const [el, h] of found) {
+    if (els.some((o) => o !== el && o.contains(el))) continue;
+    const txt = ((el.getAttribute && (el.getAttribute('aria-label') || '')) || el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+    const label = el.tagName.toLowerCase() === 'img' ? (el.getAttribute('alt') || (el.getAttribute('src') || '').split('/').pop()) : txt;
+    const rr = (q) => ({ x: Math.round(q.x), y: Math.round(q.y), w: Math.round(q.r - q.x), h: Math.round(q.b - q.y) });
+    res.hits.push({ key: sel(el) + '|' + label, sel: sel(el), text: label, kind: h.kind, rect: rr(h.rect), overlap: rr(h.overlap) });
+    if (res.hits.length >= 40) break;
+  }
+  return res;
+}
+
+/**
+ * Init script (added before the page's own scripts): records WebGPU use in window.__stGpu with the page
+ * line that asked (navigator.gpu read, requestAdapter and its result, getContext('webgpu')), and marks
+ * every canvas with the context types asked of it (data-st-ctx). With off = true, WebGPU is gone, as on
+ * a machine without a GPU: navigator.gpu is undefined and getContext('webgpu') returns null.
+ */
+export function gpuProbeScript(off) {
+  return `(() => {
+  const rec = window.__stGpu = { reads: [], adapters: [], contexts: [], off: ${off ? 'true' : 'false'} };
+  const where = () => {
+    const lines = String(new Error().stack || '').split('\\n').slice(2);
+    for (const l of lines) { const m = /(https?:\\/\\/[^\\s)]+):(\\d+):(\\d+)/.exec(l); if (m) return m[1] + ':' + m[2]; }
+    return '';
+  };
+  const push = (arr, v) => { if (arr.length < 20) arr.push(v); };
+  try {
+    const desc = Object.getOwnPropertyDescriptor(Navigator.prototype, 'gpu');
+    if (desc || ${off ? 'true' : 'false'}) {
+      Object.defineProperty(Navigator.prototype, 'gpu', { configurable: true, enumerable: true, get() {
+        push(rec.reads, where());
+        if (rec.off || !desc) return undefined;
+        const gpu = desc.get.call(this);
+        if (gpu && !gpu.__stWrapped) {
+          const req = gpu.requestAdapter.bind(gpu);
+          gpu.requestAdapter = (...a) => { const w = where(); return req(...a).then((ad) => { push(rec.adapters, { where: w, got: !!ad }); return ad; }); };
+          gpu.__stWrapped = true;
+        }
+        return gpu;
+      } });
+    }
+  } catch (e) { /* leave navigator.gpu alone */ }
+  const wrap = (proto) => {
+    if (!proto || !proto.getContext) return;
+    const orig = proto.getContext;
+    proto.getContext = function (type, ...rest) {
+      const t = String(type || '').toLowerCase();
+      const w = where();
+      try {
+        if (this.setAttribute) {
+          const have = (this.getAttribute('data-st-ctx') || '').split(' ').filter(Boolean);
+          if (!have.includes(t)) { have.push(t); this.setAttribute('data-st-ctx', have.join(' ')); }
+          // asked by the page (or a library it loads), not by showtime's runtime (/_st/)
+          if (w && !/\\/_st\\//.test(w) && !this.hasAttribute('data-st-ctx-page')) this.setAttribute('data-st-ctx-page', '');
+        }
+      } catch (e) { /* offscreen */ }
+      if (t === 'webgpu') { push(rec.contexts, w); if (rec.off) return null; }
+      return orig.call(this, type, ...rest);
+    };
+  };
+  wrap(window.HTMLCanvasElement && HTMLCanvasElement.prototype);
+  wrap(window.OffscreenCanvas && OffscreenCanvas.prototype);
+})();`;
+}
+
 /** Declared @font-face families and their load status. */
 export function fontInfo() {
   const faces = [];
   document.fonts.forEach((f) => faces.push({ family: f.family.replace(/^["']|["']$/g, ''), weight: f.weight, style: f.style, status: f.status }));
   return faces;
+}
+
+/**
+ * What is on the frame at the current seek position, for `showtime review notes`: a note's spot or box is
+ * resolved against this (scripts/lib/review/where.mjs) to the scene and the elements under it.
+ * o: { width, height, t, duration, max?: 800 }
+ * -> { width, height, t, film, scenes: [{id, name, start, end, on}] (top-level clips, `on` at t),
+ *      elements: [{i, parent (i of the nearest listed ancestor, or -1), kind, sel, tag, comp, root, text, scene,
+ *      x, y, w, h}] }
+ *   kind: 'text' (a block with words; its box is where the words are, not the whole block), 'media' (img,
+ *   video, canvas, svg, iframe), 'component' (a data-st root), 'shape' (a box with a fill or a border),
+ *   'backdrop' (a fill over most of the frame). Only what shows: invisible, off-frame and fully covered
+ *   elements are left out. A Film page's F.text calls are listed as text on its canvas. Boxes in frame px.
+ */
+export function elementSnapshot(o) {
+  const W = o.width, H = o.height, t = Number(o.t) || 0, D = Number(o.duration) || Infinity, MAX = o.max || 800;
+  const csCache = new Map();
+  const cs = (el) => { let s = csCache.get(el); if (!s) { s = getComputedStyle(el); csCache.set(el, s); } return s; };
+  const opCache = new Map();
+  function opacity(el) {
+    if (!el || el.nodeType !== 1) return 1;
+    if (opCache.has(el)) return opCache.get(el);
+    const s = cs(el);
+    let v = s.display === 'none' ? 0 : parseFloat(s.opacity);
+    if (isNaN(v)) v = 1;
+    if (v > 0) v *= opacity(el.parentElement);
+    opCache.set(el, v);
+    return v;
+  }
+  const cnv = document.createElement('canvas'); cnv.width = cnv.height = 1;
+  const g = cnv.getContext('2d', { willReadFrequently: true });
+  function alphaOf(str) {
+    if (!str || str === 'transparent') return 0;
+    g.clearRect(0, 0, 1, 1); g.fillStyle = '#000'; g.fillStyle = str; g.fillRect(0, 0, 1, 1);
+    return g.getImageData(0, 0, 1, 1).data[3] / 255;
+  }
+  // the page's own classes: st-* ones are added by the runtime and its components, not in the source
+  const clsOf = (el) => [...(el.classList || [])].filter((c) => !/^st-/.test(c)).slice(0, 2);
+  function sel(el) {
+    if (el.id) return '#' + el.id;
+    const parts = [];
+    let e = el;
+    for (let i = 0; e && e.nodeType === 1 && e !== document.body && i < 4; i++, e = e.parentElement) {
+      if (e.id) { parts.unshift('#' + e.id); break; }
+      let p = e.tagName.toLowerCase();
+      const cl = clsOf(e);
+      if (cl.length) p += '.' + cl.join('.');
+      else if (e.getAttribute('data-st')) p += `[data-st="${e.getAttribute('data-st')}"]`;
+      parts.unshift(p);
+    }
+    return parts.join(' > ');
+  }
+  const clean = (s, n = 100) => { const x = String(s || '').replace(/\s+/g, ' ').trim(); return x.length > n ? x.slice(0, n - 1) + '…' : x; };
+
+  // scenes: top-level clips, matched to their elements as check does
+  const scenes = [], sceneOf = new Map();
+  try {
+    const all = [...document.querySelectorAll('[data-start]')];
+    const cl = window.ST && typeof window.ST.clips === 'function' ? window.ST.clips() : [];
+    if (cl.length === all.length) {
+      all.forEach((el, i) => {
+        if (el.parentElement && el.parentElement.closest('[data-start]')) return;
+        const c = cl[i];
+        if (!c || !isFinite(c.start)) return;
+        const end = c.end == null ? D : Math.min(D, c.end);
+        sceneOf.set(el, scenes.length);
+        scenes.push({ id: el.id || null, name: el.id ? '#' + el.id : (c.name || el.tagName.toLowerCase()), start: c.start,
+          end: isFinite(end) ? end : null, on: t >= c.start - 1e-6 && (!isFinite(end) || t < end - 1e-6) });
+      });
+    }
+  } catch { /* no clip table */ }
+  const sceneFor = (el) => {
+    for (let e = el; e && e.nodeType === 1; e = e.parentElement) if (sceneOf.has(e)) return scenes[sceneOf.get(e)].name;
+    return null;
+  };
+
+  const cands = new Map();   // element -> {kinds, trect: where its words are}
+  const add = (el, kind, rect) => {
+    let c = cands.get(el);
+    if (!c) { c = { el, kinds: new Set(), trect: null }; cands.set(el, c); }
+    c.kinds.add(kind);
+    if (rect) c.trect = !c.trect ? { ...rect } : { x: Math.min(c.trect.x, rect.x), y: Math.min(c.trect.y, rect.y), r: Math.max(c.trect.r, rect.r), b: Math.max(c.trect.b, rect.b) };
+  };
+  // a shutter blur hides the element on its fast frames (data-st-blurring) and draws smeared copies in an <st-blur>
+  // host right after it: the element is what shows, never its copies
+  const visible = (el) => opacity(el) > 0.05 && (cs(el).visibility === 'visible' || !!el.closest('[data-st-blurring]'));
+  const blurCopy = (el) => !!el.closest('st-blur');
+  const onFrame = (r) => r.right > 0 && r.bottom > 0 && r.left < W && r.top < H && r.width >= 1 && r.height >= 1;
+  const INLINE = /^(inline|inline-block|inline-flex|inline-grid|contents|ruby|ruby-text)$/;
+  const SKIP = /^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE|TITLE|TEXTAREA|META|LINK|HEAD)$/;
+
+  // words: each text node counts for its block (an <em> in a heading is the heading's), an SVG label for its <text>
+  const walker = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_TEXT);
+  const range = document.createRange();
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    if (!n.nodeValue || !n.nodeValue.trim()) continue;
+    const p = n.parentElement;
+    if (!p || SKIP.test(p.tagName) || blurCopy(p) || !visible(p)) continue;
+    let holder;
+    if (p.closest('svg') && !p.closest('foreignObject')) holder = p.closest('text') || p;
+    else {
+      holder = p;
+      while (holder.parentElement && holder !== document.body && INLINE.test(cs(holder).display) && !holder.hasAttribute('data-st')) holder = holder.parentElement;
+    }
+    range.selectNodeContents(n);
+    for (const r of range.getClientRects()) {
+      if (!(r.width > 0.5 && r.height > 0.5) || !onFrame(r)) continue;
+      add(holder, 'text', { x: r.left, y: r.top, r: r.right, b: r.bottom });
+    }
+  }
+  // pictures, components, boxes with a fill or a border
+  const order = new Map();
+  let k = 0;
+  const ew = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_ELEMENT);
+  for (let el = ew.currentNode; el; el = ew.nextNode()) {
+    order.set(el, k++);
+    if (el === document.body || el === document.documentElement || SKIP.test(el.tagName) || sceneOf.has(el)) continue;
+    const tag = el.tagName.toLowerCase();
+    if (typeof SVGElement !== 'undefined' && el instanceof SVGElement && tag !== 'svg') continue;
+    if (blurCopy(el) || !visible(el)) continue;
+    const r = el.getBoundingClientRect();
+    if (!onFrame(r)) continue;
+    if (/^(img|video|canvas|svg|iframe|object|embed)$/.test(tag)) add(el, 'media');
+    if (el.hasAttribute('data-st')) add(el, 'component');
+    const s = cs(el);
+    const filled = alphaOf(s.backgroundColor) >= 0.15 || (s.backgroundImage && s.backgroundImage !== 'none');
+    const bordered = ['Top', 'Right', 'Bottom', 'Left'].some((side) => parseFloat(s['border' + side + 'Width']) > 0 &&
+      s['border' + side + 'Style'] !== 'none' && alphaOf(s['border' + side + 'Color']) >= 0.15);
+    if (filled || bordered) add(el, r.width * r.height >= 0.6 * W * H ? 'backdrop' : 'shape');
+  }
+
+  // covered: every sample point lands on an opaque element painted over it (the outgoing scene under the
+  // incoming one, a card over a label). Elements that do not take the pointer are hit-tested too.
+  const style = document.createElement('style');
+  style.textContent = '*{pointer-events:auto!important}';
+  (document.head || document.documentElement).appendChild(style);
+  const TRANSLUCENT = /transparent|rgba\([^)]*,\s*(0?\.\d+|0)\s*\)|\/\s*(0?\.\d+|0)\s*\)/;
+  const paintsOpaque = (e) => {
+    if (e.hasAttribute('data-st-gl') || /^(IMG|VIDEO)$/.test(e.tagName)) return true;
+    const s = cs(e);
+    if (alphaOf(s.backgroundColor) >= 0.9) return true;
+    const bi = s.backgroundImage || '';
+    return /gradient\(/.test(bi) && !/url\(/.test(bi) && !TRANSLUCENT.test(bi);
+  };
+  function covered(el, b) {
+    let tested = 0;
+    for (const [fx, fy] of [[0.5, 0.5], [0.2, 0.5], [0.8, 0.5], [0.5, 0.25], [0.5, 0.75]]) {
+      const x = b.x + b.w * fx, y = b.y + b.h * fy;
+      if (x < 0 || y < 0 || x >= W || y >= H) continue;
+      tested++;
+      const hit = document.elementFromPoint(x, y);
+      if (!hit || hit === el || el.contains(hit) || hit.contains(el)) return false;
+      const host = hit.closest('st-blur');
+      if (host && host.previousElementSibling === el) return false;   // its own shutter-blur copies
+      let opaque = false;
+      for (let e = hit; e && !e.contains(el); e = e.parentElement) {
+        if (opacity(e) < 0.9) break;
+        if (paintsOpaque(e)) { opaque = true; break; }
+      }
+      if (!opaque) return false;
+    }
+    return tested > 0;
+  }
+  const RANK = ['component', 'media', 'text', 'shape', 'backdrop'];
+  const list = [];
+  try {
+    for (const c of [...cands.values()].sort((a, b) => (order.get(a.el) || 0) - (order.get(b.el) || 0))) {
+      const el = c.el;
+      let kind = RANK.find((x) => c.kinds.has(x));
+      let b;
+      if (kind === 'text' && c.trect) b = { x: c.trect.x, y: c.trect.y, w: c.trect.r - c.trect.x, h: c.trect.b - c.trect.y };
+      else { const r = el.getBoundingClientRect(); b = { x: r.left, y: r.top, w: r.width, h: r.height }; }
+      // a picture, overlay or component over most of the frame (a background photo, grain) is the ground
+      if (kind !== 'text' && b.w * b.h >= 0.6 * W * H) kind = 'backdrop';
+      if (kind !== 'backdrop' && covered(el, b)) continue;
+      const tag = el.tagName.toLowerCase();
+      let text = clean(typeof SVGElement !== 'undefined' && el instanceof SVGElement ? el.textContent : el.innerText || (el.closest('[data-st-blurring]') ? el.textContent : ''));
+      if (!text && kind === 'media') {
+        text = clean(el.getAttribute('alt') || el.getAttribute('aria-label') || el.getAttribute('title') ||
+          String(el.currentSrc || el.getAttribute('src') || '').split(/[?#]/)[0].split('/').pop(), 60);
+      }
+      const host = el.closest('[data-st]');
+      list.push({ el, i: list.length, kind, sel: sel(el), tag, comp: host ? host.getAttribute('data-st') : null, root: el.hasAttribute('data-st'),
+        text, scene: sceneFor(el), x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.w), h: Math.round(b.h) });
+      if (list.length >= MAX) break;
+    }
+  } finally { style.remove(); }
+  const idx = new Map(list.map((e) => [e.el, e.i]));
+  const out = list.map((e) => {
+    let parent = -1;
+    for (let p = e.el.parentElement; p; p = p.parentElement) if (idx.has(p)) { parent = idx.get(p); break; }
+    const { el, ...rest } = e;   // eslint-disable-line no-unused-vars
+    return { ...rest, parent };
+  });
+  // a Film page draws on one canvas: its F.text calls of this frame are the words on it
+  let film = false;
+  try {
+    if (window.Film && typeof window.Film.frameInfo === 'function') {
+      film = true;
+      const fi = window.Film.frameInfo();
+      const ci = out.findIndex((e) => e.tag === 'canvas');
+      for (const x of (fi.texts || [])) {
+        if (!(x.alpha > 0.05) || out.length >= MAX) continue;
+        out.push({ i: out.length, parent: ci, kind: 'text', sel: 'canvas (Film text)', tag: 'canvas', comp: null, root: false,
+          text: clean(x.text), scene: ci >= 0 ? out[ci].scene : null, x: x.x, y: x.y, w: x.w, h: x.h });
+      }
+    }
+  } catch { /* not a film */ }
+  return { width: W, height: H, t, film, scenes, elements: out };
 }

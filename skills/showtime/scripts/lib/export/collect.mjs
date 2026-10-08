@@ -7,6 +7,7 @@
 // rewritten to absolute URLs on the export's virtual origin (the player maps those to blobs).
 // Font faces whose unicode-range covers no character used anywhere are dropped.
 
+import http from 'node:http';
 import { minifyJs } from './minify.mjs';
 
 export const VORIGIN = 'http://st.invalid';
@@ -16,6 +17,8 @@ const TEXT_RE = /^(text\/|application\/(json|javascript|xml|ld\+json|manifest\+j
 const JS_RE = /javascript/;
 const FONT_EXT = /\.(woff2?|ttf|otf)$/i;
 const MEDIA_RE = /^(video|audio)\//;
+// sound files: the export plays its own soundtrack, so one is packed only when the page itself asked for it
+const AUDIO_EXT = /\.(wav|mp3|m4a|aac|oga|ogg|opus|flac)$/i;
 const PATHLIKE = /(["'`(=\s,])((?:\.{1,2}\/|\/)?[A-Za-z0-9_@~%+-][^"'`()\s<>{}|\\^]*?\.(?:png|jpe?g|webp|avif|gif|svg|json|geojson|topojson|mp4|m4v|webm|mov|ogv|m4a|mp3|wav|ogg|opus|flac|woff2?|ttf|otf|css|js|mjs|txt|csv|tsv|glsl|frag|vert|lottie|vtt|srt|bin|wasm))(?=["'`)?#\s,])/gi;
 let EMOJI_RE = null;
 try {
@@ -143,18 +146,26 @@ export function pruneFontFaces(css, used) {
  * @param o.domText    every character the page showed during the probe
  * @param o.exclude    project paths packed only when the page requests them (the audio mix sources)
  * @param o.warn       (msg) => void
- * -> { files: Map(path -> {mime, bytes: Buffer, text?: string, source}), missing: [path], droppedFaces }
+ * @param o.fetchOptions  {tries, timeoutMs, delayMs} for fetchFile (tests)
+ * Sound files that only a project file names (not requested by the page) are not packed: the export
+ * plays its own soundtrack.
+ * -> { files: Map(path -> {mime, bytes: Buffer, text?: string, source}), missing: [path],
+ *      failures: [{path, status (0 = no answer), err, source}], droppedFaces }
  */
 export async function collectFiles(o) {
   const files = new Map();
   const missing = [];
+  const failures = [];
   const queue = [];
   const queued = new Set();
   const exclude = new Set(o.exclude || []);
+  const requested = new Set(o.requests);
   const enqueue = (p, source, optional = false) => {
     if (!p || SKIP.has(p) || p === o.pagePath || p === '/_st/stage.js' || queued.has(p)) return;
     // the soundtrack's sources (the mix spec and its files) and build folders: only when the page itself asks
     if (optional && (exclude.has(p) || /^\/(work|showtime-out|node_modules|\.git)\//.test(p))) return;
+    // a sound file a data file only names (voice/timeline.json -> vo.wav): the page never plays it
+    if (optional && AUDIO_EXT.test(p) && !requested.has(p)) return;
     queued.add(p);
     queue.push({ p, source, optional });
   };
@@ -164,17 +175,15 @@ export async function collectFiles(o) {
   for (const p of emojiRefs(o.pageHtml)) enqueue(p, 'emoji', true);
   enqueue('/showtime.json', 'config', true);
 
-  const get = async (p) => {
-    const r = await fetch(o.serverUrl + encodeURI(p), { headers: { 'Cache-Control': 'no-store' } });
-    if (!r.ok) return { status: r.status };
-    const mime = (r.headers.get('content-type') || 'application/octet-stream').split(';')[0].trim();
-    return { status: r.status, mime, bytes: Buffer.from(await r.arrayBuffer()) };
-  };
+  const get = (p) => fetchFile(o.serverUrl, p, o.fetchOptions);
   while (queue.length) {
     const batch = queue.splice(0, 16);
-    const got = await Promise.all(batch.map(async (it) => ({ it, r: await get(it.p).catch((e) => ({ status: 0, err: e.message })) })));
+    const got = await Promise.all(batch.map(async (it) => ({ it, r: await get(it.p) })));
     for (const { it, r } of got) {
-      if (r.status !== 200) { if (!it.optional) missing.push(it.p); continue; }
+      if (r.status !== 200) {
+        if (!it.optional) { missing.push(it.p); failures.push({ path: it.p, status: r.status, err: r.err || null, source: it.source }); }
+        continue;
+      }
       const f = { mime: r.mime, bytes: r.bytes, source: it.source };
       files.set(it.p, f);
       if (!isText(r.mime)) continue;
@@ -215,7 +224,50 @@ export async function collectFiles(o) {
     }
     dropUnreferencedFonts(files, o.pageHtml, o.pagePath);
   }
-  return { files, missing, droppedFaces };
+  return { files, missing, failures, droppedFaces };
+}
+
+const SOCKET_ERR = /ECONNRESET|EPIPE|ECONNREFUSED|ETIMEDOUT|ECONNABORTED|socket hang up|other side closed|aborted/i;
+
+/**
+ * GET one file from the showtime server: a new connection each time (no keep-alive reuse) and up to
+ * `tries` attempts when the socket fails. Minifying a large script between requests can block the
+ * event loop longer than the server's keep-alive: a pooled socket was then dead on the next request
+ * (status 0) and its files were reported missing and left out.
+ * -> {status, mime?, bytes?} or {status: 0, err} after the last failed attempt
+ */
+export async function fetchFile(serverUrl, p, { tries = 4, timeoutMs = 120000, delayMs = 150 } = {}) {
+  let last = null;
+  for (let k = 0; k < tries; k++) {
+    if (k) await new Promise((r) => setTimeout(r, delayMs * k));
+    try {
+      return await getOnce(serverUrl + encodeURI(p), timeoutMs);
+    } catch (e) {
+      last = e;
+      if (!SOCKET_ERR.test(`${e.code || ''} ${e.message || ''}`)) break;
+    }
+  }
+  return { status: 0, err: last ? (last.code ? `${last.code}: ${last.message}` : last.message) : 'failed' };
+}
+
+function getOnce(url, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const req = http.get(url, { agent: false, headers: { 'Cache-Control': 'no-store', Connection: 'close' } }, (res) => {
+      const chunks = [];
+      res.on('data', (d) => chunks.push(d));
+      res.on('aborted', () => reject(Object.assign(new Error('response aborted'), { code: 'ECONNABORTED' })));
+      res.on('error', reject);
+      res.on('end', () => {
+        if (!res.complete) return reject(Object.assign(new Error('response aborted'), { code: 'ECONNABORTED' }));
+        const status = res.statusCode || 0;
+        if (status !== 200) return resolve({ status });
+        const mime = String(res.headers['content-type'] || 'application/octet-stream').split(';')[0].trim();
+        resolve({ status, mime, bytes: Buffer.concat(chunks) });
+      });
+    });
+    req.setTimeout(timeoutMs, () => req.destroy(Object.assign(new Error(`no answer in ${timeoutMs / 1000} s`), { code: 'ETIMEDOUT' })));
+    req.on('error', reject);
+  });
 }
 
 /** Delete font files that no stylesheet, script or the page mentions any more. -> count */

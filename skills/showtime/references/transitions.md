@@ -73,7 +73,7 @@ the style asks for it (retro, glitch aesthetics, irony).
 | crossfade | css | 0.5 | calm | premium | incoming fades over outgoing; same background, same thought |
 | dip | css | 0.7 | calm | premium | through a colour (`color`, default theme bg); chapter breaks, before the logo |
 | blur-dissolve | css | 0.6 | calm | premium | outgoing blurs and grows, incoming resolves; the default soft cut, hides clashing backgrounds |
-| push | css | 0.55 | medium | premium | both scenes move one frame-width (`dir`; `blur: true` adds motion blur); sequences |
+| push | css | 0.55 | medium | premium | both scenes move one frame-width (`dir`; `blur: true` adds motion blur; one element that snaps inside a scene: `data-st-blur`, stage-api.md); sequences |
 | slide | css | 0.6 | medium | premium | incoming covers, outgoing parallaxes and dims; depth, cards |
 | zoom-through | css | 0.55 | high | premium | accelerate into the old scene, decelerate out of the new (`inverse` = pull back / arrival) |
 | whip-pan | css | 0.45 | high | accent | fast push under heavy directional blur |

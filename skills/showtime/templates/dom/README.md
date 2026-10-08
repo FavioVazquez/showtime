@@ -11,7 +11,7 @@ Files:
   scene or beat by hand, move its effect's `at` with it; swap the bed for a library track or add a voice
   (`references/audio.md`).
 - `index.html`: the video. Four scenes (`<section class="scene" data-start data-dur>`):
-  1. **hero**: the hook (3-line claim, one supporting line) with the product window teased at the side;
+  1. **hero**: the hook (a claim of about 4 words, one supporting line) with the product window teased at the side;
      the camera then pulls the window to the centre (a CSS keyframe move), pushes in on the prompt while
      it types (`browser-frame` `data-zoom`), the cursor clicks Generate and the cut builds (timeline clips,
      preview wipe, toast). A steps rail on the side says where we are in the flow.
@@ -44,7 +44,8 @@ Timing rules used here: first motion within 0.2 s of each scene start, the hook 
 one camera move per beat, holds of ~1 s before each cut, one accent colour, one shader transition.
 
 Aspects: 16:9 as shipped; `showtime new dom <dir> --aspect 9:16` or `--aspect 1:1` pass `showtime check`
-with no warnings.
+with no warnings. Length: 15 s as shipped; `--duration 10` still passes the phone check's reading times, because
+the hook and the feature lines are short (about 4 words). Longer copy needs a longer video.
 
 Commands:
 - `showtime preview .`  player with scrubber and audio

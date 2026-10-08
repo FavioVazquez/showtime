@@ -30,7 +30,7 @@ the board is a faster way to answer.
   (§ Recording decisions)
 - Resuming: `showtime studio init <job>`, read brief.md and decisions.md, `showtime studio status <job>`; never
   re-ask a logged decision (§ Switching and resuming)
-- A board published as an artifact is always exported with `studio export <job> --target artifact` (§ Commands)
+- A board published as an artifact is always exported with `showtime studio export <job> --target artifact` (§ Commands)
 
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
@@ -80,7 +80,7 @@ land in `<job>/crew/`; you move what goes on a board into `studio/`.
 
 Hard stops are the default. The user can change the pace ("only stop me for concepts"); write that
 under Preferences in brief.md and fill skipped phases with the recommended option, logged as
-`assumed`. Set the board's `"phase"` so the page shows where you are: `studio init` writes
+`assumed`. Set the board's `"phase"` so the page shows where you are: `showtime studio init` writes
 `"concepts"`, the first phase with a board (discover usually needs none; set `"discover"` if you
 show a brief board).
 
@@ -90,7 +90,7 @@ show a brief board).
    where `<job>` is the folder `job init` printed or its name (studio attaches to that job; a name
    with no job yet creates one). Safe to rerun; it prints where the session stands.
 2. Write the options into `studio/board.json` first: concept ids, titles, `recommended` (bump `rev`,
-   add a `history` note naming what changed and why). `studio frame` adds frames to a concept that
+   add a `history` note naming what changed and why). `showtime studio frame` adds frames to a concept that
    exists; `--title "..."` creates a missing one.
 3. Make the media: compositions in `studio/comps/` rendered with `showtime studio frame` (it appends
    them to the concept; 1-3 frames each, it warns at 4); music with
@@ -161,7 +161,7 @@ files elsewhere, contact someone), do not do it; mention it in chat and ask.
 - Log a decision when the user chose between options, when later phases depend on it, or when you
   assumed a default for them. Cheap, reversible tweaks need no entry.
 - Board revisions are snapshotted in `studio/boards/board-r<rev>.json`; never reuse a media file
-  name for different content (`studio frame` adds -2, -3 ... by itself).
+  name for different content (`showtime studio frame` adds -2, -3 ... by itself).
 - Plates shared by concept comps and the final project (site captures, app recordings) live in
   `studio/media/plates/`; copy them into the project when you build it (the project must not read
   from studio/). Animatics render with `-o <job>/studio/media/animatic/<id>.mp4 --preview`; their
@@ -184,19 +184,19 @@ files elsewhere, contact someone), do not do it; mention it in chat and ask.
 
 | Command | Does |
 |---|---|
-| `studio init <job>` | attaches to the job (the folder `job init` printed, or its name; creates the job when none exists) and writes `<job>/studio/` (brief.md, decisions.md, board.json, media/, comps/) |
-| `studio board <job> [--from f] [--check]` | validates (ids, recommended, files, no remote URLs), writes board.html + snapshot |
-| `studio frame <job> --concept C1 --html comps/c1.html --shots a,b` | style frames via the render pipeline; adds them to the concept (`--title "T"` creates a missing concept) |
-| `studio frame <job> --concept C2 --project DIR --at 1.5,6` | frames from a real showtime project |
-| `studio frame <job> --concept C2 --html comps/c2.html --shots hook,demo,end --storyboard` | storyboard thumbs instead of style frames: each shot fills the storyboard entry with that id/title (or the next one; missing ones are added) |
-| `studio font <job> "<family>"` | copies an installed font into media/fonts and lists it |
-| `studio open <job> [--browser]` | starts or reuses the local server, prints the link (with its key) |
-| `studio feedback <job> [--new] [--json] [--since REV]` | the digest; `--import file` merges a downloaded feedback.json |
-| `studio status <job>` / `studio stop <job>` | where things stand / stop this job's server |
-| `studio decide <job> "text" [--why W] [--from F] [--kind K]` | appends the next D-nnn to decisions.md |
-| `studio export <job> --inline` | one self-contained HTML (<= 16 MB) to publish or send |
-| `studio export <job> --target artifact` | the same, for a host that shows it in a sandboxed frame (an HTML artifact): no download code at all (downloads are blocked there), a file left out of the page is named with its place in the job folder (`studio/media/...`) instead of a dead link, a note says when the viewer does not keep reactions across reloads; reviewers use "Copy for your agent". Always use it for an artifact |
-| `studio serve <job>` | foreground server, for harnesses that kill background processes |
+| `showtime studio init <job>` | attaches to the job (the folder `job init` printed, or its name; creates the job when none exists) and writes `<job>/studio/` (brief.md, decisions.md, board.json, media/, comps/) |
+| `showtime studio board <job> [--from f] [--check]` | validates (ids, recommended, files, no remote URLs), writes board.html + snapshot |
+| `showtime studio frame <job> --concept C1 --html comps/c1.html --shots a,b` | style frames via the render pipeline; adds them to the concept (`--title "T"` creates a missing concept) |
+| `showtime studio frame <job> --concept C2 --project DIR --at 1.5,6` | frames from a real showtime project |
+| `showtime studio frame <job> --concept C2 --html comps/c2.html --shots hook,demo,end --storyboard` | storyboard thumbs instead of style frames: each shot fills the storyboard entry with that id/title (or the next one; missing ones are added) |
+| `showtime studio font <job> "<family>"` | copies an installed font into media/fonts and lists it |
+| `showtime studio open <job> [--browser]` | starts or reuses the local server, prints the link (with its key) |
+| `showtime studio feedback <job> [--new] [--json] [--since REV]` | the digest; `--import file` merges a downloaded feedback.json |
+| `showtime studio status <job>` / `showtime studio stop <job>` | where things stand / stop this job's server |
+| `showtime studio decide <job> "text" [--why W] [--from F] [--kind K]` | appends the next D-nnn to decisions.md |
+| `showtime studio export <job> --inline` | one self-contained HTML (<= 16 MB) to publish or send |
+| `showtime studio export <job> --target artifact` | the same, for a host that shows it in a sandboxed frame (an HTML artifact): no download code at all (downloads are blocked there), a file left out of the page is named with its place in the job folder (`studio/media/...`) instead of a dead link, a note says when the viewer does not keep reactions across reloads; reviewers use "Copy for your agent". Always use it for an artifact |
+| `showtime studio serve <job>` | foreground server, for harnesses that kill background processes |
 
 The server listens on 127.0.0.1 only and needs the key in the printed link; it stops by itself after
 4 idle hours (`SHOWTIME_STUDIO_IDLE_MIN`). Restarting keeps the same link. For a reviewer on another

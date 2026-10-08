@@ -35,12 +35,12 @@ protocol itself (phases, boards, questions) is in `studio.md`; the board format 
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| 1. Quick mode (the default) | 45-85 |
-| 2. Studio mode (opt-in) | 87-108 |
-| 3. Switching | 110-118 |
-| 4. Sub-agents (the crew) | 120-136 |
-| 5. The delivery card | 138-187 |
-| 6. Review mode: quality (default) or lean | 189-226 |
+| 1. Quick mode (the default) | 45-92 |
+| 2. Studio mode (opt-in) | 94-115 |
+| 3. Switching | 117-125 |
+| 4. Sub-agents (the crew) | 127-143 |
+| 5. The delivery card | 145-194 |
+| 6. Review mode: quality (default) or lean | 196-233 |
 
 ## 1. Quick mode (the default)
 
@@ -83,6 +83,13 @@ Tell the user the time for anything that takes more than about 30 s.
 **Recording the mode.** `showtime job init <slug> --mode quick` (the default; the review mode, section
 6, rides on the same flag: `--mode quick,lean`). SHOWTIME.md carries the goal, the modes, what is
 verified, what is assumed, and the open questions.
+
+**Resuming.** Start with `showtime status <job>`: besides where the job stands, it lists what changed
+since you last looked (files edited by hand, the person's unread notes, board picks, open critic
+findings) and then marks it seen (`review.md` §6). `job init` also writes `AGENTS.md` and `CLAUDE.md`
+into the job folder, the same short note: status first, read SHOWTIME.md, never overwrite a hand edit
+without asking. Agents read those files only when they work inside that folder; a session started
+elsewhere relies on the skill's Resuming line and the one line each job command ends with.
 
 ## 2. Studio mode (opt-in)
 

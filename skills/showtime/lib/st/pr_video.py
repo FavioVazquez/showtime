@@ -196,7 +196,8 @@ def mask_diff(files: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 # sections of a PR template that are not the change itself (the evidence scenes show the tests)
-SKIP_HEAD = re.compile(r"\b(test(s|ing|ed)?|checklist|check ?list|screenshots?|screen ?recordings?|videos?|demo|"
+SKIP_HEAD = re.compile(r"^(checks|verification|validation)$|"
+                       r"\b(test(s|ing|ed)?|checklist|check ?list|screenshots?|screen ?recordings?|videos?|demo|"
                        r"how (to|did you|was)|reviewers?|review notes|authorship|follow[- ]?up|related|issues?|"
                        r"tickets?|todo|to do|pre-?merge|type of change|ai|disclosure|contributor|license|"
                        r"acknowledg|thanks|references?|links?|deploy|rollout|rollback|appendix|metadata)\b", re.I)
@@ -212,10 +213,13 @@ def _sentences(par: str) -> List[str]:
 
 
 def parse_body(md: str) -> Dict[str, Any]:
-    """A PR description -> {summary: [lines], impact: {title, lines} or None, refs: ["Fixes #12"]}.
+    """A PR description -> {summary: [lines], items: [{text, show, bullet}], impact: {title, lines} or None,
+    refs: ["Fixes #12"]}.
 
     The summary is the description's own prose (one sentence per line) and top-level bullets, from the
-    opening text and from sections that are not template chrome (test plans, checklists, reviewer notes)."""
+    opening text and from sections that are not template chrome (test plans, checklists, reviewer notes).
+    items holds the same lines with what goes on screen: a bullet's bold lead (`- **Fixed the race.** Details`)
+    or, without one, its first sentence; a prose line as it is."""
     md = re.sub(r"<!--.*?-->", "", md or "", flags=re.S)
     md = re.sub(r"<!--.*$", "", md, flags=re.S)                 # an unclosed comment hides the rest
     md = re.sub(r"```.*?```", "", md, flags=re.S)
@@ -228,7 +232,7 @@ def parse_body(md: str) -> Dict[str, Any]:
         if para:
             text = rv._plain(" ".join(para))
             if text and not re.fullmatch(r"\W*", text):
-                sections[-1]["lines"] += _sentences(text)
+                sections[-1]["lines"] += [{"text": x, "show": x, "bullet": False} for x in _sentences(text)]
             del para[:]
 
     for line in rv._join_continuations(md.splitlines()):
@@ -257,22 +261,26 @@ def parse_body(md: str) -> Dict[str, Any]:
             text = rv._plain(b.group(2))
             text = rv._URL.sub("", text).strip(" -:;")
             if len(text) >= 3:
-                sections[-1]["lines"].append(text)
+                lead = re.match(r"^(\*\*|__)(.+?)\1", b.group(2).strip())
+                show = rv._URL.sub("", rv._plain(lead.group(2))).strip(" -:;") if lead else ""
+                if len(show) < 3:
+                    show = (_sentences(text) or [text])[0]
+                sections[-1]["lines"].append({"text": text, "show": show, "bullet": True})
             continue
         if re.fullmatch(r"\s*<?https?://\S+>?\s*", s) or re.fullmatch(r"\s*[^.!?]{1,60}:\s*", s):
             flush()                          # a bare link (an uploaded video) or a "Label:" line
             continue
         para.append(s.strip())
     flush()
-    summary: List[str] = []
+    items: List[Dict[str, Any]] = []
     impact = None
     for sec in sections:
-        lines = [x for x in sec["lines"] if len(x) >= 3]
+        lines = [x for x in sec["lines"] if len(x["text"]) >= 3]
         if sec["kind"] == "summary":
-            summary += lines
+            items += lines
         elif sec["kind"] == "impact" and lines and impact is None:
-            impact = {"title": rv.shorten(sec["title"], 40), "lines": lines}
-    return {"summary": summary, "impact": impact, "refs": list(dict.fromkeys(refs))}
+            impact = {"title": rv.shorten(sec["title"], 40), "lines": [x["text"] for x in lines]}
+    return {"summary": [x["text"] for x in items], "items": items, "impact": impact, "refs": list(dict.fromkeys(refs))}
 
 
 # ---------------------------------------------------------------------------
@@ -639,8 +647,16 @@ def plan(meta: Dict[str, Any], body: Dict[str, Any], stats: List[Dict[str, Any]]
     n_files = max(cf, len(stats)) if isinstance(cf, int) else len(stats)
     if max_seconds is None:
         max_seconds = length_budget(n_files, adds + dels)
-    total_lines = len(body["summary"])
-    sentences = [chunks(rv.shorten(x, 200)) for x in body["summary"][:max(0, max_items)]]
+    items = body.get("items") or [{"text": x, "show": x, "bullet": False} for x in body["summary"]]
+    bullets = [x for x in items if x["bullet"]]
+    if bullets:
+        # a description with a list: the list is the change, each item by its bold lead (or first sentence), and
+        # "+ N more" counts the items left out. Prose around it stays only when it fits one frame: a long opening
+        # paragraph cut into four frames took 45 % of PR #7's video while the fixes never showed
+        items = [x for x in items if x["bullet"] or len(x["show"]) <= CHUNK_CHARS[1]]
+    total_lines = len(bullets) if bullets else len(items)
+    picked = items[:max(0, max_items)]
+    sentences = [chunks(rv.shorten(x["show"], 200)) for x in picked]
     hunks = list(hunks)
     impact = None
     if body.get("impact"):
@@ -695,7 +711,8 @@ def plan(meta: Dict[str, Any], body: Dict[str, Any], stats: List[Dict[str, Any]]
             sentences.pop()
         else:
             break
-    more = max(0, total_lines - len(sentences))
+    shown = picked[:len(sentences)]
+    more = max(0, total_lines - (sum(1 for x in shown if x["bullet"]) if bullets else len(shown)))
     scenes: List[Dict[str, Any]] = [{"id": "hook", "dur": hook_dur()}]
     k = 0
     for i, sent in enumerate(sentences):

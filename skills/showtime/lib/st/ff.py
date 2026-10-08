@@ -46,6 +46,17 @@ REQUIRED_FILTERS = ["subtitles", "ass", "drawtext", "loudnorm", "ebur128", "xfad
 RECOMMENDED_FILTERS = ["zscale", "vidstabdetect", "vidstabtransform", "arnndn", "lut3d",
                        "rubberband", "minterpolate", "afftdn"]
 RECOMMENDED_ENCODERS = ["libvpx-vp9", "libopus", "prores_ks", "libmp3lame", "libwebp"]
+# Options of newer ffmpeg builds that showtime's commands use, probed from the build's own help: a build
+# without the required ones is too old (Ubuntu 22.04's 4.4.2 has none of them, and splices, rotated phone
+# footage and some audio paths fail on it). Setup then prefers its static build; doctor says how to switch.
+# (name, help topic, pattern in that help, required)
+FEATURE_PROBES = [
+    ("setts duration", "bsf=setts", r"(?m)^\s*-duration\b", True),
+    ("display_rotation", "long", r"-display_rotation\b", True),
+    ("ebur128 framelog=quiet", "filter=ebur128", r"(?m)^\s+quiet\s+-8\b", False),   # the meter falls back without it
+]
+MIN_VERSION = (6, 0)
+TOO_OLD_FIX = "use showtime's own build: `showtime setup --ffmpeg static`"
 
 
 @dataclass
@@ -216,8 +227,43 @@ def _list_names(exe_path: str, what: str) -> List[str]:
     return names
 
 
+def _help_text(exe_path: str, topic: str) -> str:
+    try:
+        cp = subprocess.run([exe_path, "-hide_banner", "-h", topic], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            timeout=60, encoding="utf-8", errors="replace")
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return (cp.stdout or "") + (cp.stderr or "")
+
+
+def probe_features(exe_path: str) -> Dict[str, bool]:
+    """{feature: present} for FEATURE_PROBES, read from the build's `-h` pages."""
+    pages: Dict[str, str] = {}
+    out = {}
+    for name, topic, pattern, _req in FEATURE_PROBES:
+        if topic not in pages:
+            pages[topic] = _help_text(exe_path, topic)
+        out[name] = bool(re.search(pattern, pages[topic]))
+    return out
+
+
+def version_tuple(version: str) -> Optional[Tuple[int, int]]:
+    """(major, minor) of '4.4.2-0ubuntu0.22.04.1', 'n7.1', '9.0.2-tessus'; None for git builds ('N-112345-g...')."""
+    m = re.match(r"^n?(\d+)\.(\d+)", str(version or ""))
+    return (int(m.group(1)), int(m.group(2))) if m else None
+
+
+def too_old(version: str, features: Dict[str, bool]) -> List[str]:
+    """Why this build is too old for showtime ([] when it is not): the required features it lacks."""
+    miss = [n for n, _t, _p, req in FEATURE_PROBES if req and not features.get(n, True)]
+    vt = version_tuple(version)
+    if miss and vt is not None and vt < MIN_VERSION:
+        miss.insert(0, "version %s < %d.%d" % (version, MIN_VERSION[0], MIN_VERSION[1]))
+    return miss
+
+
 def capabilities(exe_path: Optional[str] = None, use_cache: bool = True) -> Dict[str, Any]:
-    """{'filters': [...], 'encoders': [...], 'version': str}; cached per binary."""
+    """{'filters': [...], 'encoders': [...], 'features': {name: bool}, 'version': str}; cached per binary."""
     exe_path = exe_path or ffmpeg_path()
     try:
         st = os.stat(exe_path)
@@ -231,12 +277,13 @@ def capabilities(exe_path: Optional[str] = None, use_cache: bool = True) -> Dict
             cache = read_json(cache_file, {})
         except ShowtimeError:
             cache = {}
-        if key in cache:
+        if key in cache and "features" in cache[key]:
             return cache[key]
     caps = {
         "version": _version_of(exe_path) or "",
         "filters": _list_names(exe_path, "filters"),
         "encoders": _list_names(exe_path, "encoders"),
+        "features": probe_features(exe_path),
     }
     if use_cache and caps["filters"]:
         cache = {k: v for k, v in cache.items() if not k.startswith(os.path.realpath(exe_path) + "|")}
@@ -260,9 +307,12 @@ def check_capabilities(exe_path: Optional[str] = None) -> Dict[str, List[str]]:
     """Missing required/recommended filters and encoders for a binary."""
     caps = capabilities(exe_path)
     f, e = set(caps["filters"]), set(caps["encoders"])
+    feats = caps.get("features") or {}
     return {
         "missing_required": [x for x in REQUIRED_FILTERS if x not in f] + [x for x in REQUIRED_ENCODERS if x not in e],
         "missing_recommended": [x for x in RECOMMENDED_FILTERS if x not in f] + [x for x in RECOMMENDED_ENCODERS if x not in e],
+        "too_old": too_old(caps.get("version", ""), feats),
+        "missing_optional_features": [n for n, _t, _p, req in FEATURE_PROBES if not req and not feats.get(n, True)],
     }
 
 
@@ -414,6 +464,24 @@ def _probe_with_ffmpeg(p: Path) -> Dict[str, Any]:
 BT709_VF = "scale=out_color_matrix=bt709:out_range=tv"
 BT709_TAGS = ["-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709",
               "-color_range", "tv"]
+# Stills from a video. The conversion out of the video's 4:2:0 runs with exact rounding and full chroma
+# interpolation: ffmpeg's default drew a saturated gradient (example 28's purple to orange) 1-2 levels darker.
+STILL_FLAGS = "accurate_rnd+full_chroma_int"
+# A JPEG still: viewers decode a JPEG as BT.601 full range, so the frame goes to exactly that. Without it a
+# BT.709 tv-range video frame went into the JPEG with its own matrix (ffmpeg converts yuv to yuv keeping the
+# 709 matrix, and from RGB too when the frame still carries the video's tags) under JPEG's BT.601 tag:
+# saturated colours shifted (example 28's poster ~6 levels darker than its frame, purple's green 19 levels).
+JPEG_VF = "scale=flags=%s:out_color_matrix=bt601:out_range=pc,format=yuvj420p" % STILL_FLAGS
+
+
+def still_args(out: PathLike, width: Optional[int] = None, q: int = 2) -> List[str]:
+    """-vf (and -q:v) for a still of a video or image written to `out`, `width` wide (lanczos) or full size:
+    a .jpg/.jpeg in JPEG's own colours (BT.601 full range), a PNG/WebP in RGB by the frame's own tags; both
+    with STILL_FLAGS."""
+    scale = "scale=%d:-2:flags=lanczos+%s" % (width, STILL_FLAGS) if width else "scale=flags=" + STILL_FLAGS
+    if os.fspath(out).lower().endswith((".jpg", ".jpeg")):
+        return ["-vf", scale + ":out_color_matrix=bt601:out_range=pc,format=yuvj420p", "-q:v", str(q)]
+    return ["-vf", scale]
 
 
 @dataclass
@@ -610,7 +678,8 @@ def audio_levels(path: PathLike) -> Dict[str, Optional[float]]:
     cp = run_ffmpeg(["-nostats", "-i", os.fspath(path), "-vn", "-af", "ebur128=peak=true", "-f", "null", "-"],
                     loglevel="info", overwrite=False, check=False)
     txt = cp.stderr or ""
-    summary = txt[txt.rfind("Summary:"):] if "Summary:" in txt else ""
+    # a run that failed still prints a Summary of zeros (I: 0.0 LUFS): never read it as a level
+    summary = txt[txt.rfind("Summary:"):] if "Summary:" in txt and cp.returncode == 0 else ""
 
     def grab(pat: str) -> Optional[float]:
         m = re.findall(pat, summary)
@@ -625,14 +694,16 @@ def audio_levels(path: PathLike) -> Dict[str, Optional[float]]:
 
 
 def ensure_true_peak(path: PathLike, ceiling: float = -1.0, audio_source: Optional[PathLike] = None,
-                     af: Optional[str] = None, bitrate: str = AAC_BITRATE, tolerance: float = 0.1,
+                     af: Optional[str] = None, bitrate: str = AAC_BITRATE, tolerance: float = 0.0,
                      audio_stream: int = 0) -> Dict[str, Any]:
     """Re-check an AAC file's true peak and repair it in place when over `ceiling`.
 
     Repairs keep the video stream (copied) and re-encode only the audio from
     `audio_source` (default: the file itself) through `af`, first with the
     other AAC coder (twoloop), then with the fast coder and extra gain reduction. Returns
-    {"before", "after", "ceiling", "fixed", "attempts"} (dBTP values).
+    {"before", "after", "ceiling", "fixed", "attempts"} (dBTP values). ebur128 reads to 0.1 dB, so with
+    the default tolerance (0) a file that reads -0.9 dBTP against a -1 dBTP ceiling is repaired (a 0.1 dB
+    allowance let a GitHub export copy ship at -0.9).
     """
     p = Path(path)
     before = audio_levels(p).get("true_peak_dbtp")
@@ -662,7 +733,10 @@ def ensure_true_peak(path: PathLike, ceiling: float = -1.0, audio_source: Option
             rep["attempts"].append({"gain_db": round(-gain, 2), "coder": coder, "true_peak": tp})
             os.replace(str(tmp), str(p))
             rep["after"] = tp
-            if tp is None or tp <= ceiling + tolerance:
+            if tp is None:                   # not measured: never called fixed
+                rep["unmeasured"] = True
+                break
+            if tp <= ceiling + tolerance:
                 rep["fixed"] = True
                 break
     finally:
@@ -673,6 +747,10 @@ def ensure_true_peak(path: PathLike, ceiling: float = -1.0, audio_source: Option
                 pass
     if rep["fixed"]:
         debug("true peak %.2f -> %.2f dBTP (ceiling %.1f) in %s" % (before, rep["after"] or -99, ceiling, p.name))
+    elif rep.get("unmeasured"):
+        from .common import warn
+        warn("%s: the true peak could not be measured after re-encoding (it was %.2f dBTP, ceiling %.1f)"
+             % (p.name, before, ceiling))
     else:
         from .common import warn
         warn("%s: true peak %.2f dBTP is still above the %.1f dBTP ceiling after re-encoding"

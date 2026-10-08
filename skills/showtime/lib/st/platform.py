@@ -515,6 +515,54 @@ def cpu_count() -> int:
         return os.cpu_count() or 2
 
 
+# Windows: onnxruntime (voices, transcription, cutouts) needs the Microsoft Visual C++ 2015-2022 runtime.
+# Python ships vcruntime140*.dll next to python.exe, but not msvcp140.dll, so a machine without the
+# runtime fails with an unclear "DLL load failed while importing onnxruntime_pybind11_state".
+VC_REDIST_URL = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+VC_DLLS = ("msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll")
+# the same probe as a snippet for another interpreter (the venv's Python can be x64 under an arm64 launcher)
+VC_CHECK_CODE = ("import ctypes, json\nbad = []\nfor d in %r:\n    try: ctypes.WinDLL(d)\n"
+                 "    except OSError: bad.append(d)\nprint(json.dumps(bad))" % (VC_DLLS,))
+
+
+def missing_vc_runtime(python: Optional[PathLike] = None) -> List[str]:
+    """The Visual C++ runtime DLLs that do not load (Windows only; [] elsewhere or when the probe cannot run).
+    With `python`, probes in that interpreter (the venv's), else in this process."""
+    if not IS_WINDOWS:
+        return []
+    if python is None:
+        import ctypes
+        bad = []
+        for d in VC_DLLS:
+            try:
+                ctypes.WinDLL(d)  # type: ignore[attr-defined]
+            except OSError:
+                bad.append(d)
+        return bad
+    try:
+        cp = subprocess.run([os.fspath(python), "-c", VC_CHECK_CODE], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            encoding="utf-8", errors="replace", timeout=60)
+        return [str(x) for x in json.loads((cp.stdout or "").strip().splitlines()[-1])]
+    except (OSError, ValueError, IndexError, subprocess.SubprocessError):
+        return []
+
+
+def vc_runtime_fix(missing: Iterable[str] = ()) -> str:
+    names = ", ".join(missing)
+    return ("install the Microsoft Visual C++ 2015-2022 x64 runtime%s: %s (run it, then run the command again)"
+            % ((" (missing %s)" % names) if names else "", VC_REDIST_URL))
+
+
+def explain_dll_error(message: str) -> Optional[str]:
+    """A fix for Windows' "DLL load failed" import errors (onnxruntime, cv2, av ...), or None."""
+    if not IS_WINDOWS or "DLL load failed" not in str(message):
+        return None
+    missing = missing_vc_runtime()
+    if missing or "onnxruntime" in str(message):
+        return vc_runtime_fix(missing)
+    return None
+
+
 XVFB_FIX = ("install Xvfb (a virtual display): Debian/Ubuntu: sudo apt install xvfb; Fedora: sudo dnf install "
             "xorg-x11-server-Xvfb; Arch: sudo pacman -S xorg-server-xvfb")
 

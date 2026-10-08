@@ -120,6 +120,10 @@ RULES = {
     "aspect": "aspect ratio differs from the platform's",
     "resolution": "the frame is smaller than the platform's recommended size",
     "upscale": "the source footage was enlarged more than 1.5x (looks soft)",
+    "card_problem": "a talking-head card (EDL cards) overlaps another, sits on the captions or is too short to read",
+    "behind_hidden": "the word of a behind card (EDL cards) is mostly hidden by the speaker (measured by the render)",
+    "matte_flicker": "the speaker's cut-out under a behind card flickers (the render's matte measure)",
+    "caption_face": "captions cover the speaker's face (eyes to chin) with no room to move them (EDL cards / avoid_face)",
     "file_size": "file is larger than the size cap",
     "must_show": "a must-show text was not found on screen",
     "must_show_unverified": "a must-show text exists in the project but was not verified on screen",
@@ -397,6 +401,7 @@ def run(video: PathLike, *, project: Optional[PathLike] = None, expect_file: Opt
     _check_poster_match(F, vpath)
 
     _check_upscale(F, vpath)
+    _check_cards(F, vpath)
     rep["floor"] = _check_floor(F, vpath, dur, W, H, pic, _may_hold_footage(proj, cfg))
     _check_rhythm(F, vpath, dur, fps, proj, cfg, expect, rep, say)
     if loud.get("_x") is not None:
@@ -958,16 +963,48 @@ def _check_hearing(F: Findings, vpath: Path, loud: Dict[str, Any], dur: float, p
         mp = hearing.own_mix_report(vpath)
         mix = hearing.mix_facts(read_json(mp, None) if mp else None, off, dur)
         cues = {k: v - off for k, v in hearing.cue_values(proj).items()}
+        from ..audio import meter
+        speaker = meter.speaker_loudness(loud["_x"], 48000, integrated_lufs=loud.get("integrated_lufs"))
         h = hearing.measure(blk, dur, lines=lines, lines_source=src, cuts=cuts, scenes=scenes, mix=mix, cues=cues,
-                            loud=loud)
+                            loud=loud, speaker=speaker)
     except Exception as e:  # noqa: BLE001 - a measurement aid, never a reason to fail qa
         rep["hearing"] = {"error": str(e).splitlines()[0][:200] if str(e) else type(e).__name__}
+        h = None
+    rb = _readback(vpath, proj, say)
+    if h is None:
+        if rb:
+            rep["hearing"]["readback"] = rb
+            hearing.check_readback(F, rb)
         return
+    h["readback"] = rb
+    if isinstance(h.get("speaker"), dict):
+        h["speaker"]["showtime_mix"] = mp is not None or _score_bed(vpath)
     hearing.check(F, h)
+    hearing.check_readback(F, rb)
     h["summary"] = hearing.summary(h)
     h["mix_report"] = str(mp) if mp else None
     rep["hearing"] = h
     loud.setdefault("_curves", {})["blocks"] = blk
+
+
+def _score_bed(vpath: Path) -> bool:
+    """The render played an ST.score bed (render.json audio.sources), so showtime made its soundtrack."""
+    from . import review
+    rj = review.render_report(vpath)
+    au = rj.get("audio") if isinstance(rj, dict) else None
+    return isinstance(au, dict) and "score" in (au.get("sources") or [])
+
+
+def _readback(vpath: Path, proj: Optional[Path], say: Any) -> Optional[Dict[str, Any]]:
+    """The voice-over heard back and compared with the script (st.qa.hearing.readback); never fails qa."""
+    if proj is None or not (proj / "voice" / "timeline.json").is_file():
+        return None
+    say("qa: measuring what an ear would catch: the voice-over heard back")
+    try:
+        return hearing.readback(vpath, proj)
+    except Exception as e:  # noqa: BLE001 - a check, never a reason to fail qa
+        why = "the read-back failed (%s)" % (str(e).splitlines()[0][:160] if str(e) else type(e).__name__)
+        return {"skipped": why, "suspects": [], "lines": [], "summary": "read-back skipped: %s" % why}
 
 
 def _check_opening_flash(F: Findings, vpath: Path, fps: float) -> None:
@@ -1074,6 +1111,51 @@ def _check_upscale(F: Findings, vpath: Path) -> None:
         F.add("upscale", "INFO", "sources are enlarged more than %.1fx; the EDL accepts it (output.allow_upscale)" % UPSCALE_LIMIT)
     if not worst and not accepted and (rep.get("segment_meta") or []):
         F.ok("no source enlarged more than %.1fx" % UPSCALE_LIMIT)
+
+
+def _check_cards(F: Findings, vpath: Path) -> None:
+    """The cards an edit drew (EDL "cards", st.footage.cards): every problem the render found (overlaps, the
+    caption band, the safe box, reading time) is a WARN; else one ok line. From the edit render report."""
+    rep = edit_report(vpath)
+    cards = (rep or {}).get("cards") if rep else None
+    face = (rep or {}).get("caption_face") if rep else None
+    if not cards and not face:
+        return
+    probs = (cards or face).get("problems") or []
+    items = {int(c.get("i", -1)): c for c in (cards or {}).get("items") or []}
+    for p in probs[:LIST_MAX_CARDS]:
+        if p.startswith("the captions cover the speaker's face"):
+            m = re.search(r"at ([\d.]+)-", p)
+            F.add("caption_face", "WARN", p, t=float(m.group(1)) if m else None,
+                  fix="a smaller caption style or size, another position, or a panel; edit check lists the same")
+            continue
+        m = re.match(r"cards\[(\d+)\]", p)
+        c = items.get(int(m.group(1))) if m else None
+        if "the text behind the speaker is" in p:
+            F.add("behind_hidden", "WARN", p, t=(c or {}).get("start"), end=(c or {}).get("end"),
+                  fix="move the word to the free side (\"side\"), use fewer letters, or \"layout\": \"split\" in 9:16; "
+                      "edit check estimates it before a render")
+            continue
+        if "the speaker's matte flickers" in p:
+            F.add("matte_flicker", "WARN", p, t=(c or {}).get("start"), end=(c or {}).get("end"),
+                  fix="a calmer shot for the card, or \"background\": \"blur\" or \"dim\" (a soft plate hides a ragged edge)")
+            continue
+        F.add("card_problem", "WARN", p, t=(c or {}).get("start"),
+              fix="fix the card in the EDL (showtime edit check lists the same), then render again")
+    moved = (cards or face).get("caption_moves") or 0
+    behind = (cards or {}).get("behind") or []
+    if not probs:
+        F.ok(("%d card(s) clear of the captions, each other and the safe box, each long enough to read; " % len(items)
+              if cards else "") + "captions clear of the speaker's face%s" % (
+                  " (moved off it in %d stretch(es))" % moved if moved else ""))
+    if behind and not any(("the text behind the speaker is" in p or "the speaker's matte flickers" in p) for p in probs):
+        F.ok("%d behind card(s): %s" % (len(behind), "; ".join(
+            "%s %.0f %% behind the speaker, matte flicker %.2f %%" % (
+                b.get("text") or "the word", 100 * (b.get("hidden") or 0.0), 100 * (b.get("flicker") or 0.0))
+            for b in behind[:4])))
+
+
+LIST_MAX_CARDS = 12
 
 
 def _check_floor(F: Findings, vpath: Path, dur: float, W: int, H: int, crop: Optional[Sequence[int]],
@@ -1521,6 +1603,9 @@ def _format_brief(rep: Dict[str, Any]) -> str:
     passed = list(rep.get("passed", []))
     loud = [p for p in passed if p.startswith("loudness")]
     rest = [re.split(r"[:(]", p)[0].strip() for p in passed if not p.startswith("loudness")]
+    sl = hearing.speaker_line((rep.get("hearing") or {}).get("speaker"))
+    if loud and sl and not any(f["rule"] == "speaker_loudness" for f in rep.get("findings", [])):
+        loud = [loud[0] + ", " + sl] + loud[1:]
     if loud or rest:
         lines.append("  PASS  %s" % "; ".join(loud + (["also " + ", ".join(rest)] if rest else [])))
     if (rep.get("phone") or {}).get("line"):

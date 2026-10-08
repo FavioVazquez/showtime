@@ -196,6 +196,12 @@ def _delivery(job: Path, data: Dict[str, Any]) -> Dict[str, Any]:
     out["target_lufs"] = loud.get("target_lufs")
     out["qa"] = qa.get("verdict") if qa.get("video") and Path(str(qa["video"])).name == vid.name else None
     out["qa_fail"], out["qa_warn"] = (qa.get("fail"), qa.get("warn")) if out["qa"] else (None, None)
+    rb = (rep.get("hearing") or {}).get("readback") if isinstance(rep.get("hearing"), dict) else None
+    if isinstance(rb, dict) and rb.get("summary"):
+        sus = [s for s in rb.get("suspects") or [] if isinstance(s, dict)]
+        out["readback"] = {"summary": str(rb["summary"]), "words": [
+            {"word": s.get("word"), "heard": s.get("heard"), "t": s.get("t"), "critical": bool(s.get("critical"))}
+            for s in sus[:10]]}
     return out
 
 
@@ -585,7 +591,15 @@ def card_facts(rec: Dict[str, Any]) -> List[str]:
             dv["lufs"], dv.get("true_peak") or 0, " (target %g)" % dv["target_lufs"] if dv.get("target_lufs") is not None else ""))
     else:
         out.append("Loudness: not measured (run showtime qa on the final)")
-    out.append("QA: %s" % ("%s (%s fail, %s warn) on %s" % (dv["qa"], dv.get("qa_fail"), dv.get("qa_warn"), dv["final"])
+    rb = dv.get("readback") or {}
+    heard = ""
+    if dv.get("qa") and rb.get("summary"):
+        ws = rb.get("words") or []
+        heard = ("; read-back: %s" % "; ".join("\"%s\" heard as \"%s\"%s" % (
+            w.get("word"), w.get("heard") or "nothing", " at %.1fs" % w["t"] if w.get("t") is not None else "")
+            for w in ws[:4])) if ws else "; %s" % rb["summary"]
+    out.append("QA: %s" % ("%s (%s fail, %s warn) on %s%s" % (dv["qa"], dv.get("qa_fail"), dv.get("qa_warn"), dv["final"],
+                                                              heard)
                           if dv.get("qa") else "not run on %s" % (dv.get("final") or "the final")))
     mode = (rec.get("review_mode") or {}).get("mode")
     note = rv.get("note") or ""

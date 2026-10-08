@@ -33,12 +33,12 @@ the accent). Both writers group the same way: phrase-sized cards that never end 
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| 1. Pick a style | 43-66 |
-| 2. Grouping rules | 68-114 |
-| 3. Sizes and safe zones | 116-140 |
-| 4. Fonts | 142-158 |
-| 5. Checking captions | 160-172 |
-| 6. Commands | 174-203 |
+| 1. Pick a style | 43-67 |
+| 2. Grouping rules | 69-115 |
+| 3. Sizes and safe zones | 117-141 |
+| 4. Fonts | 143-159 |
+| 5. Checking captions | 161-173 |
+| 6. Commands | 175-204 |
 
 ## 1. Pick a style
 
@@ -56,7 +56,8 @@ plays muted, so social edits always get captions.
 Options (CLI flags or keys in the EDL `captions` object): `font` (family or .ttf/.otf path),
 `highlight` and `color` (`#RRGGBB`), `position` (`bottom`, `middle`, `top`), `max_words`,
 `upper` (force caps), `fillers` (show um/uh; hidden by default), `srt` (EDL: also write
-`<out>.srt`, default true). The EDL object also takes any style key from the tables below:
+`<out>.srt`, default true), `emphasis` (EDL: words or phrases coloured in the cards' look accent or
+`emphasis_color`, every time they are said; 3-5 terms, see `editing.md` §9). The EDL object also takes any style key from the tables below:
 `size` (`{"portrait": 0.135}`), `chars`, `margin_v`, `max_dur`, `gap`, `lead`, `tail`, `min_dur`,
 `min_show`. A bigger `size` without `chars` lowers the character cap to match (ASS lines never wrap).
 `edit render --captions <style>` starts from that style's own defaults (the EDL's position and

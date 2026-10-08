@@ -50,8 +50,12 @@ def register(sub: argparse._SubParsersAction) -> None:
                          "~/.showtime/assets/fonts/<id>/ with its license. Only OFL/Apache/MIT/UFL by default."),
                      epilog="examples:\n  showtime assets font inter\n  showtime assets font \"Bricolage Grotesque\" --weights 400,800\n"
                             "  showtime assets font inter --path --weight 700     # print the TTF path\n"
-                            "  showtime assets font anton --copy-to ./my-video/fonts")
-    p.add_argument("family", help="family name or id, e.g. \"Space Grotesk\" or space-grotesk")
+                            "  showtime assets font anton --copy-to ./my-video/fonts\n"
+                            "  showtime assets font --css \"https://fonts.googleapis.com/css2?family=Anton\" --copy-to ./my-video/fonts")
+    p.add_argument("family", nargs="?", help="family name or id, e.g. \"Space Grotesk\" or space-grotesk")
+    p.add_argument("--css", metavar="URL", help="a Google Fonts stylesheet link (fonts.googleapis.com/css2?family=...): copy exactly "
+                   "the files it serves, with their licenses, into --copy-to and write fonts.css there (for pages that link it)")
+    p.add_argument("--css-name", default="fonts.css", metavar="FILE", help="name of the stylesheet --css writes (default fonts.css)")
     p.add_argument("--weights", default="400,700", help="comma list or 'all' (default 400,700; nearest available is used)")
     p.add_argument("--styles", default="normal", help="normal,italic (default normal)")
     p.add_argument("--subsets", help="e.g. latin,latin-ext (default: the family's default subset)")
@@ -267,6 +271,20 @@ def _split(s):
 
 def cmd_font(args) -> int:
     from .assets import fonts
+    if args.css:
+        if not args.copy_to:
+            raise ShowtimeError("--css needs --copy-to <folder> (the project's fonts folder)",
+                                hint="showtime assets font --css \"<link>\" --copy-to ./my-video/fonts")
+        m = fonts.from_css(args.css, Path(args.copy_to), allow_license=args.allow_license, css_name=args.css_name)
+        if args.json:
+            print_json(m)
+        else:
+            for f in m["families"]:
+                log("%s (%s): %d file(s)" % (f["family"], f["license"], len(f["files"])))
+            print(Path(m["dir"]) / m["css"])
+        return 0
+    if not args.family:
+        raise ShowtimeError("name a font family (or pass --css <Google Fonts link>)", hint="showtime assets font inter")
     if args.path:
         p = fonts.resolve(args.family, args.weight, args.style, "ttf")
         if args.json:

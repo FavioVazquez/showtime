@@ -124,7 +124,8 @@ export async function buildEmbedAudio({ proj, cfg, duration, score, workDir, cod
   else {
     // a lossy encode at a low bitrate overshoots true peak more than 256k AAC: keep 1 dB of headroom
     const r = await master(combined, masterWav, { target, tp: tp - 1.0 });
-    if (r.mode === 'silent') warn('the soundtrack is silent');
+    if (r.error) warn(`loudness not measured, the soundtrack is not leveled: ${r.error}`);
+    else if (r.mode === 'silent') warn('the soundtrack is silent');
     else if (!r.reached) warn(`the soundtrack reached ${r.lufs === null ? '?' : r.lufs.toFixed(1)} LUFS instead of ${target}`);
   }
   const c = String(codec || 'aac').toLowerCase();

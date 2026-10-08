@@ -316,8 +316,11 @@ class TestHistory(HistoryCase):
         h.record(self.look("z"))
         self.assertEqual(h.clear("x"), 1)
         self.assertEqual([x["job"] for x in h.load()], ["z"])
+        picks = h.folder() / "picks.json"   # the signature picks kept next to the history go with it
+        picks.write_text('{"picks": [{"id": "x", "project": "/x"}]}', encoding="utf-8")
         self.assertEqual(h.clear(), 1)
         self.assertFalse(h.file().exists())
+        self.assertFalse(picks.exists())
 
     def test_cli_list_check_strict_off(self):
         env = dict(ENV, SHOWTIME_HISTORY_DIR=str(self.dir))

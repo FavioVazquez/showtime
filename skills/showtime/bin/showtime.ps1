@@ -16,7 +16,9 @@ if ($env:SHOWTIME_PYTHON) {
 }
 $venvPy = Join-Path $stHome 'venv\Scripts\python.exe'
 if (-not (Test-Path $venvPy)) { $venvPy = Join-Path $stHome 'venv/bin/python' }
-if (Test-Path $venvPy) {
+# setup may rebuild the venv, and Windows cannot delete a running python.exe: run it with a Python outside the venv
+$isSetup = ($args.Count -gt 0 -and "$($args[0])" -eq 'setup')
+if ((Test-Path $venvPy) -and -not $isSetup) {
     & $venvPy $launcher @args; exit $LASTEXITCODE
 }
 if ((Get-Command py -ErrorAction SilentlyContinue) -and (Test-Python 'py' @('-3'))) {
@@ -38,6 +40,9 @@ if (-not $uv) {
 }
 if ($uv) {
     & $uv run --no-project --python 3.12 python $launcher @args; exit $LASTEXITCODE
+}
+if (Test-Path $venvPy) {
+    & $venvPy $launcher @args; exit $LASTEXITCODE
 }
 Write-Error ("showtime: no Python 3.8+ found. Install uv: " +
   'powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"' +

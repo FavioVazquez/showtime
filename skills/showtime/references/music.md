@@ -170,7 +170,7 @@ Catalog, composer or library?
 - **Compose** when the edit has fixed beats that the music must hit (section changes, a logo at
   a time, an exact length) or you need stems. Structure is exact, sound is good but synthetic.
 - **Both**: a catalog bed with composed or procedural stingers and risers in the same key.
-- **The installed library** (`audio lib search --kind music`) is mostly light Kevin MacLeod pieces
+- **The installed library** (`showtime audio lib search --kind music`) is mostly light Kevin MacLeod pieces
   and CC0 game music: for serious work search calm, ambient, cinematic or piano moods, read the title
   and tags, and skip anything quirky, funny, ukulele, whistle, circus or kids.
 

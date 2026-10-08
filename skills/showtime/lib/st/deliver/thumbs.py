@@ -58,11 +58,13 @@ def thumbnail(src: PathLike, out: Optional[PathLike] = None, at: Optional[float]
             "," + ff.BT709_VF + ",format=yuv420p", "")
         out_p.parent.mkdir(parents=True, exist_ok=True)
         ext = out_p.suffix.lower()
+        if ext in (".jpg", ".jpeg") and graph.endswith("[v]"):
+            graph = graph[:-3] + "," + ff.JPEG_VF + "[v]"     # JPEG's own colours (BT.601 full range), as posters
         q = 2
         while True:
             args = ["-i", os.fspath(frame), "-filter_complex", graph, "-map", "[v]", "-frames:v", "1"]
             if ext in (".jpg", ".jpeg"):
-                args += ["-q:v", str(q), "-pix_fmt", "yuvj420p"]
+                args += ["-q:v", str(q)]
             elif ext == ".webp":
                 args += ["-quality", str(max(50, 95 - 5 * (q - 2)))]
             ff.run_ffmpeg(args + ["-update", "1", os.fspath(out_p)])

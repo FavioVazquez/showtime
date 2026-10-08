@@ -83,7 +83,7 @@ MCP Servers; in the Cline CLI: `~/.cline/mcp.json`). Keep any servers that are a
 - `timeout` is in seconds: renders and transcriptions often take longer than the default 60. A long
   tool that runs past about 20 s answers `RUNNING` with a task id instead of timing out; call `status`
   with `{"task": "<id>"}` until it returns the result.
-- Leave `autoApprove` empty unless the user asks otherwise; `doctor`, `status`, `check`, `qa`,
+- Leave `autoApprove` empty unless the user asks otherwise; `doctor`, `status`, `guide`, `check`, `qa`,
   `audio_search` and `studio_feedback` only read.
 
 ## 5. Verify

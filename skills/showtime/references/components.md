@@ -2,8 +2,9 @@
 
 Read this when you are building an HTML/DOM video page (`showtime new dom|short|data`) and want
 titles, captions, lower thirds, stats, charts, code, browser or device frames, a cursor, chat or
-notification UI, a checklist, a Ken Burns still, a map or an end card. For scene-to-scene
-handoffs read `references/transitions.md`; for timing and taste read `references/motion-craft.md`.
+notification UI, a checklist, a Ken Burns still, a map, an end card or a WebGL look (fluted glass,
+tilt-shift, liquid metal, mesh gradient, god rays, marble, metaballs). For scene-to-scene handoffs read `references/transitions.md`; for timing
+and taste read `references/motion-craft.md`.
 Run `showtime motion` for the live list.
 
 ## Essentials
@@ -26,7 +27,9 @@ Run `showtime motion` for the live list.
   `question-beat` (a stop-and-ask question's pause and think beat) §3;
   `chart`, `world-map` §4; `browser-frame`, `device-frame`, `cursor`, `keystrokes`, `code-block`, `chat-thread`,
   `notifications`, `feature-grid` §5; `camera`, `fit`, `portal`, `ken-burns`, `logo-reveal`, `end-card`, `grain`
-  §6; themes and tokens §7; writing your own §8. Live list: `showtime motion`
+  §6; the WebGL looks `fluted-glass`, `tilt-shift`, `liquid-metal`, `mesh-gradient`, `god-rays`, `marble`,
+  `metaballs` §7; themes and tokens §8; writing your own
+  §9. Live list: `showtime motion`
 - `caption-karaoke`: `clean-pop` is the default and the style for 9:16 shorts; 3-5 `emphasis` words, not more;
   place the layer outside the scenes so it runs across cuts (§2)
 - `count-up` and `chart` take real numbers only; the chart title is the takeaway computed from the data; keep
@@ -38,18 +41,25 @@ Run `showtime motion` for the live list.
   theme whose comments clear 4.5:1 (`showtime check` judges every token) (§5)
 - Chat and notification UI stays generic (never a real app's branding); no emoji icons (§5)
 - `end-card` holds >= 2.5 s; a 5-6 % `camera` push onto a result is the premium move (§6)
+- Motion blur on a snap beat: `data-st-blur` on the moving element (a word, a card, a component), smeared only
+  on its fast frames, sharp when it lands; 1-3 a video, never on text being read (§1)
+- Looks need no GPU (WebGL on SwiftShader) and fall back to a CSS or 2D version without WebGL; `tilt-shift` and
+  `mesh-gradient` are the quiet ones for explainers, `fluted-glass`, `liquid-metal`, `god-rays` and `marble` are
+  for launches, titles and reels, `metaballs` for playful beats and a gooey wipe; `check` warns (`look_budget`)
+  when one costs more than 50 ms a frame without a GPU (§7)
 
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| 1. Setup (two lines) and the time model | 54-98 |
-| 2. Text: kinetic-type, typewriter, caption-karaoke | 100-159 |
-| 3. Identification and numbers: lower-third, count-up, steps, question-beat | 161-202 |
-| 4. Data: chart, world-map | 204-255 |
-| 5. Product and UI: browser-frame / device-frame, cursor and keystrokes, code-block, ... | 257-319 |
-| 6. Camera, stills, closers, texture | 321-362 |
-| 7. Themes (runtime/themes) | 364-377 |
-| 8. Writing your own component | 379-398 |
+| 1. Setup (two lines) and the time model | 64-114 |
+| 2. Text: kinetic-type, typewriter, caption-karaoke | 116-175 |
+| 3. Identification and numbers: lower-third, count-up, steps, question-beat | 177-218 |
+| 4. Data: chart, world-map | 220-271 |
+| 5. Product and UI: browser-frame / device-frame, cursor and keystrokes, code-block, ... | 273-335 |
+| 6. Camera, stills, closers, texture | 337-378 |
+| 7. Looks (WebGL): fluted-glass, tilt-shift, liquid-metal, mesh-gradient, god-rays, marble, metaballs | 380-550 |
+| 8. Themes (runtime/themes) | 552-565 |
+| 9. Writing your own component | 567-586 |
 
 ## 1. Setup (two lines) and the time model
 
@@ -90,6 +100,12 @@ Run `showtime motion` for the live list.
   fallbacks; component CSS loads first, so your page CSS wins. Class names are `st-<component>-*`.
 - **Media.** Images and videos inside components are awaited before the first frame. Videos must be
   muted `<video data-st>` (the stage seeks them).
+- **Motion blur on a snap.** `data-st-blur` on the element that moves (any element: a word, a card, a
+  component's root) smears it only while it moves faster than 6 px a frame, as a 180° camera shutter would,
+  and it lands sharp: `<span class="word" data-st-blur>SNAP</span>`, or `data-st-blur="shutter 270; max 120"`.
+  The stage poses it between frames from its CSS animations, its component's update, `ST.anime` timelines or
+  a `pose(t)` given to `ST.blur(el, {pose})`. One to three snap beats a video, never on text being read or
+  slow moves (`check` warns): stage-api.md § Shutter blur, motion-craft.md §5.
 
 Helpers exported by `/_st/components/index.js` (from `core.js`): `ease(name)` (`'power3.out'`,
 `'expo.inOut'`, `'spring(0.5,0.8)'`, `'glide'`, `'steps(6)'`, `'cubic-bezier(...)'`, named
@@ -361,7 +377,179 @@ with each OS's own font).
 - **grain**: seeded film grain over the frame; `opacity` (default `--grain`), `fps` 24, `size`,
   `blend`. Keeps dark gradients from banding after compression.
 
-## 7. Themes (runtime/themes)
+## 7. Looks (WebGL): fluted-glass, tilt-shift, liquid-metal, mesh-gradient, god-rays, marble, metaballs
+
+Seven looks drawn by showtime's own WebGL layer (`runtime/effects/gl.js`, GLSL ES 1.00). They need no GPU:
+without one Chrome draws WebGL on the CPU (SwiftShader), the same frame gives the same pixels with 1 or 3
+render workers, and every motion is a function of the clip's time. Each one fills its box (by default the
+scene: `position:absolute; inset:0`); text or other elements inside it sit on top. All seven in one 18 s page,
+with its render: the `_looks` demo in the showtime repository's examples folder.
+
+- **Shared options.** `at`; `keys` `[{at, dur, ease, ...values}]` moves numeric options over time (each key
+  eases from where the values are to its own over `[at, at+dur]`; `dur` 0 is a cut), for example
+  `data-keys='[{"at":0.5,"dur":1.6,"y":0.4,"ease":"sine.inOut"}]'`; `scale` renders the look smaller and lets
+  the browser scale it up (cheaper, softer; `fluted-glass` and `liquid-metal` take 0.75 by themselves where WebGL
+  runs on the CPU, unless `scale` is given, which looks the same at the frame size); `seed`.
+- **Pictures.** `data-src` (an image file) or an `<img>` or `<canvas>` inside the element; the picture covers
+  the box like `object-fit: cover`, `focus` `[x%, y%]` picks the centre. A `<canvas>` is read again on every
+  frame, after the page's other `onSeek` handlers. `<video>` is not a source yet: use a still of it.
+- **Without WebGL** each look draws a fallback so the frame still reads as designed: a CSS pane (fluted-glass), a
+  CSS blur behind a mask (tilt-shift), a 2D chrome sphere (liquid-metal), a still CSS field (mesh-gradient), a
+  still CSS glow behind the sharp shape (god-rays), its first frame worked out once in JS (marble), and flat
+  blobs traced on a 2D canvas, which still move (metaballs); `showtime check` says so (`look_fallback`).
+- **Cost without a GPU**: the extra ms a 1080p frame takes on our test machine (64 cores, SwiftShader;
+  each frame a seek and a JPEG screenshot, as render takes it, against the same scene without the look), with
+  one browser and per browser with 8 rendering at once (render's choice there):
+
+  | Look, at its default | 1 browser | 8 browsers | at `scale` 1 (1 / 8) |
+  |---|---|---|---|
+  | fluted-glass (0.75 without a GPU) | 26 | 27 | 40 / 44 |
+  | tilt-shift (blur passes at 0.35) | 38-42 | 49-52 | (the compose is full size already) |
+  | liquid-metal sphere / ring / blob (0.75) | 18 / 20 / 30 | 22 / 42 / 37 | sphere 23 / 41, ring 61 / 77, blob 55 / 69 |
+  | mesh-gradient (0.5) | 9-10 | 10-11 | 22 / 29 |
+  | god-rays dawn, glow / spotlight (0.5) | 15-16 / 23 | 21-22 / 37 | dawn, glow 38 / 70, spotlight 94 / 133 |
+  | marble (0.75) | 23-28 | 30-35 | 35-51 / 60 |
+  | metaballs merge / lava / wipe (0.75) | 11 / 17 / 12 | 18 / 21 / 24 | 28 / 33 |
+
+  A full-size canvas costs a CPU renderer more than its share of pixels (its copy to the screen and the caches),
+  so most looks draw smaller and are scaled up; the four newer ones are soft enough not to show it, and fluted
+  glass and liquid metal take 0.75 by themselves without a GPU. `showtime check` adds the costs up per look from
+  its real size (`runtime/effects/gl.js` COST_1080P, the costs above with how each grows with size) and warns
+  (`look_budget`) above 50 ms (`runtime/thresholds.json` "look_budget_ms"). A small machine without a GPU is
+  several times slower than the box: keep one look per scene, and lower `scale` before adding a second one.
+- **Many looks.** A look holds a WebGL context only while its clip is on screen and builds it again, the same,
+  when a seek comes back, so a long reel can have a look in every scene. Chrome keeps about 16 contexts per
+  page: `check` warns (`look_contexts`) above 8 looks on screen at once and fails above 14; past 12 at once
+  the oldest give theirs back and show a still copy of their frame. A context the browser takes back anyway
+  (also one lost while the look builds its shaders: a GPU reset) is `look_lost`; the look draws again on a new
+  one or shows its fallback, and keeps its place and its cost in check's report.
+- **With a GPU.** A GPU can hand the screenshot a WebGL canvas it has not finished drawing (the frame then shows
+  the look a few frames back), so in a render on a GPU each look reads its frame back into a 2D canvas the page
+  shows; `check` lists it as `present: "readback"`. It adds about 10 ms to a 1080p frame of a full-frame look
+  (measured on a Mac with a GPU), far less than the look costs without a GPU.
+
+**fluted-glass**: a pane of reeded glass over an image, or over slow glows in the theme's colours when there is
+no image. Each flute shows a squeezed copy of a wider strip of the picture, with a chromatic split, a highlight
+down each flute and a fine seam. Use it for hero frames, launch title cards and trailer plates. `preset`
+`reeded` (fine, quiet), `fluted` (default), `prism` (wide, angled, strong split); `width` (px at the frame
+size), `depth` (0-1.5), `angle` (degrees), `split` (0-0.6), `frost` (0-3, a softer picture inside the flutes),
+`light` (0-1), `flow` (the flutes slide, px/s), `drift` (the picture pushes in, zoom per second, default
+0.008), `focus`, `keys`, `scale` (default 1, and 0.75 where WebGL runs on the CPU). Fallback: the picture (or
+the glows) under CSS flute shading.
+
+```html
+<div data-st="fluted-glass" data-src="media/plate.jpg"
+     data-keys='[{"at":0,"depth":0},{"at":0.1,"dur":1.1,"depth":0.62,"ease":"premium"}]'></div>
+```
+
+**tilt-shift**: a sharp band across a screenshot or photo, with a blur that grows away from it. The quiet look:
+it points at one region (a form, a chart row, a street) without boxes or arrows; move the band with `keys` as
+the narration moves. `preset` `miniature` (narrow band, strong blur, richer colour), `focus` (wide band, soft
+blur, the rest dimmed; for explainers), `progressive` (sharp below the band, blur toward the top edge, for
+type over a photo); `y` (band centre, 0 top to 1 bottom), `angle`, `width` (half-height of the sharp band,
+fraction of the frame height), `feather`, `blur` (px), `side` (`both|top|bottom`), `dim`, `saturate`,
+`contrast`, `drift`, `focus`, `keys`, `scale` (the largest size the blur passes run at, default 0.35; strong
+blurs run smaller on their own, a blur hides it). Fallback: a CSS-blurred copy behind a gradient mask.
+
+```html
+<div data-st="tilt-shift" data-src="shots/dashboard.png" data-preset="focus" data-y="0.7"
+     data-keys='[{"at":2.4,"dur":1.2,"y":0.35,"ease":"sine.inOut"}]'></div>
+```
+
+**liquid-metal**: a chrome object whose surface flows slowly, reflecting a studio built from the theme
+palette (a bright horizon, a graded sky and floor and soft boxes, faintly tinted by `--accent` and
+`--accent-2`; a dark studio with white boxes on a dark ground, a white studio with dark cards on a light one),
+with fresnel edges, a key highlight and a filmic roll-off, on a transparent canvas over the scene's own
+ground, with a soft contact shadow. A word (`text`, in `--font-display`) or an image (`logo`) is printed on
+the soft box behind the viewer, so it shows in the middle of the metal. Use it for launch end
+cards and reels, not explainers. `preset` `auto` (chrome on dark, pearl on light), `chrome`, `pearl`, `neon`;
+`shape` `sphere` (cheapest) `|blob|ring`; `size` (radius, fraction of half the shorter side, default 0.62);
+`x`, `y` (centre); `liquid` (0-1; keep 0.3-0.45 when the reflected word must read); `speed`; `turn` (the
+studio turns, degrees per second); `shadow`; `in` (seconds to grow in); `keys` (x, y, size, liquid), `scale`
+(default 1, and 0.75 where WebGL runs on the CPU, which looks the same at the frame size for half the cost).
+Fallback: a still chrome sphere drawn on a 2D canvas.
+
+```html
+<div data-st="liquid-metal" data-shape="blob" data-text="Tidepool" data-x="0.67" data-in="0.7"></div>
+```
+
+**mesh-gradient**: a soft colour field that drifts slowly: 4-6 colour points from the theme palette on long
+closed paths, blended in Oklab (two colours meet without a grey or muddy middle), the field between them bent
+by a smooth warp, with a fine grain so the gradient never steps into bands after compression. The quiet ground
+for an explainer, a chapter card or a quote: text sits on top. `preset` `calm` (default: close to `--bg`, low
+contrast, for words over it; on a dark ground it stays in the accent nearest the ground's hue, since a warm accent
+darkened into a cool ground turns brown), `aurora` (accent glows in the dark), `vivid` (the accents at full
+strength: a title or a reel, check the contrast of anything on it); `points` (4-6), `intensity` (how far the
+colours leave `--bg`, 0-1), `warp` (0-1.5), `move` (how far each point travels, fraction of the frame height),
+`speed` (1 = a loop of about half a minute), `grain` (0-0.08), `colors` (a comma list or JSON array of CSS
+colours, used in turn), `keys` (intensity, warp, move, grain), `scale` (default 0.5: the field is smooth).
+Fallback: the same points at the first frame as still CSS radial gradients.
+
+```html
+<div data-st="mesh-gradient"><h2 class="t-title">How the cache fills</h2></div>
+<div data-st="mesh-gradient" data-preset="aurora" data-keys='[{"at":0,"intensity":0.3},{"at":0.2,"dur":1.5,"intensity":0.85}]'></div>
+```
+
+**god-rays**: shafts of light through a word or a logo. The light is gathered along rays from a light point
+(three nested passes at a quarter of the frame size), so it leaks out around and between the letters in beams
+and the shape's shadow streaks away from it; the shape itself is drawn sharp on top. Use it for a title or a
+logo reveal: let the light come up (`in`, or `strength` in `keys`) and hold while the word reads. `preset`
+`dawn` (default: a warm light right behind the shape, beams bursting out of the letters, the shape a dark
+silhouette with a lit rim), `spotlight` (a cool light above the frame, beams falling through the air and the
+letters' shadows down them), `glow` (the shape itself shines in the accent and streams out); `text` (in
+`--font-display`) or `logo` (an image URL, or an `<img>` inside the element); `size` (the word's height,
+fraction of the frame height, default 0.22); `cx`, `cy` (the shape's centre); `x`, `y` (the light; outside 0-1
+for a light off the frame); `length` (0-1), `strength` (0-2), `decay` (0.5-1), `shafts` (how broken the light
+is into beams, 0-1), `disc` (the light's size), `color`, `drift` (the light sways a little; 0 holds it), `in`,
+`keys` (x, y, length, strength, decay, shafts), `scale` (default 0.5). The look draws its own dark air (light
+needs darkness to show), from `--bg`, or from `--fg` on a light theme. Fallback: a still CSS glow and beams
+behind the sharp shape.
+
+```html
+<div data-st="god-rays" data-text="Northlight" data-in="1.2"></div>
+<div data-st="god-rays" data-logo="media/mark.png" data-preset="spotlight"
+     data-keys='[{"at":0,"x":0.2},{"at":0.3,"dur":2.5,"x":0.55,"ease":"sine.inOut"}]'></div>
+```
+
+**marble**: veined stone or marbled paper that flows slowly, tinted by the theme. Smooth gradient noise (a small
+tileable texture made once in JS, so a CPU renderer pays one lookup per octave) bends the plane twice over, and
+the bent plane is drawn as stone (a cloudy tone, a network of veins, some bold and some a thread, hairlines and a
+soft halo) or as paper (stripes of the theme's colours combed into each other). Use it under a title, a quote or
+an end card for an editorial or premium feel; `ink` is loud: put text on it on a plate. `preset` `auto`
+(default: `carrara` on a light ground, `nero` on a dark one), `carrara` (white stone, grey veins with a trace
+of `--accent-2`), `nero` (dark stone, light veins with a trace of `--accent`), `ink` (stripes of `--accent` and
+`--accent-2` with a fine line on the ground); `zoom` (larger is finer), `angle` (the main direction of the veins
+or stripes), `turbulence` (0-2), `veins` (0-1.5), `speed` (1 = a slow flow; 0 a still stone), `sheen` (0-1),
+`colors` (stone, vein, second vein; for `ink` up to four stripe colours), `keys` (zoom, turbulence, veins,
+sheen), `scale` (default 0.75). Fallback: the look's first frame, worked out once in JS at a quarter of the size.
+
+```html
+<div data-st="marble"><blockquote class="t-display">Measure twice.</blockquote></div>
+<div data-st="marble" data-preset="ink" data-speed="1.5"></div>
+```
+
+**metaballs**: gooey blobs in the accent that merge and split. Each ball adds to a field and the blobs are
+drawn where it passes 1, with an edge a pixel soft at any size; they are shaded like soft candy (a dome, a key
+light, a crisp highlight, a rim lit in `--accent-2`), on a transparent canvas over the scene's ground, with a
+soft glow on a dark ground and a soft shadow on a light one. Use it for playful beats (three ideas merging into
+one, a number that splits), a playful ground, or a gooey wipe over a cut. `preset` `merge` (default: satellites
+that gather into a central blob and part again, together), `lava` (blobs rising and sinking across the frame),
+`wipe` (a gooey band that crosses the frame and covers all of it in the middle of its run, at least from
+`at + 0.46 * dur` to `at + 0.54 * dur`: put it in a layer above both scenes with the cut at `at + dur / 2`); `count` (3-12), `size` (the main blob's
+radius, fraction of the frame height), `x`, `y`, `spread` (how far the satellites travel; key it to 0 to merge
+on a beat), `speed`, `gloss` (0 flat - 1 candy), `glow` (0-1), `colors` (a comma list), `from` (wipe:
+`left|right|top|bottom`), `dur` (wipe: seconds, default 1.2), `in` (seconds to grow in, with a small
+overshoot), `keys` (x, y, size, spread, gloss, glow), `scale` (default 0.75). Fallback: the same blobs traced
+on a 2D canvas on every frame (flat colour, crisp edge), so they still move.
+
+```html
+<div data-st="metaballs" data-x="0.68" data-in="0.6" data-keys='[{"at":2.2,"dur":0.8,"spread":0,"ease":"power3.inOut"}]'></div>
+<div class="layer" data-start="4.4" data-dur="1.2" style="z-index:50">
+  <div data-st="metaballs" data-preset="wipe" data-dur="1.2" data-from="left"></div>
+</div>
+```
+
+## 8. Themes (runtime/themes)
 
 `neutral` (light product), `bold` (loud launch), `editorial` (magazine, calm), `neon`
 (night tech), `paper` (hand-made explainer), `terminal` (developer console). One `<link>` each.
@@ -376,7 +564,7 @@ Layout classes from `base.css`: `.stage .scene .layer .safe .center .stack .row`
 .glow .vignette`. Fonts are local files (Fontsource packages); each theme loads only its own
 families, `themes/fonts.css` loads them all, `themes/fonts/noto-sans-jp.css` adds Japanese.
 
-## 8. Writing your own component
+## 9. Writing your own component
 
 ```js
 import { define, seg, ease } from '/_st/components/index.js';

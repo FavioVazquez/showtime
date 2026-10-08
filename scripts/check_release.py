@@ -5,11 +5,17 @@
     python scripts/check_release.py                # also fix the mechanical ones (version lines)
     python scripts/check_release.py --set-version 0.2.0
     python scripts/check_release.py --check --json
+    python scripts/check_release.py --check --mirror      # also HEAD every mirror asset (network)
 
 Checks:
   versions    .claude-plugin/plugin.json, .claude-plugin/marketplace.json,
               skills/showtime/setup/package.json, server.json (MCP Registry) and packages/npm/package.json
-              agree with st.__version__; the npm package's mcpName and name match server.json
+              agree with st.__version__; the npm package's mcpName and name match server.json; the docs
+              follow it too: site/config.json "version" (major.minor, every page's footer), README.md's
+              footer "Status: X.Y" and status badge, every `showtime-X.Y.Z.mcpb` release link and every
+              `showtime-video@vX.Y.Z` Action pin (all rewritten when fixing and by --set-version), and
+              README.md's "What's new in X.Y.Z" summary (same major.minor, its "## New in" section and
+              anchor exist; prose, so a stale one is reported for a person to rewrite)
   skill       SKILL.md exists, has valid frontmatter (name, description <= 1024 chars,
               compatibility <= 500 chars) and a body within the word budget; no command runs a
               path built from ${CLAUDE_SKILL_DIR} or ${CLAUDE_PLUGIN_ROOT} (other hosts leave them empty,
@@ -40,6 +46,9 @@ Checks:
               top-level bin/. Warnings for what makes a review slower (over 512 files, non-image
               binaries over 256 KiB). Runs by default where there is no examples/ folder (the plugin
               repository); ask for it with --only directory elsewhere.
+  mirror      (network, only with --mirror or --only mirror) every model file mirror.json lists and every
+              pinned audio file is on its mirror release (HEAD answers 200 with the pinned size), with the
+              staging scripts' LICENSES.txt and SHA256SUMS: the sandbox fallback works only if they are there
 
 Exit code 0 = clean (warnings allowed), 1 = problems found, 2 = bad usage.
 """
@@ -239,6 +248,152 @@ def check_versions(f: Findings, fix: bool, set_version: Optional[str]) -> None:
         f.add("versions", "error", "%s says %s, expected %s (run scripts/check_release.py to sync)"
               % (label, have, want), rel(path))
     check_registry_names(f)
+    check_doc_versions(f, fix, want)
+
+
+# Version claims in the docs and the site. Mechanical ones are rewritten when fixing (and by --set-version);
+# the README's "What's new" summary is prose, so a stale one is reported for a person to write.
+SITE_VERSION_RE = re.compile(r'("version"\s*:\s*")([^"]*)(")')
+STATUS_RE = re.compile(r"(Status: )(\d+\.\d+(?:\.\d+)?)(, early)")
+STATUS_BADGE_ALT_RE = re.compile(r'(alt="status: )(\d+\.\d+(?:\.\d+)?)(, early")')
+BADGE_TITLE_RE = re.compile(r"<title[^>]*>status: (\d+\.\d+(?:\.\d+)?)")
+WHATS_NEW_RE = re.compile(r"\*\*What's new in (\d+\.\d+\.\d+)\*\*[^\n]*?\]\(#(new-in-[0-9]+)\)")
+NEW_IN_RE = re.compile(r"(?m)^## New in (\d+\.\d+\.\d+)\s*$")
+_V = r"\d+\.\d+\.\d+"
+# [`showtime-X.mcpb`](https://github.com/<owner>/<repo>/releases/download/vX/showtime-X.mcpb) from the vX release
+MCPB_LINK_RE = re.compile(r"`?showtime-%s\.mcpb`?\]\(https://github\.com/[\w.-]+/[\w.-]+/releases/download/v%s/"
+                          r"showtime-%s\.mcpb\)(?:\s+from\s+the\s+v%s\s+release)?" % (_V, _V, _V, _V))
+ACTION_PIN_RE = re.compile(r"/\.github/actions/showtime-video@v(%s)" % _V)
+# History is allowed to name old versions.
+DOC_VERSION_SKIP = ("CHANGELOG.md",)
+DOC_VERSION_SKIP_DIRS = ("benchmarks",)
+
+
+def _minor(v: str) -> str:
+    return ".".join(v.split(".")[:2])
+
+
+def _vkey(v: str) -> Tuple[int, ...]:
+    return tuple(int(x) for x in re.findall(r"\d+", v)[:3])
+
+
+def _line(text: str, pos: int) -> int:
+    return text.count("\n", 0, pos) + 1
+
+
+def doc_version_files(repo: Optional[Path] = None) -> List[Path]:
+    """Shipped text files that may pin a release (.mcpb links, Action pins); history files excluded."""
+    repo = repo or REPO
+    files = shipped_files() if repo == REPO else sorted(p for p in repo.rglob("*") if p.is_file())
+    out = []
+    for p in files:
+        parts = p.relative_to(repo).parts
+        if parts[-1] in DOC_VERSION_SKIP or parts[0] in DOC_VERSION_SKIP_DIRS:
+            continue
+        if p.suffix.lower() in (".md", ".yml", ".yaml", ".html") and is_text(p):
+            out.append(p)
+    return out
+
+
+def check_doc_versions(f: Findings, fix: bool, want: str, repo: Optional[Path] = None) -> None:
+    """site/config.json "version" (major.minor, the footer of every page); README.md's "What's new in X" summary,
+    its footer "Status: X.Y" and status badge; every .mcpb release link and every pin of the GitHub Action
+    (showtime-video@vX.Y.Z) in the docs. Files that do not exist (a copy without the site) are skipped."""
+    repo = repo or REPO
+    minor = _minor(want)
+
+    def where(p: Path, line: Optional[int] = None) -> str:
+        r = p.relative_to(repo).as_posix()
+        return "%s:%d" % (r, line) if line else r
+
+    site = repo / "site" / "config.json"
+    if site.is_file():
+        text = read(site)
+        try:
+            have = json.loads(text).get("version")
+        except ValueError:
+            have = None
+        if have != minor:
+            if fix:
+                write_lf(site, SITE_VERSION_RE.sub(lambda m: m.group(1) + minor + m.group(3), text, count=1))
+                f.add("versions", "info", 'site/config.json "version" %s -> %s' % (have, minor), where(site))
+            else:
+                f.add("versions", "error", 'site/config.json "version" is %r, expected "%s" (the footer of every '
+                      "page; run scripts/check_release.py to sync)" % (have, minor), where(site))
+
+    readme = repo / "README.md"
+    if readme.is_file():
+        text = read(readme)
+        new = text
+        for rx, label in ((STATUS_RE, 'footer "Status: X.Y"'), (STATUS_BADGE_ALT_RE, 'status badge alt text')):
+            for m in rx.finditer(text):
+                if m.group(2) != minor:
+                    if fix:
+                        f.add("versions", "info", "README.md %s %s -> %s" % (label, m.group(2), minor),
+                              where(readme, _line(text, m.start())))
+                    else:
+                        f.add("versions", "error", "README.md %s says %s, expected %s (run "
+                              "scripts/check_release.py to sync)" % (label, m.group(2), minor),
+                              where(readme, _line(text, m.start())))
+            if fix:
+                new = rx.sub(lambda m: m.group(1) + minor + m.group(3), new)
+        if new != text:
+            write_lf(readme, new)
+            text = new
+        sections = NEW_IN_RE.findall(text)
+        m = WHATS_NEW_RE.search(text)
+        if m:
+            ver, anchor, line = m.group(1), m.group(2), _line(text, m.start())
+            if _minor(ver) != minor:
+                target = max(sections, key=_vkey) if sections else minor + ".0"
+                if _minor(target) != minor:
+                    target = minor + ".0"
+                f.add("versions", "error", "README.md \"What's new in %s\" is not about %s: needs a person. Write "
+                      "\"## New in %s\" and a short summary of it in place of this one (5 bullets, linking "
+                      "#new-in-%s); no script writes prose" % (ver, minor, target, target.replace(".", "")),
+                      where(readme, line))
+            if ver not in sections:
+                f.add("versions", "error", "README.md \"What's new in %s\" has no \"## New in %s\" section to link to"
+                      % (ver, ver), where(readme, line))
+            if anchor != "new-in-" + ver.replace(".", ""):
+                f.add("versions", "error", "README.md \"What's new in %s\" links #%s, expected #new-in-%s"
+                      % (ver, anchor, ver.replace(".", "")), where(readme, line))
+            newer = [s for s in sections if _vkey(s) > _vkey(ver)]
+            if newer and _minor(ver) == minor:
+                f.add("versions", "warning", "README.md \"What's new in %s\": the README also has \"## New in %s\"; "
+                      "consider summarising that one" % (ver, max(newer, key=_vkey)), where(readme, line))
+        elif sections:
+            f.add("versions", "warning", "README.md has \"## New in\" sections but no \"**What's new in X**\" summary",
+                  where(readme))
+        badge = repo / "assets" / "readme" / "badges" / "status.svg"
+        if badge.is_file():
+            bm = BADGE_TITLE_RE.search(read(badge))
+            if bm and bm.group(1) != minor:
+                f.add("versions", "error", "assets/readme/badges/status.svg says %s, expected %s: redraw the badge "
+                      "by hand (its text is drawn as paths)" % (bm.group(1), minor), where(badge))
+
+    for p in doc_version_files(repo):
+        text = read(p)
+        stale = []
+        for m in MCPB_LINK_RE.finditer(text):
+            names = sorted(set(re.findall(_V, m.group(0))) - {want}, key=_vkey)
+            if names:
+                stale.append(("the .mcpb link (%s)" % ", ".join(names), m))
+        for m in ACTION_PIN_RE.finditer(text):
+            if m.group(1) != want:
+                stale.append(("the Action pin @v%s" % m.group(1), m))
+        if not stale:
+            continue
+        if fix:
+            new = MCPB_LINK_RE.sub(lambda m: re.sub(_V, want, m.group(0)), text)
+            new = ACTION_PIN_RE.sub(lambda m: m.group(0).replace(m.group(1), want), new)
+            write_lf(p, new)
+            for label, m in stale:
+                f.add("versions", "info", "%s -> %s" % (label, want), where(p, _line(text, m.start())))
+        else:
+            for label, m in stale:
+                f.add("versions", "error", "%s does not name %s (run scripts/check_release.py to sync)"
+                      % (label, want), where(p, _line(text, m.start())))
 
 
 def check_registry_names(f: "Findings") -> None:
@@ -351,8 +506,14 @@ def doc_files() -> List[Path]:
     return out
 
 
+def people_docs() -> List[Path]:
+    """docs/guides/*.md, the task guides for people: their links and commands are checked like the skill's."""
+    d = REPO / "docs" / "guides"
+    return sorted(d.glob("*.md")) if d.is_dir() else []
+
+
 def check_links(f: Findings) -> None:
-    for doc in doc_files():
+    for doc in doc_files() + people_docs():
         text = read(doc)
         text_nocode = re.sub(r"```.*?```", "", text, flags=re.S)
         prose = re.sub(r"`[^`\n]*`", "", text_nocode)
@@ -467,7 +628,7 @@ def agent_files(agents_dir: Optional[Path] = None) -> List[Path]:
 
 def check_commands(f: Findings) -> None:
     cmds = cli_commands()
-    for doc in doc_files() + agent_files():
+    for doc in doc_files() + agent_files() + people_docs():
         for cmd, sub, line in command_mentions(read(doc)):
             where = "%s:%d" % (rel(doc), line)
             if cmd not in cmds:
@@ -771,13 +932,78 @@ def check_directory(f: Findings, files: Sequence[Path]) -> Dict[str, Any]:
     return st
 
 
-def run_checks(fix: bool = False, set_version: Optional[str] = None,
-               only: Optional[Iterable[str]] = None) -> Findings:
-    f = Findings()
+MIRROR_JSON = LIB / "st" / "mirror.json"
+MIRROR_EXTRA_ASSETS = ("LICENSES.txt", "SHA256SUMS")   # written next to the files by the staging scripts
+
+
+def mirror_assets(data: Optional[Dict[str, Any]] = None, audio_items: Optional[List[Dict[str, Any]]] = None
+                  ) -> List[Tuple[str, str, Optional[int]]]:
+    """Every release asset the mirrors in mirror.json must hold -> [(asset name, url, expected bytes)]: the
+    model files it lists, and the audio files the pinning files list (named as stage_audio_mirror names them),
+    each with the staging scripts' LICENSES.txt and SHA256SUMS."""
+    data = data if data is not None else json.loads(read(MIRROR_JSON))
+    out: List[Tuple[str, str, Optional[int]]] = []
+
+    def add(bases: Sequence[str], files: Sequence[Tuple[str, Optional[int]]]) -> None:
+        for base in bases:
+            b = base if base.endswith("/") else base + "/"
+            for name, size in list(files) + [(x, None) for x in MIRROR_EXTRA_ASSETS]:
+                out.append((name, b + name, size))
+    add(data.get("mirrors") or [], [(f["file"], f.get("size")) for f in data.get("files") or []])
+    audio = data.get("audio") or {}
+    if audio.get("mirrors"):
+        if audio_items is None:
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("stage_audio_mirror", str(REPO / "scripts" / "stage_audio_mirror.py"))
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)  # type: ignore[union-attr]
+            audio_items = mod.all_items()
+        add(audio["mirrors"], [(it["file"], it.get("bytes")) for it in audio_items])
+    return out
+
+
+def _head(url: str, timeout: float = 30.0) -> Tuple[Optional[int], Optional[int], str]:
+    """HEAD a URL (redirects followed) -> (HTTP status or None, Content-Length or None, error text)."""
+    import ssl
+    import urllib.error
+    import urllib.request
+    req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "showtime-check-release"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout, context=ssl.create_default_context()) as r:
+            n = r.headers.get("Content-Length")
+            return r.status, int(n) if n and n.isdigit() else None, ""
+    except urllib.error.HTTPError as e:
+        return e.code, None, "HTTP %d" % e.code
+    except Exception as e:  # noqa: BLE001 - a network failure is reported per asset
+        return None, None, "%s: %s" % (type(e).__name__, e)
+
+
+def check_mirror(f: Findings, assets: Optional[List[Tuple[str, str, Optional[int]]]] = None, head=_head,
+                 jobs: int = 8) -> None:
+    """Network (opt-in, --mirror): every asset the mirrors must hold answers a HEAD with 200 and its size."""
+    from concurrent.futures import ThreadPoolExecutor
+    assets = assets if assets is not None else mirror_assets()
+    with ThreadPoolExecutor(max_workers=max(1, jobs)) as ex:
+        results = list(ex.map(lambda a: head(a[1]), assets))
+    for (name, url, size), (status, length, err) in zip(assets, results):
+        if status != 200:
+            f.add("mirror", "error", "mirror asset %s is not on the release (%s)" % (name, err or "HTTP %s" % status),
+                  url)
+        elif size and length is not None and length != size:
+            f.add("mirror", "error", "mirror asset %s is %d bytes, mirror.json says %d" % (name, length, size), url)
+
+
+def default_checks() -> List[str]:
     default = ["versions", "skill", "links", "commands", "agents", "guides", "paths", "names", "terms", "media"]
     if not (REPO / "examples").is_dir():
         default.append("directory")   # the plugin repository (the examples have their own)
-    want = set(only or default)
+    return default
+
+
+def run_checks(fix: bool = False, set_version: Optional[str] = None,
+               only: Optional[Iterable[str]] = None) -> Findings:
+    f = Findings()
+    want = set(only or default_checks())
     if "versions" in want:
         check_versions(f, fix, set_version)
     if "skill" in want:
@@ -799,6 +1025,8 @@ def run_checks(fix: bool = False, set_version: Optional[str] = None,
         check_media(f, shipped_files())
     if "directory" in want:
         check_directory(f, shipped_files())
+    if "mirror" in want:
+        check_mirror(f)
     return f
 
 
@@ -903,12 +1131,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--check", action="store_true", help="report only; never modify files")
     ap.add_argument("--set-version", metavar="X.Y.Z", help="bump every version field to X.Y.Z")
     ap.add_argument("--only", help="comma list: versions,skill,links,commands,agents,guides,paths,names,terms,media,"
-                                   "directory")
+                                   "directory,mirror")
+    ap.add_argument("--mirror", action="store_true", help="also HEAD every model and audio mirror asset on its release "
+                                                          "(network; run before a release)")
     ap.add_argument("--json", action="store_true", help="print findings as JSON")
     args = ap.parse_args(argv)
     if args.check and args.set_version:
         ap.error("--set-version changes files; drop --check")
     only = [x.strip() for x in args.only.split(",")] if args.only else None
+    if args.mirror:
+        only = (only or default_checks()) + ["mirror"]
     f = run_checks(fix=not args.check, set_version=args.set_version, only=only)
     errs = f.errors()
     if args.json:

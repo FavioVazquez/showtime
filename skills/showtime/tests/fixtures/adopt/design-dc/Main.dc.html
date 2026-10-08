@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Design clock fixture</title>
+<script src="./dc-mini.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="position: relative; width: 640px; height: 360px; overflow: hidden; background: #101418; color: #f4f1ea; font-family: 'Space Grotesk', sans-serif">
+<div style="position: absolute; left: {{x}}px; top: 150px; width: 60px; height: 60px; background: #ff3b30"></div>
+<div style="position: absolute; left: 40px; top: 40px; font-size: 40px; font-weight: 700">Frame {{frame}}</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":640,"height":360}}'>
+class Component extends DCLogic {
+  componentDidMount() {
+    this._start = performance.now();
+    const tick = (now) => {
+      const t = ((now - this._start) / 1000) % 5;
+      this.setState({ t: Math.min(t, 4) });
+      this._raf = requestAnimationFrame(tick);
+    };
+    this._raf = requestAnimationFrame(tick);
+  }
+  renderVals() {
+    const t = (this.state && this.state.t) || 0;
+    const blink = Math.floor(t * 2) % 2;
+    return { x: (40 + 120 * t).toFixed(1), frame: Math.round(t * 30) + (blink ? '' : '') };
+  }
+}
+</script>
+</body>
+</html>

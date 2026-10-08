@@ -255,6 +255,14 @@ class TestCli(unittest.TestCase):
         self.assertIn("print one: showtime guide", out)
         scoped = showtime("guide", "audio", "--find", "loudnorm", env=self.env, check=False)
         self.assertTrue(all(l.startswith("audio") for l in scoped.stdout.splitlines()[:-1] if " (line " in l))
+        # several words after --find, unquoted: all of them are searched ("at" is not read as a topic)
+        two = showtime("guide", "--find", "typewriter", "at", env=self.env)
+        quoted = showtime("guide", "--find", "typewriter at", env=self.env)
+        self.assertEqual(two.stdout, quoted.stdout)
+        self.assertIn("components §2 > typewriter", two.stdout)
+        self.assertNotIn("matches several references", two.stderr)
+        self.assertEqual(showtime("guide", "audio", "--find", "loudnorm", "engine", env=self.env).stdout,
+                         showtime("guide", "audio", "--find=loudnorm engine", env=self.env).stdout)   # the MCP form
         listing = showtime("guide", env=self.env).stdout
         self.assertIn("workflows/launch-video", listing)
         self.assertIn("crew/critic", listing)

@@ -2,7 +2,10 @@
 
 Thanks for helping. showtime is a Claude Code skill that makes videos entirely on the user's machine, on
 macOS (Apple Silicon and Intel), Windows 10/11 and Linux. Read [CONTEXT.md](CONTEXT.md) for the words we
-use and [.out-of-scope/](.out-of-scope/README.md) for what we have decided not to do.
+use and [.out-of-scope/](.out-of-scope/README.md) for what we have decided not to do. Everyone here follows
+the [code of conduct](CODE_OF_CONDUCT.md). Bugs, feature ideas, example requests and docs problems each
+have an issue form; questions and videos you made go to
+[Discussions](https://github.com/FavioVazquez/showtime/discussions).
 
 ## Set up a development checkout
 
@@ -54,7 +57,7 @@ skills/showtime/bin/showtime setup --link     # ~/.claude/skills/showtime -> thi
 ## Tests
 
 ```bash
-python skills/showtime/tests/run_all.py --fast        # what CI runs on every pull request (a few minutes)
+python skills/showtime/tests/run_all.py --fast        # what CI runs on every pull request (11 min on a clean Ubuntu machine, 18 on Windows and a macOS VM)
 python skills/showtime/tests/run_all.py               # everything (longer; renders, voice, ASR)
 python skills/showtime/tests/run_all.py -k audio      # one module
 python skills/showtime/tests/run_all.py --fast --changed --explain   # only what your changes can affect
@@ -113,9 +116,13 @@ A README links an asset as `https://github.com/<owner>/<repo>/releases/download/
 
 1. Update CHANGELOG.md (what changed and why).
 2. `python scripts/check_release.py --set-version X.Y.Z` (updates `st.__version__`, both plugin manifests,
-   `setup/package.json`, `server.json` and `packages/npm/package.json`).
-3. `python scripts/check_release.py --check` and the full test run must be clean; work through the
-   "Before publishing" list in CHANGELOG.md.
+   `setup/package.json`, `server.json` and `packages/npm/package.json`, and in the docs the site footer version,
+   the README status line, the `.mcpb` download links and the Action pins). A new minor version also needs a
+   person: the README's "What's new in X.Y.Z" summary and the status badge are reported, not rewritten.
+3. `python scripts/check_release.py --check --mirror` and the full test run must be clean; work through the
+   "Before publishing" list in CHANGELOG.md. `--mirror` goes online: it checks that every model and audio file
+   the mirrors must hold is on its release (a new entry in `mirror.json` needs `scripts/stage_model_mirror.py`
+   and its upload first).
 4. When examples changed: in showtime-examples, `python scripts/publish_media.py --refresh`, then
    `--upload` to the release tag named in `examples/MEDIA.json` (see "Example media").
 5. MCP packages (optional): `python scripts/build_packages.py all --out <folder outside the repo> --pack`

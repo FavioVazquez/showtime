@@ -168,6 +168,13 @@ def explain(exc: BaseException) -> ShowtimeError:
         return ShowtimeError("a Python package is missing: %s" % exc.name,
                              why="the showtime environment is incomplete or this feature needs an optional extra",
                              hint="run `showtime doctor`; `showtime setup` installs what is missing")
+    if isinstance(exc, ImportError):
+        from . import platform as _plat
+        fix = _plat.explain_dll_error(str(exc))
+        if fix:
+            return ShowtimeError("a Python package could not load its DLLs: %s" % exc.name if exc.name else
+                                 "a Python package could not load its DLLs",
+                                 why=str(exc).splitlines()[0][:200], hint=fix)
     where = ""
     tb = exc.__traceback__
     while tb is not None and tb.tb_next is not None:
@@ -213,6 +220,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     from .common import progress_log_command, progress_log_end
     progress_log_command(argv)
     t0 = time.time()
+    os.environ["SHOWTIME_CMD_STARTED"] = "%.3f" % t0     # st.job.catchup: a file changed after this was not the agent's
     try:
         rc = int(func(args) or 0)
         progress_log_end(rc)

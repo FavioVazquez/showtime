@@ -17,7 +17,7 @@ import {
   parseCli, runMain, UserError, info, warn, c, slugify, jobDir, venvPython, pyEnv, runPyCli, runProc, cpuCount,
   fmtDuration, IS_WIN,
 } from './lib/cli.mjs';
-import { openBrowser, openStage, openLab, parseSize } from './lib/stagehost.mjs';
+import { openBrowser, openPage, openLab, parseSize } from './lib/stagehost.mjs';
 import { resolveFF, ffmpeg, probe, hasEncoder } from './lib/ff.mjs';
 import { skillDir } from './lib/deps.mjs';
 import { resolveJobDir } from './lib/studio/paths.mjs';
@@ -25,6 +25,9 @@ import {
   listFiles, pickSource, scanPage, scanDriver, scanPython, driversFor, pageRefs, audioRefs, inlineScripts,
   SKIP_DIRS, VIDEO_EXT, AUDIO_EXT, TIME_FNS,
 } from './lib/adopt/scan.mjs';
+import {
+  scanClaudeDesign, jsClockLength, cssLoopLength, fitArtboard, fitCss, googleFontLinks, dropFontLinks, fontFetchFailure,
+} from './lib/adopt/design.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const HARNESS = () => path.join(skillDir(), 'lib', 'st', 'adopt_harness.py');
@@ -32,8 +35,8 @@ const COPY_LIMIT = 2 * 1024 ** 3;
 
 const spec = {
   name: 'adopt',
-  usage: 'showtime adopt <folder | page.html | script.py> [options]',
-  summary: 'Adopt a video written as a function of time (HTML page with seek/render/draw(t), canvas, CSS animations, or a Python frame generator) into a showtime project, unchanged.',
+  usage: 'showtime adopt <folder | page.html | export.zip | script.py> [options]',
+  summary: 'Adopt a video written as a function of time (HTML page with seek/render/draw(t), canvas, CSS animations, a Claude Design export, or a Python frame generator) into a showtime project, unchanged.',
   description: [
     'Detects the contract, copies the folder into <project>/src/ (the originals are never touched), writes',
     'index.html + showtime.json around it and checks that frames are deterministic. Then every showtime',
@@ -46,6 +49,14 @@ const spec = {
     '  python  a Python script with a frame function (render(t), make_frame(t), render_frame(i) ...) returning a',
     '          Pillow image, a numpy array or RGB bytes: frames are generated in a separate process',
     '  capture a Python script without a frame function: its own main() runs on the copy and its video is ingested',
+    '',
+    'A Claude Design export (the zip, or its folder) is a clock page: its artboard fills the frame (1080 on the',
+    'short side unless --size), its Google Fonts are copied into the project, and its length is read from the',
+    'animation (a looping design renders exactly one loop).',
+    '',
+    'Network: a page that links Google Fonts needs the internet once. adopt fetches the stylesheet and its files',
+    '(fonts.googleapis.com, fonts.gstatic.com) and their licences (api.fontsource.org, raw.githubusercontent.com).',
+    'Nothing else is sent. With SHOWTIME_OFFLINE=1 it skips them and says what to run later (--refresh).',
     '',
     'Output: <job>/project/ (a new job under ./showtime-out/ unless -o or --job), adopt.json (what was found),',
     'work/adopt/ (logs). `showtime adopt <project> --refresh` copies the source again after you edit it.',
@@ -64,13 +75,14 @@ const spec = {
     setup: { help: 'a JS file run in the page once before the first frame (await allowed), for data the driver injected', metavar: 'FILE' },
     duration: { short: 'd', help: 'length in seconds (default: the page/script DURATION, else its driver)', metavar: 'S' },
     fps: { help: 'frames per second (default: the page/script FPS, else 30)', metavar: 'N' },
-    size: { help: 'WIDTHxHEIGHT (default: the page/script size, its driver\'s viewport, else 1920x1080)', metavar: 'WxH' },
+    size: { help: 'WIDTHxHEIGHT (default: the page/script size, its driver\'s viewport, else 1920x1080; a Claude Design artboard: 1080 on the short side)', metavar: 'WxH' },
     python: { help: 'Python interpreter for a script (default: the folder\'s .venv, else showtime\'s, else python3)', metavar: 'PATH' },
     workers: { short: 'w', help: 'processes for Python frames (default: up to 8)', metavar: 'N' },
     timeout: { help: 'minutes a Python script may run (default 30)', metavar: 'MIN' },
     root: { help: 'folder to copy when a page or script is given (default: its folder)', metavar: 'DIR' },
     refresh: { type: 'boolean', help: 're-adopt an adopted project from its source (after you edited the original)' },
     'allow-network': { type: 'boolean', help: 'let an adopted Python script use the network (blocked by default)' },
+    'allow-license': { type: 'boolean', help: 'copy the page\'s Google Fonts even when their license is not OFL/Apache/MIT/UFL (you must be allowed to use them)' },
     'no-check': { type: 'boolean', help: 'skip `showtime check` at the end' },
     json: { type: 'boolean', help: 'print the result as JSON on stdout' },
   },
@@ -79,6 +91,7 @@ const spec = {
     'showtime adopt story.html --seek draw --setup setup.js   # a canvas page whose driver injected data',
     'showtime adopt odd_squares.py --job math          # Python render(t) -> Pillow frames',
     'showtime adopt promo/ --mode capture              # run the script\'s own main() and ingest its video',
+    'showtime adopt "Launch (12s)-html.zip"            # a Claude Design export: unpacked into the project',
     'showtime adopt showtime-out/math-20260929-101500/project --refresh',
     'showtime check <project>; showtime render <project> --job <job>; showtime qa <job>',
   ],
@@ -89,6 +102,16 @@ function readText(f) { try { return fs.readFileSync(f, 'utf8'); } catch { return
 function readJSON(f) { try { return JSON.parse(fs.readFileSync(f, 'utf8').replace(/^\uFEFF/, '')); } catch { return null; } }
 function writeJSON(f, o) { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, JSON.stringify(o, null, 2) + '\n'); }
 const posix = (p) => p.split(path.sep).join('/');
+/** A path as written into the project's own files (adopt.json, showtime.json): relative to the project folder,
+ * with forward slashes, so a project copied or shared names no machine path; absolute only when there is no
+ * relative way (another drive). fromProject() reads both forms back. */
+const toProject = (dest, p) => {
+  if (!p) return p;
+  const r = path.relative(dest, path.resolve(p));
+  return r === '' ? '.' : path.isAbsolute(r) ? p : posix(r);
+};
+// an absolute path (written by 0.4.0 and earlier) stays as it is: split on '/', its leading '' would drop the root
+const fromProject = (dest, p) => (!p ? p : path.isAbsolute(String(p)) ? String(p) : path.resolve(dest, ...String(p).split('/')));
 const rel = (p) => { const r = path.relative(process.cwd(), p); return r && !r.startsWith('..') && !path.isAbsolute(r) ? r : p; };
 const sha = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
 const even = (n) => Math.max(2, Math.round(n / 2) * 2);
@@ -183,14 +206,15 @@ async function main() {
     }
     prev = existing.adopt;
     dest = path.dirname(cfgAt);
-    src = prev.source;
+    src = fromProject(dest, prev.source);          // relative to the project (absolute before 0.4.1)
     if (!fs.existsSync(src)) throw new UserError(`the source of this project is gone: ${src}`, 'adopt the new location instead: showtime adopt <folder> -o <new project>');
     for (const k of ['mode', 'seek', 'fn', 'unit', 'ready', 'duration', 'fps', 'size', 'python', 'workers', 'timeout']) {
       if (a[k] === undefined && prev.options && prev.options[k] !== undefined) a[k] = String(prev.options[k]);
     }
+    if (!a['allow-license'] && prev.options && prev.options.allow_license) a['allow-license'] = true;
     if (!a.page && prev.entry && prev.kind !== 'python' && prev.kind !== 'capture') a.page = prev.entry;
     if (!a.script && prev.entry && (prev.kind === 'python' || prev.kind === 'capture')) a.script = prev.entry;
-    if (!a.root && prev.root) a.root = prev.root;
+    if (!a.root && prev.root && !prev.zip) a.root = fromProject(dest, prev.root);
   } else if (existing && !a.refresh && fs.statSync(src).isDirectory() &&
              (fs.existsSync(path.join(src, 'index.html')) && /\/_st\/stage\.js|ST\.onSeek|Film\./.test(readText(path.join(src, 'index.html'))))) {
     throw new UserError(`${rel(src)} is already a showtime project`, `use it directly: showtime check ${rel(src)}`);
@@ -199,8 +223,14 @@ async function main() {
   }
 
   // what to adopt: root folder + entry file
-  let root, entry;
-  if (fs.statSync(src).isFile()) {
+  let root, entry, job = null, zip = null;
+  if (fs.statSync(src).isFile() && /\.zip$/i.test(src)) {
+    // an export zip: the project is made first and the zip is unpacked into its src/ (the zip is the original)
+    zip = src;
+    if (!dest) ({ dest, job } = await chooseDest(a, slugify(path.basename(src).replace(/\.zip$/i, '').replace(/[-_ ]html$/i, '')) || 'adopted', src, null));
+    root = await unzipInto(zip, path.join(dest, 'src'));
+    entry = a.page || null;
+  } else if (fs.statSync(src).isFile()) {
     root = path.resolve(a.root || path.dirname(src));
     entry = posix(path.relative(root, src));
     if (entry.startsWith('..')) throw new UserError(`--root ${a.root} does not contain ${src}`);
@@ -227,19 +257,9 @@ async function main() {
   }
 
   // where the project goes
-  let job = null;
   if (!dest) {
-    if (a.output) dest = path.resolve(a.output);
-    else {
-      if (a.job) job = resolveJobDir(a.job);
-      else job = await newJob(slugify(path.basename(entry).replace(/\.\w+$/, '') === 'index' ? path.basename(root) : path.basename(entry).replace(/\.\w+$/, '')), a, src);
-      dest = path.join(job, 'project');
-      for (let n = 2; fs.existsSync(dest); n++) dest = path.join(job, `project-${n}`);
-    }
-    if (fs.existsSync(dest) && fs.readdirSync(dest).length) {
-      throw new UserError(`${rel(dest)} already exists and is not empty`, 'pick another -o folder (adopt never overwrites)');
-    }
-    if (isInside(dest, root)) throw new UserError(`the project folder ${rel(dest)} would be inside the folder being adopted`, 'pass -o outside it, or run from another folder');
+    const base = path.basename(entry).replace(/\.(dc\.)?\w+$/, '');
+    ({ dest, job } = await chooseDest(a, slugify(/^(index|main)$/i.test(base) ? path.basename(root) : base), src, root));
   }
   fs.mkdirSync(dest, { recursive: true });
   const workDir = path.join(dest, 'work', 'adopt');
@@ -247,7 +267,7 @@ async function main() {
 
   // copy the source (never touch the original)
   const srcDir = path.join(dest, 'src');
-  if (prev) fs.rmSync(srcDir, { recursive: true, force: true });
+  if (prev && !zip) fs.rmSync(srcDir, { recursive: true, force: true });
   const keep = new Set();
   if (kind === 'page' || kind === 'clock') {
     const pageDir = path.posix.dirname(entry);
@@ -266,10 +286,16 @@ async function main() {
       if (new RegExp(`(?:out\\w*|output\\w*|OUT\\w*)\\s*=\\s*[^\\n]*["'\`]${b.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["'\`]`).test(text)) keep.delete(f);
     }
   }
-  const copied = copyTree(root, srcDir, { keep });
-  info(c.dim(`  copied ${copied.files} files from ${rel(root)} into ${rel(srcDir)}${copied.skipped.length ? ` (skipped ${copied.skipped.slice(0, 4).join(', ')}${copied.skipped.length > 4 ? ', ...' : ''})` : ''}`));
+  let copied;
+  if (zip) {
+    copied = { files: files.length, bytes: files.reduce((n, f) => n + fs.statSync(path.join(root, ...f.split('/'))).size, 0), skipped: [] };
+    info(c.dim(`  unpacked ${copied.files} files from ${path.basename(zip)} into ${rel(root)}`));
+  } else {
+    copied = copyTree(root, srcDir, { keep });
+    info(c.dim(`  copied ${copied.files} files from ${rel(root)} into ${rel(srcDir)}${copied.skipped.length ? ` (skipped ${copied.skipped.slice(0, 4).join(', ')}${copied.skipped.length > 4 ? ', ...' : ''})` : ''}`));
+  }
 
-  const ctx = { a, root, entry, entryAbs, dest, srcDir, workDir, findings, pick, files, prev };
+  const ctx = { a, root, entry, entryAbs, dest, srcDir, workDir, findings, pick, files, prev, zip };
   let res;
   if (kind === 'page' || kind === 'clock') res = await adoptPage(ctx, kind);
   else res = await adoptPython(ctx, kind);
@@ -277,9 +303,11 @@ async function main() {
   // showtime.json: keep whatever the user added (audio, poster, captions), refresh what adopt owns
   const cfgPath = path.join(dest, 'showtime.json');
   const cfg = readJSON(cfgPath) || {};
+  const source = zip || (src === root ? root : path.resolve(src));
   const adoptBlock = {
-    source: src === root ? root : path.resolve(src), root, entry, kind: res.kind, contract: res.contract,
-    adopted: new Date().toISOString(), options: res.options,
+    source: toProject(dest, source), root: toProject(dest, root), entry,
+    kind: res.kind, contract: res.contract, adopted: new Date().toISOString(), options: res.options,
+    ...(zip ? { zip: true } : {}), ...(res.made ? { made: res.made } : {}),
   };
   const outCfg = {
     title: cfg.title || res.title || path.basename(entry).replace(/\.\w+$/, ''),
@@ -303,12 +331,18 @@ async function main() {
 
   const report = {
     ok: !findings.errors.length && (!check || check.errors === 0) && (!det || det.verdict !== 'differs'),
-    project: dest, job, source: adoptBlock.source, entry, kind: res.kind, contract: res.contract,
-    width: res.width, height: res.height, fps: res.fps, duration: res.duration, sources: res.sources,
+    project: dest, job, source, entry, kind: res.kind, contract: res.contract,
+    ...(res.made ? { made: res.made, design: res.design } : {}),
+    width: res.width, height: res.height, fps: res.fps, duration: res.duration, loop: res.loop || null, sources: res.sources,
+    fonts: res.fonts || [],
     audio: res.audioFiles || [], determinism: det, check, findings: findings.items, copied: { files: copied.files, bytes: copied.bytes, skipped: copied.skipped },
     seconds: Math.round((Date.now() - t0) / 100) / 10,
   };
-  writeJSON(path.join(dest, 'adopt.json'), report);
+  // on disk, paths relative to the project (as in showtime.json); the printed report keeps them absolute
+  writeJSON(path.join(dest, 'adopt.json'), {
+    ...report, project: '.', job: toProject(dest, job), source: toProject(dest, source),
+    ...(check ? { check: { ...check, report: toProject(dest, check.report), sheet: toProject(dest, check.sheet) } } : {}),
+  });
   if (job) await noteJob(job, dest, report);
   printSummary(report, a);
   if (findings.errors.length || (check && check.errors) || (det && det.verdict === 'differs')) return 1;
@@ -318,6 +352,72 @@ async function main() {
 function isInside(child, parent) {
   const r = path.relative(parent, child);
   return r === '' || (!r.startsWith('..') && !path.isAbsolute(r));
+}
+
+/** The project folder (and its job) for a new adoption. -> {dest, job} */
+async function chooseDest(a, slug, src, root) {
+  let dest, job = null;
+  if (a.output) dest = path.resolve(a.output);
+  else {
+    job = a.job ? resolveJobDir(a.job) : await newJob(slug, a, src);
+    dest = path.join(job, 'project');
+    for (let n = 2; fs.existsSync(dest); n++) dest = path.join(job, `project-${n}`);
+  }
+  if (fs.existsSync(dest) && fs.readdirSync(dest).length) {
+    throw new UserError(`${rel(dest)} already exists and is not empty`, 'pick another -o folder (adopt never overwrites)');
+  }
+  if (root && isInside(dest, root)) throw new UserError(`the project folder ${rel(dest)} would be inside the folder being adopted`, 'pass -o outside it, or run from another folder');
+  return { dest, job };
+}
+
+// unpacked into <out>.new first: the old folder is replaced only once every entry is out and checked
+// (a zip that fails its CRC halfway leaves the project as it was)
+const UNZIP_PY = `
+import sys, zipfile, shutil, os
+src, out = sys.argv[1], sys.argv[2]
+cap = int(sys.argv[3]) if len(sys.argv) > 3 else 20000
+z = zipfile.ZipFile(src)
+total = 0
+names = []
+infos = z.infolist()
+if len(infos) > cap:
+    sys.exit("the zip has %d entries (more than %d)" % (len(infos), cap))
+for i in infos:
+    n = i.filename.replace("\\\\", "/")
+    parts = [p for p in n.split("/") if p]
+    if n.startswith("/") or ".." in parts or (parts and ":" in parts[0]):
+        sys.exit("unsafe path in the zip: " + n)
+    if not parts or parts[0] == "__MACOSX" or parts[-1] in (".DS_Store", "Thumbs.db"):
+        continue
+    total += i.file_size
+    if total > 2 << 30:
+        sys.exit("the zip unpacks to more than 2 GB")
+    names.append(i)
+tmp = out.rstrip("/\\\\") + ".new"
+if os.path.isdir(tmp):
+    shutil.rmtree(tmp)
+os.makedirs(tmp)
+try:
+    for i in names:
+        z.extract(i, tmp)
+except Exception as e:
+    shutil.rmtree(tmp, ignore_errors=True)
+    sys.exit("%s (nothing was replaced)" % e)
+if os.path.isdir(out):
+    shutil.rmtree(out)
+os.replace(tmp, out)
+print(len(names))
+`;
+const ZIP_MAX_ENTRIES = 20000;
+
+/** Unpack an export zip into dir (replacing it); a zip holding one top folder -> that folder. */
+async function unzipInto(zip, dir) {
+  const py = venvPython() || (IS_WIN ? 'python' : 'python3');
+  const r = await runProc(py, ['-c', UNZIP_PY, zip, dir, String(ZIP_MAX_ENTRIES)], { timeout: 10 * 60 * 1000 });
+  if (r.code !== 0) throw new UserError(`could not unpack ${path.basename(zip)}: ${lastLine(r.stderr) || `exit ${r.code}`}`, 'unpack it yourself and adopt the folder');
+  const ents = fs.readdirSync(dir, { withFileTypes: true });
+  if (ents.length === 1 && ents[0].isDirectory()) return path.join(dir, ents[0].name);
+  return dir;
 }
 
 async function newJob(slug, a, src) {
@@ -331,7 +431,7 @@ async function newJob(slug, a, src) {
 
 async function noteJob(job, dest, rep) {
   const args = ['job', 'note', job, '--stage', 'adopt', '--project', dest,
-    '--verified', `adopted ${rep.entry} (${rep.contract}), ${rep.width}x${rep.height} ${rep.fps} fps, ${rep.duration} s`];
+    '--verified', `adopted ${rep.entry} (${rep.made ? `${rep.made}, ` : ''}${rep.contract}), ${rep.width}x${rep.height} ${rep.fps} fps, ${rep.duration} s`];
   if (rep.determinism) args.push('--verified', `determinism: ${rep.determinism.verdict}`);
   if (rep.check) args.push('--verified', `check: ${rep.check.errors} errors, ${rep.check.warnings} warnings`);
   args.push('--next', `showtime render ${dest} --job ${job}`);
@@ -365,14 +465,21 @@ async function adoptPage(ctx, kind) {
         'only the adopted folder is copied and served', `adopt the parent folder instead: showtime adopt ${rel(path.dirname(ctx.root))} --page ${posix(path.relative(path.dirname(ctx.root), entryAbs))}`);
     }
   }
-  if (s.remote.length) {
-    findings.add('warning', 'remote', `${entry} loads ${s.remote.length} file(s) from the internet (${s.remote[0]}${s.remote.length > 1 ? ', ...' : ''})`,
+  // a Claude Design export: its artboard size and logic class
+  const dc = scanClaudeDesign(html);
+  // Google Fonts: the same files, copied into the project with their licenses (renders are offline)
+  const fonts = await localizeFonts(ctx, html);
+  const fontHosts = /^https?:\/\/fonts\.(googleapis|gstatic)\.com\//i;
+  const remote = s.remote.filter((u) => !(fonts.report.length && fontHosts.test(u.replace(/&amp;/g, '&') + (/\.com$/.test(u) ? '/' : ''))));
+  if (remote.length) {
+    findings.add('warning', 'remote', `${entry} loads ${remote.length} file(s) from the internet (${remote[0]}${remote.length > 1 ? ', ...' : ''})`,
       'renders block the network, so these fonts/scripts will be missing', 'download them into the folder, or use installed ones (/_lib/@fontsource/..., `showtime assets font <name>`)');
   }
 
   // the time function
   let seek = a.seek || null, unit = a.unit || null, why = '';
-  if (!seek && kind === 'page') {
+  // a Claude Design export runs on its runtime's animation frames: a clock page (its runtime's own functions are not a time function)
+  if (!seek && kind === 'page' && !dc) {
     const called = drv.calls.map((x) => x.name);
     const inPage = s.fns.map((f) => f.name);
     const fromDriver = called.find((n) => inPage.includes(n)) || called[0];
@@ -428,10 +535,20 @@ async function adoptPage(ctx, kind) {
   }
 
   // write index.html in probe mode, look at the page for real, then write the final one
-  const baseHref = posix(path.relative(dest, path.dirname(path.join(srcDir, ...entry.split('/'))))) + '/';
-  const writeIndex = (conf) => fs.writeFileSync(path.join(dest, 'index.html'), wrapHtml(html, baseHref, conf));
+  const copyAbs = ctx.zip ? entryAbs : path.join(srcDir, ...entry.split('/'));
+  const baseHref = posix(path.relative(dest, path.dirname(copyAbs))) + '/';
+  // an artboard (a Claude Design $preview, or the page's own fixed size when --size asks for another) fills
+  // the frame: CSS zoom lays it out again at the output size, so text stays sharp
+  const asked = parseSize(a.size);
+  const art = dc && dc.artboard ? dc.artboard : asked && s.size && s.size.from === 'page css' &&
+    (s.size.width !== asked.width || s.size.height !== asked.height) ? { width: s.size.width, height: s.size.height } : null;
+  const fit = art ? fitArtboard(art, asked) : null;
+  const head = fonts.done.map((f) => `<link rel="stylesheet" href="${f.href}">`).join('') +
+    (fitCss(fit) ? `<style data-st-adopt-fit>${fitCss(fit)}</style>` : '');
+  const pageHtml = fonts.done.length ? dropFontLinks(html, fonts.done.map((f) => f.url)) : html;
+  const writeIndex = (conf) => fs.writeFileSync(path.join(dest, 'index.html'), wrapHtml(pageHtml, baseHref, conf, head));
   const guess = {
-    size: parseSize(a.size) || (drv.size ? { width: drv.size.width, height: drv.size.height } : null) || (s.size ? { width: s.size.width, height: s.size.height } : null),
+    size: (fit ? { width: fit.width, height: fit.height } : null) || asked || (drv.size ? { width: drv.size.width, height: drv.size.height } : null) || (s.size ? { width: s.size.width, height: s.size.height } : null),
     fps: Number(a.fps) || s.fps || drv.fps || null,
     duration: Number(a.duration) || null,
   };
@@ -452,11 +569,11 @@ async function adoptPage(ctx, kind) {
   // decide
   const nums = pr ? pr.probe && pr.probe.numbers || {} : {};
   const pfns = pr && pr.probe ? pr.probe.functions.map((f) => f.name) : s.fns.map((f) => f.name);
-  if (pr && seek && !pfns.includes(seek) && !a.seek) {
+  if (pr && seek && !pfns.includes(seek) && !a.seek && !dc) {
     const alt = pfns.find((n) => TIME_FNS.includes(n) && n !== 'update' && n !== 'tick' && n !== 'frame');
     if (alt) { why = `\`${seek}\` is not a global in the page; \`${alt}\` is`; seek = alt; }
   }
-  if (pr && !seek && kind === 'page' && pfns.length && !a.mode) {
+  if (pr && !seek && kind === 'page' && pfns.length && !a.mode && !dc) {
     seek = pfns.slice().sort((x, y) => TIME_FNS.indexOf(x.split('.').pop()) - TIME_FNS.indexOf(y.split('.').pop()))[0];
     why = 'the page defines it';
   }
@@ -476,8 +593,31 @@ async function adoptPage(ctx, kind) {
     if (k) { duration = s.durations[k]; durFrom = `page \`${k}\``; }
   }
   if (!duration && drv.duration) { duration = drv.duration; durFrom = `${path.basename(drv.files[0])} DURATION`; }
+  // a requestAnimationFrame clock (performance.now): its loop `% 13` and clamp `Math.min(t, 12)`
+  let loop = null;
+  const jsClock = (text) => {
+    const jc = jsClockLength(text);
+    if (jc) { duration = jc.seconds; durFrom = `inferred: ${jc.how}`; if (jc.loop) loop = { period: jc.seconds, how: jc.how }; }
+  };
+  if (!duration && !seek && dc) jsClock(dc.logic);
+  // CSS/Web Animations that repeat forever: one period, when all of them are back at the start
+  if (!duration && !seek && pr && pr.probe) {
+    const cl = cssLoopLength(pr.probe.timing);
+    if (cl) { duration = cl.seconds; durFrom = `inferred: ${cl.how}`; loop = { period: cl.seconds, how: cl.how, aligned: cl.loop }; }
+  }
   if (!duration && pr && pr.info && pr.info.durationSource && pr.info.durationSource !== 'config' && pr.info.duration > 0) {
     duration = pr.info.duration; durFrom = pr.info.durationSource;
+  }
+  if (!duration && !seek && pr && pr.probe) {
+    // finite animations of a page that builds itself on its first frame (the stage read the length before)
+    const end = (pr.probe.timing || []).filter((x) => Number.isFinite(x.iterations)).reduce((m, x) => Math.max(m, x.delay + x.duration * x.iterations), 0);
+    if (end > 0) { duration = Math.round(end) / 1000; durFrom = 'css animations (their end)'; }
+  }
+  if (!duration && !seek && !dc) jsClock(inlineScripts(html).map((x) => x.text).join('\n;\n'));
+  if (duration && a.duration && !seek && !loop) {
+    // --duration wins; a loop the page has is still worth checking at that length
+    const cl = pr && pr.probe ? cssLoopLength(pr.probe.timing) : null;
+    if (cl && Math.abs(cl.seconds - duration) < 1e-6) loop = { period: cl.seconds, how: cl.how, aligned: cl.loop };
   }
   if (duration && unit === 'ms' && duration > 600 && /page|DURATION/.test(durFrom)) { duration /= 1000; durFrom += ' (ms)'; }
   if (!duration && !findings.errors.length) {
@@ -485,7 +625,9 @@ async function adoptPage(ctx, kind) {
       'no DURATION-like global in the page, none in its driver, and no finite CSS animation', 'pass --duration <seconds>');
   }
   let fps = guess.fps || Number(nums.FPS || nums.fps || nums.FRAME_RATE || nums.frameRate) || 30;
-  let size = guess.size, sizeFrom = a.size ? '--size' : drv.size ? `${drv.size.from} viewport` : s.size ? s.size.from : '';
+  let size = guess.size, sizeFrom = fit ? `${dc && dc.artboard ? 'Claude Design artboard' : 'the page\'s own size'} ${art.width}x${art.height}` +
+    `${a.size ? ' fitted to --size' : ''}, scaled ${fit.zoom}x with CSS zoom (laid out again: text stays sharp)` :
+    a.size ? '--size' : drv.size ? `${drv.size.from} viewport` : s.size ? s.size.from : '';
   if (!size && pr && pr.probe) {
     const cv = pr.probe.canvases.find((x) => x.width >= 320 && x.height >= 240 && Math.abs(x.width / x.height - x.cssW / Math.max(1, x.cssH)) < 0.02) || null;
     const nW = Number(nums.WIDTH || nums.W || nums.VIDEO_WIDTH), nH = Number(nums.HEIGHT || nums.H || nums.VIDEO_HEIGHT);
@@ -513,9 +655,11 @@ async function adoptPage(ctx, kind) {
 
   const res = {
     kind: seek ? 'page' : 'clock', contract, width: size.width, height: size.height, fps, duration: duration || 1,
-    title: htmlTitle(html), background: null,
+    title: htmlTitle(html), background: null, loop, fonts: fonts.report,
+    ...(dc ? { made: 'Claude Design export', design: { artboard: dc.artboard, zoom: fit ? fit.zoom : 1, offset: fit && (fit.x || fit.y) ? { x: fit.x, y: fit.y } : null } } : {}),
     sources: { time_function: seek ? `${seek} (${why || '--seek'})` : null, unit, size: sizeFrom, duration: durFrom, fps: guess.fps ? (a.fps ? '--fps' : 'page/driver') : 'default 30', ready, setup: setup ? a.setup || 'kept' : null, drivers: drv.files },
-    options: { mode: a.mode, seek: a.seek, unit: a.unit, ready: a.ready, duration: a.duration, fps: a.fps, size: a.size, setup: !!setup },
+    options: { mode: a.mode, seek: a.seek, unit: a.unit, ready: a.ready, duration: a.duration, fps: a.fps, size: a.size, setup: !!setup,
+      ...(a['allow-license'] ? { allow_license: true } : {}) },
   };
   // sound the driver or a build script muxed next to the page
   // sound the driver muxed, or a build/audio script next to the page wrote (audio.mjs -> sting.wav)
@@ -527,6 +671,46 @@ async function adoptPage(ctx, kind) {
   writeJSON(path.join(dest, 'showtime.json'), { ...(readJSON(path.join(dest, 'showtime.json')) || {}), width: res.width, height: res.height, fps: res.fps, duration: res.duration });
   if (!findings.errors.length) res.determinism = await determinismPage(dest, res, findings);
   return res;
+}
+
+/**
+ * Copy the page's Google Fonts into <project>/fonts/ (the files the link serves, with their licenses) and
+ * say how to link them. Offline: a warning with the command to run later; the page keeps its link.
+ * -> {done: [{url, href}], report: [{url, css, families} | {url, error}]}
+ */
+async function localizeFonts(ctx, html) {
+  const links = googleFontLinks(html);
+  const out = { done: [], report: [] };
+  if (!links.length) return out;
+  const dir = path.join(ctx.dest, 'fonts');
+  for (let i = 0; i < links.length; i++) {
+    const name = links.length > 1 ? `fonts-${i + 1}.css` : 'fonts.css';
+    info(c.dim(`  copying the Google Fonts it links into ${rel(dir)} ...`));
+    const r = await runPyCli(['assets', 'font', '--css', links[i].url, '--copy-to', dir, '--css-name', name, '--json',
+      ...(ctx.a['allow-license'] ? ['--allow-license'] : [])], { timeout: 5 * 60 * 1000 });
+    let m = null;
+    try { m = r.code === 0 ? JSON.parse(r.stdout.slice(r.stdout.indexOf('{'))) : null; } catch { /* not json */ }
+    if (m && m.css) {
+      out.done.push({ url: links[i].url, href: `/fonts/${m.css}` });
+      out.report.push({ url: links[i].url, css: `fonts/${m.css}`, families: (m.families || []).map((f) => ({ family: f.family, license: f.license, files: f.files.length })) });
+    } else {
+      const { code, why } = fontFetchFailure(r.stderr, r.code);
+      out.report.push({ url: links[i].url, error: why });
+      const fallback = 'renders block the network, so the text falls back to a system font until the fonts are in the project';
+      if (code === 'fonts_license') {
+        ctx.findings.add('warning', 'fonts_license', `the Google Fonts the page links were not copied: ${why}`,
+          'adopt copies OFL/Apache/MIT/UFL fonts only; ' + fallback,
+          `use a font with one of those licenses in the page, or, if you may use this one: showtime adopt ${rel(ctx.dest)} --refresh --allow-license`);
+      } else if (code === 'fonts_offline') {
+        ctx.findings.add('warning', 'fonts_offline', `could not copy the Google Fonts the page links (${why})`, fallback,
+          `when you are online, run: showtime adopt ${rel(ctx.dest)} --refresh`);
+      } else {
+        ctx.findings.add('warning', 'fonts_failed', `could not copy the Google Fonts the page links (${why})`, fallback,
+          'download the fonts into the folder and link them from the page, or use installed ones (`showtime assets font <name>`)');
+      }
+    }
+  }
+  return out;
 }
 
 function stripDefs(text, name) {
@@ -561,11 +745,11 @@ function mergeDrivers(ds) {
 }
 
 /** index.html around the original page: <base> into the copy, the stage runtime and the bridge first. */
-export function wrapHtml(html, baseHref, conf) {
+export function wrapHtml(html, baseHref, conf, extraHead = '') {
   const head = `<base href="${baseHref.replace(/"/g, '&quot;')}">` +
     '<script src="/_st/stage.js"></script>' +
     `<script>window.__ST_ADOPT__=${JSON.stringify(conf).replace(/</g, '\\u003c')};</script>` +
-    '<script src="/_st/adopt.js"></script>';
+    '<script src="/_st/adopt.js"></script>' + extraHead;
   const note = '<!-- written by `showtime adopt`: the page below is a copy of the original, which is unchanged. -->\n';
   if (/<head\b[^>]*>/i.test(html)) return note + html.replace(/<head\b[^>]*>/i, (m) => `${m}${head}`);
   if (/<html\b[^>]*>/i.test(html)) return note + html.replace(/<html\b[^>]*>/i, (m) => `${m}<head>${head}</head>`);
@@ -578,7 +762,7 @@ async function probePage(dest, cfg, findings, entry, quietNoDuration = false) {
   try {
     srv = await startServer({ root: dest, port: 0 });
     b = await openBrowser({});
-    sess = await openStage(b.browser, { url: srv.url, page: 'index.html', config: cfg, followPageSize: false, readyTimeout: 60000 });
+    sess = await openPage(b, { url: srv.url, page: 'index.html', config: cfg, followPageSize: false, readyTimeout: 60000 });
     const probe = await sess.page.evaluate(() => (window.__stAdoptProbe ? window.__stAdoptProbe() : null));
     const errs = sess.log.errors.slice(0, 3);
     for (const e of errs) findings.add('warning', 'page_error', `the page threw while loading: ${e.message}`, '', 'showtime check lists every page error with its time');
@@ -604,7 +788,8 @@ async function determinismPage(dest, res, findings) {
     srv = await startServer({ root: dest, port: 0 });
     b = await openBrowser({});
     const cfg = readJSON(path.join(dest, 'showtime.json'));
-    sess = await openStage(b.browser, { url: srv.url, page: 'index.html', config: cfg, followPageSize: false });
+    // a loop is also seeked one frame past its end (frame n must be frame 0 again)
+    sess = await openPage(b, { url: srv.url, page: 'index.html', config: res.loop ? { ...cfg, duration: cfg.duration + 2 / res.fps } : cfg, followPageSize: false });
     const shot = async (k) => { await sess.seek(k / res.fps); return sess.shot({ format: 'png' }); };
     const p1 = [];
     for (const k of ks) p1.push(await shot(k));
@@ -612,7 +797,7 @@ async function determinismPage(dest, res, findings) {
     for (let i = ks.length - 1; i >= 0; i--) p2[i] = await shot(ks[i]);
     await new Promise((r) => setTimeout(r, 150));
     const again = await sess.shot({ format: 'png' });   // still on ks[0]: nothing may move in real time
-    lab = await openLab(b.browser, srv.url);
+    lab = await openLab(b, srv.url);
     const frames = [];
     let verdict = 'deterministic';
     for (let i = 0; i < ks.length; i++) {
@@ -636,6 +821,18 @@ async function determinismPage(dest, res, findings) {
       const d = await lab.diff(p2[0], again);
       if (d.solidPct > 0.01) verdict = 'differs';
       frames.push({ frame: ks[0], t: 0, note: 'captured again after 150 ms of real time', same: false, solidPct: +d.solidPct.toFixed(3) });
+    }
+    if (res.loop) {
+      // the seam: the frame after the last is where the next play of the loop starts
+      const after = await shot(n);
+      const same = sha(after) === sha(p1[0]);
+      const d = same ? { changedPct: 0, solidPct: 0 } : await lab.diff(p1[0], after);
+      res.loop.seam = { t: +(n / res.fps).toFixed(3), against: 0, same, changedPct: +d.changedPct.toFixed(3), solidPct: +d.solidPct.toFixed(3) };
+      res.loop.seamless = same || d.solidPct <= 0.01;
+      if (!res.loop.seamless) {
+        findings.add('warning', 'loop_seam', `the frame after the last (${res.loop.seam.t} s) is not frame 0 again (${res.loop.seam.changedPct}% of the picture differs)`,
+          'played on repeat, the video jumps at the seam', 'pass --duration <the length after which every animation is back at its start>');
+      }
     }
     if (verdict === 'differs') {
       const bad = frames.filter((f) => !f.same).map((f) => `${f.t}s`).join(', ');
@@ -932,8 +1129,13 @@ function printSummary(r, a) {
   const L = [];
   const bad = r.findings.filter((f) => f.level === 'error');
   L.push(`${bad.length ? c.red('adopt: not ready') : c.green('adopted')} ${r.entry} -> ${rel(r.project)}`);
+  if (r.made) L.push(`  made with   ${r.made}${r.design && r.design.artboard ? ` (artboard ${r.design.artboard.width}x${r.design.artboard.height})` : ''}`);
   L.push(`  contract    ${r.contract}`);
-  L.push(`  video       ${r.width}x${r.height}, ${r.fps} fps, ${r.duration} s   (size: ${r.sources.size || '?'}; length: ${r.sources.duration || '?'})`);
+  L.push(`  video       ${r.width}x${r.height}, ${r.fps} fps, ${r.duration} s`);
+  L.push(`  size        ${r.sources.size || '?'}`);
+  L.push(`  length      ${r.sources.duration || '?'}`);
+  if (r.loop) L.push(`  loop        ${r.loop.seamless === undefined ? 'not measured' : r.loop.seamless ? `seamless (frame ${Math.round(r.duration * r.fps)} at ${r.loop.seam.t} s is frame 0 again)` : `not seamless (${r.loop.seam.changedPct}% differs at the seam)`}`);
+  for (const f of r.fonts || []) L.push(`  fonts       ${f.css ? `${f.families.map((x) => `${x.family} (${x.license})`).join(', ')} -> ${f.css}` : `not copied: ${f.error}`}`);
   if (r.audio.length) L.push(`  sound       ${r.audio.join(', ')} -> audio/mix.json`);
   if (r.determinism) L.push(`  determinism ${r.determinism.verdict}${r.determinism.frames ? ` (${r.determinism.frames.filter((f) => f.same).length}/${r.determinism.frames.length} frames identical)` : ''}`);
   if (r.check) L.push(`  check       ${r.check.errors} error(s), ${r.check.warnings} warning(s)${r.check.sheet ? `   sheet: ${rel(r.check.sheet)}` : ''}`);

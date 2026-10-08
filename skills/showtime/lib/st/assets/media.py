@@ -237,7 +237,8 @@ def _nasa(q: str, kind: str, limit: int, aa: bool, sa: bool, orientation: Option
 def _nasa_asset_url(nid: str, kind: str, quality: str) -> Tuple[str, List[str]]:
     data = net.get_json("https://images-api.nasa.gov/asset/%s" % _q(nid), ttl=86400)
     hrefs = [i.get("href", "") for i in (data.get("collection") or {}).get("items", [])]
-    hrefs = [h.replace("http://", "https://") for h in hrefs]
+    # some NASA ids hold spaces ("What is a NASA Spinoff"): the API returns them unquoted in the hrefs
+    hrefs = [h.replace("http://", "https://").replace(" ", "%20") for h in hrefs]
     if kind == "video":
         order = {"small": ["~small.mp4", "~mobile.mp4", "~medium.mp4"],
                  "medium": ["~medium.mp4", "~large.mp4", "~small.mp4", "~orig.mp4"],

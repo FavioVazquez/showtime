@@ -85,6 +85,20 @@ class TestRepoHygiene(unittest.TestCase):
             self.assertTrue((REPO / name).is_file(), name + " is missing")
         self.assertTrue(list((REPO / ".out-of-scope").glob("*.md")), ".out-of-scope/ has no entries")
 
+    def test_template_sample_urls_are_reserved_names(self):
+        """A template's sample URL (data-url) shows on screen in every video made from it: it must be a reserved
+        name (RFC 2606 / 6761: .example, .test, .invalid, example.com), never a domain someone can own
+        (northwind.app was registered)."""
+        import re
+        bad = []
+        for page in sorted((SKILL / "templates").rglob("*.html")):
+            for url in re.findall(r'data-url="([^"]*)"', page.read_text(encoding="utf-8")):
+                host = re.sub(r"^[a-z]+://", "", url).split("/")[0].split(":")[0].lower()
+                if not (re.search(r"\.(example|test|invalid|localhost)$", host)
+                        or host in ("localhost", "example.com", "example.org", "example.net")):
+                    bad.append("%s: %s" % (page.relative_to(SKILL), url))
+        self.assertEqual(bad, [])
+
     def test_gitattributes_line_endings(self):
         text = (REPO / ".gitattributes").read_text(encoding="utf-8")
         for pat, eol in (("*.sh", "lf"), ("*.py", "lf"), ("*.mjs", "lf"), ("*.md", "lf"),
@@ -121,6 +135,21 @@ class TestCrew(unittest.TestCase):
         for role in CREW:
             self.assertIn("`%s`" % role, text, "crew.md does not list %s" % role)
 
+    @unittest.skipUnless((REPO / "site" / "content" / "crew.json").is_file(), "site/ not in this copy")
+    def test_outer_docs_say_the_critic_reviews_every_video(self):
+        # quality mode (the default since 0.3.0) sends a critic to every finished video (modes.md section 6);
+        # the README and the site once said the critic joined only videos that would be published
+        import json
+        roles = {r["id"]: r for r in json.loads((REPO / "site" / "content" / "crew.json").read_text(encoding="utf-8"))["roles"]}
+        self.assertEqual(sorted(roles), sorted(CREW))
+        self.assertIn("All Videos", roles["critic"]["when"])
+        self.assertNotIn("Publish", roles["critic"]["when"])
+        for rel in ("README.md", "site/build.py", "docs/README.md"):
+            text = " ".join((REPO / rel).read_text(encoding="utf-8").split())
+            for stale in ("except a researcher and a critic", "Quick videos stay lean", "critic pass on publish-bound",
+                          "Researcher and critic join"):
+                self.assertNotIn(stale, text, "%s still says the critic is only for published videos" % rel)
+
 
 @unittest.skipIf(cr is None, "scripts/check_release.py not found")
 class TestSkillMd(unittest.TestCase):
@@ -150,6 +179,37 @@ class TestCheckersBite(unittest.TestCase):
         self.assertEqual(fields["description"], "Use when making videos.")
         self.assertGreater(cr.word_count("word " * 1600), cr.BODY_WORDS_MAX)
 
+    def test_mirror_check_heads_every_asset(self):
+        # no network: the mirror.json shape and a fake HEAD (the real one runs with --mirror before a release)
+        data = {"mirrors": ["https://m.example/models-v1/"],
+                "files": [{"file": "a--x.onnx", "size": 10}, {"file": "b--y.bin", "size": 20}, {"file": "c--z.bin", "size": 30}],
+                "audio": {"mirrors": ["https://m.example/audio-v1"]}}
+        assets = cr.mirror_assets(data, audio_items=[{"file": "music--t.mp3", "bytes": 5}])
+        urls = [u for _n, u, _s in assets]
+        self.assertIn("https://m.example/models-v1/a--x.onnx", urls)
+        self.assertIn("https://m.example/models-v1/LICENSES.txt", urls)
+        self.assertIn("https://m.example/models-v1/SHA256SUMS", urls)
+        self.assertIn("https://m.example/audio-v1/music--t.mp3", urls)
+        self.assertIn("https://m.example/audio-v1/SHA256SUMS", urls)
+        answers = {"https://m.example/models-v1/b--y.bin": (404, None, "HTTP 404"),
+                   "https://m.example/models-v1/c--z.bin": (200, 31, "")}
+        heads = []
+
+        def head(url):
+            heads.append(url)
+            return answers.get(url, (200, None, ""))
+        f = cr.Findings()
+        cr.check_mirror(f, assets, head=head, jobs=2)
+        self.assertEqual(sorted(heads), sorted(urls), "every asset is checked")
+        msgs = [i["message"] for i in f.errors()]
+        self.assertEqual(len(msgs), 2, fmt(f.items))
+        self.assertIn("b--y.bin is not on the release (HTTP 404)", msgs[0])
+        self.assertIn("c--z.bin is 31 bytes, mirror.json says 30", msgs[1])
+        # opt-in: the default run never goes online
+        self.assertNotIn("mirror", cr.default_checks())
+        real = cr.mirror_assets(audio_items=[])
+        self.assertTrue(any(n == "modnet--model.onnx" for n, _u, _s in real))
+
     def test_banned_and_path_rules(self):
         import codecs
         import tempfile
@@ -167,6 +227,24 @@ class TestCheckersBite(unittest.TestCase):
             self.assertEqual(checks, ["names", "paths", "paths"], fmt(f.items))
         finally:
             import shutil
+            shutil.rmtree(str(d), ignore_errors=True)
+
+    def test_people_guides_are_checked(self):
+        # docs/guides/*.md (task guides for people) go through the links and commands checks too
+        self.assertIn(cr.REPO / "docs" / "guides" / "README.md", cr.people_docs())
+        d = Path(tempfile.mkdtemp(prefix="st-guides-"))
+        real = cr.people_docs
+        try:
+            doc = d / "guide.md"
+            doc.write_text("Run `showtime edit clipz <job>`, then read [the rules](no-such-file.md).\n", encoding="utf-8")
+            cr.people_docs = lambda: [doc]
+            f = cr.Findings()
+            cr.check_commands(f)
+            cr.check_links(f)
+            found = sorted(i["check"] for i in f.errors() if i["where"].startswith(str(doc)))
+            self.assertEqual(found, ["commands", "links"], fmt(f.items))
+        finally:
+            cr.people_docs = real
             shutil.rmtree(str(d), ignore_errors=True)
 
     def test_moved_doc_links(self):
@@ -204,6 +282,80 @@ class TestCheckersBite(unittest.TestCase):
                 self.assertIn(needle, msgs)
         finally:
             cr.REPO = real
+            import shutil
+            shutil.rmtree(str(d), ignore_errors=True)
+
+    def test_doc_version_rules(self):
+        """A stale copy of the docs fails; fixing rewrites every mechanical claim; the prose summary needs a person."""
+        import json
+        import tempfile
+        d = Path(tempfile.mkdtemp(prefix="st-docver-"))
+        try:
+            for sub in ("site", "docs/examples", "assets/readme/badges", "benchmarks"):
+                (d / sub).mkdir(parents=True)
+            (d / "site" / "config.json").write_text('{\n  "version": "0.3",\n  "hero": {"label": "0.3.0 reel"}\n}\n',
+                                                   encoding="utf-8")
+            link = ("[`showtime-0.3.0.mcpb`](https://github.com/o/r/releases/download/v0.3.0/showtime-0.3.0.mcpb) from\n"
+                    "the v0.3.0 release")
+            pin = "uses: o/r/.github/actions/showtime-video@v0.3.0\n"
+            (d / "README.md").write_text(
+                '<img alt="status: 0.3, early" src="x.svg">\n\n**What\'s new in 0.3.0** (the full list is '
+                "[below](#new-in-030)):\n\n- a\n\n%s\n\n## New in 0.3.0\n\n<sub>Status: 0.2, early. More.</sub>\n"
+                % link, encoding="utf-8")
+            (d / "docs" / "github-action.md").write_text("```yaml\n- " + pin + "```\n", encoding="utf-8")
+            (d / "docs" / "examples" / "video.yml").write_text("    - " + pin + "#   - " + pin, encoding="utf-8")
+            (d / "assets" / "readme" / "badges" / "status.svg").write_text(
+                '<svg><title id="t">status: 0.3 · early</title></svg>', encoding="utf-8")
+            (d / "CHANGELOG.md").write_text(pin + link, encoding="utf-8")            # history: never flagged
+            (d / "benchmarks" / "r1.md").write_text(pin, encoding="utf-8")
+            f = cr.Findings()
+            cr.check_doc_versions(f, False, "0.4.0", repo=d)
+            where = sorted(i["where"] for i in f.errors())
+            self.assertEqual(where, ["README.md:1", "README.md:12", "README.md:3", "README.md:7",
+                                     "assets/readme/badges/status.svg", "docs/examples/video.yml:1",
+                                     "docs/examples/video.yml:2", "docs/github-action.md:2", "site/config.json"],
+                             fmt(f.items))
+            self.assertTrue(any("needs a person" in i["message"] for i in f.errors()))
+            f = cr.Findings()
+            cr.check_doc_versions(f, True, "0.4.0", repo=d)
+            self.assertEqual(sorted(i["where"] for i in f.errors()), ["README.md:3", "assets/readme/badges/status.svg"],
+                             fmt(f.items))
+            self.assertEqual(json.loads((d / "site" / "config.json").read_text(encoding="utf-8"))["version"], "0.4")
+            readme = (d / "README.md").read_text(encoding="utf-8")
+            self.assertIn("showtime-0.4.0.mcpb`](https://github.com/o/r/releases/download/v0.4.0/showtime-0.4.0.mcpb) "
+                          "from\nthe v0.4.0 release", readme)
+            self.assertIn("Status: 0.4, early.", readme)
+            self.assertIn('alt="status: 0.4, early"', readme)
+            self.assertIn("What's new in 0.3.0", readme)                                # prose is left alone
+            for p in ("docs/github-action.md", "docs/examples/video.yml"):
+                text = (d / p).read_text(encoding="utf-8")
+                self.assertNotIn("@v0.3.0", text, p)
+                self.assertIn("showtime-video@v0.4.0", text, p)
+            self.assertIn("@v0.3.0", (d / "CHANGELOG.md").read_text(encoding="utf-8"))
+            self.assertIn("@v0.3.0", (d / "benchmarks" / "r1.md").read_text(encoding="utf-8"))
+            # the summary rewritten by hand, for the same minor: clean (a patch release keeps it)
+            (d / "README.md").write_text(readme.replace("What's new in 0.3.0", "What's new in 0.4.0")
+                                         .replace("#new-in-030", "#new-in-040")
+                                         .replace("## New in 0.3.0", "## New in 0.4.0\n\n## New in 0.3.0"),
+                                         encoding="utf-8")
+            (d / "assets" / "readme" / "badges" / "status.svg").write_text('<svg><title>status: 0.4 · early</title></svg>',
+                                                                           encoding="utf-8")
+            f = cr.Findings()
+            cr.check_doc_versions(f, False, "0.4.0", repo=d)
+            self.assertEqual(f.errors(), [], fmt(f.items))
+            f = cr.Findings()
+            cr.check_doc_versions(f, False, "0.4.1", repo=d)
+            self.assertEqual(sorted(i["where"] for i in f.errors()),
+                             ["README.md:7", "docs/examples/video.yml:1", "docs/examples/video.yml:2",
+                              "docs/github-action.md:2"], fmt(f.items))
+            # a wrong anchor and a missing section are caught too
+            (d / "README.md").write_text(readme.replace("What's new in 0.3.0", "What's new in 0.4.0"), encoding="utf-8")
+            f = cr.Findings()
+            cr.check_doc_versions(f, False, "0.4.0", repo=d)
+            msgs = " | ".join(i["message"] for i in f.errors())
+            self.assertIn('no "## New in 0.4.0" section', msgs)
+            self.assertIn("links #new-in-030, expected #new-in-040", msgs)
+        finally:
             import shutil
             shutil.rmtree(str(d), ignore_errors=True)
 

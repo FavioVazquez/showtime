@@ -513,6 +513,22 @@ class TestModelMirror(unittest.TestCase):
                 self.assertIn("m--m.bin", msg, "the file to put in a mirror folder is named")
                 self.assertLess(len(msg), 600)
 
+    def test_blocked_primary_and_missing_mirror_asset_say_which(self):
+        # MODNet in 0.4.1: Hugging Face blocked in the sandbox, the asset not yet on the mirror release
+        body = os.urandom(5_000)
+        with fixture_server({}, codes={"/hf/m.bin": 403}) as (base, hits):
+            it = item("fixture-gone", base + "/hf/m.bin", body, "models/gone/m.bin")
+            with fake_skill([it]) as (root, home), \
+                    mirror_table({base + "/hf/m.bin": "gone--m.bin"}, [base + "/mirror/"]):
+                with self.assertRaises(common.ShowtimeError) as cm:
+                    lazy.ensure_item("fixture-gone", "a missing mirror asset")
+                msg = str(cm.exception)
+                self.assertIn("127.0.0.1 (HTTP 403)", msg)
+                self.assertIn("the mirror 127.0.0.1 has no gone--m.bin (HTTP 404 at %s/mirror/gone--m.bin)" % base, msg)
+                self.assertIn("The mirror does not have gone--m.bin yet", msg)
+                self.assertIn("SHOWTIME_MODEL_MIRROR", msg)
+                self.assertNotIn("Allow one of these hosts", msg, "a missing file is not one more blocked host")
+
     def test_proxy_refusal_counts_as_blocked(self):
         import socket
         import urllib.error

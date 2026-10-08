@@ -16,10 +16,11 @@ import { showCard, fmtLen, openHint } from './lib/delight.mjs';
 import { writeExport, estimateSingle, notices, showtimeVersion, category, jsonBytes, playerBytes } from './lib/export/build.mjs';
 import { fitFootage } from './lib/export/fit.mjs';
 import { timeIssues, socraticDoc } from './lib/questions.mjs';
+import { resolveShare, shareMeta, genericTitle, genericChapters } from './lib/export/share.mjs';
 
 const SPEC = {
   name: 'export',
-  usage: 'showtime export html <project> [-o out.html] [--audio auto|embed|score|none] [--folder] [--controls full|minimal|none] [--target file|artifact] [--lang CODE] [--no-questions]',
+  usage: 'showtime export html <project|job> [-o out.html] [--audio auto|embed|score|none] [--folder] [--controls full|minimal|none] [--target file|artifact] [--lang CODE] [--no-questions] [--auto-continue S]',
   summary: 'Export a project as an interactive HTML video that plays in any browser, offline, from one file.',
   description: [
     'The page is packed with everything it uses (runtime, scripts, styles, fonts, images, emoji, data,',
@@ -38,12 +39,22 @@ const SPEC = {
     'MP4\'s "pause and think" beat. socratic.json (the same questions, for pages that drive the player from',
     'outside) is written next to the export. --no-questions exports a plain player.',
     'The file makes no network request. Default output: ./showtime-out/<title>-<timestamp>/<title>.html',
+    'A job (folder or name, as qa takes it) exports its project/ folder into the job folder;',
+    '`<job> --folder out` writes the folder version to ./out/.',
     '',
     'Audio: auto = the procedural score played live (streamed from the first second, tiny file) when',
     'that is all the sound, otherwise',
     'embed = the rendered soundtrack (score + mix, loudness-matched) packed as AAC (or --codec opus).',
     'The whole file must stay under --max-mb (default 16, the artifact limit); --folder writes',
-    'index.html + assets/ instead (no size limit, media stays as real files, for hosting).',
+    'index.html + assets/ instead (no size limit, media stays as real files, for hosting), with an empty',
+    '.nojekyll so GitHub Pages serves assets/media/_export/ (the mixed audio).',
+    '',
+    'Link previews: the page carries og:title, og:description, og:url, og:image and twitter:card, from',
+    'showtime.json "share": {"url", "image", "description"} or --share-url / --share-image. Without an',
+    'image the poster frame is used (--folder: assets/poster.jpg; one file with a share URL:',
+    '<name>.share.jpg beside it). Most previews need an absolute image URL: give the share URL.',
+    'The export warns when the title is a default ("Project") or the chapters are scene ids ("Shot 1").',
+    'A project file the page needs that cannot be read stops the export.',
   ].join('\n'),
   options: {
     output: { short: 'o', help: 'output .html file (with --folder: output folder)', metavar: 'FILE' },
@@ -66,6 +77,8 @@ const SPEC = {
     title: { help: 'title of the page and the start screen (default: showtime.json "title")' },
     subtitle: { help: 'start-card subtitle (default: showtime.json "subtitle" or Film.start({subtitle}))' },
     kicker: { help: 'small line above the start-card title, e.g. a series and episode (default: showtime.json "kicker")' },
+    'share-url': { help: 'the address the page will have once hosted, for link previews (og:url; makes a relative share image absolute); default: showtime.json "share": {"url"}', metavar: 'URL' },
+    'share-image': { help: 'the image of link previews: an https URL, or a file (copied into the folder with --folder); default: showtime.json "share": {"image"}, else the poster frame (--folder, or a single file with a share URL)', metavar: 'URL|FILE' },
     minify: { help: 'shrink the runtime and scripts: auto (default: on), off', metavar: 'MODE' },
     'max-mb': { help: 'size limit of the single file in MB (default 16; 0 = no limit)', metavar: 'MB' },
     fit: { help: 'auto (default): a single file over --max-mb because of embedded video clips gets those clips re-encoded at the bitrate that fits (for this export only; the project is unchanged); off: stop with the size breakdown instead', metavar: 'MODE' },
@@ -83,11 +96,14 @@ const SPEC = {
     'showtime export html my-video                         # -> showtime-out/<title>-<ts>/<title>.html',
     'showtime export html my-video -o launch.html          # one file, plays offline in any browser',
     'showtime export html my-video --job launch -o embed.html   # into the job folder, with that name',
+    'showtime export html launch                            # a job: its project/, into the job folder',
+    'showtime export html launch --folder out               # a job as a folder: ./out/index.html + assets/',
     'showtime export html my-film --audio score            # procedural score rendered live: tiny file',
     'showtime export html my-film --audio-file final.mp4   # the shipped video\'s soundtrack, nothing rebuilt',
     'showtime export html my-video --bitrate 64k --max-mb 8',
     'showtime export html my-video --max-mb 10 --fit off    # fail instead of re-encoding the clips to fit',
     'showtime export html my-video --folder -o site/launch  # index.html + assets/ for hosting',
+    'showtime export html my-video --folder --share-url https://me.github.io/launch/   # link previews with the poster',
     'showtime export html my-video --controls none --autoplay-muted --loop   # for embedding in a page',
     'showtime export html my-video --target artifact -o launch.html   # to publish as an HTML artifact',
     'showtime export html my-film --subtitle "Fix the cuts" --kicker "Studio how-to · 01"',
@@ -97,6 +113,26 @@ const SPEC = {
 };
 
 const MB = 1000 * 1000;   // decimal MB, like fmtBytes and platform limits
+
+/**
+ * A job argument -> { job, project } (its project/ folder), or null for a project folder or page. A job without
+ * a project/ folder is an error that says so (never "start a new project": the job has one somewhere else).
+ */
+export function jobProject(arg, page) {
+  const has = (d) => fs.existsSync(path.join(d, page || 'index.html'));
+  const abs = path.resolve(String(arg));
+  if (fs.existsSync(abs) && (fs.statSync(abs).isFile() || has(abs))) return null;
+  let job = null;
+  try { job = resolveJobDir(arg); } catch (e) { if (!fs.existsSync(abs)) throw new UserError(e.message, e.hint); }
+  if (!job || !fs.existsSync(job) || !fs.statSync(job).isDirectory()) return null;
+  const project = path.join(job, 'project');
+  if (has(project)) return { job, project };
+  if (fs.existsSync(path.join(job, 'job.json')) || fs.existsSync(path.join(job, 'render.json'))) {
+    throw new UserError(`the job ${job} has no project/${page || 'index.html'} to export`,
+      'pass the project folder the job was rendered from: showtime export html <project-folder> (render.json "project" names it)');
+  }
+  return null;
+}
 
 /** --lang, showtime.json "lang"/"language", <html lang>, narration.md front matter (lang: es), else "en". */
 export function projectLang(flag, cfg, pageHtml, dir) {
@@ -129,13 +165,17 @@ async function main() {
   else if (pos.length && fs.existsSync(pos[0])) { /* `showtime export <project>` means html */ }
   else if (pos.length && /^(mp4|mov|webm|gif|video)$/i.test(pos[0])) throw new UserError(`"${pos[0]}" is not an export format here`, 'video files come from `showtime render <project>`, platform versions from `showtime deliver exports <video>`');
   else throw new UserError(pos.length ? `unknown export format "${pos[0]}"` : 'missing the export format', 'showtime export html <project>');
-  if (pos.length > 1) throw new UserError(`expected one project, got: ${pos.join(' ')}`, 'showtime export html <project-folder>');
+  // `<job> --folder out`: --folder takes no value, so the word after it is the output folder
+  if (pos.length === 2 && a.folder && a.output === undefined) a.output = pos.pop();
+  if (pos.length > 1) throw new UserError(`expected one project, got: ${pos.join(' ')}`, 'showtime export html <project-folder|job> [--folder -o OUT]');
   const quiet = !!a.quiet;
   const say = (m) => { if (!quiet) info(m); };
   const warnings = [];
   const addWarn = (m) => { if (!warnings.includes(m)) { warnings.push(m); warn(m); } };
 
-  const proj = resolveProject(pos[0] || '.', { page: a.page });
+  // a job (as qa and review take it) exports its project/ folder, into the job folder by default
+  const fromJob = jobProject(pos[0] || '.', a.page);
+  const proj = resolveProject(fromJob ? fromJob.project : (pos[0] || '.'), { page: a.page });
   { const w = staleKitWarning(proj.dir); if (w) addWarn(w); }
   const cfg = { ...proj.config };
   const folder = !!a.folder;
@@ -150,6 +190,12 @@ async function main() {
   const fitMode = String(a.fit || 'auto').toLowerCase();
   if (!['auto', 'off'].includes(fitMode)) throw new UserError(`--fit must be auto or off (got ${a.fit})`);
   const title = String(a.title || cfg.title || proj.title);
+  if (!a.title && genericTitle(title)) addWarn(`the title is "${title}", a default: it shows on the start screen, in the browser tab, on a phone's home screen and in link previews; set "title" in showtime.json (or --title)`);
+  const shareFlags = { url: a['share-url'], image: a['share-image'] };
+  const shareCfg = cfg.share && typeof cfg.share === 'object' ? cfg.share : {};
+  const shareUrl = shareFlags.url !== undefined ? String(shareFlags.url).trim() : String(shareCfg.url || '').trim();
+  if (shareUrl && !/^https?:\/\/[^\s/]+/i.test(shareUrl)) throw new UserError(`the share URL must start with https:// or http:// (got ${shareUrl})`, '--share-url https://example.com/my-video/ (or showtime.json "share": {"url"})');
+  const shareImageGiven = !!String(shareFlags.image ?? shareCfg.image ?? '').trim();
   const startKind = String(a.start || 'card').toLowerCase();
   if (!['card', 'poster'].includes(startKind)) throw new UserError(`--start must be card or poster (got ${a.start})`);
   const cardMode = startKind === 'card' && !a['autoplay-muted'];
@@ -189,7 +235,7 @@ async function main() {
     }
     if (out !== want) addWarn(`${want} exists; writing ${path.basename(out)} instead (exports never overwrite)`);
   } else {
-    const dir = a.job ? resolveJobDir(a.job) : jobDir(proj.slug, a['out-dir']);
+    const dir = a.job ? resolveJobDir(a.job) : (fromJob && !a['out-dir'] ? fromJob.job : jobDir(proj.slug, a['out-dir']));
     if (!dir || !fs.existsSync(dir)) throw new UserError(`no job named "${a.job}"`, 'list jobs with `showtime job list`');
     out = freshPath(path.join(dir, folder ? `${proj.slug}-html` : `${proj.slug}.html`));
   }
@@ -208,24 +254,27 @@ async function main() {
     const wantAudio = String(a.audio || 'auto').toLowerCase() !== 'none';
     // the start screen draws the poster frame live: an image only for --start poster (or a --poster given)
     const posterImage = !cardMode || (posterArg !== null && !noPoster);
+    // the poster frame is also the link-preview image when none is given (a folder, or a file with a share URL)
+    const sharePoster = !shareImageGiven && (folder || !!shareUrl);
     const t1 = Date.now();
-    const pr = await probeProject({ url: server.url, page: proj.page, config: cfg, gpu: a.gpu, posterT, wantScore: wantAudio, posterImage });
+    const pr = await probeProject({ url: server.url, page: proj.page, config: cfg, gpu: a.gpu, posterT, wantScore: wantAudio, posterImage: posterImage || sharePoster });
     const D = pr.info.duration;
     if (askQuestions) questionErrors(timeIssues(qs.list, D), addWarn);
     say(c.dim(`  played ${pr.samples} frames through in ${fmtDuration(Date.now() - t1)}; ${pr.requests.length} files requested`));
     for (const e of pr.errors.slice(0, 3)) addWarn(`page error: ${e}`);
     for (const u of pr.blocked.slice(0, 5)) addWarn(`the page requests ${u} from the internet; it cannot be packed (use a local copy)`);
-    const poster = pr.poster, posterTime = pr.posterT;
+    const poster = posterImage ? pr.poster : null, posterTime = pr.posterT;
+    if (!(Array.isArray(cfg.chapters) && cfg.chapters.length) && genericChapters(pr.chapters)) {
+      const names = pr.chapters.slice(0, 2).map((x) => `"${x.label || '(no name)'}"`).join(', ');
+      addWarn(`the chapters are named after the scenes (${names}, ...): they show in the chapter menu and on the scrubber; name them in showtime.json "chapters": [[0, "Intro"], [12.5, "How it works"]]`);
+    }
 
     // ---- 2) files
     const pageHtml = fs.readFileSync(path.join(proj.dir, ...proj.page.split('/')), 'utf8');
     const pagePath = '/' + proj.page;
     const exclude = audioInputs(cfg.audio, proj.dir).map((f) => '/' + path.relative(proj.dir, f).split(path.sep).join('/')).filter((p) => !p.startsWith('/..'));
     const col = await collectFiles({ serverUrl: server.url, pagePath, pageHtml, requests: pr.requests, domText: pr.domText, allFonts: a['all-fonts'], exclude, warn: addWarn });
-    for (const p of col.missing) {
-      if (p.startsWith('/_st/emoji/')) addWarn(`emoji ${p.slice(11)} is not installed (it shows as a broken image): run \`showtime assets emoji <char>\``);
-      else addWarn(`the page asks for ${p}, which does not exist (404)`);
-    }
+    missingFiles(col.failures, addWarn);
     if (col.droppedFaces) say(c.dim(`  dropped ${col.droppedFaces} font faces for scripts the video never uses (--all-fonts keeps them)`));
     preferWoff2(col.files, pageHtml, pagePath);
     // canvas films: font families no frame draws with (and no project script names) are left out
@@ -301,7 +350,11 @@ async function main() {
     const fit = async (over) => {
       if (fitMode === 'off') return false;
       const r = await fitFootage(col.files, { over, workDir: path.join(workDir, 'fit'), say: (m) => say(c.dim(`  fit: ${m}`)) });
-      refit.push(...r.items);
+      // one entry per clip: a later pass re-encodes the same clip again (its original size, its last encode)
+      for (const it of r.items) {
+        const i = refit.findIndex((x) => x.path === it.path);
+        if (i >= 0) refit[i] = it; else refit.push(it);
+      }
       if (!r.items.length && r.reason) addWarn(`could not fit the footage under ${maxMb} MB: ${r.reason}`);
       return r.items.length > 0;
     };
@@ -327,6 +380,13 @@ async function main() {
     // the page's language: --lang, else showtime.json "lang", the page's <html lang>, the narration's
     // front matter (lang: es), else en. It sets <html lang> and the player's own words (Play, Chapters ...)
     const lang = projectLang(a.lang, cfg, pageHtml, proj.dir);
+    let share;
+    try {
+      share = resolveShare({ flags: shareFlags, cfg, folder, out, dirs: [proj.dir, process.cwd()], poster: sharePoster ? pr.poster : null,
+        width: pr.info.width, height: pr.info.height, fresh: freshPath });
+    } catch (e) { if (e.user) throw new UserError(e.message); throw e; }
+    for (const w of share.warnings) addWarn(w);
+    for (const n of share.notes) say(c.dim(`  ${n}`));
     const manifest = {
       v: 1, generator: `showtime ${showtimeVersion()}`, title, page: pagePath,
       width: pr.info.width, height: pr.info.height, fps: pr.info.fps, duration: D, background: pr.info.background || cfg.background || '#000',
@@ -339,6 +399,9 @@ async function main() {
     };
     const write = () => writeExport({
       files: col.files, manifest, html: pageHtml, poster, audio: audioPack, out, folder, noCsp: !!a['no-csp'], lang, minify, compress: minify,
+      description: share.description || undefined, shareFiles: share.files,
+      // a preview without a written description still says what the link opens
+      share: shareMeta({ title, ...share, description: share.description || `An interactive video, ${fmtLen(D)}${pr.chapters.length > 1 ? `, in ${pr.chapters.length} chapters` : ''}${manifest.questions ? ', that stops and asks' : ''}.` }),
       notice: `${title}\nExported with ${manifest.generator}: an interactive HTML video; every file it uses is packed inside.\n` + notices(col.files, { projDir: proj.dir, extraCredits: credits }),
     });
     let res = write();
@@ -351,6 +414,7 @@ async function main() {
         throw sizeError(res.bytes, maxMb, col.files, poster, audioPack, sizeHints, fitMode);
       }
     }
+    if (share.beside) fs.writeFileSync(share.beside.file, share.beside.bytes);
     // socratic.json beside the export: the same questions for a page that drives the player from outside
     let socratic = null;
     if (askQuestions && qs.list.length) {
@@ -371,13 +435,14 @@ async function main() {
       start: manifest.start.card ? 'card' : 'poster', minified: res.minified, compressed: res.compressed, unused_parts: shrink.parts,
       totals: res.totals, largest: res.breakdown.slice(0, 8), footage_refit: refit, warnings, seconds: +((Date.now() - T0) / 1000).toFixed(1),
       questions: askQuestions ? qs.list.map((q) => ({ id: q.id, t: q.t, resume: q.resume })) : [], socratic,
+      share: { url: share.url || null, image: share.image ? share.image.href : null, card: share.card, description: share.description || null, image_file: share.beside ? share.beside.file : null },
     };
     if (a.json) process.stdout.write(JSON.stringify(report, null, 2) + '\n');
     else {
       const aTxt = audioReport.mode === 'embed' ? `embedded ${audioReport.codec.toUpperCase()} ${audioReport.bitrate}` : audioReport.mode === 'score' ? 'live score' : 'no sound';
       console.log(`${c.green('exported')} ${res.output}`);
       console.log(`  ${fmtBytes(res.bytes)}${folder ? ' (folder)' : ` of ${maxMb || 'unlimited'} MB`}, ${manifest.width}x${manifest.height} ${manifest.fps} fps ${D.toFixed(2)} s, ${aTxt}, ${pr.chapters.length} chapters, ${res.files} files packed`);
-      console.log(`  open it in any browser (double-click); it makes no network request${folder ? '. Serve the folder, or open index.html' : ''}`);
+      console.log(`  open it in any browser (double-click); it makes no network request${folder ? '. Serve the folder from a host with byte ranges (GitHub Pages, most web hosts), or open index.html' : ''}`);
       if (socratic) console.log(`  ${qs.list.length} question${qs.list.length > 1 ? 's' : ''}: the video stops and asks${controls === 'none' ? ' (from the embedding page)' : ''}; ${path.basename(socratic)} beside it`);
       showCard({
         title: `${path.basename(res.output)} is ready`, file: res.output,
@@ -391,6 +456,27 @@ async function main() {
     if (!a['keep-work']) fs.rmSync(workDir, { recursive: true, force: true });
     else info(c.dim(`  work folder: ${workDir}`));
   }
+}
+
+/**
+ * Files the page needs that could not be read. A project file that is not there, or any file the
+ * server did not answer for, stops the export (a page with scenes left out must not ship); a missing
+ * emoji or runtime file is a warning, as before.
+ */
+function missingFiles(failures, addWarn) {
+  const stop = [];
+  for (const f of failures || []) {
+    const p = f.path;
+    if (p === '/showtime.json') continue;                 // the stage asks for it; a project may have none
+    if (f.status === 0) stop.push(`${p} (the server did not answer: ${f.err || 'no response'})`);
+    else if (p.startsWith('/_st/emoji/')) addWarn(`emoji ${p.slice(11)} is not installed (it shows as a broken image): run \`showtime assets emoji <char>\``);
+    else if (/^\/_(st|lib|assets)\//.test(p)) addWarn(`the page asks for ${p}, which does not exist (${f.status})`);
+    else stop.push(`${p} (${f.status === 404 ? 'not found' : `HTTP ${f.status}`}${f.source && f.source !== 'requested' ? `, ${f.source}` : ''})`);
+  }
+  if (!stop.length) return;
+  const shown = stop.slice(0, 12).map((s) => `  ${s}`).join('\n') + (stop.length > 12 ? `\n  ... and ${stop.length - 12} more` : '');
+  throw new UserError(`the page needs ${stop.length} file${stop.length > 1 ? 's' : ''} that could not be packed, so the export would play without ${stop.length > 1 ? 'them' : 'it'}:\n${shown}`,
+    'add the file or fix the path in the page (`showtime check <project>` loads it the same way); if the server did not answer, run the export again');
 }
 
 /** Question issues: errors stop the export (the fix is in showtime.json), warnings are passed on. */

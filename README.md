@@ -8,10 +8,10 @@
 
 
 
-https://github.com/user-attachments/assets/1132aa71-7fe5-4345-a925-790d80462fda
+https://github.com/user-attachments/assets/638bfa30-522f-4e7c-ab9e-e77f364e7dc9
 
 
-<p align="center"><sub>The 0.3.0 showreel: 50 seconds, rendered by showtime 0.3.0 on one machine; every shot names the feature it uses (<a href="https://github.com/FavioVazquez/showtime-examples/blob/main/examples/_showreel/README.md">about the film</a>).</sub><br><sub><a href="https://github.com/FavioVazquez/showtime-examples/releases/download/examples-media-v1/_showreel--showreel-16x9.mp4"><b>Download the 50-second showreel</b></a> (full quality, 41 MB). Music: “Born Of The Sky” by Scott Buckley, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. CO2 data: NOAA GML / Scripps (<a href="https://github.com/FavioVazquez/showtime-examples/blob/main/examples/_showreel/credits.txt">credits</a>).</sub></p>
+<p align="center"><sub>The 0.4.1 showreel: 55 seconds, rendered by showtime 0.4.1 in 2 min 23 s on a 64-core CPU with no GPU; seven real showtime films, then the features behind them (<a href="https://github.com/FavioVazquez/showtime-examples/blob/main/examples/_showreel041/README.md">about the film</a>).</sub><br><sub><a href="https://github.com/FavioVazquez/showtime-examples/releases/download/examples-media-v1/_showreel041--showreel-16x9.mp4"><b>Download the showreel</b></a> (full quality, 107 MB). Music: “Supernova” by Scott Buckley, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Footage: NASA (public domain); photo: “Godafoss 3” by Tord Dellsen, CC0 (<a href="https://github.com/FavioVazquez/showtime-examples/blob/main/examples/_showreel041/credits.txt">credits</a>).</sub></p>
 <!-- /HERO -->
 
 <p align="center">

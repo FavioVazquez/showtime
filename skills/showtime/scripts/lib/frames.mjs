@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { startServer } from '../server.mjs';
 import { resolveProject, info, c, UserError } from './cli.mjs';
-import { openStage } from './stagehost.mjs';
+import { openPage } from './stagehost.mjs';
 import { resolveFF, ffmpeg, probe, STILL_VF } from './ff.mjs';
 import { stripColorChunks } from './png.mjs';
 
@@ -44,7 +44,7 @@ export async function openSource(arg, a, shared) {
   const proj = resolveProject(arg || '.', { page: a.page });
   const server = await startServer({ root: proj.dir, port: 0 });
   const b = await shared.browser();
-  const sess = await openStage(b.browser, { url: server.url, page: proj.page, config: proj.config, size: a.size });
+  const sess = await openPage(b, { url: server.url, page: proj.page, config: proj.config, size: a.size });
   shared.serverUrl = shared.serverUrl || server.url;
   return {
     kind: 'project', dir: proj.dir, name: path.basename(proj.dir), title: proj.title, proj, sess, info: sess.info,

@@ -3,9 +3,10 @@
 // and snap so every tool sees exactly the same pixels.
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import { skillDir } from './deps.mjs';
 import { launchBrowser } from './chrome.mjs';
-import { UserError } from './cli.mjs';
+import { UserError, warn } from './cli.mjs';
 
 const STAGE_SRC = () => fs.readFileSync(path.join(skillDir(), 'runtime', 'stage.js'), 'utf8');
 let stageCache = null;
@@ -19,7 +20,8 @@ export function isLocalUrl(u) {
 
 /**
  * Launch one browser (retrying once in software mode if the GPU path fails to start).
- * -> { browser, kind, version, executablePath, flags }
+ * -> { browser, kind, version, executablePath, flags, relaunch() }  (relaunch: a new one the same way, for
+ * openGuarded below)
  */
 // Extra flags for capture on top of the shared set (scripts/lib/chrome-flags.json).
 // --disable-lcd-text: text in composited layers is always grayscale-antialiased while text in the
@@ -29,12 +31,165 @@ export const CAPTURE_ARGS = ['--disable-lcd-text'];
 
 export async function openBrowser({ gpu = 'auto', headless = true, args = [], ownSignals = false } = {}) {
   const extra = [...CAPTURE_ARGS, ...args];
+  let rec;
   try {
-    return await launchBrowser({ gpu, headless, args: extra, ownSignals });
+    rec = await launchBrowser({ gpu, headless, args: extra, ownSignals });
   } catch (e) {
     if (gpu === 'off') throw e;
-    return launchBrowser({ gpu: 'off', headless, args: extra, ownSignals });
+    rec = await launchBrowser({ gpu: 'off', headless, args: extra, ownSignals });
   }
+  rec.relaunch = () => openBrowser({ gpu, headless, args, ownSignals });
+  rec.pid = await browserPid(rec.browser);
+  return rec;
+}
+
+/**
+ * A browser record from launchBrowser made ready for openGuarded: relaunch() (a function that returns another
+ * such record) and the process id. -> rec
+ */
+export async function guardable(rec, relaunch) {
+  rec.relaunch = relaunch;
+  rec.pid = await browserPid(rec.browser);
+  return rec;
+}
+
+/** launchBrowser(o) as a record for openGuarded (relaunch() the same way, the process id). */
+export async function launchGuarded(o = {}) {
+  const launch = async () => guardable(await launchBrowser(o), launch);
+  return launch();
+}
+
+/** The browser's process id (CDP SystemInfo.getProcessInfo), or null. */
+async function browserPid(browser) {
+  try {
+    const s = await withTimeout(browser.newBrowserCDPSession(), 15000, 'reading the browser process id');
+    const r = await withTimeout(s.send('SystemInfo.getProcessInfo'), 15000, 'reading the browser process id');
+    s.detach().catch(() => {});
+    const p = ((r && r.processInfo) || []).find((x) => x.type === 'browser');
+    return p && Number.isInteger(p.id) && p.id > 0 ? p.id : null;
+  } catch { return null; }
+}
+
+/**
+ * Give up a browser that stopped answering: close it if it still can, and kill its process (its process group:
+ * Playwright starts it as a group leader) so it never keeps the command alive or holds the machine.
+ */
+export function abandonBrowser(rec) {
+  if (!rec || !rec.browser) return;
+  closeSoon(rec.browser.close(), 3000);
+  const pid = rec.pid;
+  if (!pid) { warn('the browser stopped answering and its process id is unknown: it was only asked to close; it ends with this command'); return; }
+  if (process.platform === 'win32') {
+    try { spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true }).on('error', () => {}); } catch { /* gone */ }
+  } else {
+    try { process.kill(-pid, 'SIGKILL'); } catch { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } }
+  }
+}
+
+// tests only: SHOWTIME_TEST_STOP_BROWSER=open stops (SIGSTOP) the browser just before the first page opens,
+// =ready:N just after the N-th page opened: a real browser that stops answering, for the deadline and the
+// watchdog (POSIX only)
+const TEST_STOP = /^(open|ready)(?::(\d+))?$/.exec(process.platform === 'win32' ? '' : String(process.env.SHOWTIME_TEST_STOP_BROWSER || ''));
+let testStop = TEST_STOP ? { when: TEST_STOP[1], n: Number(TEST_STOP[2] || 1) } : null;
+let opened = 0;
+function testStopNow(b, when) {
+  if (when === 'ready') opened++;
+  if (!testStop || testStop.when !== when || (when === 'ready' && opened !== testStop.n) || !b.pid) return;
+  testStop = null;
+  try { process.kill(b.pid, 'SIGSTOP'); } catch { /* gone */ }
+}
+
+// ------------------------------------------------------------------ opening a page, with a deadline
+// A browser on a very busy machine can stop answering while it opens a page (a render once waited 14 minutes;
+// on macOS CI runners a render and a check outlived their callers' deadlines): creating its context, its page
+// or its CDP session has no deadline of its own. Every page showtime opens goes through openGuarded: the whole
+// open (context, page, the first navigation, the page getting ready) gets PAGE_OPEN_MS, longer than the load and
+// ready timeouts inside, times the page's pace factor; past it the browser is given up (killed), the open tried
+// once more in a new browser, and then the command fails naming the step it was stuck at instead of waiting with
+// no end.
+// SHOWTIME_TEST_OPEN_TIMEOUT=<seconds> shortens it (tests).
+export const PAGE_OPEN_MS = Number(process.env.SHOWTIME_TEST_OPEN_TIMEOUT) > 0 ? Number(process.env.SHOWTIME_TEST_OPEN_TIMEOUT) * 1000 : 300000;
+
+/** close() of a browser or page that may not answer: never waits more than ms. */
+export function closeSoon(p, ms = 10000) {
+  return withTimeout(Promise.resolve().then(() => p), ms, 'closing a browser').catch(() => {});
+}
+
+/**
+ * Run open(browser, track, pace) under the page-open deadline. b is a browser record ({browser, relaunch()}, as
+ * openBrowser returns): a browser that never answers is closed and replaced in b itself (Object.assign), so the
+ * caller's later pages and its own close use the new one. open() keeps track.step current ('creating the
+ * browser context', ...) for the error, and may report the page's pace into pace (its deadline grows with it).
+ * onRetry(message, what) is told before the second try (default: a warning on stderr); what is the step it was
+ * stuck at. It may throw instead (a caller that holds pages of the old browser cannot go on in a new one).
+ * -> whatever open() returns (it must have close() if it holds anything)
+ */
+export async function openGuarded(b, open, { label = 'opening the page', onRetry = (m) => warn(m) } = {}) {
+  for (let attempt = 1; ; attempt++) {
+    const track = { step: 'starting' };
+    const pace = newPace();
+    testStopNow(b, 'open');
+    const p = Promise.resolve().then(() => open(b.browser, track, pace));
+    try {
+      const got = await withPacedTimeout(p, PAGE_OPEN_MS, label, pace);
+      testStopNow(b, 'ready');
+      return got;
+    } catch (e) {
+      if (!e || e.deadline !== label) throw e;
+      p.then((x) => x && typeof x.close === 'function' && closeSoon(x.close(), 5000), () => {});
+      const what = `${String(e.message)} (stuck at: ${track.step})`;
+      // a record without relaunch() lends a browser that others use (render's soundtrack borrows worker 0's):
+      // the caller decides what to do with it
+      if (typeof b.relaunch === 'function') abandonBrowser(b);
+      if (attempt > 1 || typeof b.relaunch !== 'function') {
+        throw Object.assign(new UserError(`the browser stopped answering: ${what}${attempt > 1 ? ', in a new browser too' : ''}`, STUCK_HINT),
+          { browserStuck: true });
+      }
+      onRetry(`the browser did not answer while ${label}: ${what}; trying once more in a new browser`, what);
+      Object.assign(b, await b.relaunch());
+    }
+  }
+}
+
+export const STUCK_HINT = 'the machine is too busy or the browser is stuck: close other heavy programs and retry, or try --gpu off; `showtime doctor` checks the browser';
+
+/**
+ * Watch a browser record while a command works with it (calls on a page have no deadline of their own): a
+ * browser that does not answer a ping (CDP Browser.getVersion, answered by the browser process however busy its
+ * pages are) within PAGE_OPEN_MS has stopped. onStuck(message, hint) is called once, after the browser is killed;
+ * the command then ends with that error instead of waiting with no end. A browser replaced meanwhile
+ * (openGuarded) is pinged anew. -> stop()
+ */
+export function watchBrowser(b, onStuck) {
+  const every = Math.min(30000, Math.max(500, PAGE_OPEN_MS / 4));
+  let stopped = false, timer = null, sess = null, sessFor = null;
+  const tick = async () => {
+    if (stopped) return;
+    const br = b.browser;
+    const t0 = Date.now();
+    try {
+      if (sessFor !== br) { sess = null; sessFor = br; sess = await withTimeout(br.newBrowserCDPSession(), PAGE_OPEN_MS, 'answering a ping'); }
+      await withTimeout(sess.send('Browser.getVersion'), PAGE_OPEN_MS, 'answering a ping');
+    } catch (e) {
+      if (stopped) return;
+      if (e && e.deadline && b.browser === br) {
+        stopped = true;
+        abandonBrowser(b);
+        onStuck(`the browser stopped answering (no answer for ${Math.round((Date.now() - t0) / 1000)} s)`, STUCK_HINT);
+        return;
+      }
+      sessFor = null;   // closed or replaced: a new session next time
+    }
+    if (!stopped) { timer = setTimeout(tick, every); timer.unref(); }
+  };
+  timer = setTimeout(tick, every);
+  timer.unref();
+  return () => { stopped = true; clearTimeout(timer); if (sess) sess.detach().catch(() => {}); };
+}
+
+/** openStage under openGuarded: b is a browser record (see openBrowser); its browser may be replaced once. */
+export function openPage(b, o, opts = {}) {
+  return openGuarded(b, (browser, track, pace) => openStage(browser, { ...o, pace, track }), opts);
 }
 
 // WebGL renderer strings of a CPU rasteriser: Chrome's SwiftShader, Mesa's llvmpipe/softpipe, Windows' WARP
@@ -48,19 +203,23 @@ export const SOFTWARE_GL = /swiftshader|llvmpipe|softpipe|basic render driver|\b
 export async function glRenderer(browser) {
   let context = null;
   try {
-    context = await browser.newContext({ viewport: { width: 64, height: 64 }, deviceScaleFactor: 1 });
-    const page = await context.newPage();
-    const renderer = await withTimeout(page.evaluate(() => {
-      const gl = document.createElement('canvas').getContext('webgl');
-      if (!gl) return '';
-      const ext = gl.getExtension('WEBGL_debug_renderer_info');
-      return String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
-    }), 15000, 'WebGL probe');
+    // one deadline for the whole probe: a browser that stopped answering (a busy machine) never answers
+    // newContext or newPage either, and the render must not wait for it here (it gets a new one for its page)
+    const renderer = await withTimeout((async () => {
+      context = await browser.newContext({ viewport: { width: 64, height: 64 }, deviceScaleFactor: 1 });
+      const page = await context.newPage();
+      return page.evaluate(() => {
+        const gl = document.createElement('canvas').getContext('webgl');
+        if (!gl) return '';
+        const ext = gl.getExtension('WEBGL_debug_renderer_info');
+        return String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+      });
+    })(), 30000, 'WebGL probe');
     return { renderer: renderer || 'none (no WebGL)', software: !renderer || SOFTWARE_GL.test(renderer) };
   } catch {
     return { renderer: 'unknown', software: null };
   } finally {
-    if (context) await context.close().catch(() => {});
+    if (context) await withTimeout(context.close(), 5000, 'closing the WebGL probe').catch(() => {});
   }
 }
 
@@ -111,7 +270,7 @@ export function withPacedTimeout(p, baseMs, label, pace) {
         const lim = baseWait(baseMs) * f;
         const left = lim - (Date.now() - t0);
         if (left <= 0) {
-          rej(new Error(`timed out after ${Math.round(lim / 1000)}s${f > 1 ? ` (x${f} for this page's pace)` : ''}: ${label}`));
+          rej(Object.assign(new Error(`timed out after ${Math.round(lim / 1000)}s${f > 1 ? ` (x${f} for this page's pace)` : ''}: ${label}`), { deadline: label }));
           return;
         }
         timer = setTimeout(tick, Math.min(left, 1000));
@@ -144,6 +303,7 @@ export function withPacedTimeout(p, baseMs, label, pace) {
 export async function openStage(browser, o) {
   const size = parseSize(o.size);
   o = o.pace ? o : { ...o, pace: newPace() };
+  const track = o.track || {};
   const opts = size ? { ...o, override: { ...(o.override || {}), width: size.width, height: size.height } } : o;
   const sess = await openStageOnce(browser, opts);
   const cfg = o.config || {};
@@ -153,6 +313,7 @@ export async function openStage(browser, o) {
     // the page set its own size with ST.config and nothing else did: reopen at that size, so snap,
     // check, studio frames and exports see the page as render does (a 1080x1080 page is not stretched)
     const w = sess.info.width, h = sess.info.height;
+    track.step = 'closing the page to reopen it at its own size';
     await sess.close();
     return openStageOnce(browser, { ...o, override: { ...(o.override || {}), width: w, height: h } });
   }
@@ -188,10 +349,13 @@ async function openStageOnce(browser, o) {
   // so downscaling happens in the capture (clip.scale); supersampling (> 1) uses the DSF.
   const dsf = scale > 1 ? scale : 1;
   const clipScale = scale < 1 ? scale : null;
+  const track = o.track || {};
+  track.step = 'creating the browser context';
   const context = await browser.newContext({
     viewport: { width, height }, deviceScaleFactor: dsf, colorScheme: 'light',
     reducedMotion: 'no-preference', locale: 'en-US', timezoneId: 'UTC', serviceWorkers: 'block',
   });
+  track.step = 'opening a tab';
   const page = await context.newPage();
   const log = { console: [], errors: [], requests: [], failed: [], blocked: [], http: [], cancelled: 0 };
   const ring = (arr, v, max = 200) => { arr.push(v); if (arr.length > max) arr.shift(); };
@@ -214,6 +378,7 @@ async function openStageOnce(browser, o) {
   });
   page.on('response', (r) => { if (r.status() >= 400) ring(log.http, { url: r.url(), status: r.status() }); });
   page.on('request', (r) => ring(log.requests, r.url(), 500));
+  track.step = 'setting up the tab';
   await page.route('**/*', (route) => {
     const u = route.request().url();
     if (isLocalUrl(u)) return route.continue();
@@ -233,6 +398,7 @@ async function openStageOnce(browser, o) {
   if (o.init) await page.addInitScript({ content: String(o.init) });
   const cdp = await context.newCDPSession(page);
   const target = `${o.url}/${String(o.page || 'index.html').replace(/^\/+/, '')}`;
+  track.step = 'loading the page';
   try {
     await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 60000 });
   } catch (e) {
@@ -248,6 +414,7 @@ async function openStageOnce(browser, o) {
     polling = page.evaluate(() => (window.ST && typeof window.ST.pace === 'function' ? window.ST.pace() : null))
       .then((r) => notePace(pace, r), () => {}).finally(() => { polling = null; });
   }, 1000);
+  track.step = 'waiting for the page to be ready';
   try {
     info = await withPacedTimeout(page.evaluate(() => window.ST.ready()), o.readyTimeout || 120000, 'the page never became ready', pace);
     notePace(pace, info && info.pace);
@@ -309,7 +476,7 @@ export function withTimeout(p, ms, label) {
   let timer;
   return Promise.race([
     p,
-    new Promise((_, rej) => { timer = setTimeout(() => rej(new Error(`timed out after ${Math.round(ms / 1000)}s: ${label}`)), ms); }),
+    new Promise((_, rej) => { timer = setTimeout(() => rej(Object.assign(new Error(`timed out after ${Math.round(ms / 1000)}s: ${label}`), { deadline: label })), ms); }),
   ]).finally(() => clearTimeout(timer));
 }
 
@@ -367,10 +534,21 @@ export async function pullScore(page, { duration, sampleRate = 48000 }) {
   return { channels, sampleRate: meta.sampleRate, peak: meta.peak };
 }
 
-/** A blank page served by our server, for image math (diffs, contact sheets, colour sampling). */
-export async function openLab(browser, url) {
+/**
+ * A blank page served by our server, for image math (diffs, contact sheets, colour sampling). b: a browser record
+ * (openBrowser; opened under openGuarded, its browser may be replaced once) or a bare Playwright browser.
+ */
+export async function openLab(b, url, opts = {}) {
+  if (b && b.browser) return openGuarded(b, (browser, track) => openLabOn(browser, url, track), { label: 'opening the image lab page', ...opts });
+  return openLabOn(b, url, {});
+}
+
+async function openLabOn(browser, url, track) {
+  track.step = 'creating the browser context';
   const context = await browser.newContext({ viewport: { width: 800, height: 600 }, deviceScaleFactor: 1 });
+  track.step = 'opening a tab';
   const page = await context.newPage();
+  track.step = 'loading the page';
   await page.goto(`${url}/_st/lab`, { waitUntil: 'load' });
   await page.addScriptTag({ content: LAB_JS });
   return {

@@ -172,6 +172,9 @@ All notable changes to showtime. Each entry says what changed and why, so this f
   - `guide --find` takes several words unquoted; the templates' sample URL is a reserved `.example` name; the site
     shows a stray placeholder tag as text instead of hiding the page; the critic is described as reviewing every
     video in quality mode; `history clear` also removes the signature picks.
+  - A browser that stops answering no longer hangs a command: every page showtime opens has a deadline (5 minutes,
+    longer for slow pages) and one retry in a new browser, and check exits with an error naming the step; a 3D look
+    whose WebGL context is lost stays in check's report with its fallback.
 
 ## 0.4.0 (2026-10-05)
 

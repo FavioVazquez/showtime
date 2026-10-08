@@ -10,7 +10,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { launchBrowser } from './lib/chrome.mjs';
+import { launchGuarded, openGuarded, closeSoon } from './lib/stagehost.mjs';
 import { parseCli, runMain, UserError, info, warn, c, jobDir, fmtDuration, printHelp, Progress } from './lib/cli.mjs';
 import { newCaptureContext, installConsent, waitConsent, cleanupOverlays, robustGoto, detectBotWall, blockedMarkdown, slug, sleep, serveStatic, landingProblem, redactUrl, chromeUA, emulatePlatform, hostPlatform } from './lib/capture.mjs';
 import { resolveFF, ffmpeg, fpsArg } from './lib/ff.mjs';
@@ -440,17 +440,25 @@ async function record(argv) {
   info(`${c.bold('demo record')} ${path.basename(scriptPath)} ${c.dim(`${viewport.width}x${viewport.height} @${dpr}x, ${fps} fps${baseUrl ? ', ' + baseUrl : ''}`)}`);
   if (server) info(c.dim(`  serving ${server.root} (plain static server, stopped when done)`));
   info(c.dim(`  output ${out}`));
-  const { browser } = await launchBrowser({ gpu: o.gpu, headless: !o.headed });
+  const B = await launchGuarded({ gpu: o.gpu, headless: !o.headed });
   let rec;
   try {
     const platform = String(o.platform || so.platform || hostPlatform()).toLowerCase();
-    const ctx = await newCaptureContext(browser, { css: viewport, dpr, mobile: false }, { dark: !!o.dark, reducedMotion: 'no-preference',
-      userAgent: chromeUA(browser.version(), { platform }) });
-    await emulatePlatform(ctx, platform);
+    // the context, the tab and its CDP session under the page-open deadline (once more in a new browser)
+    const { consentLog, page, cdp } = await openGuarded(B, async (browser, track) => {
+      track.step = 'creating the browser context';
+      const ctx = await newCaptureContext(browser, { css: viewport, dpr, mobile: false }, { dark: !!o.dark, reducedMotion: 'no-preference',
+        userAgent: chromeUA(browser.version(), { platform }) });
+      await emulatePlatform(ctx, platform);
+      track.step = 'setting up the consent clicker';
+      const consentLog = o['no-consent'] ? null : await installConsent(ctx);
+      track.step = 'opening a tab';
+      const page = await ctx.newPage();
+      track.step = 'opening the tab\'s CDP session';
+      const cdp = await ctx.newCDPSession(page);
+      return { consentLog, page, cdp, close: () => ctx.close() };
+    }, { label: 'opening the recording tab' });
     if (platform !== hostPlatform()) info(c.dim(`  the page sees ${platform} (recording on ${hostPlatform()})`));
-    const consentLog = o['no-consent'] ? null : await installConsent(ctx);
-    const page = await ctx.newPage();
-    const cdp = await ctx.newCDPSession(page);
     const animations = o.animations === 'real' ? 'real' : 'step';
     rec = new Recorder({ page, cdp, out, fps, dpr, viewport, baseUrl, quality: Math.min(100, Math.max(40, Number(o.quality))), animations });
     rec.consentLog = consentLog;
@@ -470,7 +478,7 @@ async function record(argv) {
     }
     if (!rec.n) throw new UserError('the script finished without recording any frame', 'add steps like `await demo.wait(1)` or `await demo.click(...)`');
   } finally {
-    await browser.close().catch(() => {});
+    await closeSoon(B.browser.close());
     if (server) { try { await server.close(); } catch { /* already closed */ } }
   }
   const duration = rec.n / fps;

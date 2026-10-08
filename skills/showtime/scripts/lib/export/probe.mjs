@@ -1,7 +1,7 @@
 // Probe a project for `showtime export html`: open it in render mode (live shader transitions, as
 // the exported player draws them), play through the timeline and record every file the page asks
 // the server for, the chapters, the poster frame and (on request) the offline ST.score.
-import { openBrowser, stageSource, isLocalUrl, withTimeout, pullScore } from '../stagehost.mjs';
+import { openBrowser, openGuarded, closeSoon, stageSource, isLocalUrl, withTimeout, pullScore } from '../stagehost.mjs';
 import { UserError } from '../cli.mjs';
 
 // Film.start() options are private to film.js; this hook keeps its `acts` (or `chapters`) for the
@@ -95,37 +95,46 @@ export async function probeProject(o) {
   const consoleErrors = [];
   const blocked = [];
   try {
-    const context = await b.browser.newContext({
-      viewport: { width, height }, deviceScaleFactor: 1, colorScheme: 'light', reducedMotion: 'no-preference',
-      locale: 'en-US', timezoneId: 'UTC', serviceWorkers: 'block',
-    });
-    const page = await context.newPage();
-    page.on('request', (r) => {
-      const u = r.url();
-      if (!u.startsWith(origin + '/')) return;
-      const p = decodeURIComponent(new URL(u).pathname);
-      if (!seen.has(p)) { seen.add(p); requests.push(p); firstAt.set(p, curT); }
-    });
-    page.on('response', (r) => {
-      if (r.status() >= 400 && r.url().startsWith(origin + '/')) failed.push({ path: decodeURIComponent(new URL(r.url()).pathname), status: r.status() });
-    });
-    page.on('pageerror', (e) => errors.push(String(e.message || e).slice(0, 400)));
-    page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text().slice(0, 400)); });
-    await page.route('**/*', (route) => {
-      const u = route.request().url();
-      if (isLocalUrl(u)) return route.continue();
-      if (!blocked.includes(u)) blocked.push(u);
-      return route.abort('blockedbyclient');
-    });
-    const seed = cfg.seed === undefined ? 1 : cfg.seed;
-    const renderCfg = { config: cfg, override: null, alpha: false, settle: 'raf1', layers: false, seed };
-    await page.addInitScript({ content: `window.__ST_RENDER__=${JSON.stringify(renderCfg)};\n${FILM_HOOK}\n${stageSource()}` });
-    const target = `${o.url}/${String(o.page || 'index.html').replace(/^\/+/, '')}`;
-    try {
-      await page.goto(target, { waitUntil: 'load', timeout: 60000 });
-    } catch (e) {
-      throw new UserError(`could not open ${target}: ${e.message.split('\n')[0]}`);
-    }
+    // the context, the tab and the first load under the page-open deadline (once more in a new browser)
+    const { context, page } = await openGuarded(b, async (browser, track) => {
+      for (const list of [requests, failed, errors, consoleErrors, blocked]) list.length = 0;
+      seen.clear(); firstAt.clear();
+      track.step = 'creating the browser context';
+      const context = await browser.newContext({
+        viewport: { width, height }, deviceScaleFactor: 1, colorScheme: 'light', reducedMotion: 'no-preference',
+        locale: 'en-US', timezoneId: 'UTC', serviceWorkers: 'block',
+      });
+      track.step = 'opening a tab';
+      const page = await context.newPage();
+      page.on('request', (r) => {
+        const u = r.url();
+        if (!u.startsWith(origin + '/')) return;
+        const p = decodeURIComponent(new URL(u).pathname);
+        if (!seen.has(p)) { seen.add(p); requests.push(p); firstAt.set(p, curT); }
+      });
+      page.on('response', (r) => {
+        if (r.status() >= 400 && r.url().startsWith(origin + '/')) failed.push({ path: decodeURIComponent(new URL(r.url()).pathname), status: r.status() });
+      });
+      page.on('pageerror', (e) => errors.push(String(e.message || e).slice(0, 400)));
+      page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text().slice(0, 400)); });
+      await page.route('**/*', (route) => {
+        const u = route.request().url();
+        if (isLocalUrl(u)) return route.continue();
+        if (!blocked.includes(u)) blocked.push(u);
+        return route.abort('blockedbyclient');
+      });
+      const seed = cfg.seed === undefined ? 1 : cfg.seed;
+      const renderCfg = { config: cfg, override: null, alpha: false, settle: 'raf1', layers: false, seed };
+      await page.addInitScript({ content: `window.__ST_RENDER__=${JSON.stringify(renderCfg)};\n${FILM_HOOK}\n${stageSource()}` });
+      const target = `${o.url}/${String(o.page || 'index.html').replace(/^\/+/, '')}`;
+      track.step = 'loading the page';
+      try {
+        await page.goto(target, { waitUntil: 'load', timeout: 60000 });
+      } catch (e) {
+        throw new UserError(`could not open ${target}: ${e.message.split('\n')[0]}`);
+      }
+      return { context, page, close: () => context.close() };
+    }, { label: 'opening the page to probe it' });
     let info;
     try {
       info = await withTimeout(page.evaluate(() => window.ST.ready()), 120000, 'the page never became ready');
@@ -218,10 +227,10 @@ export async function probeProject(o) {
 
     let score = null;
     if (o.wantScore && info.hasScore) score = await pullScore(page, { duration: D, sampleRate: 48000 });
-    await context.close().catch(() => {});
+    await closeSoon(context.close());
     return { info, requests, failed, errors, consoleErrors, blocked, chapters, poster, posterT, score, samples: list.length, domText, look, canvasFonts };
   } finally {
-    await b.browser.close().catch(() => {});
+    await closeSoon(b.browser.close());
   }
 }
 

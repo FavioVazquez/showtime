@@ -9,7 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { startServer } from '../../server.mjs';
-import { openBrowser, openStage } from '../stagehost.mjs';
+import { openBrowser, openPage } from '../stagehost.mjs';
 
 export async function captureFrames({ root, page, config = {}, override = null, shots, width = 1280, thumbWidth = 480, quality = 90, gpu = 'auto' }) {
   const server = await startServer({ root, port: 0 });
@@ -20,7 +20,7 @@ export async function captureFrames({ root, page, config = {}, override = null, 
     const groups = new Map();
     for (const s of shots) { const k = s.query || ''; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(s); }
     for (const [query, list] of groups) {
-      const sess = await openStage(b.browser, { url: server.url, page: page + query, config, override });
+      const sess = await openPage(b, { url: server.url, page: page + query, config, override });
       try {
         const W = sess.width;
         for (const s of list) {

@@ -204,7 +204,7 @@ async function main() {
     const image = path.join(outDir, `look-${n}.jpg`);
 
     if (!shared.serverUrl) { labServer = await startServer({ root: tmpRoot, port: 0 }); shared.serverUrl = labServer.url; }
-    lab = await openLab((await shared.browser()).browser, shared.serverUrl);
+    lab = await openLab(await shared.browser(), shared.serverUrl);
     const width = Math.max(320, Math.min(3840, Number(a.width || 1280)));
     const k = frames.length;
     const vertical = H > W;

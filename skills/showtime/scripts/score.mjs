@@ -4,7 +4,7 @@ import path from 'node:path';
 import { startServer } from './server.mjs';
 import { parseCli, runMain, resolveProject, jobDir, freshPath, info, warn, c, fmtDuration, UserError } from './lib/cli.mjs';
 import { enclosingJob } from './lib/studio/paths.mjs';
-import { openBrowser, openStage, pullScore } from './lib/stagehost.mjs';
+import { openBrowser, openPage, pullScore } from './lib/stagehost.mjs';
 import { measureLoudness, writeWavFloat } from './lib/ff.mjs';
 
 const SPEC = {
@@ -90,7 +90,7 @@ async function main() {
   let report;
   try {
     b = await openBrowser({ gpu: 'auto' });
-    s = await openStage(b.browser, { url: server.url, page: proj.page, config: proj.config });
+    s = await openPage(b, { url: server.url, page: proj.page, config: proj.config });
     const dur = s.info.duration;
     if (!s.info.hasScore) {
       throw new UserError('this project has no ST.score',

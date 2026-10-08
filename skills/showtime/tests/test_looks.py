@@ -13,7 +13,11 @@ marble, metaballs).
     the WebGL one; the metaballs fallback still moves, the others are still
   * `showtime check` warns when a look costs more per frame without a GPU than runtime/thresholds.json
     "look_budget_ms" (a tilt-shift at full size over a box larger than 1080p; a marble at twice the size) and stays
-    quiet for the defaults (each of the newer looks at 1080p estimates under the budget)
+    quiet for the defaults (each of the newer looks at 1080p estimates under the budget); every look is in the
+    report in every run, and a run where this browser's GPU gave a look no WebGL says so (the budget is then
+    checked with --gpu off, the cost without a GPU it describes)
+  * a WebGL context lost while a look builds its shaders (a GPU reset) does not drop the look: it draws its
+    fallback, and check reports it (look_lost) with its passes' cost
   * WebGL contexts (Chrome keeps about 16 per page): 20 looks in one scene all draw (none white or empty) and
     check fails the page with look_contexts; 20 scenes with a look each draw every scene, give the same frames
     with 1 and 3 workers, pass check's shuffled-order probe, and count one look on screen at a time
@@ -286,21 +290,75 @@ class LooksTests(unittest.TestCase):
     style="inset:auto;left:0;top:0;width:2400px;height:1350px" id="big"></div></div>
   <div class="p" style="left:50%%;width:50%%"><div data-st="tilt-shift" data-src="media/plate.png" id="small"></div></div>"""
         proj = self.project("budget", page(body=body.replace("%%", "%")))
-        rep = check(proj)
-        # the summary names each look's cost too (it was only in report.json)
-        cp = showtime("check", proj, "--no-determinism", "--no-timeline", "--no-history", "--samples", "2", check=False)
-        line = re.search(r"looks\s+(.+ per frame without a GPU \(budget 50 ms\))", cp.stdout)
-        self.assertTrue(line, cp.stdout)
-        self.assertRegex(line.group(1), r"tilt-shift #big [\d.]+ ms \(over\)")
-        self.assertRegex(line.group(1), r"tilt-shift #small [\d.]+ ms(,| per)")
-        items = {x["sel"]: x for x in (rep.get("looks") or {}).get("items", [])}
-        self.assertIn("#big", items, items)
+
+        def runs(*extra):
+            rep = check(proj, *extra)
+            # the summary names each look's cost too (it was only in report.json)
+            cp = showtime("check", proj, "--no-determinism", "--no-timeline", "--no-history", "--samples", "2", *extra,
+                          check=False)
+            line = re.search(r"looks\s+(.+ per frame without a GPU \(budget 50 ms\))", cp.stdout)
+            self.assertTrue(line, cp.stdout)
+            items = {x["sel"]: x for x in (rep.get("looks") or {}).get("items", [])}
+            # every look is in the report, a look that fell back here too (one whose WebGL context went while it
+            # set up once vanished from it: macOS runner, a GPU reset)
+            self.assertEqual(set(items), {"#big", "#small"}, items)
+            fell = sorted(s for s, x in items.items() if not x["gl"])
+            for s in fell:
+                self.assertTrue(items[s]["note"], items[s])
+                self.assertTrue([f for f in rep["findings"] if f["code"] in ("look_fallback", "look_lost") and s in f["message"]],
+                                (s, rep["findings"]))
+            return rep, line.group(1), items, fell or "fallback" in line.group(1)
+
+        rep, line, items, fell = runs()
+        if fell:
+            # this browser had no WebGL for a look in one of the runs (the GPU's own path: the macOS runner's
+            # virtual GPU resets now and then), and the report said so above. The budget is the cost without a
+            # GPU: measured where it is defined, Chrome's SwiftShader, which has WebGL on every machine
+            print("  (WebGL fell back on this GPU for a look: %s; the budget is checked with --gpu off)" % line,
+                  file=sys.stderr)
+            rep, line, items, fell = runs("--gpu", "off")
+            self.assertFalse(fell, (line, items))
+        self.assertRegex(line, r"tilt-shift #big [\d.]+ ms \(over\)")
+        self.assertRegex(line, r"tilt-shift #small [\d.]+ ms(,| per)")
         self.assertGreater(items["#big"]["ms"], 50, items["#big"])
         self.assertLess(items["#small"]["ms"], 50, items["#small"])
         warn = [f for f in rep["findings"] if f["code"] == "look_budget"]
         self.assertEqual(len(warn), 1, warn)
         self.assertIn("#big", warn[0]["message"])
         self.assertIn("data-scale", warn[0].get("fix", ""))
+
+    def test_04b_context_lost_while_setting_up(self):
+        """A GPU reset while a look builds its shaders (its context lost, every later request null, as on the macOS
+        runner once): the look is not dropped from check's report (its shader read as failed to compile, its setup
+        threw), it draws its fallback and the report says so, with its passes' cost kept."""
+        crash = """<script>
+  (function () { var g = HTMLCanvasElement.prototype.getContext, n = 0;
+    HTMLCanvasElement.prototype.getContext = function (t, o) {
+      if (!/webgl/i.test(String(t)) || this.className !== 'st-look-canvas') return g.call(this, t, o);
+      if (++n > 1) return null;
+      var c = g.call(this, t, o);
+      if (c) { var e = c.getExtension('WEBGL_lose_context'), cs = c.compileShader.bind(c);
+        c.compileShader = function (x) { if (e) e.loseContext(); return cs(x); }; }
+      return c;
+    }; })();
+</script>"""
+        body = """
+  <div class="p" style="left:0;width:50%"><div data-st="tilt-shift" data-src="media/plate.png" id="one"></div></div>
+  <div class="p" style="left:50%;width:50%"><div data-st="tilt-shift" data-src="media/plate.png" id="two"></div></div>"""
+        proj = self.project("lostsetup", page(extra_head=crash, body=body))
+        rep = check(proj)
+        items = {x["sel"]: x for x in (rep.get("looks") or {}).get("items", [])}
+        self.assertEqual(set(items), {"#one", "#two"}, items)
+        self.assertFalse(any(x["gl"] for x in items.values()), items)
+        lost = [x for x in items.values() if x["lost"]]
+        self.assertEqual(len(lost), 1, items)
+        self.assertEqual(lost[0]["lost"], 1, lost[0])   # one reset is one loss, not one per place that sees it
+        self.assertGreater(lost[0]["ms"], 0, lost[0])
+        self.assertIn("lost", lost[0]["note"])
+        codes = {(f["code"], s) for f in rep["findings"] for s in items if s in f["message"]}
+        self.assertIn(("look_lost", lost[0]["sel"]), codes, rep["findings"])
+        failed = [w for w in rep["diag"]["waits"] if w["state"].startswith("failed")]
+        self.assertEqual(failed, [], "a look's setup threw")
 
     # ------------------------------------------- WebGL contexts (Chrome keeps about 16 per page)
     def gray(self, png_path, w, h):

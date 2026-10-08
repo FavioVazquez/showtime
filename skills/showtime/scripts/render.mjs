@@ -10,7 +10,7 @@ import {
   parseTime, runPyCli, hasPyModule, UserError, progressLog, briefOutput, sinceLastLooked, printSince,
 } from './lib/cli.mjs';
 import { checkFreshness } from './lib/lean.mjs';
-import { openBrowser, openStage, writeDiagnostics, pullScore, parseSize, glRenderer, withTimeout, withPacedTimeout, newPace, paceSummary } from './lib/stagehost.mjs';
+import { openBrowser, openStage, openPage, abandonBrowser, PAGE_OPEN_MS, writeDiagnostics, pullScore, parseSize, glRenderer, withTimeout, withPacedTimeout, newPace, paceSummary } from './lib/stagehost.mjs';
 import { resolveFF, ffmpeg, probe, ebur128, writeWavFloat, fpsArg, hasEncoder, setLogFile, logLine, meanFrameDiff, JPEG_VF } from './lib/ff.mjs';
 import { CaptureQueue, OrderedFeed, autoWorkers, machineLimits } from './lib/pipeline.mjs';
 import { renderFlags } from './lib/chrome.mjs';
@@ -321,7 +321,12 @@ async function main() {
     const outW = even(base * scale);
     scale = outW / base;
     openOpts.scale = scale;
-    const s0 = await openStage(b0.browser, openOpts);
+    // every page render opens has the page-open deadline (stagehost openGuarded: PAGE_OPEN_MS, times the page's
+    // pace factor); the first one, past it, is tried once more in a new browser (b0 itself is updated); a
+    // worker's page has its own retries (openWorkerPage below)
+    const firstRetry = (m) => { warn(m); logLine(`first page: ${m}`); };
+    const openFirst = (opts) => openPage(b0, opts, { onRetry: firstRetry });
+    const s0 = await openFirst(openOpts);
     sessions.push(s0);
     const inf = s0.info;
     if (inf.width !== base || inf.height !== baseH) {
@@ -332,7 +337,7 @@ async function main() {
       const outW2 = even(inf.width * (a.scale !== undefined ? Number(a.scale) : (a.preview ? Math.min(1, 720 / Math.min(inf.width, inf.height)) : 1)));
       openOpts.scale = outW2 / inf.width;
       openOpts.config = cfg;
-      sessions.push(await openStage(b0.browser, openOpts));
+      sessions.push(await openFirst(openOpts));
     }
     const info0 = sessions[0].info;
     timings.load = Date.now() - t;
@@ -614,11 +619,8 @@ async function main() {
 
     const wsess = [sessions[0]];   // one page per worker, kept across its runs
     const drawn = [];              // per worker: the frame after the last one its page drew (null: a new page)
-    // a worker's page. A browser that never answers while it opens one (seen on a very busy machine: the
-    // render waited 14 minutes) is closed after 5 minutes (longer than the page load and ready timeouts
-    // inside; times the page's pace factor, which the page reports while it gets ready) and replaced; frames
-    // go only to a worker whose page is open, so a stuck one never holds frames
-    const OPEN_MS = 300000;
+    // a worker's page. A browser that never answers while it opens one is closed after PAGE_OPEN_MS and
+    // replaced; frames go only to a worker whose page is open, so a stuck one never holds frames
     // (SHOWTIME_SHOT_TIMEOUT=S shortens it: the stuck-browser test)
     const SHOT_MS = Number(process.env.SHOWTIME_SHOT_TIMEOUT) > 0 ? Number(process.env.SHOWTIME_SHOT_TIMEOUT) * 1000 : 600000;
     // a frame whose write failed (disk full, an I/O error) may leave a partial file: it is re-captured after
@@ -636,15 +638,17 @@ async function main() {
     const openWorkerPage = async (w) => {
       if (!browsers[w] || !browsers[w].browser.isConnected()) browsers[w] = await openBrowser({ gpu, ownSignals: true, args: renderFlags() });
       const pace = newPace();
-      const p = openStage(browsers[w].browser, { ...openOpts, pace });
+      const track = { step: 'starting' };
+      const p = openStage(browsers[w].browser, { ...openOpts, pace, track });
       let sess;
       try {
-        sess = await withPacedTimeout(p, OPEN_MS, `opening the page in worker ${w}`, pace);
+        sess = await withPacedTimeout(p, PAGE_OPEN_MS, `opening the page in worker ${w}`, pace);
       } catch (e) {
+        if (e && e.deadline) e.message += ` (stuck at: ${track.step})`;
         p.then((x) => x.close(), () => {});
         const b = browsers[w];
         browsers[w] = null;
-        if (b) b.browser.close().catch(() => {});
+        if (b) abandonBrowser(b);   // closed if it can, its process killed
         throw e;
       }
       sessions.push(sess);
@@ -721,7 +725,7 @@ async function main() {
             const b = browsers[w];
             browsers[w] = null;
             if (sess) closeSoon(sess.close(), 5000);
-            if (b) closeSoon(b.browser.close(), 10000);
+            if (b) abandonBrowser(b);
           } else {
             if (sess) await closeSoon(sess.close());
             if (browsers[w] && !browsers[w].browser.isConnected()) browsers[w] = null;
@@ -772,7 +776,7 @@ async function main() {
       addWarn(`${missing.length} frame(s) missing after capture; re-capturing`);
       const b = await openBrowser({ gpu, ownSignals: true, args: renderFlags() });
       browsers.push(b);
-      const sess = await openStage(b.browser, openOpts);
+      const sess = await openPage(b, openOpts, { onRetry: (m) => { warn(m); logLine(m); } });
       sessions.push(sess);
       for (const i of missing) {
         await sess.seek(i / fps);
@@ -1265,7 +1269,8 @@ async function buildAudio({ proj, cfg, info, browser, openOpts, audioDir, from, 
   // 1) ST.score, rendered offline in its own page
   if (info.hasScore) {
     const t = Date.now();
-    const sess = await openStage(browser, { ...openOpts, scale: 1 });
+    // the page-open deadline; past it this attempt fails and render's audio retry starts a new browser
+    const sess = await openPage({ browser }, { ...openOpts, scale: 1 }, { label: 'opening the page for the soundtrack' });
     try {
       const sc = await pullScore(sess.page, { duration: fullDur, sampleRate: 48000 });
       if (sc) {

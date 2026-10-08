@@ -123,7 +123,7 @@ async function main() {
     const all = [...new Set([...atTimes.map(q), ...sheetTimes].map((x) => +x.toFixed(6)))].sort((x, y) => x - y);
     // the lab page (sheets, resizing) is served by the project server, or a tiny one for video files
     if (!shared.serverUrl) { labServer = await startServer({ root: tmpRoot, port: 0 }); shared.serverUrl = labServer.url; }
-    lab = await openLab((await shared.browser()).browser, shared.serverUrl);
+    lab = await openLab(await shared.browser(), shared.serverUrl);
     const shots = new Map();
     // keys are rounded to 6 decimals; seek the exact frame time (k / fps): a rounded time can fall a hair
     // before the frame boundary, and the stage floors it to the previous frame

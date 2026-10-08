@@ -285,6 +285,16 @@ function material(gl, h) {
   }
 }
 
+/**
+ * material() on a context that may be gone: true when built. A context the browser took back while a look built
+ * on it (a GPU process that crashed or reset; seen on the macOS CI runner's virtual GPU) does nothing and reads
+ * every shader as failed with no log (null): that is no context, not a broken shader, so it is false here and
+ * the look gets a new context (or its fallback) when it draws, keeping its place in check's report.
+ */
+function buildOn(gl, h) {
+  try { material(gl, h); return true; } catch (e) { if (gl.isContextLost()) return false; throw e; }
+}
+
 /* ---------------------------------------------- frames read back on a GPU */
 
 // In a render on a GPU the screenshot of a WebGL canvas can come out stale: the compositor reads the canvas's
@@ -314,6 +324,14 @@ export function lookLayer(el, { name, scale = 1, alpha = false, fallback = null 
   const readback = readbackHere();
   // what check reports (looks[].present): 'readback' (a 2D canvas the frames are read into) or 'webgl'
   el.__stLookPresent = readback ? 'readback' : 'webgl';
+  // one lost context is one loss, whichever of the event, the failed build and the failed re-acquire sees it first
+  // (a look's record exists only once its setup is done: a loss before that waits for the event or for draw())
+  const countLost = (canvas) => {
+    const rec = el.__stLook;
+    if (!rec || (canvas && canvas.__stCounted)) return;
+    if (canvas) canvas.__stCounted = true;
+    rec.lost = (rec.lost || 0) + 1;
+  };
   const layer = {
     el, gl: null, glc: null, canvas: null, ctx: null, px: null, buf: null, W, H, dpr, scale, box: [bw, bh], used: 0, failed: false, readback,
     /** Get a context (a new canvas each time) and build every handle on it. false when WebGL cannot be had. */
@@ -328,11 +346,11 @@ export function lookLayer(el, { name, scale = 1, alpha = false, fallback = null 
       canvas.setAttribute('aria-hidden', 'true');
       let gl = null;
       try { gl = canvas.getContext('webgl', opts) || canvas.getContext('experimental-webgl', opts); } catch { gl = null; }
-      if (!gl) return false;
+      if (!gl || gl.isContextLost()) return false;
       // a context the browser takes back (too many at once, a GPU reset) is reported: check says look_lost
       canvas.addEventListener('webglcontextlost', () => {
         if (canvas.__stReleased) return;
-        if (el.__stLook) el.__stLook.lost = (el.__stLook.lost || 0) + 1;
+        countLost(canvas);
         if (layer.glc === canvas) { layer.gl = null; LIVE.delete(layer); }
       });
       if (readback) {
@@ -355,7 +373,7 @@ export function lookLayer(el, { name, scale = 1, alpha = false, fallback = null 
       layer.buf = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, layer.buf);
       gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
-      for (const h of handles) material(gl, h);
+      for (const h of handles) if (!buildOn(gl, h)) { layer.gl = null; return false; }
       LIVE.add(layer);
       hookSeeks();
       return true;
@@ -384,11 +402,13 @@ export function lookLayer(el, { name, scale = 1, alpha = false, fallback = null 
       const ext = gl.getExtension('WEBGL_lose_context');
       if (ext) ext.loseContext();
     },
+    /** The context went while a handle was built on it: let it go; draw() gets a new one or the fallback. */
+    dropLost() { countLost(layer.glc); LIVE.delete(layer); layer.gl = null; },
     /** defines: {NAME: value} become #define lines, for variants compiled apart instead of branched per pixel */
     program(frag, defines = {}) {
       const h = { kind: 'program', name, frag, defines, prog: null, aPos: -1, loc: {} };
       handles.push(h);
-      if (layer.gl) material(layer.gl, h);
+      if (layer.gl && !buildOn(layer.gl, h)) layer.dropLost();
       return h;
     },
     /** Upload an image or canvas. mips: draw it into a power-of-two canvas first and build mipmaps. */
@@ -401,14 +421,14 @@ export function lookLayer(el, { name, scale = 1, alpha = false, fallback = null 
         try { gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source); } catch { /* keep the last */ }
       } };
       handles.push(h);
-      if (layer.gl) material(layer.gl, h);
+      if (layer.gl && !buildOn(layer.gl, h)) layer.dropLost();
       return h;
     },
     /** An offscreen RGBA target of w x h px (linear filtering, clamped). */
     target(w, h) {
       const t = { kind: 'target', name, w, h, tex: null, fb: null };
       handles.push(t);
-      if (layer.gl) material(layer.gl, t);
+      if (layer.gl && !buildOn(layer.gl, t)) layer.dropLost();
       return t;
     },
     /**
@@ -420,7 +440,10 @@ export function lookLayer(el, { name, scale = 1, alpha = false, fallback = null 
         // no context to be had any more: the look's still fallback, once
         layer.failed = true;
         if (layer.canvas) layer.canvas.style.visibility = 'hidden';
-        if (el.__stLook) { el.__stLook.lost = (el.__stLook.lost || 0) + 1; el.__stLook.gl = false; }
+        if (el.__stLook) {
+          countLost(layer.glc); el.__stLook.gl = false; el.__stLook.present = null;
+          el.__stLook.note = 'WebGL context lost and no new one to be had: drew the fallback';
+        }
         if (fallback) fallback();
       }
       const gl = layer.gl;

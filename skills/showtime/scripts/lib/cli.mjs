@@ -98,6 +98,17 @@ export async function runMain(main) {
   }
 }
 
+/**
+ * End the command now with an error, in runMain's words (for a watchdog: the command's own work is stuck in a
+ * call that never returns, so it cannot throw).
+ */
+export function failNow(message, hint) {
+  PLOG.error = String(message).split('\n')[0].slice(0, 300);
+  process.stderr.write(`${c.red(`${CMD}: error:`)} ${message}\n`);
+  if (hint) process.stderr.write(`  ${c.bold('fix:')} ${hint}\n`);
+  process.exit(1);
+}
+
 /** Known failure patterns -> one-line fixes. */
 export function hintFor(msg) {
   const m = String(msg);

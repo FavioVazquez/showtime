@@ -57,9 +57,9 @@ Run `showtime motion` for the live list.
 | 4. Data: chart, world-map | 220-271 |
 | 5. Product and UI: browser-frame / device-frame, cursor and keystrokes, code-block, ... | 273-335 |
 | 6. Camera, stills, closers, texture | 337-378 |
-| 7. Looks (WebGL): fluted-glass, tilt-shift, liquid-metal, mesh-gradient, god-rays, marble, metaballs | 380-549 |
-| 8. Themes (runtime/themes) | 551-564 |
-| 9. Writing your own component | 566-585 |
+| 7. Looks (WebGL): fluted-glass, tilt-shift, liquid-metal, mesh-gradient, god-rays, marble, metaballs | 380-550 |
+| 8. Themes (runtime/themes) | 552-565 |
+| 9. Writing your own component | 567-586 |
 
 ## 1. Setup (two lines) and the time model
 
@@ -421,7 +421,8 @@ with its render: the `_looks` demo in the showtime repository's examples folder.
   when a seek comes back, so a long reel can have a look in every scene. Chrome keeps about 16 contexts per
   page: `check` warns (`look_contexts`) above 8 looks on screen at once and fails above 14; past 12 at once
   the oldest give theirs back and show a still copy of their frame. A context the browser takes back anyway
-  is `look_lost`.
+  (also one lost while the look builds its shaders: a GPU reset) is `look_lost`; the look draws again on a new
+  one or shows its fallback, and keeps its place and its cost in check's report.
 - **With a GPU.** A GPU can hand the screenshot a WebGL canvas it has not finished drawing (the frame then shows
   the look a few frames back), so in a render on a GPU each look reads its frame back into a 2D canvas the page
   shows; `check` lists it as `present: "readback"`. It adds about 10 ms to a 1080p frame of a full-frame look

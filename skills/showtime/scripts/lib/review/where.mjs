@@ -162,18 +162,18 @@ function sessions() {
     const p = (async () => {
       const { resolveProject } = await import('../cli.mjs');
       const { startServer } = await import('../../server.mjs');
-      const { openBrowser, openStage } = await import('../stagehost.mjs');
+      const { openBrowser, openPage } = await import('../stagehost.mjs');
       const P = resolveProject(proj.dir, { page: proj.page });
       if (!shared) shared = openBrowser({ gpu: 'auto' });
       const b = await shared;
       const server = await startServer({ root: P.dir, port: 0 });
       try {
-        let sess = await openStage(b.browser, { url: server.url, page: P.page, config: P.config });
+        let sess = await openPage(b, { url: server.url, page: P.page, config: P.config });
         // a render at another aspect (render --size): open the page at the video's size
         const va = proj.width > 0 && proj.height > 0 ? proj.width / proj.height : 0;
         if (va && Math.abs(sess.info.width / sess.info.height - va) > 0.01) {
           await sess.close();
-          sess = await openStage(b.browser, { url: server.url, page: P.page, config: P.config, size: `${proj.width}x${proj.height}` });
+          sess = await openPage(b, { url: server.url, page: P.page, config: P.config, size: `${proj.width}x${proj.height}` });
         }
         return { sess, server };
       } catch (e) { await server.close().catch(() => {}); throw e; }

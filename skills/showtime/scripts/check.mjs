@@ -7,8 +7,8 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { startServer } from './server.mjs';
-import { parseCli, runMain, resolveProject, info, c, fmtTime, fmtDuration, parseTimes, parseTime, UserError, cpuCount, workName, briefOutput, runPyCli, hasPyModule, sinceLastLooked, printSince } from './lib/cli.mjs';
-import { openBrowser, openStage, openLab, parseSize, paceSummary } from './lib/stagehost.mjs';
+import { parseCli, runMain, failNow, resolveProject, info, c, fmtTime, fmtDuration, parseTimes, parseTime, UserError, cpuCount, workName, briefOutput, runPyCli, hasPyModule, sinceLastLooked, printSince } from './lib/cli.mjs';
+import { openBrowser, openPage, openLab, parseSize, paceSummary, watchBrowser, closeSoon, STUCK_HINT } from './lib/stagehost.mjs';
 import { textSnapshot, hideText, fontInfo, leafAlpha, captionCollisions, gpuProbeScript } from './lib/audit.mjs';
 import { phoneConfig, createPhone, readNeed, readingRate, ptOf, phoneLine } from './lib/phone.mjs';
 import { brandFindings } from './lib/brandcheck.mjs';
@@ -169,8 +169,11 @@ const snip = (s, n = 40) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
 export function looksLine(looks) {
   const items = (looks && looks.items) || [];
   if (!items.length) return '';
+  // a look that lost its WebGL context after it set up keeps its passes' cost, and says it fell back here
   const one = (lk) => `${lk.look}${items.filter((x) => x.look === lk.look).length > 1 && lk.sel ? ` ${lk.sel}` : ''} ` +
-    (lk.gl && Number.isFinite(Number(lk.ms)) ? `${Number(lk.ms)} ms${Number(lk.ms) > looks.budget_ms ? ' (over)' : ''}` : 'fallback (no WebGL)');
+    ((lk.gl || Number(lk.ms) > 0) && Number.isFinite(Number(lk.ms))
+      ? `${Number(lk.ms)} ms${Number(lk.ms) > looks.budget_ms ? ' (over)' : ''}${lk.gl ? '' : ' (WebGL lost: fallback here)'}`
+      : 'fallback (no WebGL)');
   return `${items.map(one).join(', ')} per frame without a GPU (budget ${looks.budget_ms} ms)`;
 }
 
@@ -189,13 +192,21 @@ async function main() {
   const add = (sev, code, message, extra = {}) => findings.push({ severity: sev, code, message, ...extra });
   const quiet = !!a.quiet;
   const talk = !quiet && !a.json && !briefOutput();   // progress steps: terminals and --verbose only
-  const step = (m) => { if (talk) info(c.dim(`  ${m}`)); };
+  let doing = 'opening the page';   // check's last step (the watchdog's error names it)
+  const step = (m) => { doing = m; if (talk) info(c.dim(`  ${m}`)); };
   if (talk) info(`${c.bold('showtime check')} ${proj.dir}`);
 
   const server = await startServer({ root: proj.dir, port: 0 });
   const b = await openBrowser({ gpu: a.gpu || 'auto' });
-  const cleanup = async () => { await b.browser.close().catch(() => {}); await server.close().catch(() => {}); };
+  // every page opens under the page-open deadline (stagehost openGuarded: once more in a new browser, then an
+  // error naming the step), and a browser that stops answering at any other step ends check with an error
+  // instead of a check that never returns (a macOS CI runner's check once outlived its caller's 5 minutes)
+  const stopWatch = watchBrowser(b, (m, hint) => failNow(`${m}; check's last step: ${doing}`, hint));
+  const cleanup = async () => { stopWatch(); await closeSoon(b.browser.close()); await server.close().catch(() => {}); };
   let sess, lab, sess2;
+  // once the first page is open, a later open that finds the browser stuck must not go on in a new one (the open
+  // page belongs to the old browser): end with the error
+  const noRelaunch = { onRetry: (m, what) => failNow(`the browser stopped answering: ${what}; check's last step: ${doing}`, STUCK_HINT) };
   let phone = null, floorPx = TINY * 1080, ranTimeline = false;   // the phone check's collector; smallest readable size in frame px
   let reel = { on: false, source: 'default', detail: '' };          // the showreel tone (showtime.json tone, the job's tone or its brief)
   const report = { project: proj.dir, page: proj.page, ok: false, findings, timings: {}, samples: [] };
@@ -212,11 +223,13 @@ async function main() {
     // ---------------------------------------------------------- load
     let t = Date.now();
     try {
-      sess = await openStage(b.browser, { url: server.url, page: proj.page, config: proj.config, size, init: gpuProbeScript(false) });
+      sess = await openPage(b, { url: server.url, page: proj.page, config: proj.config, size, init: gpuProbeScript(false) });
     } catch (e) {
+      if (e && e.browserStuck) throw e;   // the browser, not the page: an error, not a finding
       add('error', 'ready_failed', String(e.message || e), { fix: e.hint || 'open the page with `showtime preview` and look at the console' });
       return await finish();
     }
+    doing = 'opened the page; reading its timeline and text';
     const inf = sess.info;
     // an overlay page (rendered with --alpha over other footage: lower thirds, step chips) is empty
     // between its elements on purpose: <body data-overlay> or showtime.json "overlay": true
@@ -242,7 +255,9 @@ async function main() {
       .map((e) => (e.closest('[data-storyboard-shot]') || e.closest('[id]') || {}).id || '?'))]).catch(() => []);
     if (briefs.length) add('warning', 'storyboard_brief', `${briefs.length} shot(s) still show their storyboard brief instead of a picture: ${briefs.slice(0, 8).join(', ')}${briefs.length > 8 ? ', ...' : ''}`,
       { fix: 'build each shot in its <section> from its brief (storyboard.json has every row), then delete the [data-storyboard-brief] elements' });
-    lab =await openLab(b.browser, server.url);
+    doing = 'opening the image lab page';
+    lab = await openLab(b, server.url, noRelaunch);
+    doing = 'opened the image lab page; sampling the frames';
     const D = inf.duration, fps = inf.fps, W = inf.width, H = inf.height;
     // language of the on-screen text (sets the reading speed): showtime.json "lang", else <html lang>, else en
     const pageLang = await sess.page.evaluate(() => document.documentElement.getAttribute('lang') || '').catch(() => '');
@@ -922,7 +937,7 @@ async function main() {
         const hashes = [];
         const cross = [];
         try {
-          sess2 = await openStage(b.browser, { url: server.url, page: proj.page, config: proj.config, size });
+          sess2 = await openPage(b, { url: server.url, page: proj.page, config: proj.config, size }, noRelaunch);
           for (let i = uniq.length - 1; i >= 0; i--) {
             if (!A[i]) continue;
             await sess2.seek(uniq[i]);
@@ -936,8 +951,9 @@ async function main() {
             }
           }
         } catch (e) {
+          if (e && e.browserStuck) throw e;
           add('warning', 'determinism_incomplete', `the second page load failed: ${String(e.message || e).split('\n')[0]}`);
-        } finally { if (sess2) { await sess2.close(); sess2 = null; } }
+        } finally { if (sess2) { await closeSoon(sess2.close()); sess2 = null; } }
         hashes.sort((x, y) => x.t - y.t);
         report.determinism.hashes = hashes;
         report.determinism.cross = cross;
@@ -1358,7 +1374,7 @@ async function main() {
       if (asks) {
         t = Date.now();
         const gpuSels = await sess.page.evaluate(() => [...document.querySelectorAll('canvas[data-st-ctx~="webgpu"]')].map((c) => (c.id ? '#' + c.id : null)).filter(Boolean)).catch(() => []);
-        const noGpu = await probeNoGpu({ browser: b.browser, url: server.url, proj, size, lab, times: sampleTimes, gpuSels });
+        const noGpu = await probeNoGpu({ b, url: server.url, proj, size, lab, times: sampleTimes, gpuSels, noRelaunch });
         // name the calls that ask (requestAdapter, a 'webgpu' context) first; a bare navigator.gpu test only when nothing else shows
         const named = [...runtimeWhere.map(([what, w]) => ({ what, at: rel(w) || 'an unknown line' })), ...staticHits.map((h) => ({ what: h.what, at: `${h.file}:${h.line}` }))];
         const strong = named.filter((n) => n.what !== 'navigator.gpu');
@@ -1379,6 +1395,7 @@ async function main() {
         report.webgpu = { where: staticHits.map((h) => `${h.what} at ${h.file}:${h.line}`).slice(0, 4), asked: false };
       }
     } catch (e) {
+      if (e && e.browserStuck) throw e;
       add('info', 'webgpu_probe_failed', `the WebGPU probe did not run: ${String(e.message || e).split('\n')[0]}`);
     }
     // WebGL looks (fluted-glass, tilt-shift, liquid-metal, mesh-gradient, god-rays, marble, metaballs;
@@ -1408,7 +1425,9 @@ async function main() {
             const moves = /still move/.test(lk.note || ''), what = String(lk.note || '').replace(/^no WebGL:\s*(drew\s+)?/, '');
             add('warning', 'look_fallback', `${lk.look} ${lk.sel} drew its ${moves ? '' : 'still '}fallback${what ? ` (${what})` : ''}: WebGL is not available in this browser, so ${moves ? 'the look is drawn flat' : 'the look does not move'} here and this render will differ from one made where WebGL works`,
               { fix: 'render where Chrome has WebGL (with or without a GPU: SwiftShader is enough); `showtime doctor` shows the browser' });
-          } else if (lk.ms > budget) {
+          }
+          // a look that lost its context after it set up still knows its passes: what it costs where WebGL works
+          if (lk.ms > budget) {
             const passes = (lk.passes || []).map((p) => `${p.kind} ${p.w}x${p.h}`).join(' + ');
             add('warning', 'look_budget', `${lk.look} ${lk.sel} costs about ${lk.ms} ms per frame without a GPU (${passes}; budget ${budget} ms): on a machine without a GPU every frame it shows renders that much slower`,
               { fix: KNOB[lk.look] || 'render the look at a smaller data-scale' });
@@ -1450,7 +1469,7 @@ async function main() {
     if (lab && !overlayPage) {
       t = Date.now();
       try {
-        sess2 = await openStage(b.browser, { url: server.url, page: proj.page, config: proj.config, size });
+        sess2 = await openPage(b, { url: server.url, page: proj.page, config: proj.config, size }, noRelaunch);
         report.cuts = await cutFrames({ sess: sess2, lab, fps, W, lastT, txWin });
         const late = report.cuts.filter((x) => x.late);
         if (late.length) {
@@ -1458,8 +1477,9 @@ async function main() {
             { t: late[0].t, times: late.map((c) => c.t), fix: 'decide what a scene draws from the stage\'s own clip windows: ST.clips() is frame-exact (on screen while t >= start && t < end); do not compare t with scene times typed again in the script or read from data-start yourself' });
         }
       } catch (e) {
+        if (e && e.browserStuck) throw e;
         add('info', 'cut_probe_failed', `the first frames after the cuts were not probed: ${String(e.message || e).split('\n')[0]}`);
-      } finally { if (sess2) { await sess2.close(); sess2 = null; } }
+      } finally { if (sess2) { await closeSoon(sess2.close()); sess2 = null; } }
       report.timings.cuts = Date.now() - t;
     }
     const log = sess.log;
@@ -1591,8 +1611,8 @@ async function main() {
     await lookHistory();
     return await finish();
   } finally {
-    if (lab) await lab.close();
-    if (sess) await sess.close();
+    if (lab) await closeSoon(lab.close());
+    if (sess) await closeSoon(sess.close());
     await cleanup();
   }
 
@@ -1868,11 +1888,11 @@ function webgpuSources(dir, requests, base) {
  * screen, the page's own WebGL / 2D canvases are hidden for a moment: when that changes the pixels under
  * them, the fallback draws. -> { drew: {t, sel, ctx} | null, probed: n, errors: [page errors] }
  */
-async function probeNoGpu({ browser, url, proj, size, lab, times, gpuSels }) {
+async function probeNoGpu({ b, url, proj, size, lab, times, gpuSels, noRelaunch }) {
   let s2 = null;
   const res = { drew: null, probed: 0, errors: [] };
   try {
-    s2 = await openStage(browser, { url, page: proj.page, config: proj.config, size, init: gpuProbeScript(true) });
+    s2 = await openPage(b, { url, page: proj.page, config: proj.config, size, init: gpuProbeScript(true) }, noRelaunch);
     // the middle of every clip that holds a canvas first, then the sample times
     const mids = await s2.page.evaluate(() => {
       const all = [...document.querySelectorAll('[data-start]')], cl = window.ST.clips(), out = [];
@@ -1915,8 +1935,9 @@ async function probeNoGpu({ browser, url, proj, size, lab, times, gpuSels }) {
     }
     res.errors = s2.log.errors.slice(0, 3).map((e) => String(e.message).split('\n')[0]);
   } catch (e) {
+    if (e && e.browserStuck) throw e;
     res.errors.push(String(e.message || e).split('\n')[0]);
-  } finally { if (s2) await s2.close(); }
+  } finally { if (s2) await closeSoon(s2.close()); }
   return res;
 }
 

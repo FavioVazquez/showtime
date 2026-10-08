@@ -13,6 +13,10 @@ seeks, and every wait is its fixed value times a factor of 1-5 (never shorter th
     factor (5, the ceiling) and the seek cost
   * a page whose ST.waitFor gate takes 3 s of work in 200 ms pieces (scale 0.03: the gate gets 1.8 s): with the
     fixed waits the page never becomes ready; paced, the gaps between its frames raise the factor and it does
+  * the page-open deadline (stagehost openGuarded, SHOWTIME_TEST_OPEN_TIMEOUT shortens it): render's first page
+    and check's pages are tried once more in a new browser, then the command fails naming the step; a browser
+    really stopped (SIGSTOP) before check opens its page is killed and check finishes in a new one, and stopped
+    later the watchdog ends check with an error naming its last step
 
 Needs a browser. usage: python tests/test_pace.py [--fast] [-v]
 """
@@ -60,6 +64,10 @@ def showtime(*args, env=None, timeout=600):
     return subprocess.run([sys.executable, str(LAUNCHER)] + [str(a) for a in args], env=env or ENV,
                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8", errors="replace",
                           timeout=timeout)
+
+
+STUCK_AT = (r"stuck at: (creating the browser context|opening a tab|setting up the tab|loading the page|"
+            r"waiting for the page to be ready)")
 
 
 def write(path, text):
@@ -170,6 +178,76 @@ process.exit(0);
         self.assertTrue(paced["ok"], paced)
         self.assertGreater(paced["pace"]["frame_ms"], 50, paced)
         self.assertGreater(paced["factor"], 1, paced)
+
+    def test_first_page_open_deadline(self):
+        """render's first page has the workers' page-open deadline (5 min; SHOWTIME_TEST_OPEN_TIMEOUT shortens
+        it): a browser that never answers while it opens the page is given up, the page tried once more in a new
+        browser, and then the render fails with the deadline instead of waiting with none (the first page and
+        the WebGL probe had no deadline of their own)."""
+        proj = self.tmp / "slowopen"
+        write(proj / "showtime.json", json.dumps({"width": 320, "height": 180, "fps": 10, "duration": 0.5, "background": "#202830"}))
+        write(proj / "index.html", HEAD + "</head><body><script>"
+              "ST.waitFor(new Promise((r) => setTimeout(r, 20000)), 'slow open');\n"
+              "ST.onSeek(() => {});</script></body></html>")
+        cp = showtime("render", proj, "-o", self.tmp / "slowopen.mp4", "--no-check", "--workers", "1",
+                      env=dict(ENV, SHOWTIME_TEST_OPEN_TIMEOUT="3"), timeout=300)
+        self.assertNotEqual(cp.returncode, 0, cp.stdout[-1500:])
+        self.assertIn("trying once more in a new browser", cp.stderr)
+        self.assertEqual(cp.stderr.count("trying once more"), 1, cp.stderr[-2000:])
+        self.assertRegex(cp.stderr, r"timed out after \d+s: opening the page")
+        # names the step (on a fast machine the page's own 20 s wait; a slow one may still be setting the tab up)
+        self.assertRegex(cp.stderr, STUCK_AT)
+
+    def slow_open_project(self, name):
+        proj = self.tmp / name
+        write(proj / "showtime.json", json.dumps({"width": 320, "height": 180, "fps": 10, "duration": 0.5, "background": "#202830"}))
+        write(proj / "index.html", HEAD + "</head><body><script>"
+              "ST.waitFor(new Promise((r) => setTimeout(r, 20000)), 'slow open');\n"
+              "ST.onSeek(() => {});</script></body></html>")
+        return proj
+
+    def test_check_open_deadline(self):
+        """check opens its pages the way render does (stagehost openGuarded): the page-open deadline, once more in
+        a new browser, then an error naming the step it was stuck at; never a check that does not return (a
+        macOS CI runner's check outlived its caller's 5 minutes)."""
+        proj = self.slow_open_project("slowcheck")
+        cp = showtime("check", proj, "--json", "--no-determinism", "--no-timeline", "--no-history", "--samples", "2",
+                      env=dict(ENV, SHOWTIME_TEST_OPEN_TIMEOUT="3"), timeout=300)
+        self.assertNotEqual(cp.returncode, 0, cp.stdout[-1500:])
+        self.assertEqual(cp.stderr.count("trying once more in a new browser"), 1, cp.stderr[-2000:])
+        self.assertIn("the browser stopped answering", cp.stderr)
+        # names the step (on a fast machine the page's own 20 s wait; a slow one may still be setting the tab up)
+        self.assertRegex(cp.stderr, STUCK_AT)
+        self.assertIn("in a new browser too", cp.stderr)
+
+    @unittest.skipIf(sys.platform == "win32", "SIGSTOP is POSIX")
+    def test_check_stopped_browser(self):
+        """A browser that really stops answering (SIGSTOP, SHOWTIME_TEST_STOP_BROWSER): stopped before the first
+        page opens, check gives it up at the deadline, kills it and finishes in a new browser; stopped after the
+        image lab page opened, the watchdog ends check with an error naming its last step. Both return in seconds
+        (the open deadline is 3 s here) and leave no stopped browser behind."""
+        proj = self.tmp / "stopped"
+        write(proj / "showtime.json", json.dumps({"width": 320, "height": 180, "fps": 10, "duration": 1, "background": "#202830"}))
+        write(proj / "index.html", HEAD + "</head><body style=\"margin:0;background:#234\"><h1 style=\"color:#fff;"
+              "font:40px sans-serif\">Hi</h1><script>ST.onSeek(() => {});</script></body></html>")
+        args = ("check", proj, "--json", "--no-determinism", "--no-timeline", "--no-history", "--samples", "2")
+        env = dict(ENV, SHOWTIME_TEST_OPEN_TIMEOUT="3")
+        before = {l for l in subprocess.run(["ps", "-axo", "stat=,command="], stdout=subprocess.PIPE, encoding="utf-8",
+                                            errors="replace").stdout.splitlines() if l.strip().startswith("T")}
+        cp = showtime(*args, env=dict(env, SHOWTIME_TEST_STOP_BROWSER="open"), timeout=180)
+        self.assertEqual(cp.returncode, 0, cp.stderr[-2000:])
+        self.assertTrue(json.loads(cp.stdout)["ok"], cp.stdout[-1500:])
+        self.assertEqual(cp.stderr.count("trying once more in a new browser"), 1, cp.stderr[-2000:])
+        self.assertIn("stuck at: ", cp.stderr)
+        cp = showtime(*args, env=dict(env, SHOWTIME_TEST_STOP_BROWSER="ready:2"), timeout=180)
+        self.assertEqual(cp.returncode, 1, cp.stderr[-2000:])
+        self.assertIn("the browser stopped answering", cp.stderr)
+        self.assertIn("check's last step: opened the image lab page", cp.stderr)
+        ps = subprocess.run(["ps", "-axo", "stat=,command="], stdout=subprocess.PIPE, encoding="utf-8", errors="replace").stdout
+        # the run's browsers hold a temp profile (--user-data-dir) of their own; the command line never names the
+        # project, so a stopped (state T) Chrome after the run is any stopped Chrome that was not stopped before
+        stopped = [l for l in ps.splitlines() if l.strip().startswith("T") and "--user-data-dir" in l and "chrom" in l.lower()]
+        self.assertEqual([l for l in stopped if l not in before], [], "a stopped browser was left behind")
 
 
 if __name__ == "__main__":

@@ -17,7 +17,7 @@ import {
   parseCli, runMain, UserError, info, warn, c, slugify, jobDir, venvPython, pyEnv, runPyCli, runProc, cpuCount,
   fmtDuration, IS_WIN,
 } from './lib/cli.mjs';
-import { openBrowser, openStage, openLab, parseSize } from './lib/stagehost.mjs';
+import { openBrowser, openPage, openLab, parseSize } from './lib/stagehost.mjs';
 import { resolveFF, ffmpeg, probe, hasEncoder } from './lib/ff.mjs';
 import { skillDir } from './lib/deps.mjs';
 import { resolveJobDir } from './lib/studio/paths.mjs';
@@ -762,7 +762,7 @@ async function probePage(dest, cfg, findings, entry, quietNoDuration = false) {
   try {
     srv = await startServer({ root: dest, port: 0 });
     b = await openBrowser({});
-    sess = await openStage(b.browser, { url: srv.url, page: 'index.html', config: cfg, followPageSize: false, readyTimeout: 60000 });
+    sess = await openPage(b, { url: srv.url, page: 'index.html', config: cfg, followPageSize: false, readyTimeout: 60000 });
     const probe = await sess.page.evaluate(() => (window.__stAdoptProbe ? window.__stAdoptProbe() : null));
     const errs = sess.log.errors.slice(0, 3);
     for (const e of errs) findings.add('warning', 'page_error', `the page threw while loading: ${e.message}`, '', 'showtime check lists every page error with its time');
@@ -789,7 +789,7 @@ async function determinismPage(dest, res, findings) {
     b = await openBrowser({});
     const cfg = readJSON(path.join(dest, 'showtime.json'));
     // a loop is also seeked one frame past its end (frame n must be frame 0 again)
-    sess = await openStage(b.browser, { url: srv.url, page: 'index.html', config: res.loop ? { ...cfg, duration: cfg.duration + 2 / res.fps } : cfg, followPageSize: false });
+    sess = await openPage(b, { url: srv.url, page: 'index.html', config: res.loop ? { ...cfg, duration: cfg.duration + 2 / res.fps } : cfg, followPageSize: false });
     const shot = async (k) => { await sess.seek(k / res.fps); return sess.shot({ format: 'png' }); };
     const p1 = [];
     for (const k of ks) p1.push(await shot(k));
@@ -797,7 +797,7 @@ async function determinismPage(dest, res, findings) {
     for (let i = ks.length - 1; i >= 0; i--) p2[i] = await shot(ks[i]);
     await new Promise((r) => setTimeout(r, 150));
     const again = await sess.shot({ format: 'png' });   // still on ks[0]: nothing may move in real time
-    lab = await openLab(b.browser, srv.url);
+    lab = await openLab(b, srv.url);
     const frames = [];
     let verdict = 'deterministic';
     for (let i = 0; i < ks.length; i++) {

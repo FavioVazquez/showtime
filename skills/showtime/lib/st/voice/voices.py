@@ -166,6 +166,10 @@ def configured_voice(lang: str) -> Optional[str]:
     if low.startswith("piper:"):
         info = PIPER_VOICES.get(v.split(":", 1)[1])
         return v if info and str(info["lang"]).lower().split("-")[0] == want else None
+    if ":" in low:
+        e0 = low.split(":", 1)[0]
+        if e0 not in ("kokoro", "piper", "supertonic", "st"):
+            return v
     first = low[len("kokoro:"):] if low.startswith("kokoro:") else low
     have = KOKORO_LANG.get(first[:1], "")
     return v if have.split("-")[0] == want else None
@@ -203,6 +207,19 @@ def resolve(voice: Optional[str], lang: Optional[str] = None, engine: Optional[s
             raise ShowtimeError("unknown or excluded Piper voice %r" % name,
                                 hint="commercially usable Piper voices: " + ", ".join(sorted(PIPER_VOICES)))
         return VoiceSpec("piper", name, str(PIPER_VOICES[name]["lang"]))
+    if eng and eng not in ("kokoro", "piper", "supertonic"):
+        name = v.split(":", 1)[-1] if ":" in v else v
+        from .engines import get as get_engine
+        get_engine(eng)
+        lg = (lang or "en").lower().split("-")[0] or "en"
+        return VoiceSpec(eng, name or eng, lg)
+    if ":" in low:
+        e0, _, _rest = low.partition(":")
+        if e0 not in ("kokoro", "piper", "supertonic", "st"):
+            from .engines import get as get_engine
+            get_engine(e0)
+            lg = (lang or "en").lower().split("-")[0] or "en"
+            return VoiceSpec(e0, v.split(":", 1)[1], lg)
     if low.startswith("kokoro:"):
         v = v.split(":", 1)[1]
     if eng not in (None, "kokoro"):

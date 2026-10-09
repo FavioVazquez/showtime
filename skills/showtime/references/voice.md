@@ -40,18 +40,19 @@ Everything runs locally. Kokoro is the default engine. It gives exact word timin
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| Commands | 56-68 |
-| Choosing a voice | 70-109 |
-| Writing for the ear | 111-122 |
-| Word budgets | 124-135 |
-| Script → timeline → scenes (timing-driven editing) | 137-190 |
-| Captions from TTS timings | 192-198 |
-| Pronunciation fixes | 200-242 |
-| Aligning a recorded voice (or another engine's output) | 244-259 |
-| Mastering | 261-277 |
-| Engines and licensing | 279-289 |
-| Performance (measured on a 6-core Intel i5-8500, CPU only, load ~3) | 291-306 |
-| Platform notes and troubleshooting | 308-321 |
+| Commands | 57-69 |
+| Choosing a voice | 71-110 |
+| Writing for the ear | 112-123 |
+| Word budgets | 125-136 |
+| Script → timeline → scenes (timing-driven editing) | 138-191 |
+| Captions from TTS timings | 193-199 |
+| Pronunciation fixes | 201-243 |
+| Aligning a recorded voice (or another engine's output) | 245-260 |
+| Mastering | 262-278 |
+| Engines and licensing | 280-291 |
+| Bring your own voice engine | 293-305 |
+| Performance (measured on a 6-core Intel i5-8500, CPU only, load ~3) | 307-322 |
+| Platform notes and troubleshooting | 324-337 |
 
 ## Commands
 
@@ -285,8 +286,23 @@ The final video mix is normalized again (−14 by default), so keep narration at
 | Piper voices (optional, sherpa-onnx, Apache-2.0) | per voice | Only commercially usable voices are listed. Public domain: `en_US-ljspeech-high`, `en_US-john/kristin/norman-medium`, `en_GB-cori-high`. Apache-2.0: `es_MX-claude-high`. CC0: `es_ES-davefx-medium`. Unlicense: `es_MX-ald-medium`. **CC-BY, credit required:** `en_US-libritts_r-medium`, `en_GB-alba-medium`, `es_ES-sharvard-medium`. The credit line is in `voice list --json` → `attribution`; put it in the video's credits. |
 | English aligner | Apache-2.0 | wav2vec2-base-960h, ONNX export |
 
-- **No cloning:** no engine here clones a real person's voice. Do not imitate a real person.
+- **No cloning:** no bundled engine clones a real person's voice. Do not imitate a real person.
+- **Extra local engines:** bring your own Piper-shaped module (§ Bring your own voice engine). Defaults are unchanged.
 - **Disclosure:** say that the voice is synthetic where the platform or audience expects it. Platforms increasingly ask for an "AI voice" label.
+
+## Bring your own voice engine
+
+Showtime ships Kokoro, optional Supertonic, and optional Piper. You can add another **local** engine without patching showtime or waiting for a release.
+
+1. Write a module that exposes `ENGINE` (an `Engine` instance), same shape as `lib/st/voice/engines/piper.py`. Prefer `has_timings = False` so existing CTC alignment in `tts.py` supplies word times.
+2. Put it where showtime looks, in order:
+   - this package as `st.voice.engines.<name>` (in-tree only; wiped on update), or
+   - `$SHOWTIME_ENGINE_PATH` (one directory, or several joined with the platform path separator), or
+   - `$SHOWTIME_HOME/engines/<name>.py` (default `~/.showtime/engines/<name>.py`) so a drop-in survives a showtime update.
+3. Name it `[a-z][a-z0-9_]{0,31}`. Select it with `SHOWTIME_VOICE=<name>:<voice>` or `--engine <name>`.
+4. `showtime doctor` lists every extra engine it finds and whether each one imports. Missing Kokoro model files become **SKIP** (not FAIL) when `$SHOWTIME_VOICE` names a non-Kokoro engine; an unset voice still expects Kokoro.
+
+**Your engine, your network.** The no-cloud rule is about what showtime itself does: it never calls a hosted TTS service and never asks for an API key. An engine you write and run is your code on your machines. If it talks to a process on localhost, or to a box you own on your LAN, that is your call; showtime only loads the module. What stays out of this repository is a network engine shipped by showtime.
 
 ## Performance (measured on a 6-core Intel i5-8500, CPU only, load ~3)
 

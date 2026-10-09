@@ -33,6 +33,21 @@ from .common import ShowtimeError, brief_output, fmt_duration, paint, paths, rea
 
 PASS, WARN, FAIL, SKIP = "pass", "warn", "fail", "skip"
 
+
+def showtime_voice_skips_kokoro_models() -> bool:
+    """True when the operator chose a non-Kokoro engine via $SHOWTIME_VOICE.
+
+    Doctor then SKIPs missing Kokoro weight files instead of FAILing a
+    `setup --skip models` install. Unset voice keeps the default (Kokoro required).
+    """
+    if os.environ.get("SHOWTIME_SKIP_KOKORO") == "1":
+        return True
+    v = (os.environ.get("SHOWTIME_VOICE") or "").strip().lower()
+    if not v or ":" not in v:
+        return False
+    eng = v.split(":", 1)[0]
+    return eng not in ("", "kokoro")
+
 REQUIRED_MODULES = ["numpy", "scipy", "soundfile", "PIL", "cv2", "av", "scenedetect", "onnxruntime", "kokoro_onnx",
                     "sherpa_onnx", "librosa", "mido", "pretty_midi", "pyloudnorm", "requests", "huggingface_hub",
                     "pypdfium2"]
@@ -649,12 +664,50 @@ class Doctor:
                          "`showtime setup --prune` removes the old one" % (size / 1e6))
                 continue
             required = it.get("tier") in base_tiers
+            if (required and str(it.get("id") or "").startswith("kokoro")
+                    and showtime_voice_skips_kokoro_models()):
+                self.add("model " + it["id"], SKIP,
+                         "%s: %s (Kokoro unused: SHOWTIME_VOICE=%s)" % (
+                             st, detail, os.environ.get("SHOWTIME_VOICE", "")),
+                         "unset SHOWTIME_VOICE, or `showtime setup` to install Kokoro")
+                continue
             self.add("model " + it["id"], FAIL if required else WARN, "%s: %s" % (st, detail),
                      "run `showtime setup%s`" % ((" --with " + it["extra"]) if it.get("extra") else ""))
         self.add("models", PASS if ok_count == len(items) else WARN,
                  "%d/%d items for tier %s%s present in %s" % (ok_count, len(items), tier,
                                                              ("+" + ",".join(extras)) if extras else "",
                                                              self.p["home"]))
+
+    def check_voice_engines(self) -> None:
+        """List drop-in TTS engines (package + $SHOWTIME_HOME/engines + $SHOWTIME_ENGINE_PATH)."""
+        try:
+            from .voice import engines as eng_mod
+        except ImportError as e:
+            self.add("voice engines", SKIP, "voice package not importable (%s)" % e)
+            return
+        bundled = set(eng_mod.bundled_names())
+        found = list(eng_mod.names())
+        extras = [n for n in found if n not in bundled]
+        dirs = eng_mod.user_engine_dirs()
+        dir_note = (", user dirs: " + ", ".join(str(d) for d in dirs)) if dirs else ""
+        if not extras:
+            self.add("voice engines", PASS,
+                     "bundled: %s%s (no extras)" % (", ".join(eng_mod.bundled_names()), dir_note))
+            return
+        probes = eng_mod.probe_extras()
+        bad = [p for p in probes if not p.get("ok")]
+        ok_n = len(probes) - len(bad)
+        detail = "%d extra(s): %s%s" % (
+            len(probes),
+            "; ".join("%s (%s)" % (p["name"], "ok" if p["ok"] else "fail") for p in probes),
+            dir_note,
+        )
+        if bad:
+            self.add("voice engines", WARN, detail,
+                     "fix imports or remove broken .py under $SHOWTIME_HOME/engines / $SHOWTIME_ENGINE_PATH",
+                     extras=probes)
+        else:
+            self.add("voice engines", PASS, detail + (" (%d import ok)" % ok_n), extras=probes)
 
     def check_extras(self) -> None:
         lib = self.p["library"] / "catalog.json"
@@ -804,6 +857,7 @@ class Doctor:
             self.guard("node", self.check_node, "node and playwright")
             self.guard("browser", self.check_browser, "the headless browser")
             self.guard("models", self.check_models, "model files")
+            self.guard("voice engines", self.check_voice_engines, "extra TTS engines")
             self.guard("extras", self.check_extras, "extras and espeak-ng")
         finally:
             self.live.stop()

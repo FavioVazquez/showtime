@@ -87,7 +87,9 @@ def register(sub: argparse._SubParsersAction) -> None:
                      epilog="Examples:\n  showtime voice list\n  showtime voice list --lang es\n"
                             "  showtime voice list --engine piper --json")
     p.add_argument("--lang", "-l", help="filter by language (en, en-gb, es, fr, it, pt, hi, ja, zh)")
-    p.add_argument("--engine", "-e", choices=["kokoro", "supertonic", "piper"], help="only this engine")
+    p.add_argument("--engine", "-e", metavar="NAME",
+                   help="only this engine (bundled: kokoro, supertonic, piper; "
+                        "extra: $SHOWTIME_HOME/engines/<name>.py or $SHOWTIME_ENGINE_PATH)")
     p.add_argument("--all", action="store_true", help="include low-grade Kokoro voices (D/F)")
     p.add_argument("--json", action="store_true", help="machine-readable output")
     p.set_defaults(func=cmd_list)
@@ -109,8 +111,9 @@ def register(sub: argparse._SubParsersAction) -> None:
     p.add_argument("-v", "--voice", help="voice id (default: af_heart, or the language's default)")
     p.add_argument("-s", "--speed", type=float, default=1.0, help="speaking rate, 0.5-2.0 (default 1.0)")
     p.add_argument("-l", "--lang", help="language override (default: from the voice)")
-    p.add_argument("-e", "--engine", choices=["auto", "kokoro", "supertonic", "piper"], default="auto",
-                   help="TTS engine (default: from the voice id)")
+    p.add_argument("-e", "--engine", default="auto", metavar="NAME",
+                   help="TTS engine (default: from the voice id). Bundled: kokoro, supertonic, piper. "
+                        "Extra: $SHOWTIME_HOME/engines/<name>.py or $SHOWTIME_ENGINE_PATH")
     p.add_argument("--style", default="neutral", help="delivery: neutral, calm, warm, upbeat, energetic, "
                                                      "tutorial, documentary, trailer (default neutral)")
     p.add_argument("--fit", type=float, metavar="SECONDS", help="adjust the speed so the speech lasts about this long")

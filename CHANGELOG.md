@@ -5,6 +5,15 @@ All notable changes to showtime. Each entry says what changed and why, so this f
 `skills/showtime/lib/st/__init__.py` and `python3 scripts/check_release.py` keeps the plugin manifests, the registry files and
 `setup/package.json` in sync with it.
 
+## Unreleased
+
+- **Extra local TTS engines, without changing the default.** `engines.get()` loads a Piper-shaped
+  `ENGINE` by name from the package, then `$SHOWTIME_ENGINE_PATH`, then `$SHOWTIME_HOME/engines/<name>.py`
+  (names must match `^[a-z][a-z0-9_]{0,31}$`; error hints list engines found). `--engine` is no longer a
+  closed argparse list. `$SHOWTIME_VOICE=<engine>:<voice>` selects an extra engine; doctor **SKIP**s
+  missing Kokoro model files in that case (still FAIL when the voice is unset or a Kokoro id) and reports
+  whether each extra engine imports. See issue FavioVazquez/showtime#8.
+
 ## 0.4.1 (2026-10-08)
 
 - **Renders are faster, most of all without a GPU.** Measured on a 64-core Linux machine with no GPU, default

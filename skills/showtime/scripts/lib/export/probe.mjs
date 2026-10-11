@@ -6,7 +6,7 @@ import { UserError } from '../cli.mjs';
 
 // Film.start() options are private to film.js; this hook keeps its `acts` (or `chapters`) for the
 // chapter ticks and its subtitle/kicker for the start card.
-const FILM_HOOK = `(function(){try{var F;Object.defineProperty(window,'Film',{configurable:true,enumerable:true,
+export const FILM_HOOK = `(function(){try{var F;Object.defineProperty(window,'Film',{configurable:true,enumerable:true,
 get:function(){return F},set:function(v){F=v;if(v&&typeof v.start==='function'&&!v.start.__stHook){var s=v.start;
 v.start=function(o){try{window.__stFilmActs=o&&(o.chapters||o.acts)||null;window.__stFilmCard={subtitle:o&&o.subtitle||'',
 kicker:o&&o.kicker||''}}catch(e){}return s.apply(this,arguments)};v.start.__stHook=1}}})}catch(e){}})();`;

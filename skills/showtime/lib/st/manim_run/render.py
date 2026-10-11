@@ -33,12 +33,17 @@ GL_VENV = "venv-manimgl"
 
 # ------------------------------------------------------------------ environment
 
-def manim_installed(vpy: Optional[Path] = None) -> bool:
-    venv = paths()["venv"]
+def _has_package(venv: Path, name: str) -> bool:
+    """A package installed in that venv (its site-packages, POSIX or Windows layout), without starting Python."""
     for sp in list(venv.glob("lib/python3*/site-packages")) + [venv / "Lib" / "site-packages"]:
-        if (sp / "manim" / "__init__.py").is_file():
+        if (sp / name / "__init__.py").is_file():
             return True
     return False
+
+
+def manim_installed(vpy: Optional[Path] = None) -> bool:
+    """Manim Community in the main venv (or in the venv of `vpy`, its python: setup's own --home)."""
+    return _has_package(Path(vpy).parent.parent if vpy else paths()["venv"], "manim")
 
 
 def ensure_manim(feature: str) -> Path:
@@ -53,6 +58,12 @@ def ensure_manim(feature: str) -> Path:
 def gl_python() -> Optional[Path]:
     vpy = plat.venv_python(home() / GL_VENV)
     return vpy if vpy.exists() else None
+
+
+def gl_installed(venv: Optional[Path] = None) -> bool:
+    """ManimGL (manimlib) in its venv: <home>/venv-manimgl, or `venv` (setup's own --home)."""
+    v = Path(venv) if venv else home() / GL_VENV
+    return plat.venv_python(v).exists() and _has_package(v, "manimlib")
 
 
 def kit_env(settings_file: Path, tex_info: Dict[str, Any]) -> Dict[str, str]:

@@ -16,7 +16,11 @@ after it (0.3334, 0.6667, 1.0001 ...); even scenes draw a 2D canvas, odd ones We
     every frame shows its scene's colour, the first frame after each cut included
   * own.html (draws from its own copy of the typed times): the render's first frame after each cut is
     blank, and `showtime check` reports late_first_frame for those cuts (good.html: none)
-  * the built-in showreel template (`showtime new showreel`): check walks its cuts and finds none late
+  * the built-in showreel template (`showtime new showreel`): check walks its cuts and finds none late;
+    `check --no-cuts` walks none (no report.cuts, no late_first_frame)
+  * a WebGL canvas whose context is lost while on screen is captured white (the macOS Intel nightly lost
+    every one in some renders, #12): a render on a GPU that loses one runs again without the GPU and every
+    frame is right; without a GPU the render's warnings name the canvas and the frames
 
 Skipped with --fast (needs a browser). usage: python tests/test_cut_frames.py [--fast] [-v]
 """
@@ -92,18 +96,30 @@ ST.onSeek(function (t) {
 """
 
 
-def page_html(own):
+# the odd (WebGL) scenes' contexts are taken back once the page has drawn its setup, as a GPU reset does; gpu:
+# only in a render that draws on a GPU (__ST_RENDER__.softwareGL false), so a render without it draws them
+LOSE = """<script>(function () {
+  var R = window.__ST_RENDER__ || {};
+  if (%(gpu)s && R.softwareGL) return;
+  document.querySelectorAll('section canvas').forEach(function (c, i) {
+    if (i %% 2) c.getContext('webgl', { preserveDrawingBuffer: true }).getExtension('WEBGL_lose_context').loseContext();
+  });
+})();</script></body>"""
+
+
+def page_html(own, lose=None):
     secs = []
     for i, s in enumerate(STARTS):
         dur = (STARTS[i + 1] - s) if i + 1 < N else (N * LEN / FPS - s)
         secs.append('<section class="scene" id="s%d" data-start="%s" data-dur="%s"><canvas width="%d" height="%d"></canvas></section>'
                     % (i, ("%.4f" % s).rstrip("0").rstrip(".") or "0", "%.4f" % dur, W, H))
-    return PAGE % {"sections": "\n".join(secs), "starts": json.dumps(STARTS), "colors": json.dumps([list(color(i)) for i in range(N)]),
+    html = PAGE % {"sections": "\n".join(secs), "starts": json.dumps(STARTS), "colors": json.dumps([list(color(i)) for i in range(N)]),
                    "own": "true" if own else "false"}
+    return html.replace("</body>", LOSE % {"gpu": "true" if lose == "gpu" else "false"}) if lose else html
 
 
-def showtime(*args, check=True, timeout=600):
-    cp = subprocess.run([sys.executable, str(LAUNCHER)] + [str(a) for a in args], env=ENV,
+def showtime(*args, check=True, timeout=600, env=None):
+    cp = subprocess.run([sys.executable, str(LAUNCHER)] + [str(a) for a in args], env=dict(ENV, **(env or {})),
                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8",
                         errors="replace", timeout=timeout)
     if check and cp.returncode != 0:
@@ -137,20 +153,23 @@ class CutFrames(unittest.TestCase):
                                                              "duration": N * LEN / FPS, "background": "#000000"}), encoding="utf-8")
         (cls.proj / "index.html").write_text(page_html(False), encoding="utf-8")
         (cls.proj / "own.html").write_text(page_html(True), encoding="utf-8")
+        (cls.proj / "lostgpu.html").write_text(page_html(False, lose="gpu"), encoding="utf-8")
+        (cls.proj / "lost.html").write_text(page_html(False, lose="always"), encoding="utf-8")
 
     @classmethod
     def tearDownClass(cls):
         shutil.rmtree(str(cls.tmp), ignore_errors=True)
 
-    def render(self, page):
+    def render(self, page, *extra, env=None):
         out = self.tmp / ("%s.mp4" % page.split(".")[0])
-        showtime("render", self.proj, "--page", page, "--no-audio", "--poster", "none", "-o", out, "-q")
+        showtime("render", self.proj, "--page", page, "--no-audio", "--poster", "none", "-o", out, "-q", *extra, env=env)
         cols = frame_colors(out)
         self.assertEqual(len(cols), N * LEN)
+        self.last_report = json.loads((self.tmp / ("%s.work" % out.stem) / "render.json").read_text(encoding="utf-8"))
         return cols
 
-    def check(self, page):
-        cp = showtime("check", self.proj, "--page", page, "--json", "--no-determinism", "--samples", "3", check=False)
+    def check(self, page, *extra):
+        cp = showtime("check", self.proj, "--page", page, "--json", "--no-determinism", "--samples", "3", *extra, check=False)
         return json.loads(cp.stdout)
 
     def test_scene_times_are_a_hair_after_the_frame(self):
@@ -179,6 +198,32 @@ class CutFrames(unittest.TestCase):
         good = self.check("index.html")
         self.assertEqual([f for f in good["findings"] if f["code"] == "late_first_frame"], [])
         self.assertTrue(all(not c["late"] for c in good["cuts"]), good["cuts"])
+
+    def test_webgl_lost_on_a_gpu_renders_again_without_it(self):
+        # SHOWTIME_TEST_GPU=1: this browser counts as a GPU one, so a machine without a GPU runs the same path
+        cols = self.render("lostgpu.html", env={"SHOWTIME_TEST_GPU": "1"})
+        wrong = [(f, cols[f]) for f in range(N * LEN) if not near(cols[f], color(f // LEN))]
+        self.assertEqual(wrong, [], "frames without their scene's colour (frame, rgb)")
+        again = [w for w in self.last_report["warnings"] if "rendered again without the GPU" in w]
+        self.assertEqual(len(again), 1, self.last_report["warnings"])
+        self.assertIn("#s1", again[0])
+
+    def test_webgl_lost_without_a_gpu_is_named(self):
+        cols = self.render("lost.html", "--gpu", "off")
+        # the known-bad case the check above must catch: the lost canvases are captured white
+        self.assertTrue(all(near(cols[f], (255, 255, 255)) for f in range(LEN, 2 * LEN)), cols[LEN:2 * LEN])
+        lost = [w for w in self.last_report["warnings"] if "lost its context" in w]
+        self.assertEqual(len(lost), 3, self.last_report["warnings"])
+        for k in (1, 3, 5):
+            self.assertTrue(any("#s%d " % k in w and "%d frame(s) from %.2fs" % (LEN, k * LEN / FPS) in w for w in lost), lost)
+        self.assertFalse([w for w in self.last_report["warnings"] if "rendered again" in w])
+
+    def test_no_cuts_skips_the_walk(self):
+        # --no-cuts (test_showreel's aspects, #14): no second page walks the cuts, so a late page goes unreported
+        rep = self.check("own.html", "--no-cuts")
+        self.assertNotIn("cuts", rep)
+        self.assertNotIn("cuts", rep["timings"])
+        self.assertEqual([f for f in rep["findings"] if f["code"] == "late_first_frame"], [])
 
     def test_clips_are_frame_exact(self):
         # check's cut frames are ceil(start * fps) of ST.clips(): a raw 0.3334 would give frame 11, not 10

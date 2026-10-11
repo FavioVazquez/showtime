@@ -23,6 +23,12 @@ class Engine:
     name = "base"
     has_timings = False
     speed_range: Tuple[float, float] = (0.5, 2.0)
+    default_voice = ""                         # extra engines: the voice used when none is named
+    default_lang = "en"                        # extra engines: the language when the request names none
+
+    def voices(self) -> List[str]:
+        """Voice names for `showtime voice list --engine <name>` (extra engines; may be empty)."""
+        return []
 
     def available(self) -> Tuple[bool, str]:
         """(ok, reason). Cheap: must not load models."""

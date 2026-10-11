@@ -48,6 +48,31 @@ def norm_query(q: str) -> str:
     return re.sub(r"\s+", " ", re.sub(sep, " ", q.lower())).strip()
 
 
+def rank(index_path: Path, query: str) -> list:
+    """The pages app.js's search lists for a query, in order, run in Node over the built index: the search block of
+    app.js with a stub page (null when node is missing)."""
+    node = shutil.which("node")
+    if not node:
+        return None
+    js = (SITE / "static" / "app.js").read_text(encoding="utf-8")
+    block = js[js.index("var input = document.querySelector('.search input')"):js.rindex("})();")]
+    block = block.replace("if (!input) return;", "")
+    harness = (
+        "var window = {}; eval(require('fs').readFileSync(%s, 'utf8'));\n"
+        "var handlers = {}, base = '', safeSrc = function (x) { return x; };\n"
+        "var input = { value: %s, addEventListener: function (n, f) { handlers[n] = f; } };\n"
+        "var box = { innerHTML: '', hidden: true, querySelectorAll: function () { return []; } };\n"
+        "var document = { querySelector: function (q) { return q === '.results' ? box : input; }, addEventListener: function () {}, "
+        "createElement: function () { return {}; }, head: { appendChild: function () {} } };\n"
+        "(function () {\n%s\n handlers.input(); })();\n"
+        "console.log(JSON.stringify((box.innerHTML.match(/href=\"[^\"]+\"/g) || []).map(function (h) { return h.slice(6, -1); })));"
+        % (json.dumps(str(index_path)), json.dumps(query), block))
+    cp = subprocess.run([node, "-e", harness], stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8", timeout=60)
+    if cp.returncode != 0:
+        raise RuntimeError(cp.stderr[-1500:])
+    return json.loads(cp.stdout.strip().splitlines()[-1])
+
+
 class Normalise(unittest.TestCase):
     def test_one_rule_in_both_places(self):
         js = (SITE / "static" / "app.js").read_text(encoding="utf-8")
@@ -151,6 +176,84 @@ class RealBuild(unittest.TestCase):
             log = next(e for e in index if e["u"] == "docs/changelog.html")
             self.assertGreater(sum(len(s[2]) for s in log["s"]), 100000)
             self.assertTrue(any("0.1.0" in s[0] for s in log["s"]))
+            # the landing and the gallery are searchable, and the changelog is weighed below the guides
+            for page in ("index.html", "gallery.html"):
+                self.assertIn(page, urls)
+            land = next(e for e in index if e["u"] == "index.html")
+            self.assertTrue(any("agent" in s[2].lower() for s in land["s"]))
+            self.assertLess(log["w"], 1)
+            # ranking, run through app.js: guides lead for a command, the changelog still wins a version number
+            for q in ("doctor", "estimate"):
+                hits = rank(out / "search-index.js", q)
+                if hits is not None:
+                    self.assertFalse(hits[0].startswith("docs/changelog.html"), (q, hits[:3]))
+            hits = rank(out / "search-index.js", "0.4.0")
+            if hits is not None:
+                self.assertTrue(any(h.startswith("docs/changelog.html") for h in hits[:2]), hits[:4])
+            # a landing hit links to its own section, not the install block that merely comes first
+            anchors = {s[0]: s[1] for s in land["s"]}
+            self.assertEqual(anchors.get("Now showing"), "showing")
+            self.assertEqual(anchors.get("A crew, when you want one"), "crew")
+            self.assertEqual(anchors.get("Everything renders on your machine"), "local")
+            # no page opens on the YAML front matter of SKILL.md (it was one huge heading)
+            skill = next(e for e in index if e["u"] == "docs/skill.html")
+            self.assertFalse(any(s[0].startswith("name:") for s in skill["s"]), [s[0][:40] for s in skill["s"]][:3])
+            self.assertNotRegex((out / "docs" / "skill.html").read_text(encoding="utf-8"), r'<h2 id="name-')
+            # every docs page, the example pages and the docs map have Previous / Next to a page that was built
+            for page in ["docs/index.html", "docs/agents.html", "docs/whats-new.html", "docs/faq.html", "docs/skill.html"] + [
+                    u for u in urls if u.startswith("examples/")]:
+                text = (out / page).read_text(encoding="utf-8")
+                links = re.findall(r'<nav class="pager".*?</nav>', text, re.S)
+                self.assertEqual(len(links), 1, page)
+                for href in re.findall(r'href="([^"#]+)"', links[0]):
+                    self.assertTrue((out / page).parent.joinpath(href).resolve().is_file(), (page, href))
+            # one version: the footer and the landing's "New in" follow the repo
+            ver = re.search(r'__version__\s*=\s*"([^"]+)"', (REPO / "skills/showtime/lib/st/__init__.py").read_text(encoding="utf-8")).group(1)
+            self.assertIn("&nbsp; %s, MIT" % ver, (out / "index.html").read_text(encoding="utf-8"))
+            # the docs proposal (0.4.2): Start here in four places, shelves, New in 0.4, act crumbs, See it done
+            gallery = (out / "gallery.html").read_text(encoding="utf-8")
+            if build.CONFIG.get("gallery_film") is None:   # null: the page opens on its intro, then the tabs
+                self.assertNotIn('id="gallery-film"', gallery)
+            self.assertNotIn("launch-film", gallery)
+            tabs = re.findall(r'data-filter="([^"]+)"', gallery)
+            self.assertEqual(tabs, ["all", "start-here", "explainers", "footage", "products", "code", "social", "looks", "new"])
+            self.assertLess(gallery.index('id="shelf-start-here"'), gallery.index('id="shelf-explainers"'))
+            start = gallery[gallery.index('id="shelf-start-here"'):gallery.index('id="shelf-explainers"')]
+            self.assertEqual(re.findall(r"<h3><a [^>]*>([^<]+)</a></h3>", start), ["Launch video", "Narrated explainer", "Your footage, edited"])
+            self.assertIn("Make a 20-second launch video", start, "the kind's name sits over the example's own request")
+            self.assertEqual(gallery.count('<span class="badge">New in 0.4</span>'), 10)
+            self.assertIn('<span class="spec">25 \u00b7 2:38</span>', gallery)
+            self.assertIn("Thirty examples and two demos", gallery)
+            landing = (out / "index.html").read_text(encoding="utf-8")
+            self.assertIn('<a class="btn primary" href="docs/guides/first-video.html">Get started</a>', landing)
+            self.assertIn("<h3>New in 0.4</h3>", landing)
+            self.assertIn('href="gallery.html#new"', landing)
+            self.assertEqual(landing.count('<div class="new-films">'), 1)
+            voice = (out / "docs" / "voice.html").read_text(encoding="utf-8")
+            self.assertIn('<a href="../docs/index.html#act-iv--sound-and-voice">Act IV \u00b7 Sound and voice</a> / Voice</div>', voice)
+            self.assertIn('<p class="see-it-done">See it done: <a href="../examples/02-explainer-heat-pump.html">', voice)
+            self.assertIn("<h4>Start here</h4>", voice)
+            # a page on a Choose your path card and in an act is named by its act
+            self.assertIn("Act III \u00b7 Building the picture</a> / Components</div>",
+                          (out / "docs" / "components.html").read_text(encoding="utf-8"))
+            self.assertIn("In 0.4.2: ", landing)
+            self.assertIn("House vocabulary", voice)
+            h1 = re.search(r"^# (.+)$", (REPO / "CONTEXT.md").read_text(encoding="utf-8"), re.M).group(1)
+            self.assertIn(h1, (out / "docs" / "house-vocabulary.html").read_text(encoding="utf-8"))
+            self.assertIn('id="overture--start-here"', (out / "docs" / "index.html").read_text(encoding="utf-8"))
+            self.assertIn('href="../docs/house-vocabulary.html"', (out / "docs" / "glossary.html").read_text(encoding="utf-8"))
+            self.assertTrue((out / "docs" / "troubleshooting.html").is_file())
+            # pinned answers: install, an error and the first video open on the page written for them
+            for q, want in (("install", "docs/agents.html"), ("doctor", "docs/troubleshooting.html"),
+                            ("first video", "docs/guides/first-video.html")):
+                hits = rank(out / "search-index.js", q)
+                if hits is not None:
+                    self.assertTrue(hits[0].startswith(want), (q, hits[:3]))
+            # ... and only those: "first look" is a showtime term, "start" is data-start and film.start
+            for q in ("first look", "start", "setup"):
+                hits = rank(out / "search-index.js", q)
+                if hits is not None:
+                    self.assertNotIn(hits[0], ("docs/guides/first-video.html", "docs/agents.html"), (q, hits[:3]))
         finally:
             shutil.rmtree(out, ignore_errors=True)
 

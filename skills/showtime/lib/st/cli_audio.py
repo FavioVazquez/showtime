@@ -223,6 +223,9 @@ def register(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--no-speaker-safe", action="store_true",
                    help="leave the lows as mixed: no high-pass under 40 Hz and no low shelf on a bass-heavy bed (for a "
                         "video meant for headphones; the same as \"master\": {\"speaker_safe\": false})")
+    p.add_argument("--validate", action="store_true",
+                   help="only check the spec (tracks, kinds, sources, files, numbers) and exit; nothing is rendered "
+                        "(what `showtime check` runs on the project's audio)")
     p.add_argument("--json", action="store_true", help="print the full report")
     p.set_defaults(func=cmd_mix)
 
@@ -786,6 +789,13 @@ def cmd_mix(args) -> int:
     spec = Path(args.spec)
     if not spec.is_file():
         raise ShowtimeError("mix spec not found: %s" % spec)
+    if args.validate:
+        res = mix.validate(spec, root=Path(args.root) if args.root else None)
+        if args.json:
+            print_json(res)
+        else:
+            print("%s is valid (%d tracks)" % (spec, res["tracks"]))
+        return 0
     out = Path(args.output) if args.output else spec.with_name("mix.wav")
     rep = mix.render(spec, out, root=Path(args.root) if args.root else None,
                      report_path=Path(args.report) if args.report else None, ffmpeg_check=args.check,

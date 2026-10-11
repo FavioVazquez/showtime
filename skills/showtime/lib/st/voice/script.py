@@ -259,6 +259,116 @@ def _speech_words(clips) -> Tuple[int, float]:
     return n, secs
 
 
+EST_SPAN = 1.1               # the real fit counts words over their spoken span, about 10 % faster than whole clips: cut that much more
+EST_CPS = 11.8               # characters/s at speed 1.0 for a voice not heard here yet; real voices read 11-13, so a cut errs high
+
+
+def _line_rate(ln: Dict[str, Any], seen: Dict[str, Optional[float]]) -> Tuple[float, str]:
+    """(units per second at speed 1.0, where it comes from) for one line. Units are characters (letters and
+    digits; zh/ja/ko count as the storyboard does), from the voice's own earlier lines when it has spoken
+    some in this install, else EST_CPS."""
+    from .. import storyboard as sb
+    if ln["lang"] in sb.CPS:
+        return sb.CPS[ln["lang"]], "default"
+    try:
+        vid = tts.voices.resolve(ln["voice"], ln["lang"], ln["engine"]).id
+    except Exception:  # noqa: BLE001 - an estimate never fails a run
+        vid = str(ln["voice"])
+    if vid not in seen:
+        seen[vid] = tts.voice_rate(vid)
+    r = seen[vid]
+    return (r, "measured") if r else (EST_CPS, "default")
+
+
+def estimate_fit(lines: List[Dict[str, Any]], c: Dict[str, Any], target: float) -> Dict[str, Any]:
+    """Before any synthesis: can this narration fit `target` seconds? The same arithmetic as the real fit
+    (fit_total), on a guess of each line's length: its characters at the voice's rate (measured from lines the
+    voice spoke earlier, else a conservative default), pauses and tail as the script has them, speed 0.85-1.15x,
+    then pauses and tail down to their floors. Lines with their own `fit` keep their length. An estimate, not a
+    measure: the real run still reports the exact cut."""
+    from .. import storyboard as sb
+    if target <= 0:
+        raise ShowtimeError("--fit must be a positive number of seconds")
+    tol = max(0.1, 0.01 * target)
+    lo, hi = FIT_SPEED
+    seen: Dict[str, Optional[float]] = {}
+    words = 0
+    speech = fixed = 0.0
+    pauses = pauses_min = 0.0
+    sources = set()
+    for k, ln in enumerate(lines):
+        if "fit" in ln:
+            fixed += float(ln["fit"])
+        else:
+            words += sb.speech_units(ln["text"], ln["lang"]) if ln["lang"] in sb.CPS else len(ln["text"].split())
+            units = sb.speech_units(ln["text"], ln["lang"]) if ln["lang"] in sb.CPS else tts.spoken_chars(ln["text"])
+            rate, src = _line_rate(ln, seen)
+            sources.add(src)
+            speech += units / rate / max(ln["speed"], 1e-3)
+        if k < len(lines) - 1:
+            pauses += ln["pause_after"]
+            pauses_min += min(ln["pause_after"], FIT_MIN_PAUSE)
+    lead, tail = float(c["lead_in"]), float(c["tail"])
+    natural = lead + fixed + speech + pauses + tail
+    shortest = lead + fixed + speech / hi + pauses_min + min(tail, FIT_MIN_TAIL)
+    longest = lead + fixed + speech / lo + pauses + tail
+    wps = (words / speech) if speech > 0 else 0.0           # words per second of speech at speed 1.0
+    top = max([ln["speed"] for ln in lines if "fit" not in ln] or [1.0])
+    est: Dict[str, Any] = {"target": round(target, 3), "words": words, "wps": round(wps, 2),
+                           "rate_source": "measured" if sources == {"measured"} else "default",
+                           "natural": round(natural, 2), "shortest": round(shortest, 2),
+                           "longest": round(longest, 2), "over": 0.0, "under": 0.0, "cut_words": 0,
+                           "add_words": 0, "verdict": "fits", "tolerance": round(tol, 3)}
+    if shortest > target + tol:
+        est["verdict"] = "too long"
+        est["over"] = round(shortest - target, 2)
+        est["cut_words"] = int(np.ceil(est["over"] * wps * hi * EST_SPAN))
+    elif longest < target - tol:
+        est["verdict"] = "too short"
+        est["under"] = round(target - longest, 2)
+        est["add_words"] = int(est["under"] * wps * lo)
+    # the real run speeds every line up before it trims pauses: past x1.1 it sounds rushed (FIT_FAST)
+    if natural > target + tol and speech > 0:
+        other = natural - speech
+        factor = hi if target - other <= 0.05 else min(max(speech / (target - other), lo), hi)
+        if top * factor > FIT_FAST + 1e-6:
+            est["fast"] = True
+            est["max_speed"] = round(top * factor, 2)
+            est["cut_words_at_1x"] = int(np.ceil((natural - target) * wps * EST_SPAN))
+    return est
+
+
+def estimate_message(est: Dict[str, Any]) -> str:
+    """One human line (or more) for estimate_fit()."""
+    msg = ("fit %.2fs, estimated before any speech (%s voice rate): about %d words read in %.1fs at natural speed; "
+           "%.1f-%.1fs within x%.2f-x%.2f with the pauses at their floor" % (
+               est["target"], "measured" if est["rate_source"] == "measured" else "assumed", est["words"],
+               est["natural"], est["shortest"], est["longest"], FIT_SPEED[0], FIT_SPEED[1]))
+    if est["verdict"] == "too long":
+        msg += ("\n  this script cannot fit: cut about %d word%s (%.1fs over at the fastest natural speed), then run it "
+                "again" % (est["cut_words"], "" if est["cut_words"] == 1 else "s", est["over"]))
+    elif est["verdict"] == "too short":
+        msg += ("\n  this script is short for it: the tail would be padded with silence (about %d more word%s would "
+                "fill it)" % (est["add_words"], "" if est["add_words"] == 1 else "s"))
+    if est.get("fast"):
+        msg += ("\n  it would speak at x%.2f, which sounds rushed above about x%.2f (explainers and documentaries "
+                "read best at x0.9-1.0): cut about %d word%s instead" % (
+                    est["max_speed"], FIT_FAST, est["cut_words_at_1x"], "" if est["cut_words_at_1x"] == 1 else "s"))
+    return msg
+
+
+def estimate(script_path: PathLike, overrides: Optional[Dict[str, Any]], fit: Optional[float]) -> Dict[str, Any]:
+    """estimate_fit() for a script file; the target is `fit` or the script's own "fit"."""
+    cfg, raw_lines = load_script(Path(script_path))
+    c, lines = normalize(cfg, raw_lines, overrides or {})
+    if fit is None and c.get("fit") is not None:
+        fit = float(c["fit"])
+    if fit is None:
+        raise ShowtimeError("--estimate needs a target length", why="it compares the narration with the length "
+                            "--fit would fit it to", hint="add --fit SECONDS (or a \"fit\" key in the script)")
+    return estimate_fit(lines, c, float(fit))
+
+
 def fit_total(lines: List[Dict[str, Any]], lex, clips, c: Dict[str, Any], target: float
               ) -> Tuple[List[Tuple[Dict[str, Any], "tts.Speech"]], Dict[str, Any]]:
     """Fit the whole narration to `target` seconds.
@@ -533,6 +643,13 @@ def build(script_path: PathLike, out_dir: Optional[PathLike] = None, overrides: 
     if fit is None and c.get("fit") is not None:
         fit = float(c["fit"])
     t_start = time.time()
+    if fit is not None:
+        # news up front: a script that cannot fit says so before the first synthesis, not after the last
+        pre = estimate_fit(lines, c, float(fit))
+        if pre["verdict"] == "too long":
+            warn(estimate_message(pre))
+        else:
+            info(estimate_message(pre))
     clips = _synth_all(lines, lex, 1.0)
     fit_report: Optional[Dict[str, Any]] = None
     if fit is not None:

@@ -137,7 +137,7 @@ def _lead_review(rv: Dict[str, Any], us: Dict[str, Any]) -> bool:
 
 
 def _findings(job: Path) -> Optional[Dict[str, Any]]:
-    """The critic's blockers and should-fixes and what became of each (st.job.findings); None when no critic
+    """The critic's blockers and should-fixes (polish left out) and what became of each (st.job.findings); None when no critic
     answered. Texts and reasons are masked: a receipt is meant to be shared."""
     try:
         from . import findings
@@ -152,10 +152,11 @@ def _findings(job: Path) -> Optional[Dict[str, Any]]:
             out["by"] = f["by"]
             out["reason" if f["status"] == "waived" else "note"] = mask(f.get("note") or "")
         return out
-    fs = g["findings"]
+    fs = [f for f in g["findings"] if f["severity"] != "polish"]       # polish is not a gating finding
     return {"raised": len(fs), "blockers": sum(1 for f in fs if f["severity"] == "blocker"),
             "should_fix": sum(1 for f in fs if f["severity"] == "should-fix"),
-            "fixed": [row(f) for f in g["fixed"]], "waived": [row(f) for f in g["waived"]],
+            "fixed": [row(f) for f in g["fixed"] if f["severity"] != "polish"],
+            "waived": [row(f) for f in g["waived"] if f["severity"] != "polish"],
             "open": [row(f) for f in g["open"]]}
 
 
@@ -200,7 +201,8 @@ def _delivery(job: Path, data: Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(rb, dict) and rb.get("summary"):
         sus = [s for s in rb.get("suspects") or [] if isinstance(s, dict)]
         out["readback"] = {"summary": str(rb["summary"]), "words": [
-            {"word": s.get("word"), "heard": s.get("heard"), "t": s.get("t"), "critical": bool(s.get("critical"))}
+            {"word": s.get("word"), "heard": s.get("heard"), "t": s.get("t"), "critical": bool(s.get("critical")),
+             "noted": bool(s.get("noted"))}
             for s in sus[:10]]}
     return out
 
@@ -595,8 +597,9 @@ def card_facts(rec: Dict[str, Any]) -> List[str]:
     heard = ""
     if dv.get("qa") and rb.get("summary"):
         ws = rb.get("words") or []
-        heard = ("; read-back: %s" % "; ".join("\"%s\" heard as \"%s\"%s" % (
-            w.get("word"), w.get("heard") or "nothing", " at %.1fs" % w["t"] if w.get("t") is not None else "")
+        heard = ("; read-back: %s" % "; ".join("\"%s\" heard as \"%s\"%s%s" % (
+            w.get("word"), w.get("heard") or "nothing", " at %.1fs" % w["t"] if w.get("t") is not None else "",
+            " (noted: listed in readback.note)" if w.get("noted") else "")
             for w in ws[:4])) if ws else "; %s" % rb["summary"]
     out.append("QA: %s" % ("%s (%s fail, %s warn) on %s%s" % (dv["qa"], dv.get("qa_fail"), dv.get("qa_warn"), dv["final"],
                                                               heard)

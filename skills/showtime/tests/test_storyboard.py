@@ -272,6 +272,16 @@ QUESTION = """| Shot | Length | Visual | Narration |
 """
 
 
+LATER_PIN = """| Shot | Length | Visual | Narration |
+|---|---|---|---|
+| 1 | 5 s | A | One. |
+| 2 | 4 s | The beat | (pause) |
+| 3 | 5 s | B | Two. |
+| 4 | 5 s | C | Three. |
+| 5 | 3 s | End card | — |
+"""
+
+
 def _line(lid, start, end, nxt, at=None):
     """A voice timeline line as `voice script` writes it (no TTS here)."""
     d = {"id": lid, "text": lid, "file": "lines/%s.wav" % lid, "start": start, "end": end,
@@ -384,6 +394,34 @@ class TestSilentShots(unittest.TestCase):
         self.assertIn("Regenerate narration.md", notes)
         self.assertTrue(sb.legacy_pin(out, "shot-4", 4.7))
         self.assertFalse(sb.legacy_pin(out, "shot-4", 14.2))       # the 0.4.1 pin
+
+    def test_a_later_pin_holds_the_silent_shot_once(self):
+        # #21: the line right after the silent shot lost its pin, the next one kept it; the voice holds the
+        # silence before that pin, so the silent shot fills it instead of adding its 4 s on top of the pin
+        out = self.tmp / "later"
+        showtime("new", "dom", out, "--from-storyboard", "-", stdin=LATER_PIN)
+        (out / "voice").mkdir()
+        rep, durs = self._retime(out, {"duration": 16.4, "lines": [
+            _line("shot-1", 0, 2.4, 2.75, at=0), _line("shot-3", 2.75, 4.75, 13.4),
+            _line("shot-4", 13.4, 15.4, 15.75, at=13.4)]})
+        self.assertEqual(durs[1], 4)                                    # the silent shot keeps its length
+        at = {m["line"]: m["at"] for m in rep["voice"]["mapping"]}
+        self.assertAlmostEqual(at["shot-3"], 0.3 + 2.75 + 4 + 0.3, places=1)
+        self.assertAlmostEqual(at["shot-4"], 14.3, places=1)            # shot 4 starts at 14, + the pad
+        self.assertFalse([n for n in rep["notes"] if "pinned" in n], rep["notes"])
+
+    def test_two_lines_after_a_silent_shot_one_pinned(self):
+        # the pin sits on the second line of the scene after the silence: the gap before it holds the silence
+        out = self.tmp / "second"
+        showtime("new", "dom", out, "--from-storyboard", "-", stdin=LATER_PIN)
+        (out / "voice").mkdir()
+        rep, durs = self._retime(out, {"duration": 12, "lines": [
+            _line("shot-1", 0, 2.4, 2.75, at=0), _line("shot-3", 2.75, 4.0, 8.7),
+            _line("more", 8.7, 10.0, 10.35, at=8.7), _line("shot-4", 10.35, 11.4, 11.75)]})
+        self.assertEqual(durs[1], 4)
+        at = {m["line"]: m["at"] for m in rep["voice"]["mapping"]}
+        self.assertAlmostEqual(at["more"], 0.3 + 8.7 + 0.3, places=1)  # the pin, + one pad per narrated shot
+        self.assertFalse([n for n in rep["notes"] if "pinned" in n], rep["notes"])
 
     def test_unpinned_line_after_a_silent_shot_keeps_its_length(self):
         out = self._project()

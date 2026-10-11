@@ -55,6 +55,9 @@ from st import platform as plat  # noqa: E402
 from st.launcher import build_env, showtime_home  # noqa: E402
 
 ENV = build_env(showtime_home())
+# every command here takes well under a minute; one that is stuck ends itself with an error naming the step it is at
+# (SHOWTIME_TIMEOUT), long before this file's 15 minutes run out and the runner kills it with no word (macos-14 CI)
+ENV["SHOWTIME_TIMEOUT"] = "420"
 LOOKS = ("fluted-glass", "tilt-shift", "liquid-metal")
 NEW = ("mesh-gradient", "god-rays", "marble", "metaballs")
 ALL = LOOKS + NEW
@@ -62,9 +65,15 @@ FILES = [RUNTIME / "effects" / "gl.js"] + [RUNTIME / "components" / (n + ".js") 
 
 
 def showtime(*args, check=True, timeout=900):
-    cp = subprocess.run([sys.executable, str(LAUNCHER)] + [str(a) for a in args], env=ENV,
-                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8",
-                        errors="replace", timeout=timeout)
+    try:
+        cp = subprocess.run([sys.executable, str(LAUNCHER)] + [str(a) for a in args], env=ENV,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8",
+                            errors="replace", timeout=timeout)
+    except subprocess.TimeoutExpired as e:
+        # what it printed (a render that printed its result and did not exit, or one still capturing)
+        out, err = ((x.decode("utf-8", "replace") if isinstance(x, bytes) else (x or "")) for x in (e.stdout, e.stderr))
+        raise AssertionError("showtime %s did not return in %d s\nstdout: %s\nstderr: %s" % (
+            " ".join(map(str, args)), timeout, out[-1500:], err[-2500:])) from None
     skip_if_listen_refused(cp)
     if check and cp.returncode != 0:
         raise AssertionError("showtime %s failed (rc=%d):\n%s\n%s" % (

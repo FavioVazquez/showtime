@@ -471,8 +471,10 @@ class TestFindingsGate(Base):
     def test_parse_ids_and_statements(self):
         from st.job import findings as F
         got = F.parse(FINDINGS, "r1")
-        self.assertEqual([(f["id"], f["severity"]) for f in got], [("r1-B1", "blocker"), ("r1-S1", "should-fix")])
-        self.assertIn("without a bridge", got[1]["text"])          # "none" is no finding; FIRST VIEWER and polish do not gate
+        self.assertEqual([(f["id"], f["severity"]) for f in got],
+                         [("r1-B1", "blocker"), ("r1-S1", "should-fix"), ("r1-P1", "polish")])   # #48: polish has ids too
+        self.assertIn("without a bridge", got[1]["text"])          # "none" is no finding; FIRST VIEWER does not count
+        self.assertEqual(F.norm_id("R1-p1"), "r1-P1")
         inline = F.parse("BLOCKERS: t=1s frames/a.jpg black frame\nSHOULD-FIX (none)\nVERDICT: ship\n", "r2")
         self.assertEqual([f["id"] for f in inline], ["r2-B1"])
         pair = F.parse("SHOULD-FIX:\n- [X] t=1s ../X/frames/a.jpg small\n- t=2s ../Y/frames/b.jpg soft\n", "r2o1")
@@ -515,6 +517,27 @@ class TestFindingsGate(Base):
         s = review_state.state(j)
         self.assertEqual((s["status"], s["findings"]["open"]), ("findings open", ["r1-S1"]))
 
+    def test_polish_ids_register_and_never_gate(self):
+        # #48: `review-respond --fixed r1-P1` only printed the list of ids
+        j = self.job()
+        f = self.final(j)
+        self.critic(j, video=f)
+        lst = self.st("review-respond", str(j)).stdout
+        self.assertIn("r1-P1     polish     open", lst)               # lower case: it does not hold delivery
+        self.assertIn("delivery: held by 2 open findings", lst)          # polish is not one of them
+        from st.job import findings as F
+        self.assertEqual([x["id"] for x in F.collect(j)["open"]], ["r1-B1", "r1-S1"])
+        cp = self.st("review-respond", str(j), "--fixed", "r1-P1", "easing softened")
+        self.assertIn("r1-P1     polish     fixed", cp.stdout)
+        self.assertEqual([x["id"] for x in F.collect(j)["open"]], ["r1-B1", "r1-S1"])
+        # the receipt is about blockers and should-fixes: a fixed polish is in none of its counts or lists
+        self.st("review-respond", str(j), "--fixed", "r1-B1", "cold open", "--waive", "r1-S1", "house style")
+        from st.job import receipt
+        fd = receipt._findings(j)
+        self.assertEqual((fd["raised"], [x["id"] for x in fd["fixed"]], [x["id"] for x in fd["waived"]], fd["open"]),
+                         (2, ["r1-B1"], ["r1-S1"], []))
+        self.assertIn("delivery: clear (1 fixed, 1 waived)", self.st("review-respond", str(j)).stdout)
+
     def test_respond_and_waiver_pass(self):
         j = self.job()
         f = self.final(j)
@@ -524,7 +547,7 @@ class TestFindingsGate(Base):
         self.assertIn("delivery: held by 2 open findings", lst)
         bad = self.st("review-respond", str(j), "--waive", "r1-S9", "x", check=False)
         self.assertEqual(bad.returncode, 1)
-        self.assertIn("names no blocker or should-fix", bad.stderr)
+        self.assertIn("names no finding", bad.stderr)
         self.assertEqual(self.st("review-respond", str(j), "--waive", "r1-S1", "  ", check=False).returncode, 1)
         cp = self.st("review-respond", str(j), "--fixed", "r1-B1", "a 10 s cold open states the claim",
                      "--waive", "r1-s1", "the user wants the hard cut into part 2")
@@ -676,7 +699,7 @@ class TestReviewFindings(Base):
         cp = self.save(j.name)
         f = d / "FINDINGS.md"
         self.assertEqual(f.read_text(encoding="utf-8"), FINDINGS)                # the fence and the chat are left out
-        self.assertIn("saved %s: 1 blocker, 1 should-fix, 1 polish (ids r1-B1, r1-S1)" % f, cp.stdout)
+        self.assertIn("saved %s: 1 blocker, 1 should-fix, 1 polish (ids r1-B1, r1-S1, r1-P1)" % f, cp.stdout)
         self.assertIn("left out 4 lines", cp.stdout)            # the chat and the fence
         self.assertIn("review-respond %s --fixed r1-B1" % j.name, cp.stdout)
         from st.job import findings as F
@@ -720,6 +743,29 @@ class TestReviewFindings(Base):
         p = self.tmp / "reply.txt"
         p.write_text(text, encoding="utf-8")
         return p
+
+    def test_time_ranges_count_as_timestamps(self):
+        # #48: "t=38.73-41.50s" was reported as citing no timestamp
+        from st.job import findings as F
+        body = FINDINGS.replace("- t=8.00s frames/t0008.000s.jpg part 2", "- t=38.73-41.50s frames/t0038.730s.jpg part 2")
+        self.assertEqual([w for w in F.shape(body, 1)[1] if "timestamp" in w], [])
+        for ok in ("t=38.73s-41.50s x", "t=38.73 - 41.50 s x", "t=3.00s x"):
+            self.assertTrue(F._T.search(ok), ok)
+        for bad in ("t=3 x", "t=5-6 x"):
+            self.assertFalse(F._T.search(bad), bad)
+        loose = body.replace("- t=3.00s frames/t0003.000s.jpg easing", "- easing")
+        self.assertIn("r1-P1 cites no timestamp", " ".join(F.shape(loose, 1)[1]))
+
+    def test_pairwise_keeps_range_timestamped_findings(self):
+        # #48 review: shape() accepted a range but review-verdict's own parser dropped the finding
+        from st.job import findings as F
+        from st.qa import pairwise
+        txt = ("PREFERENCE: X -- ok\nWOULD I POST X: yes -- ok\nWOULD I POST Y: no -- ok\nBLOCKERS:\n"
+               "- [X] t=38.73-41.50s ../X/frames/t0038.730s.jpg the title is cut off\nSHOULD-FIX:\n- none\nPOLISH:\n- none\n")
+        self.assertEqual(F.shape(txt, 2, 1), ([], []))
+        got = pairwise.parse_findings(txt)
+        self.assertEqual([(f["severity"], f["t"]) for f in got["findings"]], [("blocker", 38.73)], got)
+        self.assertEqual(got["dropped"], [])
 
     def test_pairwise_needs_the_order(self):
         j = self.job()

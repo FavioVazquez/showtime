@@ -10,7 +10,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { launchGuarded, openGuarded, closeSoon } from './lib/stagehost.mjs';
+import { launchGuarded, openGuarded, closeSoon, imageSize } from './lib/stagehost.mjs';
 import { parseCli, runMain, UserError, info, warn, c, jobDir, fmtDuration, printHelp, Progress } from './lib/cli.mjs';
 import { newCaptureContext, installConsent, waitConsent, cleanupOverlays, robustGoto, detectBotWall, blockedMarkdown, slug, sleep, serveStatic, landingProblem, redactUrl, chromeUA, emulatePlatform, hostPlatform } from './lib/capture.mjs';
 import { resolveFF, ffmpeg, fpsArg } from './lib/ff.mjs';
@@ -69,18 +69,10 @@ function hash01(i, seed) {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 
-/** Pixel size of a baseline/progressive JPEG (SOFn marker), or null. */
+/** Pixel size of a JPEG: {width, height}, or null (stagehost's imageSize reads it). */
 export function jpegSize(buf) {
-  let i = 2;
-  while (i + 9 < buf.length) {
-    if (buf[i] !== 0xff) { i++; continue; }
-    const m = buf[i + 1];
-    if (m === 0xd8 || m === 0x01 || (m >= 0xd0 && m <= 0xd7)) { i += 2; continue; }
-    const len = buf.readUInt16BE(i + 2);
-    if (m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc) return { height: buf.readUInt16BE(i + 5), width: buf.readUInt16BE(i + 7) };
-    i += 2 + len;
-  }
-  return null;
+  const s = imageSize(buf);
+  return s ? { width: s[0], height: s[1] } : null;
 }
 
 /** type() arguments: (target, text, opts) | (text) | (text, opts) | (null, text, opts). */

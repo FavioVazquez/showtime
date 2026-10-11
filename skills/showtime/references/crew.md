@@ -14,8 +14,9 @@ folder (`board.json`, `brief.md`, `decisions.md`), the main project's `index.htm
 - You stay the only one who talks to the user, writes the ledger and the studio folder, edits the main
   `index.html`/`showtime.json`, renders, runs qa and delivers; members write only their own folders (§2)
 - Quick jobs run inline; dispatch as the table says (quality mode, the default: critic on every final;
-  factual claims or publish-bound: researcher before the final; 6+ scenes: motion designers), never for what
-  one or two commands do (§1)
+  factual claims or publish-bound: researcher before the final; publish-bound with music or effects:
+  sound designer; 6+ scenes: motion designers; "full crew":
+  every member the job can use, no pitch), never for what one or two commands do (§1)
 - Dispatch: make `<job>/crew/<task-id>/`, write `TASK.md` from the skeleton, then a two-line prompt (read
   `rules.md` and `<role>.md`, then the `TASK.md` path), no chat history; `subagent_type` `showtime:<role>` (§3)
 - No such agent type: a general-purpose sub-agent, same two lines; no sub-agents: do it yourself, say so (§3)
@@ -30,19 +31,20 @@ folder (`board.json`, `brief.md`, `decisions.md`), the main project's `index.htm
   CSS/JS, copy `assets/`), then `showtime check <project>` and `showtime look <project>` (§5)
 - New voice: `showtime retime <project> --from-voice <project>/voice/timeline.json`, send the new times (§4)
 - CPU slots: a third of the cores (1 to 3); motion designers at most slots + 1, single `snap --at` frames;
-  the final render (`--workers` 3 at most) only after every builder returns (§6)
+  the final render (`--workers` auto) only after every builder returns; with locked durations, chapters may render
+  earlier (§6)
 - Footage: confirm every dropped take or sentence in `cuts.md` with the user before the final (§4)
 
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| 1. When to use it | 47-61 |
-| 2. The roster | 63-82 |
-| 3. How to dispatch | 84-119 |
-| 4. Patterns | 121-167 |
-| 5. Merging results | 169-188 |
-| 6. CPU budget | 190-204 |
-| 7. Cost | 206-218 |
+| 1. When to use it | 49-76 |
+| 2. The roster | 78-97 |
+| 3. How to dispatch | 99-136 |
+| 4. Patterns | 138-185 |
+| 5. Merging results | 187-206 |
+| 6. CPU budget | 208-225 |
+| 7. Cost | 227-239 |
 
 ## 1. When to use it
 
@@ -51,7 +53,8 @@ folder (`board.json`, `brief.md`, `decisions.md`), the main project's `index.htm
 | Quick, quality review (default) | critic on the final (two for a pairwise round); researcher before the final when it states facts | 1-3 |
 | Quick, lean review (the user asked for a draft) | none: do it inline | 0 |
 | Quick, 6+ scenes | motion designers, capped by CPU (section 6) | 2-4 |
-| Quick, publish-bound | researcher (claims and licenses) before the final, critic on the final | 2 |
+| Quick, publish-bound | researcher (claims and licenses) before the final, critic on the final; sound designer in parallel with the build when the video has music or effects (not voice only, not lean) | 2-3 |
+| Quick, full crew ("full crew") | every member the job can use, no pitch and no storyboard gate: sound designer for any film with music, voice director for any voice-over, motion designers per beat or scene group, researcher, critic twice | 4-10 |
 | Studio | pitch trio, then script, sound, voice, storyboard, researcher, motion per scene, critic twice | 10-16 |
 | Studio or publish-bound footage | editor, sound designer, researcher, critic | 4-6 |
 
@@ -59,6 +62,18 @@ Never dispatch for something one or two commands do (`brand init`, one voice lin
 Follow-ups go to the same member (resume it, section 3), not a new one. If the user says "no crew",
 note it under Preferences in `brief.md` (or as a job note) and do everything inline. The studio offer
 line may say that studio uses the crew and takes longer.
+
+"Full crew" (also "use the whole crew") keeps quick mode and dispatches every member the job can use, as the
+row above says; CPU limits still apply (section 6), and the opening line says in one line who is working.
+Which words set which mode:
+
+| You say | Mode | Crew |
+|---|---|---|
+| (nothing special) | quick, quality review | critic; researcher for facts or publish-bound; sound designer for publish-bound with music or effects; motion designers at 6+ scenes |
+| "lean", "quick draft", "don't review" | quick, lean | none; a critic only when publish-bound |
+| "full crew", "use the whole crew" | quick, full crew | every member the job can use, critic twice |
+| "studio", "show me concepts first", "storyboard it first" | studio | pitch, storyboard gate, full crew |
+| "no crew" | any | done inline |
 
 ## 2. The roster
 
@@ -113,6 +128,8 @@ Assumptions already made: <...>     Out of scope: <...>
    about 3 minutes"). Wait for their notifications; never poll in a sleep loop.
 5. Follow-ups (a fix note, new timings) go to the same member with `SendMessage`, which keeps its
    context; write longer notes into its task folder and send the path.
+6. Split a heavy brief so no member runs into its turn cap: the board first, the animatic as a second task.
+   When a member stops at its cap, resume it with a follow-up message (`SendMessage`), not a fresh dispatch.
 
 **Validate before fan-out.** Before parallel builders start: freeze the cue table, write the theme or
 brand CSS, fetch everything in the storyboard's `assets-needed.txt`, and run `showtime check` on the
@@ -151,7 +168,8 @@ the motion designers and the sound designer.
 **D. Critic.** Publish-bound studio: round 1 on the first look (a `--preview` render), where fixes are
 cheap; round 2 on the final candidate, paired against the best so far (`review-pack --against best`, two
 critics, one per order, then `review-verdict`). Quick (quality review, or lean and publish-bound): one round, on the final. Dispatch
-each critic with only its `CRITIC.md` path (`references/review.md`). A critic whose Write was denied returns
+each critic with only its `CRITIC.md` path (`references/review.md`). Wait for the critic to return, not for
+`FINDINGS.md` to appear. A critic whose Write was denied returns
 the findings in its reply: save them with `showtime review-findings <job> < reply.txt` (`--order N` for a
 pairwise brief), never by retyping them.
 
@@ -201,7 +219,10 @@ speech recognition, TTS or long encodes share the machine:
 Slots: a third of the CPU cores, between 1 and 3 (6 cores give 2). Parallel motion designers: at most
 slots + 1 (they spend most of their time writing), and each `TASK.md` allows single `snap --at` frames,
 never `--every` sheets. Never run speech recognition while a browser capture runs. Your final render
-(`--workers` 3 at most) starts only after every builder has returned.
+(`--workers` auto: it sizes itself to the machine) starts only after every builder has returned. Once the
+storyboard and durations are locked (the total must not change), a finished chapter may render while later
+scenes are still being built: `showtime render <p> --chapter N --job J`, then `--join --job J` when all are in
+(render.md § The loop, Chapters). On one machine this overlaps work; it does not make the render faster.
 
 ## 7. Cost
 

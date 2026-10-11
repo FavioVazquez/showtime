@@ -12,6 +12,10 @@
     as long as the video and at -14 LUFS; the ledger records it as the latest final, spliced from final.mp4, and
     the receipt counts a partial render. Other encode settings (--crf 18) fall back to one whole encode; a new
     poster time re-renders frame 0's GOP and bakes it like a full render
+  * splice into a --size variant: after a full `--size 256x256 --job` render, the same span with --size is
+    spliced into the job's newest 256x256*.mp4 (256x256-2.mp4: old bytes outside the re-rendered GOPs, the fix
+    inside, the soundtrack reused, a third of the frames captured, less capture + encode time) and the job's
+    final stays final.mp4; another size, no job or a changed length stays a span clip and says why
   * span clips: no full render in the job -> <job>/work/span-1-2.mp4 (never final*), a changed length -> a span
     and `showtime qa <job>` still checks final.mp4, no job -> span-*.mp4 in a new folder that has no final,
     -o final.mp4 -> span beside it, -o clip.mp4 as given, a range covering the whole video -> an ordinary final
@@ -392,6 +396,77 @@ class TestSpliceRender(unittest.TestCase):
         self.assertLess(mad(g[0], want), 2.0, "frame 0 is the baked poster (or the opening frame when not baked)")
         self.assertLess(mad(g[1], gr[1]), 2.0)
         self.assertEqual(probe(sp["output"])["frames"], TOTAL)
+
+
+@unittest.skipUnless(NODE, "Node.js is not installed")
+class TestSpliceSize(unittest.TestCase):
+    """One job: final.mp4, then a full --size 256x256 render, the fix, and the span with --size 256x256 (a square
+    stands in for 9:16: the fix box at x 160-240 stays in the frame and the renders stay small)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = Path(tempfile.mkdtemp(prefix="st-splice-size-"))
+        cls.proj = write_project(cls.tmp / "proj")
+        cls.job = new_job("splice-size", cls.tmp)
+        render(cls.proj, "--job", cls.job, cwd=cls.tmp)
+        cls.full, _ = render(cls.proj, "--job", cls.job, "--size", "256x256", cwd=cls.tmp)
+        # the fix touches only the page (only frames 66-83 change), so the soundtrack's inputs are the same
+        page = cls.proj / "index.html"
+        page.write_text(page.read_text(encoding="utf-8").replace("#e02020", "#2050f0"), encoding="utf-8")
+        cls.sp, cls.sp_cp = render(cls.proj, "--from", 2.2, "--to", 2.8, "--job", cls.job, "--size", "256x256", cwd=cls.tmp)
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(str(cls.tmp), ignore_errors=True)
+
+    def test_1_spliced_into_the_newest_render_of_that_size(self):
+        sp = self.sp
+        out = Path(sp["output"])
+        self.assertEqual((out, Path(self.full["output"])), (self.job / "256x256-2.mp4", self.job / "256x256.mp4"))
+        self.assertEqual((sp["kind"], Path(sp["splice"]["base"]).name, sp["splice"]["mode"]), ("spliced", "256x256.mp4", "cut"), sp.get("splice"))
+        p = probe(out)
+        self.assertEqual((p["frames"], p["width"], p["height"], p["fps"]), (TOTAL, 256, 256, "30/1"))
+        self.assertAlmostEqual(p["audio"], DUR, delta=0.03)
+        self.assertIn("splice: 2.20-2.80s into a copy of 256x256.mp4 -> 256x256-2.mp4 (the full 6.00s video)", self.sp_cp.stderr)
+        self.assertIn("soundtrack reused", self.sp_cp.stdout + self.sp_cp.stderr)
+        rr = sp["splice"]["rerendered"]
+        s0, e0 = round(rr[0][0] * FPS), round(rr[-1][1] * FPS)
+        hs, hb = frame_hashes(out), frame_hashes(self.full["output"])
+        self.assertEqual(hs[:s0], hb[:s0], "frames before the re-rendered GOPs are the old render's")
+        self.assertEqual(hs[e0:], hb[e0:], "frames after them too")
+        self.assertNotEqual(hs[66:84], hb[66:84])
+        blue, red = pixel(out, 75, 190, 95), pixel(self.full["output"], 75, 190, 95)
+        self.assertGreater(blue[2], blue[0] + 80, blue)
+        self.assertGreater(red[0], red[2] + 80, red)
+        self.assertLess(sp["splice"]["frames_captured"], TOTAL // 2, sp["splice"])
+        # capture + encode (the work that grows with the frames): the wall time of a render this small is mostly its
+        # fixed start-up, which a busy machine (run_all -j 8) can make longer than the full render's
+        work = lambda r: r["timings"]["capture"] + r["timings"]["encode"]
+        self.assertLess(work(sp), work(self.full), "the splice's capture + encode (%d ms) is shorter than the full render's (%d ms)" % (
+            work(sp), work(self.full)))
+
+    def test_2_the_final_stays_and_another_size_is_a_span(self):
+        data = json.loads((self.job / "job.json").read_text(encoding="utf-8"))
+        self.assertEqual(Path(data["outputs"]["final"]).name, "final.mp4")
+        entry = [o for o in data["output_log"] if Path(o["path"]).name == "256x256-2.mp4"][-1]
+        self.assertTrue(entry.get("variant"), entry)
+        self.assertEqual(entry["spliced"], "2.2-2.8 from 256x256.mp4")
+        self.assertEqual(ledger.latest_video(self.job)[0].name, "final.mp4")
+        # a size with no earlier render in the job (the final and the 256x256 renders are not it)
+        rep, _ = render(self.proj, "--from", 1, "--to", 2, "--job", self.job, "--size", "192x256", cwd=self.tmp)
+        self.assertEqual((rep["kind"], Path(rep["output"]).parent), ("span", self.job / "work"))
+        self.assertIn("no earlier 192x256 render of this project", rep["span_reason"])
+        rep, _ = render(self.proj, "--from", 1, "--to", 2, "--size", "256x256", "-o", self.tmp / "o" / "final.mp4", cwd=self.tmp)
+        self.assertEqual(rep["kind"], "span")
+        self.assertIn("spliced only into a job's render of that size", rep["span_reason"])
+
+    def test_3_changed_length_stays_a_span(self):
+        write_project(self.proj, color="#2050f0", duration=5)
+        rep, cp = render(self.proj, "--from", 1, "--to", 2, "--job", self.job, "--size", "256x256", cwd=self.tmp)
+        self.assertEqual(rep["kind"], "span")
+        self.assertIn("256x256-2.mp4 is 256x256 30 fps 180 frames", rep["span_reason"])
+        self.assertIn("length changed", rep["span_reason"])
+        self.assertIn("length changed", cp.stdout + cp.stderr)
 
 
 @unittest.skipUnless(NODE, "Node.js is not installed")

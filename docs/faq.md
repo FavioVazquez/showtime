@@ -1,17 +1,21 @@
 # Questions people ask
 
-Short answers, each with a link to the long one. Something missing? Open an
-[issue](https://github.com/FavioVazquez/showtime/issues).
+Short answers, each with a link to the long one. Something failed or looks wrong? See
+[Troubleshooting](troubleshooting.md). New here? [Make your first video](guides/first-video.md). Something missing?
+Open an [issue](https://github.com/FavioVazquez/showtime/issues).
 
 ## Do I need a GPU?
 
-No. Every frame is drawn by a browser, and without a GPU the browser draws on the CPU, WebGL included. On a
-64-core Linux machine with no GPU, a 30-second 1080p launch film rendered in 17.6 s with 0.4.1's automatic settings
-(8 browsers), against 42.0 s with 0.4.0's (3 browsers), and in 13.1 s with 16 browsers (measured on 7 October 2026). On fewer cores, WebGL scenes are the slow part: on a 6-core Intel Mac
-with its GPU turned off, a shader-heavy 1080p frame took about 0.5 s. Without a GPU, showtime picks the number of
-browsers from your cores, and each of the seven WebGL looks adds less than 50 ms to a 1080p frame at its default
-size (measured on the same 64-core machine, one browser). More numbers:
-[render § Speed](../skills/showtime/references/render.md#speed).
+No. Without a GPU, renders run on your CPU and take longer, mostly in WebGL scenes; showtime picks how many
+browsers to run from your cores. On a 64-core machine with no GPU a 30 s film took 17.6 s; on a 6-core Intel Mac
+with its GPU turned off, a shader-heavy frame took about 0.5 s.
+
+Every frame is drawn by a browser, and without a GPU the browser draws on the CPU, WebGL included. The 64-core
+figure is a 30-second 1080p launch film on Linux with 0.4.1's automatic settings (8 browsers), against 42.0 s with
+0.4.0's (3 browsers), and 13.1 s with 16 browsers (measured on 7 October 2026). Each of the seven WebGL looks adds
+less than 50 ms to a 1080p frame at its default size (the same machine, one browser). More numbers:
+[render § Speed](../skills/showtime/references/render.md#speed); what to do on a small machine:
+[slow machine guide](guides/slow-machine.md).
 
 ## What does it cost?
 
@@ -70,9 +74,11 @@ issue. What ran where is in the [README](https://github.com/FavioVazquez/showtim
 
 ## Which languages?
 
-Voices speak English, Spanish and 30 other languages, all on your machine: the default voices cover eight of them, and
-the Supertonic voices, an extra (`showtime setup --with supertonic`), add the rest. Transcripts cover 25 languages
-with the default model, and more with Whisper. Ask for "the same video in French" and your agent re-voices it,
+Voices speak 32 languages, all on your machine. The default Kokoro voices (54 of them) cover eight: English,
+Spanish, French, Italian, Brazilian Portuguese, Hindi, Japanese and Mandarin (nine if American and British English
+count apart). The Supertonic voices, an extra (`showtime setup --with supertonic`), speak 31 and add the other 24.
+Transcripts cover 25 languages with the default model (Parakeet), and Whisper, fetched the first time another
+language needs it, covers more. Ask for "the same video in French" and your agent re-voices it,
 re-times the scenes and translates the on-screen text
 ([localize](../skills/showtime/references/workflows/localize.md)).
 

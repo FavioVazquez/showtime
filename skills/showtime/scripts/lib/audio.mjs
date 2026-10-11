@@ -5,6 +5,7 @@
 // (the audio module: ducking, synth/compose tracks, hit alignment); when that module is missing
 // or fails, a simple built-in ffmpeg mixer handles file tracks.
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { runPyCli, hasPyModule, UserError } from './cli.mjs';
 import { ffmpeg } from './ff.mjs';
@@ -24,6 +25,40 @@ export function audioInputs(aud, dir) {
     for (const t of aud.tracks || []) add(t.file);
   }
   return out;
+}
+
+/**
+ * The problem with showtime.json "audio", or null: an audio file or spec that is missing, or a mix spec the mixer
+ * rejects (`showtime audio mix --validate`: tracks, kinds, one source per track, files, numbers; nothing is
+ * rendered). `check` reports it and `render` stops on it before any frame is captured, with this same message.
+ * -> { message, fix } | null
+ */
+export async function mixSpecProblem(aud, dir) {
+  if (aud === undefined || aud === null || aud === false || aud === '') return null;
+  const fix = 'fix the mix spec; `showtime audio mix <spec> --validate` re-checks it without rendering (format: references/audio.md)';
+  const isPath = typeof aud === 'string';
+  if (isPath && !/\.json$/i.test(aud)) {
+    return fs.existsSync(path.resolve(dir, aud)) ? null : { message: `showtime.json audio file not found: ${aud}`, fix: 'put the file there or fix the path in showtime.json "audio"' };
+  }
+  if (isPath && !fs.existsSync(path.resolve(dir, aud))) return { message: `showtime.json audio mix not found: ${aud}`, fix: 'create the mix spec there or fix the path in showtime.json "audio"' };
+  if (!isPath && !Array.isArray(aud) && !(aud && typeof aud === 'object')) return { message: 'showtime.json "audio" must be a file, a mix.json path or a list of tracks', fix };
+  if (!hasPyModule('cli_audio.py')) return null;
+  let specPath = isPath ? path.resolve(dir, aud) : null, tmp = null;
+  if (!specPath) {
+    const spec = Array.isArray(aud) ? { tracks: aud.map((x) => (typeof x === 'string' ? { file: x } : x)) } : aud;
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'st-mixspec-'));
+    specPath = path.join(tmp, 'inline.mix.json');
+    fs.writeFileSync(specPath, JSON.stringify(spec, null, 2));
+  }
+  try {
+    const r = await runPyCli(['audio', 'mix', specPath, '--validate', '--root', dir], { cwd: dir, timeout: 60000 }).catch(() => null);
+    if (!r || r.code === 0) return null;
+    const msg = String(r.stderr || r.stdout || '').trim().replace(/^error:\s*/i, '').split('\n').map((l) => l.replace(/\s+$/, ''))
+      .filter((l) => l && !/^\s*(why|fix):/i.test(l)).join('; ').replace(/;\s+-\s+/g, '; ').replace(/:;\s*/, ': ');
+    return { message: `showtime.json "audio" (${isPath ? aud : 'inline mix'}): ${msg || 'the mix spec is not valid'}`, fix };
+  } finally {
+    if (tmp) fs.rmSync(tmp, { recursive: true, force: true });
+  }
 }
 
 /** Mix the showtime.json "audio" value into out (48 kHz stereo WAV). -> {kind, credits, reportFile, creditItems} | null */

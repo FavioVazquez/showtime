@@ -47,11 +47,11 @@ costs nothing to redo. Motion, sound and render just carry it out.
 | 3. Hooks (the first 2 seconds) | 90-112 |
 | 4. Structures | 114-162 |
 | 5. Writing the lines | 164-177 |
-| 6. Honesty rules (hard) | 179-207 |
-| 7. Pitch round (when direction is open) | 209-226 |
-| 8. Distinctness check (before building) | 228-241 |
-| 9. Videos that ask | 243-265 |
-| 10. A storyboard from another skill | 267-292 |
+| 6. Honesty rules (hard) | 179-209 |
+| 7. Pitch round (when direction is open) | 211-228 |
+| 8. Distinctness check (before building) | 230-243 |
+| 9. Videos that ask | 245-267 |
+| 10. A storyboard from another skill | 269-294 |
 
 ## 1. The one-sentence contract
 
@@ -182,6 +182,8 @@ sting. Show the world, not the feature list. The name lands last.
   customer logos or version numbers. If the source doesn't state it, the video doesn't either.
 - Illustrative UI content is fine when it's obviously illustrative ("Exported ✓" toasts, placeholder
   names, sample data). When sample data could be mistaken for real results, label it ("sample data").
+- A tagline, slogan or line the user never gave (their README or site is not in the job) is a placeholder or a
+  suggestion: say so in the plan and on the card, never present it as copy taken from a source.
 - A number on screen must match its source exactly (you may round only in narration).
 - **The user's claims are claims too.** A headline the user asks for is checked against the data they
   gave before anything is built. "5x faster than X" next to their own "X 52 s, ours 40 s" is not

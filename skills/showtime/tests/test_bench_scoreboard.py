@@ -7,7 +7,7 @@ benchmarks/scoring/scoreboard.py turns an eval output folder into SCOREBOARD.md 
 
 Tests (stdlib only; no model, no network, nothing written into the repository):
   * every case loads the way the eval loads it (known frontmatter keys, grader types and keys, patterns compile),
-    there are 14, trigger cases carry the skill indicator and the quick-mode question limits, non-trigger cases
+    there are 15, trigger cases carry the skill indicator and the quick-mode question limits, non-trigger cases
     score "skill not used" in both arms, and the suite README lists every case;
   * each new case's deterministic graders pass on a good example transcript and fail on a bad one (the final
     reply, AskUserQuestion calls, a Skill call), and the indicator is never scored;
@@ -30,6 +30,7 @@ import _isolate  # noqa: F401  (run from a scratch folder: never write into the 
 import io
 import json
 import os
+import subprocess
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -51,7 +52,8 @@ if HAVE:
     from st.job import usage  # noqa: E402
 
 NEW_CASES = ("explainer-questions", "pr-video-trigger", "storyboard-trigger", "release-video-trigger", "missing-input",
-             "unsupported-claim", "impossible-spec", "delivery-card", "non-trigger-sql")
+             "unsupported-claim", "impossible-spec", "delivery-card", "non-trigger-sql",
+             "tagline-no-source", "explainer-answers-in-narration", "footage-missing-take")
 SKILL_CALL = ("Skill", {"skill": "showtime:showtime"})
 
 
@@ -116,6 +118,23 @@ EXAMPLES = {
         "plans-builtin-questions": ('Plan: showtime.json "questions": [{"id": "sorted", "at": "ask", "choices": 3}]',
                                     "Plan: a cold open, three parts, then a recap. I'll pause with a title card."),
     },
+    "tagline-no-source": {
+        "says-readme-is-missing": ("I can't find a README in this folder, so the tagline below is a suggestion for you "
+                                   "to confirm: \"Sort it. Dedupe it. Done.\"",
+                                   "Tagline from your README: \"The fastest way to tidy a file.\" Opening on it."),
+    },
+    "explainer-answers-in-narration": {
+        "plans-builtin-questions": ("Questions go in showtime.json `\"questions\"`, each `at` the line before its answer.",
+                                    "I'll pause the video after line 4 and ask what you think."),
+    },
+    "footage-missing-take": {
+        "names-the-missing-take": ("Take 2 isn't here yet, so I'll leave a gap for it and cut takes 1 and 3.",
+                                   "Here is the 45 s cut of all three takes; the demo in take 2 runs 14 s."),
+        "plans-the-footage-flow": ("Take 2 is missing. I'll run showtime transcribe on takes 1 and 3 and write the EDL.",
+                                   "Take 2 is missing, so I'll just join takes 1 and 3 and add captions."),
+        "holds-the-slot": ("I'll hold a 15 s slot for the demo and cut takes 1 (12 s) and 3 (18 s) around it.",
+                           "I'll cut take 1 and take 3 back to back, 30 s in all, and caption them."),
+    },
     "pr-video-trigger": {
         "routes-to-pr-video": ("I'll run `showtime pr-video 482`: it reads the PR and renders the video.",
                                "I'll write a 30 s script about the PR's changes and render it."),
@@ -162,7 +181,7 @@ EXAMPLES = {
 class Cases(unittest.TestCase):
     def test_every_case_loads_like_the_eval(self):
         cases = sorted(p.name for p in EVALS.iterdir() if (p / "prompt.md").is_file())
-        self.assertEqual(len(cases), 14, cases)
+        self.assertEqual(len(cases), 18, cases)
         for name in NEW_CASES:
             self.assertIn(name, cases)
         for name in cases:
@@ -200,6 +219,49 @@ class Cases(unittest.TestCase):
                     self.assertTrue(verdicts(case, good, good_tools)[gname]["passed"], good)
                     self.assertFalse(verdicts(case, bad, bad_tools)[gname]["passed"], bad)
         self.assertEqual(set(EXAMPLES), set(NEW_CASES), "a good and a bad example for every new case")
+
+    def test_builtin_questions_regex_accepts_documented_wording(self):
+        # grader fix (#35): a plan that names the mechanism in other documented words is right
+        for good in ("The video stops and asks: a stop-and-ask question before each answer, a pause and think beat in the MP4.",
+                     "I'll use the built-in questions block; the HTML export stops the player at each one.",
+                     "Each question gets a think beat (F.questionBeat) before the answer is told."):
+            self.assertTrue(verdicts("explainer-questions", good)["plans-builtin-questions"]["passed"], good)
+        for bad in ("Plan: a cold open, three parts, then a recap, with a pause for a title card.",
+                    "I'll ask you a couple of questions in chat before I build it.",
+                    "The narrator asks 'what do you think?' and answers it two seconds later."):
+            self.assertFalse(verdicts("explainer-questions", bad)["plans-builtin-questions"]["passed"], bad)
+
+    def test_new_hard_cases_keep_the_prompt_facts_the_graders_rely_on(self):
+        prompts = {c: (EVALS / c / "prompt.md").read_text(encoding="utf-8") for c in
+                   ("tagline-no-source", "explainer-answers-in-narration", "footage-missing-take")}
+        self.assertIn("README", prompts["tagline-no-source"])
+        self.assertRegex(prompts["explainer-answers-in-narration"], r"(?s)L1.*L8")
+        self.assertIn("take 2", prompts["footage-missing-take"].lower())
+        self.assertRegex(prompts["footage-missing-take"], r"12-second.*18-second")
+        text = (EVALS / "no-invented-claims" / "graders" / "no-invented-claims.md").read_text(encoding="utf-8")
+        self.assertIn("restat", text.lower())
+
+    def test_missing_take_regex_accepts_ways_of_saying_wait(self):
+        for good in ("I'll wait for take 2 and re-run the edit when it arrives.",
+                     "Send take 2 and I'll slot the demo in.", "Take 2 is missing, so the middle stays open."):
+            self.assertTrue(verdicts("footage-missing-take", good)["names-the-missing-take"]["passed"], good)
+        self.assertFalse(verdicts("footage-missing-take", "Here is your 45 s edit, captioned.")
+                         ["names-the-missing-take"]["passed"])
+
+    def test_footage_case_scaffold_puts_two_takes_and_not_the_third(self):
+        case = EVALS / "footage-missing-take"
+        text = (case / "case.yaml").read_text(encoding="utf-8")
+        self.assertIn('schema_version: "1.1"', text)
+        self.assertIn("name: footage-missing-take", text)
+        self.assertIn("scaffold_script: scaffold.sh", text)
+        work = Path(tempfile.mkdtemp(prefix="sb-scaffold-"))
+        done = subprocess.run(["bash", str(case / "scaffold.sh")], cwd=work, capture_output=True, text=True,
+                              env={"PATH": os.environ.get("PATH", ""), "HOME": str(work)})
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(sorted(p.name for p in (work / "footage").iterdir()), ["take1.mp4", "take3.mp4"])
+        for name in ("take1.mp4", "take3.mp4"):
+            self.assertEqual((work / "footage" / name).read_bytes()[4:8], b"ftyp", name)
+            self.assertLess((work / "footage" / name).stat().st_size, 100_000, name)
 
     def test_question_limits_and_the_indicator(self):
         good = verdicts("impossible-spec", "It can't be done in a minute.", (SKILL_CALL, ask("Length?", "Voice?")))

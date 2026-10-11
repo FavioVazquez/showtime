@@ -7,8 +7,8 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { startServer } from './server.mjs';
-import { parseCli, runMain, failNow, resolveProject, info, c, fmtTime, fmtDuration, parseTimes, parseTime, UserError, cpuCount, workName, briefOutput, runPyCli, hasPyModule, sinceLastLooked, printSince } from './lib/cli.mjs';
-import { openBrowser, openPage, openLab, parseSize, paceSummary, watchBrowser, closeSoon, STUCK_HINT } from './lib/stagehost.mjs';
+import { parseCli, runMain, failNow, stage, resolveProject, info, c, fmtTime, fmtDuration, parseTimes, parseTime, UserError, cpuCount, workName, briefOutput, runPyCli, hasPyModule, sinceLastLooked, printSince } from './lib/cli.mjs';
+import { openBrowser, openPage, openLab, parseSize, paceSummary, watchBrowser, closeSoon, STUCK_HINT, onStuckShot } from './lib/stagehost.mjs';
 import { textSnapshot, hideText, fontInfo, leafAlpha, captionCollisions, gpuProbeScript } from './lib/audit.mjs';
 import { phoneConfig, createPhone, readNeed, readingRate, ptOf, phoneLine } from './lib/phone.mjs';
 import { brandFindings } from './lib/brandcheck.mjs';
@@ -16,6 +16,7 @@ import { uncovered, loadedFaces, glyphFix } from './lib/glyphs.mjs';
 import { timeIssues } from './lib/questions.mjs';
 import { resolveShowreel, showreelConfig, flashVerdict, flashNote } from './lib/showreel.mjs';
 import { blurConfig, blurFindings, blurSummary } from './lib/blurcheck.mjs';
+import { mixSpecProblem } from './lib/audio.mjs';
 import { enclosingJob, readJSON } from './lib/studio/paths.mjs';
 
 const PROBES = ['black', 'frozen', 'nondeterministic', 'error'];
@@ -124,6 +125,7 @@ const SPEC = {
     determinism: { type: 'boolean', help: 'thorough determinism probe: 12 frames, and a second page load must give the same hashes' },
     'no-determinism': { type: 'boolean', help: 'skip the determinism probe' },
     'no-timeline': { type: 'boolean', help: 'skip dense sampling (readability, dead air, blank frames)' },
+    'no-cuts': { type: 'boolean', help: 'skip the first frame after each cut (late_first_frame): a second page walks every cut, which is most of a check without a GPU on a WebGL page' },
     'find-first': { help: `bisect for the first bad frame: ${PROBES.join(' | ')}`, metavar: 'PROBE' },
     from: { help: '--find-first: start of the searched range (default 0)', metavar: 'S' },
     to: { help: '--find-first: end of the searched range (default: the end)', metavar: 'S' },
@@ -192,8 +194,10 @@ async function main() {
   const add = (sev, code, message, extra = {}) => findings.push({ severity: sev, code, message, ...extra });
   const quiet = !!a.quiet;
   const talk = !quiet && !a.json && !briefOutput();   // progress steps: terminals and --verbose only
-  let doing = 'opening the page';   // check's last step (the watchdog's error names it)
-  const step = (m) => { doing = m; if (talk) info(c.dim(`  ${m}`)); };
+  let doing = 'opening the page';   // check's last step (the watchdog's error names it; SHOWTIME_TIMEOUT's too)
+  const setDoing = (m) => { doing = m; stage('check', m); };
+  const step = (m) => { setDoing(m); if (talk) info(c.dim(`  ${m}`)); };
+  setDoing(doing);
   if (talk) info(`${c.bold('showtime check')} ${proj.dir}`);
 
   const server = await startServer({ root: proj.dir, port: 0 });
@@ -202,6 +206,9 @@ async function main() {
   // error naming the step), and a browser that stops answering at any other step ends check with an error
   // instead of a check that never returns (a macOS CI runner's check once outlived its caller's 5 minutes)
   const stopWatch = watchBrowser(b, (m, hint) => failNow(`${m}; check's last step: ${doing}`, hint));
+  // a screenshot whose frame never comes (the browser's drawing processes idle: stagehost guardShot) ends check
+  // with its step, the same way, instead of a check that never returns
+  onStuckShot((m) => failNow(`the browser stopped drawing: ${m}; check's last step: ${doing}`, STUCK_HINT));
   const cleanup = async () => { stopWatch(); await closeSoon(b.browser.close()); await server.close().catch(() => {}); };
   let sess, lab, sess2;
   // once the first page is open, a later open that finds the browser stuck must not go on in a new one (the open
@@ -220,6 +227,7 @@ async function main() {
     else { cur.first = Math.min(cur.first, tt); cur.last = Math.max(cur.last, tt); cur.caption = cur.caption || !!caption; }
   };
   try {
+    await mixSpecFindings();
     // ---------------------------------------------------------- load
     let t = Date.now();
     try {
@@ -229,7 +237,7 @@ async function main() {
       add('error', 'ready_failed', String(e.message || e), { fix: e.hint || 'open the page with `showtime preview` and look at the console' });
       return await finish();
     }
-    doing = 'opened the page; reading its timeline and text';
+    setDoing('opened the page; reading its timeline and text');
     const inf = sess.info;
     // an overlay page (rendered with --alpha over other footage: lower thirds, step chips) is empty
     // between its elements on purpose: <body data-overlay> or showtime.json "overlay": true
@@ -255,9 +263,9 @@ async function main() {
       .map((e) => (e.closest('[data-storyboard-shot]') || e.closest('[id]') || {}).id || '?'))]).catch(() => []);
     if (briefs.length) add('warning', 'storyboard_brief', `${briefs.length} shot(s) still show their storyboard brief instead of a picture: ${briefs.slice(0, 8).join(', ')}${briefs.length > 8 ? ', ...' : ''}`,
       { fix: 'build each shot in its <section> from its brief (storyboard.json has every row), then delete the [data-storyboard-brief] elements' });
-    doing = 'opening the image lab page';
+    setDoing('opening the image lab page');
     lab = await openLab(b, server.url, noRelaunch);
-    doing = 'opened the image lab page; sampling the frames';
+    setDoing('opened the image lab page; sampling the frames');
     const D = inf.duration, fps = inf.fps, W = inf.width, H = inf.height;
     // language of the on-screen text (sets the reading speed): showtime.json "lang", else <html lang>, else en
     const pageLang = await sess.page.evaluate(() => document.documentElement.getAttribute('lang') || '').catch(() => '');
@@ -1466,7 +1474,7 @@ async function main() {
     // draws it from its own clock (canvas or WebGL drawn in onSeek "while active", tested against a time
     // typed again in the script, or one written a hair after the frame) draws it one frame later. That
     // frame is then blank or half drawn in the render, and the sample frames above never land on it.
-    if (lab && !overlayPage) {
+    if (lab && !overlayPage && !a['no-cuts']) {
       t = Date.now();
       try {
         sess2 = await openPage(b, { url: server.url, page: proj.page, config: proj.config, size }, noRelaunch);
@@ -1616,6 +1624,12 @@ async function main() {
     await cleanup();
   }
 
+  /** audio_mix: the soundtrack spec, with the rule `render` stops on at its start (issue #27); see mixSpecProblem. */
+  async function mixSpecFindings() {
+    const p = await mixSpecProblem(proj.config && proj.config.audio, proj.dir);
+    if (p) add('error', 'audio_mix', p.message, { fix: p.fix });
+  }
+
   /** look_repeat: the variety guard (st.variety.history via `showtime history check`), never fatal. */
   async function lookHistory() {
     if (a['no-history'] || !hasPyModule('cli_variety.py')) return;
@@ -1623,7 +1637,7 @@ async function main() {
     if (r.code !== 0) return;
     try {
       const h = JSON.parse(r.stdout);
-      report.look = { level: h.level, compared: h.compared, repeats: (h.repeats || []).map((x) => ({ aspect: x.aspect, value: x.value, jobs: x.jobs, alternatives: x.alternatives })) };
+      report.look = { level: h.level, compared: h.compared, repeats: (h.repeats || []).map((x) => ({ aspect: x.aspect, value: x.value, jobs: x.jobs, why: x.why, alternatives: x.alternatives })) };
       if (h.level === 'warning' || h.level === 'info') {
         add(h.level, 'look_repeat', h.message, { fix: `${h.fix}${h.fix ? '; ' : ''}details: showtime history check ${proj.dir}` });
       }

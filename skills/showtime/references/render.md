@@ -16,8 +16,8 @@ slow, fails, or looks different from the preview; or when you need the exact fla
   video (§ The loop, § showtime render)
 - `showtime render <p>` writes a new job folder and never overwrites; `--job <job>` writes `<job>/final.mp4`
   (`final-2.mp4` on a re-render) so `showtime qa <job>` checks it; not with `-o` (§ showtime render)
-- Defaults: CRF 16 / `veryfast`, JPEG capture, workers by machine (3 with a GPU; without one, one per 8 CPU
-  threads, 3-8), -14 LUFS / -1 dBTP; `--preview` is a 720p draft, `--preview --fps 12` the fastest first look.
+- Defaults: CRF 16 / `veryfast`, JPEG capture, workers by machine (3 with a GPU; without one, CPU threads - 2
+  from 8 threads up, at most 8, else 3), -14 LUFS / -1 dBTP; `--preview` is a 720p draft, `--preview --fps 12` the fastest first look.
   Keep CRF 16 for anything a platform re-encodes; encode settings you ship go in showtime.json
   `"render": {...}` (flags still win); `"x264_preset": "medium"` is the encode before 0.4.1 (§ showtime render)
 - Poster: best default is a hook complete at t=0 with `"poster": 0`; a poster unlike the opening is not baked
@@ -45,15 +45,15 @@ slow, fails, or looks different from the preview; or when you need the exact fla
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| The loop | 58-95 |
-| showtime render <project> | 97-229 |
-| showtime check <project> | 231-290 |
-| showtime snap <project / video> | 292-313 |
-| showtime preview <project> | 315-332 |
-| showtime retime <project> -d <seconds> | 334-387 |
-| Speed | 389-471 |
-| Troubleshooting | 473-487 |
-| Platforms | 489-504 |
+| The loop | 58-136 |
+| showtime render <project> | 138-279 |
+| showtime check <project> | 281-341 |
+| showtime snap <project / video> | 343-364 |
+| showtime preview <project> | 366-383 |
+| showtime retime <project> -d <seconds> | 385-440 |
+| Speed | 442-545 |
+| Troubleshooting | 547-561 |
+| Platforms | 563-578 |
 
 ## The loop
 
@@ -89,10 +89,51 @@ length, the mix of the whole video: reused when its inputs did not change, else 
 poster as in a full render), recorded as `spliced: 12-18 from final.mp4` and counted by the receipt as a partial
 render. When the old render was encoded with other settings or another ffmpeg, the whole video is encoded once
 instead (old frames decoded, new ones from the capture). With no such render, after a size, fps or length
-change, with `--preview`, `--alpha` or `--size`, or without `--job`, the result is a span clip:
+change, with `--preview` or `--alpha`, or without `--job`, the result is a span clip:
 `<job>/work/span-12-18.mp4` (without a job, `span-12-18.mp4` in a new folder; `-o clip.mp4` without `--job` writes it
 there, in a job folder too, and never splices it; with `--job` the fix is spliced and `-o` is ignored). It is only those seconds: look at
 it (`showtime look <file>`), never deliver it; `qa <job>`, `look <job>` and the ledger skip span clips.
+With `--size` the same splice goes into the job's newest render of that size: `--from 12 --to 18 --job <job>
+--size 9:16` splices into the latest `1080x1920*.mp4` (same checks: this project, frame rate and length) and writes
+the next `1080x1920-2.mp4`, a variant that leaves the job's final alone; with no earlier render of that size it is
+a span clip that says so.
+
+**Chapters** (#22): a film rendered in named, frame-exact pieces and joined with **one audio pass for the whole
+timeline**, so the result is the file a single render gives (no loudness steps, shifts or cut fades at the joins).
+On one machine a whole render is faster (§ Speed); chapters are for a second machine, a later fix of one chapter,
+or a long film whose browsers should not live for an hour. The chapters are showtime.json
+`"chapters": [[0, "Intro"], [42.5, "How it works"]]` (also `{"t": 42.5, "label": "..."}`, the list the HTML export
+and review-pack use), else the film's acts; never the top-level scenes. Chapter N is the frames
+`[round(t_N * fps), round(t_N+1 * fps))`, the last ends at the video's end; a time past the end is dropped with a
+warning, a chapter under 1 s or a list out of order is refused, a chapter starting inside a `data-transition`
+warns (start chapters on scene starts). Lock the durations first: pieces made for another length are refused.
+- `render <p> --chapters [--job J] [--json]`: the plan only (each chapter's seconds and frames, the command per
+  chapter, the join command), saved as `<job>/work/chapters/plan.json`; nothing is rendered.
+- `render <p> --chapter N --job J`: with a full render of this size, fps and length in the job, the splice above at
+  chapter N's bounds (a new `final-N.mp4`; after a whole render or a join each chapter start is a keyframe, so exactly
+  its frames are re-rendered; after a `--from/--to` splice across a chapter start, whole GOPs around it). Without one, a **piece** `<job>/work/chapters/<W>x<H>/ch-NN.mp4`: video only (no
+  mix is built), never a final: the ledger records it as a partial render, `latest video`, `qa` and `look` never pick it.
+  Rendering a chapter again deletes its earlier piece first, so an interrupted render leaves that chapter to render
+  again. Chapter 1's piece holds the poster
+  frame, baked into frame 0 as in a whole render. Its report records the chapter, the timeline's frame count,
+  `sources_hash` (sha256 of the project's HTML, CSS, JS, JSON, SVG and Markdown, the files the freshness check reads:
+  the same on a copy at another path; images, fonts, video and audio are not in it), the encode settings and the
+  ffmpeg and Chrome versions.
+- `render <p> --join --job J`: the pieces must tile the video at one size, fps and length (else refused, with the
+  `--chapter N` command to run). They are byte-joined at their keyframes (one piece in memory at a time); pieces
+  with other encode settings or from another ffmpeg are decoded and encoded once as a whole (the report says why).
+  The mix is built once for the whole video (the audio cache's key is a whole render's), muxed, and the
+  seams checked before the file is named `final.mp4` (`final-N.mp4`): frames = total, a keyframe at each seam,
+  frame times `k / fps`, the two frames at each seam captured again from the page (PSNR >= 40 dB, or at most 3 dB under a frame
+  inside the same piece captured the same way, so grain or a high CRF does not fail it, never below 25 dB; `--no-seam-pixels` skips
+  it), the loudness at each seam = the master's (+-0.1 dB) and lag 0 (+-1 sample) (the mux carries the master's AAC
+  stream as is, so this catches a container offset or cut, not a mix problem), the
+  whole file's loudness and length as a render's. A failure leaves `work/chapters/joined-failed.mp4` and names the
+  seam. render.json says `kind: "joined"`; pieces from other project files (`sources_hash`), another Chrome build
+  or GPU/software GL warn, naming the chapters. `qa <job>` adds the seam section.
+- A second machine: copy the project, render `--chapter N --job J` there, then copy its
+  `<job>/work/chapters/<W>x<H>/ch-NN.mp4` and the `ch-NN.work/` folder beside it (its `render.json`) into the
+  same place in the job on the joining machine.
 
 ## `showtime render <project>`
 
@@ -104,9 +145,13 @@ A project is a folder with `showtime.json` and `index.html` (or pass an `.html` 
 | `--job JOB`, `-j` | none | a job folder or name: writes `<job>/final.mp4` (`final-2.mp4`... on a re-render, `preview.mp4` with `--preview`) and records it in job.json `outputs`, so `showtime qa <job>` checks it. Not with `-o` |
 | `--out-dir DIR` | `$SHOWTIME_OUT` or the current folder | job folder is `DIR/showtime-out/<title>-<timestamp>/` |
 | `--preview`, `-p` | off | a draft: at most 720p, x264 veryfast CRF 23, AAC 128k, no poster bake; the file is named `preview.mp4` |
-| `--from S --to S` | whole video | re-render one section: with `--job` and a full render there, spliced into a copy of it (a full `final-N.mp4`); otherwise a span clip `span-S-S.mp4` (audio cut to match, no poster), never a final (§ The loop) |
+| `--from S --to S` | whole video | re-render one section: with `--job` and a full render there, spliced into a copy of it (a full `final-N.mp4`; with `--size`, into the job's newest `<W>x<H>*.mp4`: `<W>x<H>-N.mp4`); otherwise a span clip `span-S-S.mp4` (audio cut to match, no poster), never a final (§ The loop) |
+| `--chapters` | off | chapter mode: print the chapter plan (seconds, frames, the command per chapter) and render nothing; with `--job` saved as `<job>/work/chapters/plan.json` (§ The loop, Chapters) |
+| `--chapter N` | off | with `--job`: render chapter N, spliced into the job's full render at this size, fps and length when there is one, else a video-only piece `<job>/work/chapters/<W>x<H>/ch-NN.mp4` |
+| `--join` | off | with `--job`: join the pieces into `<job>/final.mp4` (`final-N.mp4`) with one mix for the whole video, then check the seams; `kind: "joined"` |
+| `--no-seam-pixels` | off | with `--join`: skip the seam pixel check (captures the two frames at each seam again, about a warm-up each) |
 | `--fps N` | showtime.json | `--preview --fps 12` is the fastest first look (40 % of the frames): judge layout and story with it, not motion |
-| `--workers N`, `-w` | auto | separate browsers. Auto: 3 with a GPU; without one (SwiftShader, llvmpipe, WARP), one per 8 CPU threads, at least 3 and at most 8; never more than CPU threads - 2, one per 45 frames, one per 3 GB of memory (in a container, of its memory limit), or `SHOWTIME_MAX_WORKERS`. The render log and render.json `workers_why` say what was picked and why |
+| `--workers N`, `-w` | auto | separate browsers. Auto: 3 with a GPU; without one (SwiftShader, llvmpipe, WARP), CPU threads - 2 from 8 threads up (at most 8), 3 below 8 threads; never more than CPU threads - 2, one per 45 frames, one per 3 GB of memory (in a container, of its memory limit), or `SHOWTIME_MAX_WORKERS`. The render log and render.json `workers_why` say what was picked and why |
 | `--scale X` | 1 | `0.5` = half size, `2` = supersampled (sharper text, 4x the pixels) |
 | `--alpha prores\|animation\|webm` | off | transparent background (the themes' scene and stage fills turn transparent; a background a scene sets itself still paints; mark an overlay page `<body data-overlay>` so `check` does not call its gaps dead air): ProRes 4444 `.mov` (editors; large: a 1 s full-frame 1080p stinger is about 30 MB), QuickTime Animation `.mov` (editors; lossless RGBA, a fraction of that for flat graphics such as lower thirds and stingers, larger than ProRes for photos and gradients) or VP9 `.webm` (web) |
 | `--format jpeg\|png` | jpeg (q92) | png is lossless and ~1.5x slower to capture |
@@ -115,7 +160,7 @@ A project is a folder with `showtime.json` and `index.html` (or pass an `.html` 
 | `--poster-bake auto\|force\|off` | auto | auto bakes the poster into frame 0 only when it looks like the opening frame (else frame 0 would flash on autoplay and loops) |
 | `--lufs N`, `--no-loudnorm`, `--no-audio` | -14 LUFS, -1 dBTP | |
 | `--allow-silent` | off | a project with audio (ST.score or an `audio` mix) fails when its audio fails twice; this ships it silent instead |
-| `--gpu off` | auto | software rendering: slower, most reproducible across machines |
+| `--gpu off` | auto | software rendering: slower, most reproducible across machines. A render on the GPU that loses a WebGL canvas's context while it is on screen (it would be captured white) runs again this way by itself, and says so |
 | `--settle raf1\|raf2\|none` | raf1 | paint wait after each seek (raf2 is extra safe; none can miss paints). A canvas or WebGL scene blank on the first frame after a cut is not a paint wait: raf2 does not change it; see `late_first_frame` in `check` |
 | `--keep-frames` | off | keep the captured frames (`frames/` in the work folder), also after a failed or interrupted render |
 | `--keep-work` | off | keep the whole work folder: the silent `video.mp4` (about the size of the final) and the WAV stems too |
@@ -147,9 +192,14 @@ What happens:
    Chrome DevTools screenshot call. A worker that is
    done takes the back half of the largest range left (after its own one-second replay), so no
    worker runs alone at the end; a worker whose page does not open in 5 minutes (scaled, see below) gets a new browser,
-   and its frames go to the others meanwhile. Missing or empty frames are captured again; a crashed
-   browser is restarted up to twice, with a screenshot, the DOM and the console saved to
-   `work/diagnostics/`.
+   and its frames go to the others meanwhile. A screenshot whose frame does not come is given up once the
+   browser's GPU process and renderers have done no work for 30 s (scaled, see below) and the frame is drawn again
+   in a new browser (`capture.retries` in render.json). A frame whose renderer keeps working (a page with its own
+   timer loop), or a browser that cannot report its processes' work, is waited for up to 10 minutes
+   (`SHOWTIME_SHOT_TIMEOUT=<seconds>`). Missing or empty frames are
+   captured again; a crashed browser is restarted up to twice, with a screenshot, the DOM and the console saved
+   to `work/diagnostics/`. `SHOWTIME_TIMEOUT=<seconds>` is a caller's limit for a render (or a check): past it
+   the command ends with an error naming what each worker was doing (also in `logs/render.log`).
 3. One encode, running during the capture: the frames go to disk as before and one ffmpeg reads
    them in order as soon as each one and all before it are there, so the file is the same, byte
    for byte, as an encode started after the capture (`SHOWTIME_PIPE_ENCODE=0` does that). With a GPU,
@@ -244,7 +294,7 @@ exactly like the renderer and reports findings with the time they happen and a f
 | `clip_timing`, `video` | error | bad `data-start`/`data-dur`, or a video that cannot be decoded/seeked |
 | `font_load_failed` | error | an `@font-face` file failed |
 | `low_contrast` | error (warning under 1 % of the height) | WCAG contrast of text against the real pixels behind it: 4.5:1 for every size. Judged at the settled frame: a text a sample caught mid-fade, blurred or mid-entrance is measured again at the frame of its visible window where it is most opaque, and only fails when it is low there (the message gives that time and where it was first sampled). A text seen only mid-transition gets an info note naming the transition. Large text (>= 4 % of the height) in the colours of the job's style reference (`reference-style.css`) at 3:1 or more is a note: the user asked for that look. |
-| `caption_zone` | warning | with caption-karaoke captions: a visible element (text, image, SVG shape, a box with a fill) drawn where the caption cards sit while a caption shows. Names the element, the time and the overlap in px. Ignores full-frame backgrounds, full-width bands without text and anything under 10 % opacity; mark an intended overlap `data-st-caption-ok` |
+| `caption_zone` | warning | with caption-karaoke captions: a visible element (text, image, SVG shape, a box with a fill) drawn where the caption cards sit while a caption shows. Names the element, the time and the overlap in px. Ignores full-frame backgrounds, full-width bands without text and anything under 10 % opacity; mark an intended overlap `data-st-caption-ok`. On a canvas film only DOM elements are seen, not what the film draws on its canvas |
 | `webgpu` | error / warning | the page asks for WebGPU (`navigator.gpu`, a `webgpu` canvas); the message names the file and line. Check loads the page again with WebGPU gone, as on a machine without a GPU (showtime never needs one): error when no WebGL or 2D canvas of the page draws in its place (the render would be a flat ground), warning when one does (frames differ with and without a GPU). Fix: WebGL or 2D, e.g. showtime's shader layer (`shaderLayer`, motion-craft.md) |
 | `font_not_embedded` | warning | text is painted with a system font (differs between Mac, Windows and Linux) |
 | `text_off_canvas`, `text_clipped` | error | readable text runs off the frame or is cut by a container at a sample time (decor: info) |
@@ -266,7 +316,7 @@ exactly like the renderer and reports findings with the time they happen and a f
 | `poster_not_baked` | info | showtime.json `poster` is set, but the frame differs from the opening, so `render` (`--poster-bake auto`) will not bake it into frame 0 (it would flash on autoplay and loops); poster.jpg is still written. Start the video in the poster's state, or `"render": {"poster_bake": "force"}` |
 | `dead_air` | error / warning | error: for 1.5 s or more no clip is showing (a gap between scenes, or scenes that end before the video does; canvas: only the flat backdrop is drawn), listed in report.json `timeline_holes` (`from`, `to`, `at_end`, `detail`). Warning: a still hold of `--dead-air` seconds or more (default 2.5 s, the same rule as qa `frozen`, so check catches it before the render), or an end hold over 4 s. Fix: add motion (a slow push-in, drift, a progress element) or another beat, or shorten the scene with `showtime retime`. An overlay page for `--alpha` (`<body data-overlay>` or showtime.json `"overlay": true`) gets `overlay_gap` notes instead |
 | `final_hold` | info | a still hold that runs to the end, up to 4 s: fine for an end card (qa has the same rule) |
-| `look_repeat` | warning / info | the look repeats one of your last five videos (theme, palette, type pair, transitions, camera, music, structure; template or tone alone: info), with two alternatives per repeat; a repeat that follows the job's style reference is info (intended); `--no-history` skips it ([reference.md](reference.md)) |
+| `look_repeat` | warning / info | the look repeats one of your last five videos (theme, palette, type pair, transitions, camera, music, structure; template or tone alone: info), with two alternatives per repeat, and what matched with its distance and threshold; a repeat that follows the job's style reference is info (intended); `--no-history` skips it ([reference.md](reference.md)) |
 | `timeline_gap` | warning | only with `--no-timeline`: a gap in the clip table (the dense pass that measures holes was skipped) |
 | `blank_frames`, `first_frame_blank` | warning | black/white screens; a blank frame 0 is a bad thumbnail |
 | `timers`, `css_transitions`, `animated_gif`, `config_conflict`, `clip_after_end` | warning | see [stage-api.md](stage-api.md) |
@@ -282,7 +332,8 @@ again after timing changes. report.json also lists `scenes`
 `from`, `to`); review-pack uses them for per-scene frames. The hold thresholds live in
 `runtime/thresholds.json`, shared by check, retime and qa. Exit code 1 on errors (`--strict`: also on
 warnings). Useful flags: `--samples N` (default 9 + the last frame), `--at 3.2,7.9`,
-`--no-timeline` (skip the dense pass: faster), `--no-determinism`, `--dead-air S` (default 2.5).
+`--no-timeline` (skip the dense pass: faster), `--no-determinism`, `--no-cuts` (skip `late_first_frame`: without a
+GPU it is about a third of a WebGL page's check), `--dead-air S` (default 2.5).
 
 How the determinism probe works: four frames are captured, re-captured after 150 ms of real time,
 and captured again after being reached in another order through the two previous frames (the way
@@ -370,13 +421,15 @@ the scene lengths from the narration instead of one length for all:
   line absorbs it instead; a `--total` that would cut into that line is an error that names the
   shortest length that works. The report counts only values that really changed.
 - Pins win over `data-silent` scenes. A silent scene keeps its length and moves the lines after it
-  later by that much, unless the next line is pinned (`{at=...}`) and the voice starts it on its
+  later by that much, unless a line after it is pinned (`{at=...}`) and the voice starts it on its
   pin: then the voice already holds the silence, so the silent scene fills the gap from the end of
-  the line before it (plus its pause) to the pin, and the narrated scene before it keeps whatever is
-  left. A gap a little shorter than the silent scene wants shrinks it, with a note that says how
-  much later to pin the line. The silent scene keeps its length (with a note saying why) when the
-  voice ran past the pin (the line before it is too long), when it would drop under 1 s, and when the
-  pin comes from a 0.4.0 narration.md that left the silent shots out (regenerate it).
+  the line before the pin (plus its pause) to the pin, and that line keeps whatever is left. The
+  first pinned line after the silent scene counts, even when the lines between them are not pinned,
+  so the silence is never counted twice. A gap a little shorter than the silent scene wants shrinks
+  it, with a note that says how much later to pin the line. The silent scene keeps its length (with
+  a note saying why) when the voice ran past the pin (the line before it is too long), when it would
+  drop under 1 s, and when the pin comes from a 0.4.0 narration.md that left the silent shots out
+  (regenerate it).
 - Every line becomes its own voice track in `audio/mix.json` (`vo-<id>`, file
   `voice/lines/NN-id.wav`) at scene start + pad; music without ducking gets `"duck": {"under":
   "voice"}`; music sections, sound effects and the poster move with their scenes. A project without
@@ -397,6 +450,24 @@ were running:
 | same, `--preview` (1280x720 output) | capture 28.9 fps, encode 2.3 s, 20.5 s total |
 | same, 1 worker | 19 fps (jpeg), 12 fps (png) |
 | 4 s 1280x720 template / canvas + offline score, 2 workers | 30-40 fps / 26-35 fps capture; A/V offset 0.02 ms |
+
+Chapters (#22) on one machine (2026-10-09, an 8-thread Linux VM without a GPU, a 180 s 1080p30 DOM project,
+3 chapters of 60 s, `--workers` auto = 6, one command at a time):
+
+| Run | Wall s |
+|---|---|
+| one whole render | 245.8, 247.3 |
+| `--chapters` plan | 1.6 |
+| `--chapter 1`, `2`, `3` (pieces, video only) | 82.4 + 93.5 + 69.2 = 245.1 |
+| `--join` (byte join, mix from the cache, mux, seam check with pixels: 4.3 s) | 6.8 |
+| chapters + join | 251.9 (+2.5 %) |
+| a fix of one chapter: `--chapter 2` piece again + `--join` | 95.8 + 8.3 = 104.1 |
+| a fix of one chapter in a job with a whole render: `--chapter 2` (splice of its 1800 frames) | 113.3 |
+
+**One machine: no speed.** The pieces together cost what a whole render does, and the join adds to it. What
+chapters buy is a join with one mix (step 0 dB and lag 0 samples at both seams here, seam pixels >= 53 dB) and a
+fix of one chapter at 42 % (chapter 2 again plus the join) or 46 % (spliced into the whole render) of a whole render in this film (its second chapter is the heaviest). Several
+machines are not measured.
 
 0.4.0 against 0.4.1 on the same machine (2026-10-07, 1080p30, automatic settings, best of 2 interleaved runs).
 Other jobs kept it very busy (load average 50-280 on 6 cores), so every number spreads widely; the encode and
@@ -439,8 +510,9 @@ Rules of thumb:
 - Keep the automatic worker count. With a GPU, 3 browsers were fastest on a 6-core machine (4 and 6
   were slower). Without one, every browser already spreads its drawing over the cores: on a 6-core
   machine 1 browser beat 3 for a WebGL showreel (by about 10 %) but a DOM page was about 50 % slower
-  with 1 than with 3, and on a 64-core machine 4-16 were best, so the default is one per 8 CPU
-  threads, at least 3 and at most 8. On a 4-8 core machine without a GPU, WebGL scenes stay slow (about 0.5 s per frame
+  with 1 than with 3, on a 64-core machine 4-16 were best, and an 8-thread machine was fastest with 8
+  browsers for a DOM page (a third faster than 3) and a WebGL showreel, so from 8 CPU threads up the
+  default is CPU threads - 2, at most 8, and 3 below. On a 4-8 core machine without a GPU, WebGL scenes stay slow (about 0.5 s per frame
   for a shader-heavy 1080p scene, measured): render them at half resolution.
 - What 0.4.1 made faster, with the same frames (except GPU antialiasing noise at hand-over joins):
   x264 `veryfast` (2-3x faster encodes than `medium`
@@ -467,8 +539,10 @@ Rules of thumb:
 - Fonts: load them from `/_lib/@fontsource/<family>/...` or `/_lib/@fontsource-variable/<family>/...`
   (installed by setup), or from `@font-face` files in the project. Never rely on system fonts or
   web font URLs; `check` shows which fonts actually painted the text.
-- Long videos: renders keep one browser per worker for the whole range; for videos longer than
-  ~10 minutes, render in sections with `--from/--to` and join them with the editing tools.
+- Long videos: renders keep one browser per worker for the whole range. To render one in pieces (a browser
+  per chapter, a second machine, a later fix of one chapter), use chapters (§ The loop): `--chapter N --job J`
+  then `--join --job J` builds the mix once. Never join `--from/--to` span clips with `edit render`: each
+  span masters its own audio (steps of 0.7-2.6 dB at the joins, #22) and the edit adds cut fades.
 
 ## Troubleshooting
 

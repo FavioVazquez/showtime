@@ -8,6 +8,7 @@
   "_examples": "The examples (and their media release) live in their own repository. The build reads them from --examples, else examples/ in this checkout, else examples_dir (a sibling clone); CI checks that repository out.",
   "branch": "main",
   "version": "0.4",
+  "_version": "The footer, llms.txt and the landing read st.__version__ (build.py repo_version); this major.minor is only the fallback for a copy without the library, and check_release.py keeps it in step.",
   "marketplace": "FavioVazquez/showtime",
   "description": "A local video studio for your coding agent. Describe a video. Your agent directs. Your machine renders. No cloud AI services, no API keys, no uploads.",
   "hero": {
@@ -20,6 +21,8 @@
     "label": "The showtime 0.4.1 showreel",
     "credit": "The 0.4.1 showreel: seven real showtime films, then the features behind them on the beat, rendered by showtime on a CPU with no GPU. Music: \u201cSupernova\u201d by Scott Buckley, <a href=\"https://creativecommons.org/licenses/by/4.0/\">CC BY 4.0</a>. Footage: NASA (public domain). Event data: IceCube Collaboration.",
     "_showreel": "The 0.3.0 showreel stays in examples/_showreel (its links keep working).",
-    "_launch": "The 0.2.0 launch film (examples/_launch) plays at the top of the gallery, gallery.html#launch-film."
-  }
+    "_launch": "The gallery's optional film is gallery_film below."
+  },
+  "_gallery_film": "An optional film at the top of the gallery, above the tabs: null shows none (the page opens on its intro, then the tabs and the Start here shelf). To show one, give an object with folder, film, poster, label, length and credit (a release asset, like the hero's), e.g. {\"folder\": \"examples/_launch\", \"film\": \"launch-16x9.mp4\", \"poster\": \"examples/_launch/poster.jpg\", \"label\": \"The showtime 0.2.0 launch film\", \"length\": \"40 s\", \"credit\": \"...\"}. The 0.2.0 launch film's files stay in examples/_launch.",
+  "gallery_film": null
 }

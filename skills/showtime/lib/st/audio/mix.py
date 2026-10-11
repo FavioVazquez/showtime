@@ -1182,6 +1182,62 @@ def speaker_safe(buses: Dict[str, np.ndarray], sub_fx: Optional[np.ndarray], sub
     return rep
 
 
+def validate(spec: Any, spec_path: Optional[Path] = None, root: Optional[Path] = None) -> Dict:
+    """Structural check of a mix spec with the rules `render` applies, without decoding or rendering anything.
+
+    `showtime check` runs this so a spec the mixer would reject fails before any frame is captured. Catalog
+    and library sources are not resolved (that can need a download). Raises ShowtimeError listing every problem.
+    """
+    if isinstance(spec, (str, Path)):
+        spec_path = Path(spec)
+        spec = read_json(spec_path)
+    if not isinstance(spec, dict) or not isinstance(spec.get("tracks"), list) or not spec["tracks"]:
+        raise ShowtimeError("mix spec needs a non-empty 'tracks' list", hint="see references/audio.md for the mix.json format")
+    problems: List[str] = []
+    if spec.get("sample_rate") is not None and spec.get("sample_rate") not in (44100, 48000):
+        problems.append("sample_rate must be 48000 or 44100")
+    dur = spec.get("duration")
+    if dur is not None and dur != "project":
+        try:
+            if not 0 < float(dur) <= 3600:
+                problems.append("duration must be between 0 and 3600 seconds")
+        except (TypeError, ValueError):
+            problems.append("duration must be a number of seconds")
+    bases = _bases(spec_path, root)
+    live = 0
+    for i, tr in enumerate(spec["tracks"]):
+        if not isinstance(tr, dict):
+            problems.append("track %d must be an object" % i)
+            continue
+        kind = tr.get("kind") or "sfx"
+        if not isinstance(kind, str) or kind.lower() not in KINDS:
+            problems.append("track %d: kind must be one of %s (got %r)" % (i, ", ".join(KINDS), kind))
+        if tr.get("mute"):
+            continue
+        live += 1
+        try:
+            for name in ("start", "at", "dur", "gain_db", "fade_in", "fade_out", "pan"):
+                _num(tr.get(name), name, i)
+            if not tr.get("typewriter") and not tr.get("keystrokes"):
+                srcs = [k for k in ("file", "lib", "catalog", "synth", "compose") if tr.get(k)]
+                if len(srcs) != 1:
+                    raise ShowtimeError("track %d: give exactly one source: file, lib, catalog, synth, compose, keystrokes "
+                                        "or typewriter (got %s)" % (i, ", ".join(srcs) or "none"))
+                if srcs[0] == "file":
+                    resolve_path(tr["file"], bases)
+            elif tr.get("keystrokes"):
+                resolve_path(tr["keystrokes"], bases)
+        except ShowtimeError as e:
+            msg = str(e)
+            problems.append(msg if msg.startswith("track %d" % i) else "track %d: %s" % (i, msg))
+    if not live and not problems:
+        problems.append("every track is muted")
+    if problems:
+        raise ShowtimeError("mix spec is not valid:\n  - " + "\n  - ".join(problems),
+                            hint="fix the spec, then `showtime audio mix <spec> --validate` re-checks it without rendering")
+    return {"valid": True, "tracks": len(spec["tracks"]), "active": live}
+
+
 def render(spec: Any, out_path, spec_path: Optional[Path] = None, root: Optional[Path] = None,
            report_path: Optional[Path] = None, ffmpeg_check: bool = False,
            speaker_safe_on: Optional[bool] = None) -> Dict:

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -116,6 +117,14 @@ class TestCrew(unittest.TestCase):
         f = cr.run_checks(fix=False, only=["agents"])
         self.assertEqual(f.errors(), [], "crew agent problems:\n" + fmt(f.errors()))
 
+    def test_every_agent_caps_its_turns(self):
+        for role in CREW:
+            text = (REPO / "agents" / (role + ".md")).read_text(encoding="utf-8")
+            m = re.search(r"(?m)^maxTurns:\s*(\d+)\s*$", text)
+            self.assertIsNotNone(m, "agents/%s.md declares no maxTurns" % role)
+            self.assertTrue(20 <= int(m.group(1)) <= 100,
+                            "agents/%s.md: maxTurns %s is outside 20-100" % (role, m.group(1)))
+
     def test_roster_complete(self):
         for role in CREW:
             self.assertTrue((REPO / "agents" / (role + ".md")).is_file(), "agents/%s.md is missing" % role)
@@ -165,6 +174,33 @@ class TestSkillMd(unittest.TestCase):
     def test_commands_exist(self):
         f = cr.run_checks(fix=False, only=["commands"])
         self.assertEqual(f.errors(), [], "docs name commands the CLI does not have:\n" + fmt(f.errors()))
+
+    def test_fit_is_estimated_before_synthesis(self):
+        # `voice script --fit S --estimate` answers "cut about N words" without speech (issue #45): every
+        # workflow or crew brief that runs `voice script ... --fit` says so
+        files = [SKILL_MD] + sorted((SKILL / "references" / "workflows").glob("*.md")) + sorted((SKILL / "references" / "crew").glob("*.md"))
+        files.append(SKILL / "references" / "manim.md")
+        files.append(SKILL / "references" / "voice.md")
+        missing = []
+        for p in files:
+            text = re.sub(r"\s+", " ", p.read_text(encoding="utf-8"))
+            for m in re.finditer(r"voice script", text):
+                # a `voice script` that goes on to `--fit` (the file names in between have dots: no [^.] shortcuts)
+                if "--fit" in text[m.start():m.end() + 250] and "--estimate" not in text[max(0, m.start() - 500):m.end() + 500]:
+                    missing.append("%s: ...%s..." % (p.name, text[m.start():m.end() + 120]))
+        self.assertEqual(missing, [], "runs `voice script --fit` without pointing to --estimate first:\n" + "\n".join(missing))
+        # the files the issue names must be in the list (a moved or renamed guide must not drop out silently)
+        names = {p.name for p in files}
+        for n in ("social-short.md", "explainer.md", "scriptwriter.md", "voice-director.md"):
+            self.assertIn(n, names)
+
+    def test_skill_md_names_the_synthesis_run_after_the_estimate(self):
+        # the step that sets the scene lengths from voice/timeline.json must still run the real `voice script --fit`
+        body = re.sub(r"\s+", " ", SKILL_MD.read_text(encoding="utf-8"))
+        m = re.search(r"Voice-led:(.{0,300}?)timeline\.json", body)
+        self.assertTrue(m, "SKILL.md step 2 no longer mentions voice/timeline.json")
+        self.assertIn("--estimate", m.group(1))
+        self.assertRegex(m.group(1), r"then without `--estimate`", "the real (synthesizing) run must stay named")
 
 
 @unittest.skipIf(cr is None, "scripts/check_release.py not found")
@@ -246,6 +282,31 @@ class TestCheckersBite(unittest.TestCase):
         finally:
             cr.people_docs = real
             shutil.rmtree(str(d), ignore_errors=True)
+
+    def test_newcomer_pages_are_linked_and_checked(self):
+        # the docs audit for 0.4.2: newcomers were sent to the 1,382-line README, troubleshooting answers were written
+        # for agents only, and EDL, ledger and look signature had no reader's definition
+        docs = REPO / "docs"
+        for page in (docs / "guides" / "first-video.md", docs / "troubleshooting.md", docs / "glossary.md"):
+            self.assertTrue(page.is_file(), page)
+            self.assertIn(page, cr.people_docs(), "%s is not link- and command-checked" % page.name)
+        for rel, links in (("docs/README.md", ("guides/first-video.md", "troubleshooting.md", "glossary.md")),
+                           ("docs/guides/README.md", ("first-video.md", "../troubleshooting.md", "../glossary.md")),
+                           ("docs/faq.md", ("troubleshooting.md", "guides/first-video.md")),
+                           ("README.md", ("docs/guides/first-video.md", "docs/troubleshooting.md", "docs/glossary.md"))):
+            text = (REPO / rel).read_text(encoding="utf-8")
+            for link in links:
+                self.assertIn("(%s" % link, text, "%s does not link %s" % (rel, link))
+        glossary = (docs / "glossary.md").read_text(encoding="utf-8")
+        for term in ("EDL", "ledger", "look signature", "splice", "critic", "crew", "quality and lean", "quick and studio"):
+            self.assertIn("## %s" % term, glossary, "the glossary does not define %s" % term)
+        self.assertIn("../CONTEXT.md", glossary, "the glossary must say how it relates to CONTEXT.md")
+        # contradictions the audit found: review mode is not tied to quick mode, and the first-use transcription model is
+        # Parakeet (outside its 25 languages Whisper small is fetched, or turbo when installed; --full fetches turbo)
+        for rel in ("docs/README.md", "docs/agents.md", "README.md", "site/build.py", "skills/showtime/references/harness-notes.md"):
+            text = " ".join((REPO / rel).read_text(encoding="utf-8").split())
+            for stale in ("quick is lean", "Whisper for transcripts", "Whisper before the first transcription"):
+                self.assertNotIn(stale, text, "%s still says %r" % (rel, stale))
 
     def test_moved_doc_links(self):
         import tempfile

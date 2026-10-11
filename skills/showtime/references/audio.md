@@ -46,13 +46,13 @@ Everything runs locally. Every command has `--help` with examples, and most acce
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| 1. The five-minute path | 57-71 |
-| 2. Music | 73-128 |
-| 3. Sound effects | 130-146 |
-| 4. Library | 148-196 |
-| 5. The mix spec (audio/mix.json): Heard on a phone, Credits | 198-340 |
-| 6. Analysis and delivery | 342-368 |
-| 7. Platform notes | 370-380 |
+| 1. The five-minute path | 57-72 |
+| 2. Music | 74-129 |
+| 3. Sound effects | 131-147 |
+| 4. Library | 149-197 |
+| 5. The mix spec (audio/mix.json): Heard on a phone, Credits | 199-341 |
+| 6. Analysis and delivery | 343-369 |
+| 7. Platform notes | 371-381 |
 
 ## 1. The five-minute path
 
@@ -64,10 +64,11 @@ showtime audio compose --style underscore --dur 45 \
 showtime audio sfx whoosh -o audio/whoosh.wav               # prints JSON with "hit"
 showtime audio mix audio/mix.json -o audio/mix.wav          # mastered to -14 LUFS / -1 dBTP + report
 showtime audio meter audio/mix.wav                          # verify, never guess
+showtime audio mix audio/mix.json --validate                # only the spec rules, no render (check runs this)
 ```
 
 When a project's `showtime.json` has `"audio": "audio/mix.json"`, `showtime render` runs the mix
-itself. Run `showtime audio mix` on its own while iterating: it takes seconds, and the report shows what
+itself, and `showtime check` and `showtime render` reject a spec the mixer would refuse (`audio_mix` error; the render stops before capturing a frame). Run `showtime audio mix` on its own while iterating: it takes seconds, and the report shows what
 changed.
 
 ## 2. Music
@@ -314,7 +315,7 @@ ends on the hit, so it does not count.
 - integrated LUFS, true peak and LRA, plus the pre-master levels
 - `speaker`: the speaker-safe step and how loud the mix is above 300 Hz and 1 kHz (above)
 - per section: LUFS, RMS and the RMS of each bus
-- `voice_to_music_db`: how far the voice sits above the music and ambience while speaking (aim for 10–20)
+- `voice_to_music_db`: how far the voice sits above the music and ambience while speaking (aim for 10–20). When the music is the project's `ST.score` (not a track of the mix), `render` measures the voice mix against the raw score (integrated loudness) and writes that gap here, with `voice_to_music_source: "score"`
 - per track: gain, level reference and alignment, plus duck and carve statistics; for a music bed
   its landmarks on the output timeline (`end_hit`, `music_sections`, `downbeats`) and, for a composed
   bed, the `backend_used` and `soundfont_file` (the credit line for the SoundFont): line up the logo

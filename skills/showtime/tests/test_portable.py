@@ -5,7 +5,8 @@
     command built from ${CLAUDE_SKILL_DIR} / ${CLAUDE_PLUGIN_ROOT} (an unexpanded one becomes
     /bin/showtime); the documented command runs with CLAUDE_SKILL_DIR and CLAUDE_PLUGIN_ROOT unset;
   * <home>/bin/showtime (st.shim): runs the recorded skill, sets its own home, works through a link,
-    finds a moved skill in the usual folders, follows the newest version, `showtime doctor` repairs it,
+    finds a moved skill in the usual folders, follows the newest version, keeps the installed (or the
+    recorded) skill on a version tie, `showtime doctor` repairs it,
     PATH advice never edits a shell file;
   * --background and `showtime status <run>` (st.runs): run ids, --wait (75 while running), --cancel,
     --runs, --json, a failing command, a supervisor that died ("lost");
@@ -245,17 +246,41 @@ class TestShim(Tmp):
         cp = run([home / "bin" / "showtime", "version"], env=clean_env(HOME=self.fake_home()), cwd=self.tmp)
         self.assertEqual(cp.stdout.strip(), "showtime 9.9.9")
 
-    def test_same_version_follows_the_running_skill(self):
-        """Two folders of the same version (a plugin and a checkout, two hosts sharing one home) can hold
-        different code: the command runs the one used last, never a stale one another host recorded."""
+    def test_same_version_keeps_the_installed_skill(self):
+        """A version tie never moves the command to whichever folder ran last (#23): an installed skill (a
+        plugin, a skill in the usual folders) beats a checkout, and otherwise the recorded one stays."""
+        user = self.fake_home()
+        plugin = self.copy_skill(user / ".claude" / "plugins" / "cache" / "mk" / "showtime" / __version__
+                                 / "skills" / "showtime")
+        self.assertTrue(shim.installed(plugin, user_home=user))
+        self.assertFalse(shim.installed(SKILL, user_home=user))
         home = self.tmp / "home-tie"
-        self.install(home)
-        other = self.copy_skill(self.tmp / "other-host" / "showtime")
-        env = clean_env(HOME=self.fake_home(), SHOWTIME_HOME=home)
-        run([sys.executable, other / "lib" / "st" / "launcher.py", "version"], env=env, cwd=self.tmp)
-        self.assertEqual(shim.recorded_skill(home).resolve(), other.resolve())
-        launcher("version", env=env, cwd=self.tmp)   # this skill runs: the command follows it back
-        self.assertEqual(shim.recorded_skill(home).resolve(), SKILL.resolve())
+        self.install(home, plugin)
+        env = clean_env(HOME=user, SHOWTIME_HOME=home)
+        launcher("version", env=env, cwd=self.tmp)               # a checkout of the same version runs
+        self.assertEqual(shim.recorded_skill(home).resolve(), plugin.resolve(), "the plugin keeps the command")
+        self.assertIsNone(shim.drift(home, SKILL, user_home=user), "an expected tie is not a doctor warning")
+        second = self.copy_skill(self.tmp / "second-checkout" / "showtime")
+        run([sys.executable, second / "lib" / "st" / "launcher.py", "version"], env=env, cwd=self.tmp)
+        self.assertEqual(shim.recorded_skill(home).resolve(), plugin.resolve())
+        # two checkouts and no plugin: the recorded one stays, whichever ran last
+        home2 = self.tmp / "home-checkouts"
+        self.install(home2, second)
+        env2 = clean_env(HOME=user, SHOWTIME_HOME=home2)
+        launcher("version", env=env2, cwd=self.tmp)
+        self.assertEqual(shim.recorded_skill(home2).resolve(), second.resolve())
+        # the plugin of the same version runs: it takes the command from the checkout, and keeps it
+        run([sys.executable, plugin / "lib" / "st" / "launcher.py", "version"], env=env2, cwd=self.tmp)
+        self.assertEqual(shim.recorded_skill(home2).resolve(), plugin.resolve())
+        launcher("version", env=env2, cwd=self.tmp)
+        self.assertEqual(shim.recorded_skill(home2).resolve(), plugin.resolve())
+        # a newer checkout still wins (test_newest_skill_wins), and `setup --link` claims a tie on purpose
+        code, _ = shim.install(home2, SKILL, claim=True)
+        self.assertEqual(code, "ok")
+        self.assertEqual(shim.recorded_skill(home2).resolve(), SKILL.resolve())
+        launcher("version", env=env2, cwd=self.tmp)
+        run([sys.executable, second / "lib" / "st" / "launcher.py", "version"], env=env2, cwd=self.tmp)
+        self.assertEqual(shim.recorded_skill(home2).resolve(), SKILL.resolve(), "a claimed checkout stays")
 
     def test_skill_in_npm_cache_is_kept_as_a_copy(self):
         """npx runs the npm package from npm's cache, which npm prunes: the command must not depend on it."""

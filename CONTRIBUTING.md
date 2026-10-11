@@ -23,6 +23,11 @@ To try your working copy inside Claude Code without installing the plugin, link 
 skills/showtime/bin/showtime setup --link     # ~/.claude/skills/showtime -> this checkout
 ```
 
+The stable command `~/.showtime/bin/showtime` follows a newer version, but not a tie: running a checkout of
+the version you have installed (or a second checkout, or a scratch copy) leaves it on the installed plugin,
+or on the folder it already runs. `setup --link` points it at the linked checkout. Run a checkout's own
+`skills/showtime/bin/showtime` to use that checkout without touching the command.
+
 ## Ground rules
 
 1. **Everything runs locally.** No cloud AI services, API keys, accounts, uploads or telemetry. The network

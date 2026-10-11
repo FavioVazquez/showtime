@@ -9,7 +9,7 @@ with pages and footage, and LaTeX setup per OS.
 
 - Order: `showtime job init <slug> --goal "..."`, beat sheet and narration, `showtime manim new <job>/manim`
   (`--template equation|graph|plane|refine|blank`, `--aspect 9:16`), then
-  `showtime voice script <job>/manim/narration.md -o <job>/manim/voice/` (`--fit <s>`) (§2)
+  `showtime voice script <job>/manim/narration.md -o <job>/manim/voice/` (`--fit <s>`, `--estimate` first) (§2)
 - `showtime manim cues <job>/manim` prints the line ids and numbered words that `beat()`, `at()` and
   `fit(until=)` take; never name a line after a word the narration says (`cue_ambiguous`) (§2, §9)
 - `showtime manim check <job>/manim` until 0 errors and every WARN read; for a 9:16 cut also run it with
@@ -56,7 +56,7 @@ with pages and footage, and LaTeX setup per OS.
 | 10. Narration sync | 290-319 |
 | 11. Integration | 321-335 |
 | 12. Pitfalls | 337-363 |
-| 13. Setup and LaTeX per OS | 365-389 |
+| 13. Setup and LaTeX per OS | 365-390 |
 
 ## 1. When Manim, and which engine
 
@@ -83,7 +83,7 @@ depth-correct; everything else belongs in Manim Community.
 1. `showtime job init <slug> --goal "..."`, then write the beat sheet (section 4) and the narration.
 2. `showtime manim new <job>/manim` (`--template equation|graph|plane|refine|blank`, `--aspect 9:16`).
    *Done when:* the folder has `manim.json`, `scenes.py`, `narration.md`.
-3. `showtime voice script <job>/manim/narration.md -o <job>/manim/voice/` (add `--fit <s>` for a target length).
+3. `showtime voice script <job>/manim/narration.md -o <job>/manim/voice/` (add `--fit <s>` for a target length; run it with `--estimate` first and cut words until it fits).
 4. `showtime manim cues <job>/manim` lists each line id and its numbered words: the names `beat()`,
    `at()` and `fit(until=)` take.
 5. Write the scenes. `showtime manim check <job>/manim` until it reports 0 errors and you have read
@@ -383,7 +383,8 @@ the one it finds first for renders.
 libraries on macOS and Linux: macOS `brew install cairo pango pkg-config`; Debian/Ubuntu
 `sudo apt install libcairo2-dev libpango1.0-dev pkg-config python3-dev`; Fedora
 `sudo dnf install cairo-devel pango-devel pkgconf-pkg-config python3-devel`; Arch
-`sudo pacman -S cairo pango pkgconf`. Windows gets wheels. Then `showtime setup --with manim --force`.
+`sudo pacman -S cairo pango pkgconf`. Windows gets wheels. setup checks them before it downloads anything
+(a WARN with this line); after installing them, `showtime setup` installs manim again.
 
 **When a render fails.** The error names the scene, the line in `scenes.py` and the log
 (`build/logs/render.log`). A cue word error lists the words the line really has.

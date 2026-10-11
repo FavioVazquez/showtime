@@ -62,8 +62,8 @@ not say.
      `"audio": {"music": {"file": "../track.wav", "gain_db": 0}}` with `"loudness": {"lufs": -14}`.
      `showtime edit check`, then read the output time of every cut and compare with `downbeats`.
    - **Motion graphics or photos:** a `dom` or `film` project; set `data-start` of each scene to a
-     downbeat; put the track in `audio/mix.json` as `{"kind": "music", "file": "audio/track.wav",
-     "level": "raw"}`. Beat-reactive motion uses the beat times as data (copy `beats`/`downbeats` into a
+     downbeat; put the track in the `tracks` list of `audio/mix.json`: `{"tracks": [{"kind": "music",
+     "file": "audio/track.wav", "level": "raw"}]}`. Beat-reactive motion uses the beat times as data (copy `beats`/`downbeats` into a
      JSON file the page loads), never real-time audio analysis.
 6. **First look.** Projects: `showtime check`, `showtime snap --at <the downbeats of section starts>`.
    EDLs (in `<job>/edit/`): `showtime edit render <job> --preview` and `showtime edit view <job>`. Look at the frames on

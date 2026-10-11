@@ -772,7 +772,7 @@ def _previous_ids(root: Path, pack: Path) -> List[Dict[str, Any]]:
     except Exception:  # noqa: BLE001 - the brief still lists the files
         return []
     return [{"id": f["id"], "severity": f["severity"], "text": f["text"], "status": f["status"]}
-            for f in g["findings"] if pack.resolve() not in Path(f["file"]).resolve().parents]
+            for f in g["findings"] if f["severity"] != "polish" and pack.resolve() not in Path(f["file"]).resolve().parents]
 
 
 FIRST_VIEWER = """## First-viewer pass (do it first, before you open the brief or `context/`)
@@ -920,7 +920,7 @@ video on a number scale; the verdict and the findings carry the judgment.
 
 Then the absolute verdict, {absolute}
 
-## Answer in exactly this format (write it to FINDINGS.md in this folder)
+## Answer in exactly this format (write it to FINDINGS.md in this folder; if you cannot write files, reply with the whole block)
 ```
 VERDICT: ship | ship after fixes | not ready  -- one line of reasoning
 WOULD I POST THIS: yes | no  -- one reason, judged on this video alone

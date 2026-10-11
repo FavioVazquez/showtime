@@ -1,6 +1,7 @@
 """Model files the voice module needs, and lazy downloads of the optional ones.
 
-Kokoro comes from `showtime setup`; Whisper is fetched before the first
+Kokoro comes from `showtime setup`; the transcription model (Parakeet; Whisper
+only outside its 25 languages) is fetched before the first
 transcription (st/lazy.py). Two more optional pieces are fetched on first
 use (with a one-line notice), verified by size + sha256:
 

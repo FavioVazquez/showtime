@@ -652,6 +652,41 @@ print(json.dumps({"path": p.name, "names": sorted(x.name for x in d.iterdir()), 
             self.assertEqual(rep["tracks"][0].get("license"), "generated", rnd)
             side.unlink(missing_ok=True)
 
+    def test_11_validate_checks_the_spec_without_rendering(self):
+        """`audio mix --validate` is what `showtime check` runs: a spec the mixer rejects fails before any render."""
+        d = self.tmp / "validate"
+        d.mkdir()
+        (d / "vo.wav").write_bytes(b"RIFF")          # only its presence is checked; nothing is decoded
+        bad = {
+            "no tracks list": {"kind": "voice", "file": "vo.wav", "start": 0},
+            "empty tracks": {"tracks": []},
+            "unknown kind": {"tracks": [{"kind": "foley", "file": "vo.wav"}]},
+            "missing file": {"tracks": [{"kind": "voice", "file": "nope.wav"}]},
+            "no source": {"tracks": [{"kind": "voice"}]},
+            "two sources": {"tracks": [{"kind": "sfx", "file": "vo.wav", "synth": {"type": "click"}}]},
+            "track not an object": {"tracks": ["vo.wav"]},
+            "start not a number": {"tracks": [{"kind": "voice", "file": "vo.wav", "start": "soon"}]},
+        }
+        for name, spec in bad.items():
+            (d / "bad.json").write_text(json.dumps(spec), encoding="utf-8")
+            cp = st("audio", "mix", d / "bad.json", "--validate", check=False)
+            self.assertNotEqual(cp.returncode, 0, name)
+            self.assertFalse((d / "mix.wav").exists(), "%s: --validate must not render" % name)
+        # the known-good twin passes, still without rendering
+        good = {"tracks": [{"kind": "voice", "file": "vo.wav", "start": 0},
+                           {"kind": "sfx", "synth": {"type": "click"}, "at": 1.0},
+                           {"kind": "music", "compose": {"style": "upbeat-tech"}, "duck": {"under": "voice"}}]}
+        (d / "good.json").write_text(json.dumps(good), encoding="utf-8")
+        cp = st("audio", "mix", d / "good.json", "--validate")
+        self.assertIn("valid", cp.stdout)
+        self.assertFalse((d / "mix.wav").exists())
+        # the message names the problem and the track
+        (d / "bad.json").write_text(json.dumps(bad["missing file"]), encoding="utf-8")
+        cp = st("audio", "mix", d / "bad.json", "--validate", check=False)
+        self.assertIn("track 0", cp.stderr + cp.stdout)
+        self.assertIn("nope.wav", cp.stderr + cp.stdout)
+
+
 if __name__ == "__main__":
     argv = [a for a in sys.argv if a != "--fast"]
     t0 = time.time()

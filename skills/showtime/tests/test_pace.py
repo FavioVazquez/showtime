@@ -18,6 +18,16 @@ seeks, and every wait is its fixed value times a factor of 1-5 (never shorter th
     and check's pages are tried once more in a new browser, then the command fails naming the step; a browser
     really stopped (SIGSTOP) before check opens its page is killed and check finishes in a new one, and stopped
     later the watchdog ends check with an error naming its last step
+  * a screenshot whose frame never comes (SHOWTIME_TEST_STOP_GPU stops the browser's GPU process just before a
+    screenshot, as the macOS CI runners' virtual GPU stalled): render's screenshot fails once the browser's drawing
+    processes have done no work for 30 s (it waited a flat 10 minutes, longer than any caller) and the frame is
+    drawn again in a new browser; check, whose screenshots had no deadline, ends with an error naming its step;
+    SHOWTIME_TIMEOUT ends a render at the caller's limit with an error naming each part's step
+  * the stuck-frame guard on a browser that cannot report its work (CDP replies faked, node only): one whose
+    SystemInfo.getProcessInfo answers with an error is asked once and then only the screenshot cap applies, a late
+    frame still comes through; one that does not answer at all is stuck after twice the idle time
+  * only Linux render browsers have --disable-frame-rate-limit (with it a renderer keeps working after the GPU
+    process stops, so on macOS the guard never sees the stop; likely what stalled the macOS CI runners in 0.4.1)
 
 Needs a browser. usage: python tests/test_pace.py [--fast] [-v]
 """
@@ -26,10 +36,12 @@ from __future__ import annotations
 import _isolate  # noqa: F401  (run from a scratch folder: never write into the repository)
 
 import json
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -115,6 +127,64 @@ console.log(JSON.stringify({ factor: pace.factor, summary: S.paceSummary([{ pace
 """ % json.dumps(STAGEHOST), env=dict(ENV, SHOWTIME_PACE="0"))
         self.assertEqual(r["factor"], 1)
         self.assertTrue(r["summary"].get("off"))
+
+
+    def test_stuck_frame_guard_browser_cannot_report_its_work(self):
+        """The stuck-frame guard (stagehost guardShot) reads the browser's drawing work with CDP
+        SystemInfo.getProcessInfo. A browser that ANSWERS WITH AN ERROR (an older headless shell without that method)
+        cannot say what it is doing: the guard remembers it (cache.noWork), stops asking, and only the screenshot cap
+        (SHOT_MAX_MS) applies; it never reads the silence as a stuck browser. One that does not answer at all is
+        different: it is stuck once it has said nothing for twice the idle time. The CDP replies are faked, the waits
+        shrunk (idle 30 s -> 0.3 s, polls every 50 ms, cap 2 s)."""
+        r = node("""
+const S = await import(%s);
+const never = () => new Promise(() => {});
+const fake = (send) => { const b = { sessions: 0, sends: 0 };
+  b.newBrowserCDPSession = async () => { b.sessions++; return { send: async (m) => { b.sends++; return send(m); }, detach: async () => {} }; };
+  return b; };
+const rejects = () => { throw new Error("Protocol error (SystemInfo.getProcessInfo): 'SystemInfo.getProcessInfo' wasn't found"); };
+const run = async (b, frame, cache) => { const t0 = Date.now();
+  const o = await S.guardShot(frame, b, 'screenshot', S.newPace(), cache, 50).then((v) => ({ ok: v }), (e) => ({ err: e.message, stuck: !!e.browserStuck }));
+  return { ...o, ms: Date.now() - t0 }; };
+const out = {};
+// 1. the browser answers with an error and the frame never comes: only the cap ends it, not the idle rules
+let b = fake(rejects), cache = {};
+out.cap = await run(b, never(), cache);
+out.cap.sessions = b.sessions; out.cap.sends = b.sends; out.cap.noWork = cache.noWork === true;
+// 2. the same browser, a frame that comes late (well past twice the idle time, 0.6 s): it is not called stuck
+b = fake(rejects); cache = {};
+out.late = await run(b, new Promise((r) => setTimeout(() => r('frame'), 1400)), cache);
+out.late.noWork = cache.noWork === true;
+// 3. a browser that does not answer: stuck after twice the idle time, long before the cap
+b = fake(never); cache = {};
+out.silent = await run(b, never(), cache);
+out.silent.noWork = cache.noWork === true;
+console.log(JSON.stringify(out));
+""" % json.dumps(STAGEHOST), env=dict(ENV, SHOWTIME_TEST_WAIT_SCALE="0.01", SHOWTIME_SHOT_TIMEOUT="2", SHOWTIME_PACE="1"))
+        cap, late, silent = r["cap"], r["late"], r["silent"]
+        self.assertRegex(cap["err"], r"^timed out after 2s: screenshot \(still not there after 2 s, the longest a screenshot may take\)$")
+        self.assertTrue(cap["stuck"])
+        self.assertGreaterEqual(cap["ms"], 1900)   # not before the cap
+        self.assertEqual((cap["sessions"], cap["sends"], cap["noWork"]), (1, 1, True), cap)   # asked once, then never again
+        self.assertEqual(late["ok"], "frame", late)
+        self.assertTrue(late["noWork"])
+        self.assertRegex(silent["err"], r"\(the browser did not say what it was doing for \d+ s\)$")
+        self.assertTrue(silent["stuck"])
+        self.assertLess(silent["ms"], 1900)
+        self.assertFalse(silent["noWork"])
+
+    def test_no_frame_rate_limit_flag(self):
+        """render's browsers draw on Chrome's own frame clock on macOS and Windows: with --disable-frame-rate-limit a
+        renderer keeps spending CPU after the GPU process stops, so on macOS the stuck-frame guard never sees a stopped
+        GPU process (the stall test fails with it on an Intel Mac), and it is the likely cause of the 0.4.1 stalls on
+        the 3-thread macOS CI runners. Linux renders keep it (about 10 % faster): the guard ends a frame that never
+        comes there with it on (TestFrameNeverComes). No other browser gets it."""
+        flags = json.loads((SKILL / "scripts" / "lib" / "chrome-flags.json").read_text(encoding="utf-8"))
+        every = [f for k, v in flags.items() if isinstance(v, list) for f in v] + \
+                [f for v in flags["gpu"].values() for f in v]
+        self.assertNotIn("--disable-frame-rate-limit", every)
+        self.assertEqual({o: "--disable-frame-rate-limit" in flags["render"][o] for o in ("mac", "windows", "linux")},
+                         {"mac": False, "windows": False, "linux": True})
 
 
 class TestSlowPages(unittest.TestCase):
@@ -258,6 +328,97 @@ process.exit(0);
         # project, so a stopped (state T) Chrome after the run is any stopped Chrome that was not stopped before
         stopped = [l for l in ps.splitlines() if l.strip().startswith("T") and "--user-data-dir" in l and "chrom" in l.lower()]
         self.assertEqual([l for l in stopped if l not in before], [], "a stopped browser was left behind")
+
+
+def stopped_gpu_processes():
+    """Chrome GPU processes in state T (stopped) on this machine."""
+    ps = subprocess.run(["ps", "-axo", "pid=,stat=,command="], stdout=subprocess.PIPE, encoding="utf-8", errors="replace").stdout
+    return {l.split()[0] for l in ps.splitlines() if len(l.split()) > 2 and l.split()[1].startswith("T") and "--type=gpu-process" in l}
+
+
+@unittest.skipIf(sys.platform == "win32", "SIGSTOP is POSIX")
+class TestFrameNeverComes(unittest.TestCase):
+    """A frame that never comes: the browser's GPU process stopped (SIGSTOP, SHOWTIME_TEST_STOP_GPU=shot:N) just before
+    the N-th screenshot, as the virtual GPU of the macOS CI runners stalled now and then. Before 0.4.1's fix render
+    waited a flat 10 minutes for that screenshot (then drew it again in a new browser) and check waited for ever:
+    both outlived their callers (a test file's 15 minutes, test_motion's 10) with no word on where they were."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = Path(tempfile.mkdtemp(prefix="st-nevercomes-"))
+        cls.proj = cls.tmp / "gl"
+        # a WebGL canvas drawn on every seek: its pixels come from the GPU process with or without a GPU (SwiftShader)
+        write(cls.proj / "showtime.json", json.dumps({"width": 320, "height": 180, "fps": 10, "duration": 2, "background": "#202830"}))
+        write(cls.proj / "index.html", HEAD + "</head><body style=\"margin:0;background:#202830\">"
+              "<canvas id=\"c\" width=\"320\" height=\"180\"></canvas><script>"
+              "const gl = document.getElementById('c').getContext('webgl', { preserveDrawingBuffer: true });\n"
+              "ST.onSeek((t) => { gl.clearColor(t / 2, 0.3, 1 - t / 2, 1); gl.clear(gl.COLOR_BUFFER_BIT); });"
+              "</script></body></html>")
+        cls.stopped_before = stopped_gpu_processes()
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(str(cls.tmp), ignore_errors=True)
+
+    def injected(self, cp):
+        # the test switch says when it stopped a GPU process; a browser without one cannot show this
+        if "stopped the GPU process before screenshot" not in cp.stderr:
+            self.skipTest("this browser has no GPU process to stop: " + cp.stderr[-300:])
+
+    def assertNoStoppedGpu(self):
+        time.sleep(1)
+        self.assertEqual(stopped_gpu_processes() - self.stopped_before, set(), "a stopped GPU process was left behind")
+
+    def test_render_draws_the_frame_again(self):
+        """The screenshot fails once the GPU process and the renderers have done no work for 30 s (x the page's
+        pace), the frame is drawn again in a new browser (the stuck one killed), and the render finishes with every
+        frame and the retry in render.json."""
+        t0 = time.time()
+        cp = showtime("render", self.proj, "-o", self.tmp / "render.mp4", "--no-check", "--workers", "1", "--no-audio",
+                      "--poster", "none", "--json", env=dict(ENV, SHOWTIME_TEST_STOP_GPU="shot:6"), timeout=400)
+        took = time.time() - t0
+        self.injected(cp)
+        self.assertEqual(cp.returncode, 0, cp.stderr[-2000:])
+        rep = json.loads(cp.stdout)
+        self.assertEqual(rep["frames"], 20)
+        self.assertEqual(rep["capture"]["retries"], 1, rep["capture"])
+        self.assertRegex(cp.stderr, r"timed out after \d+s: screenshot at 0\.500s \(its GPU process and renderers did no work "
+                                    r"for \d+ s: the frame is not coming\); retrying")
+        # 30 s x the pace (5 at most) and a new browser: never the 10 minutes it was
+        self.assertLess(took, 300, cp.stderr[-1500:])
+        self.assertNoStoppedGpu()
+
+    def test_check_ends_with_its_step(self):
+        """check's screenshots had no deadline (its watchdog pings the browser process, which answers while the
+        frame never comes): check now ends with an error naming the screenshot and its last step."""
+        cp = showtime("check", self.proj, "--json", "--no-determinism", "--no-timeline", "--no-history", "--samples", "2",
+                      env=dict(ENV, SHOWTIME_TEST_STOP_GPU="shot:1"), timeout=400)
+        self.injected(cp)
+        self.assertEqual(cp.returncode, 1, cp.stderr[-2000:])
+        self.assertRegex(cp.stderr, r"the browser stopped drawing: timed out after \d+s: screenshot \(its GPU process and "
+                                    r"renderers did no work for \d+ s: the frame is not coming\); check's last step: \S")
+        self.assertNoStoppedGpu()
+
+    def test_command_timeout_names_the_step(self):
+        """SHOWTIME_TIMEOUT (the caller's limit) ends a render that is still waiting with an error naming where each of
+        its parts is, in its log too, and its browsers go with it. The waits are stretched (x3: the stuck screenshot
+        gets 90 s) so the 50 s limit comes first on a slow runner too."""
+        out = self.tmp / "limit.mp4"
+        t0 = time.time()
+        cp = showtime("render", self.proj, "-o", out, "--no-check", "--workers", "1", "--no-audio", "--poster", "none",
+                      env=dict(ENV, SHOWTIME_TEST_STOP_GPU="shot:6", SHOWTIME_TIMEOUT="50", SHOWTIME_TEST_WAIT_SCALE="3"),
+                      timeout=200)
+        took = time.time() - t0
+        self.injected(cp)
+        self.assertEqual(cp.returncode, 1, cp.stderr[-2000:])
+        m = re.search(r"did not finish within 50 s \(SHOWTIME_TIMEOUT\); stuck at: (.+)", cp.stderr)
+        self.assertTrue(m, cp.stderr[-2000:])
+        self.assertRegex(m.group(1), r"worker 0: screenshot at 0\.500s \(\d+ s\)")
+        self.assertRegex(m.group(1), r"main: waiting for the workers \(\d+ s\)")
+        self.assertLess(took, 90)
+        log = (self.tmp / "limit.work" / "logs" / "render.log").read_text(encoding="utf-8")
+        self.assertIn("error: did not finish within 50 s (SHOWTIME_TIMEOUT); stuck at: ", log)
+        self.assertNoStoppedGpu()
 
 
 if __name__ == "__main__":

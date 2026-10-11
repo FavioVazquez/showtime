@@ -77,9 +77,47 @@ export function progressLog(event) {
   plogWrite(event);
 }
 
+// ---- what the command is doing, and the caller's time limit --------------------------------------------------
+// A long command (render, check) says what each of its parts is doing: stage('worker 1', 'screenshot at 2.033s').
+// When it has to end without finishing (SHOWTIME_TIMEOUT, below), the error names every part's step and how long
+// it has been at it, so a stuck render or check is never a silent timeout in its caller.
+const STAGES = new Map();   // who -> {what, since}
+const ON_FAIL = [];         // called with the message before the command ends that way (render: its render.log)
+
+/** Record what `who` (a part of this command) is doing now; null removes it (the part is done). */
+export function stage(who, what) {
+  if (what === null || what === undefined) STAGES.delete(who);
+  else STAGES.set(who, { what: String(what), since: Date.now() });
+}
+
+/** Every part's step and how long it has been at it: "worker 0: screenshot at 1.133s (212 s); main: ...". */
+export function describeStages(now = Date.now()) {
+  if (!STAGES.size) return 'starting';
+  return [...STAGES].map(([who, x]) => `${who}: ${x.what} (${Math.round((now - x.since) / 1000)} s)`).join('; ');
+}
+
+/** fn(message) runs before the command ends with a failure it could not throw (failNow, SHOWTIME_TIMEOUT). */
+export function onFail(fn) { ON_FAIL.push(fn); }
+
+// SHOWTIME_TIMEOUT=<seconds>: the caller's limit for this command (a test, an agent, a CI step). Past it the
+// command ends itself with an error naming where each of its parts is (describeStages) instead of being killed
+// with no word by its caller; process.exit also ends the browsers it launched (Playwright kills them at exit).
+export const COMMAND_TIMEOUT_MS = Number(process.env.SHOWTIME_TIMEOUT) > 0 ? Number(process.env.SHOWTIME_TIMEOUT) * 1000 : 0;
+
+function armCommandTimeout() {
+  if (!COMMAND_TIMEOUT_MS) return;
+  const left = Math.max(0, COMMAND_TIMEOUT_MS - (Date.now() - T_START));
+  const t = setTimeout(() => {
+    failNow(`did not finish within ${Math.round(COMMAND_TIMEOUT_MS / 1000)} s (SHOWTIME_TIMEOUT); stuck at: ${describeStages()}`,
+      'the step named above did not return: the machine is too busy or the browser stopped drawing; `showtime doctor` checks the browser, --gpu off avoids the GPU');
+  }, left);
+  t.unref();   // a command that finished never waits for it
+}
+
 /** Run main() and turn exceptions into readable errors (stack only with --debug). */
 export async function runMain(main) {
   const t0 = Date.now();
+  armCommandTimeout();
   try {
     const rc = await main();
     process.exitCode = typeof rc === 'number' ? rc : 0;
@@ -103,6 +141,7 @@ export async function runMain(main) {
  * call that never returns, so it cannot throw).
  */
 export function failNow(message, hint) {
+  for (const fn of ON_FAIL) { try { fn(message); } catch { /* a log that fails never stops the exit */ } }
   PLOG.error = String(message).split('\n')[0].slice(0, 300);
   process.stderr.write(`${c.red(`${CMD}: error:`)} ${message}\n`);
   if (hint) process.stderr.write(`  ${c.bold('fix:')} ${hint}\n`);

@@ -24,6 +24,10 @@ A recognizer can also respell a rare name the voice said right (Parakeet writes 
 So each line with a flagged word is heard once more by a second recognizer when one is installed (Whisper
 small.en for English): `confirmed` is true when it also hears the word differently, false when it hears it as
 written. A person who listened to a flagged word clears it in showtime.json, `"readback": {"ok": ["JSON"]}`.
+A person who listened to the clip and found only the recognizer's spelling different ("QN" for "Qwen", with
+`voice ipa` showing the right sound) can list the word in `"readback": {"note": ["Qwen"]}` instead: it stays in the
+read-back as a NOTE that never fails qa, tagged as the project's own claim. Both lists also cover a name inside a
+longer phrase ("Qwen" for "Qwen Image") when the phrase's other words were heard as written.
 
 qa runs the same check on the project's voice/vo.wav (reusing voice/readback.json when it belongs to that
 file) and lists the words as `readback`: WARN, and FAIL only for a name in the title, the brand or the
@@ -672,25 +676,70 @@ def _project_cfg(project_dir: Optional[Path]) -> Dict[str, Any]:
     return {}
 
 
+def _words_of(project_dir: Optional[Path], key: str) -> List[str]:
+    rb = _project_cfg(project_dir).get("readback")
+    v = rb.get(key) if isinstance(rb, dict) else None
+    return [str(w) for w in v if isinstance(w, str) and w.strip()] if isinstance(v, list) else []
+
+
 def cleared_words(project_dir: Optional[Path]) -> List[str]:
     """Words a person listened to and found right: showtime.json "readback": {"ok": ["JSON", ...]}."""
-    rb = _project_cfg(project_dir).get("readback")
-    ok = rb.get("ok") if isinstance(rb, dict) else None
-    return [str(w) for w in ok if isinstance(w, str) and w.strip()] if isinstance(ok, list) else []
+    return _words_of(project_dir, "ok")
 
 
-def apply_cleared(rep: Dict[str, Any], ok: Sequence[str]) -> Dict[str, Any]:
-    """Move the suspects a person cleared (by spelling or letters: "Open A I" clears "OpenAI") into
-    rep["cleared"]; the others stay suspects. Summary updated."""
+def noted_words(project_dir: Optional[Path]) -> List[str]:
+    """Words whose heard spelling is only the recognizer's (`voice ipa` shows the voice is told the right
+    sound): showtime.json "readback": {"note": ["Qwen", ...]}. Reported as a note, never a qa FAIL."""
+    return _words_of(project_dir, "note")
+
+
+def _entry_keys(words: Sequence[str]) -> Tuple[Set[str], Set[str]]:
+    """(whole-text keys, word-run keys) of showtime.json readback.ok / readback.note entries."""
+    whole = {w.casefold() for w in words} | {letters(w) for w in words}
+    runs = {" ".join(letters(x) for x in re.findall(r"[^\W_]+", w)) for w in words}
+    whole.discard("")
+    runs.discard("")
+    return whole, runs
+
+
+def _listed(s: Dict[str, Any], keys: Tuple[Set[str], Set[str]]) -> bool:
+    """Is suspect `s` covered by an entry? The whole text (or its letters) always is. A longer name unit is
+    covered through a run of whole words in it ("Qwen" for "Qwen Image") only when the rest of the unit was heard
+    as written (its words are among the heard ones): the entry says nothing about the other words, and a lone "A"
+    the voice swallowed is never covered by a part."""
+    whole, runs = keys
+    w = str(s.get("word") or "")
+    if w.casefold() in whole or letters(w) in whole:
+        return True
+    if s.get("lone_a"):
+        return False
+    ws = re.findall(r"[^\W_]+", w)
+    heard = {letters(x) for x in re.findall(r"[^\W_]+", str(s.get("heard") or ""))}
+    for a in range(len(ws)):
+        for b in range(a + 1, len(ws) + 1):
+            if " ".join(letters(x) for x in ws[a:b]) in runs and all(letters(x) in heard for x in ws[:a] + ws[b:]):
+                return True
+    return False
+
+
+def apply_cleared(rep: Dict[str, Any], ok: Sequence[str], note: Sequence[str] = ()) -> Dict[str, Any]:
+    """Move the suspects a person cleared (by spelling or letters: "Open A I" clears "OpenAI"; also a cleared
+    name inside a longer phrase whose other words were heard as written: "Qwen" clears "Qwen Image" heard "QN
+    image") into rep["cleared"]; the others stay suspects. Summary updated. Suspects matching `note` (the same
+    rule) stay listed, marked "noted": the project's own claim that only the recognizer's spelling differs, shown
+    as a note and never a qa FAIL."""
     if rep.get("skipped"):
         return rep
-    keys = {w.casefold() for w in ok} | {letters(w) for w in ok}
-    keys.discard("")
+    okk, nk = _entry_keys(ok), _entry_keys(note)
     every = list(rep.get("suspects") or []) + list(rep.get("cleared") or [])
     every.sort(key=lambda s: (s.get("t") is None, s.get("t") or 0.0))
-    hit = lambda s: str(s.get("word") or "").casefold() in keys or letters(str(s.get("word") or "")) in keys  # noqa: E731
-    rep["suspects"] = [s for s in every if not hit(s)]
-    rep["cleared"] = [s for s in every if hit(s)]
+    rep["suspects"] = [s for s in every if not _listed(s, okk)]
+    rep["cleared"] = [s for s in every if _listed(s, okk)]
+    for s in every:
+        if s in rep["cleared"] or not _listed(s, nk):
+            s.pop("noted", None)
+        else:
+            s["noted"] = True
     if not rep["cleared"]:
         rep.pop("cleared")
     lines_sus = {}
@@ -817,8 +866,9 @@ def summary(rep: Dict[str, Any]) -> str:
         return "read-back: %d line%s heard back, %d name%s and number%s as written%s" % (
             n, "" if n == 1 else "s", rep.get("checked", 0), "" if rep.get("checked") == 1 else "s",
             "" if rep.get("checked") == 1 else "s", tail)
-    return "read-back: %d word%s heard differently in %d line%s (%s)%s" % (
-        len(sus), "" if len(sus) == 1 else "s", n, "" if n == 1 else "s",
+    k = sum(1 for s in sus if s.get("noted"))
+    return "read-back: %d word%s heard differently%s in %d line%s (%s)%s" % (
+        len(sus), "" if len(sus) == 1 else "s", " (%d noted)" % k if k else "", n, "" if n == 1 else "s",
         ", ".join('"%s" as "%s"' % (s["word"], s["heard"] or "nothing") for s in sus[:3]) + (" ..." if len(sus) > 3 else ""),
         tail)
 
@@ -836,7 +886,10 @@ def second_note(s: Dict[str, Any]) -> str:
 
 def tag(s: Dict[str, Any]) -> str:
     """The note after a suspect: a title/brand/lexicon name, and what the second recognizer heard."""
-    parts = ["a name in the title, brand or lexicon"] if s.get("critical") else []
+    parts = ["listed in readback.note by the project: it says only the recognizer's spelling differs, not checked"] \
+        if s.get("noted") else []
+    if s.get("critical"):
+        parts.append("a name in the title, brand or lexicon")
     if second_note(s):
         parts.append(second_note(s))
     return "; ".join(parts)
@@ -845,7 +898,7 @@ def tag(s: Dict[str, Any]) -> str:
 def is_fail(s: Dict[str, Any]) -> bool:
     """qa FAILs a suspect only when it is a title/brand/lexicon name AND a second recognizer also heard it
     differently: one recognizer alone can respell a rare name the voice said right."""
-    return bool(s.get("critical")) and s.get("confirmed") is True
+    return bool(s.get("critical")) and s.get("confirmed") is True and not s.get("noted")
 
 
 def fix_for(s: Dict[str, Any], clip: Optional[str] = None) -> str:
@@ -883,9 +936,10 @@ def report_lines(rep: Dict[str, Any], limit: int = 6) -> List[str]:
     out = [rep.get("summary") or summary(rep)]
     for s in (rep.get("suspects") or [])[:limit]:
         out.append("  %s %7s  %s: \"%s\" heard as \"%s\"%s" % (
-            "FAIL" if is_fail(s) else "WARN", "%.2fs" % s["t"] if s.get("t") is not None else "?", s["line"], s["word"], s["heard"] or "(nothing)",
+            "NOTE" if s.get("noted") else "FAIL" if is_fail(s) else "WARN", "%.2fs" % s["t"] if s.get("t") is not None else "?", s["line"], s["word"], s["heard"] or "(nothing)",
             "  [%s]" % tag(s) if tag(s) else ""))
-        out.append("        fix: %s" % fix_for(s, s.get("clip")))
+        if not s.get("noted"):
+            out.append("        fix: %s" % fix_for(s, s.get("clip")))
     if len(rep.get("suspects") or []) > limit:
         out.append("  ... %d more in readback.json" % (len(rep["suspects"]) - limit))
     return out
@@ -915,7 +969,7 @@ def for_voice(out_dir: Path, items: Sequence[Dict[str, Any]], speeches: Sequence
         files = {ln["id"]: ln["file"] for ln in lines}
         for s in rep["suspects"]:
             s["clip"] = files.get(s["line"])
-        apply_cleared(rep, cleared_words(project_dir))
+        apply_cleared(rep, cleared_words(project_dir), noted_words(project_dir))
     rep["summary"] = summary(rep)
     try:
         from ..footage.util import quick_hash
@@ -939,7 +993,7 @@ def for_speech(text: str, speech: Any, wav: Path, lexicon, project_dir: Optional
                       second=_second(speech.lang, lambda ln, m: heard_words(wav, speech.lang, key, model=m)))
     for s in rep["suspects"]:
         s["clip"] = wav.name
-    return apply_cleared(rep, cleared_words(project_dir))
+    return apply_cleared(rep, cleared_words(project_dir), noted_words(project_dir))
 
 
 def _second(lang: str, hear_with: Any) -> Optional[Dict[str, Any]]:
@@ -1011,7 +1065,7 @@ def for_project(proj: Path, video: Optional[Path] = None, allow_asr: bool = True
         return None
     lex = script_lexicon(vd, tl)
     crit = critical_names(proj, lex)
-    ok_words = cleared_words(proj)
+    ok_words, note_words = cleared_words(proj), noted_words(proj)
     vo_hash = quick_hash(vo)
     lang = str(items[0].get("lang") or "en")
     lines = [{"id": ln.get("id"), "text": ln.get("source_text") or ln["text"], "lang": ln.get("lang") or lang,
@@ -1051,7 +1105,7 @@ def for_project(proj: Path, video: Optional[Path] = None, allow_asr: bool = True
                 except Exception:  # noqa: BLE001 - a second opinion, never a reason to fail
                     pass
         rep["source"] = "voice/readback.json (written by voice script for this vo.wav)"
-        return apply_cleared(rep, ok_words)
+        return apply_cleared(rep, ok_words, note_words)
     ok, why = asr_ready(lang)
     if not ok or not allow_asr:
         return {"version": READBACK_VERSION, "skipped": why or "not run", "lines": [], "suspects": [], "checked": 0,
@@ -1062,4 +1116,4 @@ def for_project(proj: Path, video: Optional[Path] = None, allow_asr: bool = True
         s["clip"] = next((str(ln["file"]) for ln in lines if str(ln["id"]) == s["line"] and clips), "voice/" + vo.name)
     rep["source"] = source
     rep["vo_hash"] = vo_hash
-    return apply_cleared(rep, ok_words)
+    return apply_cleared(rep, ok_words, note_words)

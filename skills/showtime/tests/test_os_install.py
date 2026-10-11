@@ -13,7 +13,12 @@
   * setup --estimate says what the install takes on disk, by component, and what grows later;
   * the preview window turns off Chrome's device discovery (the macOS local-network prompt), and every local
     server binds 127.0.0.1;
-  * Windows paths: a clip's work folder no longer repeats its name, and temp names shrink near 260 characters.
+  * Windows paths: a clip's work folder no longer repeats its name, and temp names shrink near 260 characters;
+  * an extra an earlier setup recorded but that does not work (doctor's check: manim failed to build, or the
+    manimgl venv has no manimlib) is installed again by a plain re-run, a working one is skipped, and setup
+    drops doctor's cached --quick result;
+  * manim/manimgl build pycairo/manimpango: a missing C compiler, pkg-config, cairo or pangocairo is a WARN with
+    the install line for this OS before the first download, not after an hour of them.
 
 Light: stdlib, Node for the meter test, no browser, no network (setup's downloads are stubbed out).
 usage: python tests/test_os_install.py [--fast] [-v]
@@ -446,6 +451,108 @@ class TestWindowsPaths(Tmp):
     def test_clip_work_folder_does_not_repeat_its_name(self):
         src = (SKILL / "lib" / "st" / "footage" / "render_edl.py").read_text(encoding="utf-8")
         self.assertIn('shared / (out.stem if out.stem != edl_path.stem else "render")', src)
+
+
+# ------------------------------------------------------------------ 12. extras: a failed one again, build deps first
+
+class TestExtras(Tmp):
+    def run_setup(self, home, *argv, path=None):
+        """setup with every download step stubbed out: -> (calls, stderr, rows). "<download>" marks the first one."""
+        su = setup_mod()
+        calls, err, out = [], io.StringIO(), io.StringIO()
+        step = lambda name: lambda self: calls.append(name) or ("ok", "")  # noqa: E731
+        env = dict(os.environ, PATH=path) if path else dict(os.environ)
+        with mock.patch.dict(os.environ, env, clear=True), \
+                mock.patch.object(su, "missing_prereqs", lambda skip=(): []), \
+                mock.patch.object(su.Installer, "step_ffmpeg", lambda self: sys.stderr.write("<download>\n") or ("ok", "")), \
+                mock.patch.object(su.Installer, "step_manim", step("manim")), \
+                mock.patch.object(su.Installer, "step_manimgl", step("manimgl")), \
+                mock.patch.object(su.Installer, "step_shim", lambda self: ("ok", "")), \
+                redirect_stdout(out), redirect_stderr(err):
+            su.main(["--home", str(home), "--json", "--skip", "python", "--skip", "node", "--skip", "browser",
+                     "--skip", "models"] + list(argv))
+        return calls, err.getvalue(), {r["component"]: r for r in json.loads(out.getvalue())["results"]}
+
+    def record(self, home, extras):
+        home.mkdir(parents=True, exist_ok=True)
+        (home / "state.json").write_text(json.dumps({"items": {}, "installed": {
+            "tier": "core", "extras": extras, "platform": plat.platform_key()}}))
+
+    def package(self, venv, name):
+        """A package where the doctor checks look: <venv>/lib/python3.12/site-packages/<name>/__init__.py."""
+        d = venv / ("Lib" if os.name == "nt" else "lib/python3.12") / "site-packages" / name
+        d.mkdir(parents=True)
+        (d / "__init__.py").write_text("")
+
+    def test_a_recorded_extra_that_does_not_work_is_installed_again(self):
+        home = self.tmp / "home"
+        self.record(home, ["manim", "manimgl"])
+        gl = plat.venv_python(home / "venv-manimgl")       # manimgl works, manim failed to build (not in the venv)
+        gl.parent.mkdir(parents=True)
+        gl.write_text("")
+        self.package(home / "venv-manimgl", "manimlib")
+        calls, err, _ = self.run_setup(home)
+        self.assertEqual(calls, ["manim"], "only the broken extra runs again")
+        self.assertIn("the manim extra is recorded but not importable: installing it again", err)
+        self.assertNotIn("manimgl extra is recorded", err)
+        self.package(home / "venv", "manim")
+        calls, err, _ = self.run_setup(home)
+        self.assertEqual(calls, [], "working extras are skipped")
+        self.assertNotIn("installing it again", err)
+
+    def test_a_manimgl_venv_without_its_package_is_installed_again(self):
+        from st.manim_run import render as mr
+        home = self.tmp / "home"
+        self.record(home, ["manimgl"])
+        gl = plat.venv_python(home / "venv-manimgl")       # the venv was made, then the package install failed
+        gl.parent.mkdir(parents=True)
+        gl.write_text("")
+        with mock.patch.dict(os.environ, {"SHOWTIME_HOME": str(home)}):
+            self.assertFalse(mr.gl_installed(), "doctor's check: no manimlib in the venv")
+        calls, err, _ = self.run_setup(home)
+        self.assertEqual(calls, ["manimgl"])
+        self.assertIn("the manimgl extra is recorded but not importable: installing it again", err)
+        self.package(home / "venv-manimgl", "manimlib")
+        with mock.patch.dict(os.environ, {"SHOWTIME_HOME": str(home)}):
+            self.assertTrue(mr.gl_installed())
+        calls, _, _ = self.run_setup(home)
+        self.assertEqual(calls, [])
+
+    def test_setup_drops_the_doctor_quick_cache(self):
+        from st import doctor
+        home = self.tmp / "home"
+        self.record(home, ["manim"])                        # manim recorded, not in the venv: installed again
+        with mock.patch.dict(os.environ, {"SHOWTIME_HOME": str(home)}):
+            doctor.save_quick({"ok": True, "version": "x", "counts": {"pass": 1, "warn": 1, "fail": 0, "skip": 0},
+                               "seconds": 1.0, "checks": []})
+            self.assertIsNotNone(doctor.cached_quick())
+            calls, _, _ = self.run_setup(home)
+            self.assertEqual(calls, ["manim"])
+            self.assertIsNone(doctor.cached_quick(), "the next doctor --quick checks again")
+            self.assertFalse((home / "cache" / "doctor-quick.json").exists())
+
+    @unittest.skipUnless(POSIX, "uses shell-script stand-ins for cc and pkg-config")
+    def test_missing_cairo_is_a_warn_before_any_download(self):
+        su = setup_mod()
+        bin_ = self.tmp / "bin"
+        bin_.mkdir()
+        for name, body in (("cc", "exit 0"), ("pkg-config", 'case "$*" in *cairo*) exit 1;; esac\nexit 0')):
+            (bin_ / name).write_text("#!/bin/sh\n%s\n" % body)
+            (bin_ / name).chmod(0o755)
+        calls, err, rows = self.run_setup(self.tmp / "home", "--with", "manim", path=str(bin_))
+        self.assertIn("WARN  build tools: manim compiles pycairo/manimpango here and this machine lacks cairo, pangocairo", err)
+        self.assertLess(err.index("build tools:"), err.index("<download>"), "said before the first download")
+        self.assertIn("install first: " + su.manim_build_fix(), err)
+        self.assertEqual(rows["build tools"]["status"], "warn")
+        self.assertEqual(calls, ["manim"], "a WARN: setup goes on")
+        (bin_ / "pkg-config").write_text("#!/bin/sh\nexit 0\n")
+        _, err, rows = self.run_setup(self.tmp / "home2", "--with", "manim", path=str(bin_))
+        self.assertNotIn("WARN", err)
+        self.assertNotIn("build tools", rows)
+        (bin_ / "cc").unlink()
+        with mock.patch.dict(os.environ, {"PATH": str(bin_)}):
+            self.assertEqual(su.missing_build_deps(["manim"]), ["a C compiler"])
+            self.assertEqual(su.missing_build_deps(["supertonic"]), [], "only the extras that compile are checked")
 
 
 # ------------------------------------------------------------------ 11. the dom template at 10 s

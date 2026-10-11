@@ -28,10 +28,10 @@ version", "add Portuguese subtitles"). How much can change depends on what the v
 | Inputs | 36-41 |
 | Defaults | 43-50 |
 | Translation rules | 52-62 |
-| Steps (showtime project) | 64-82 |
-| Steps (finished file or footage) | 84-97 |
-| Pitfalls | 99-105 |
-| Read next | 107-110 |
+| Steps (showtime project) | 64-83 |
+| Steps (finished file or footage) | 85-98 |
+| Pitfalls | 100-106 |
+| Read next | 108-111 |
 
 ## Inputs
 
@@ -74,7 +74,8 @@ leaves the variant genuinely open (Brazilian vs European Portuguese for a named 
    `VO` (`explainer.md` step 5) by running `showtime voice cues <job>/project/voice/timeline.json -o
    <job>/project/voice/cues.js` again (search the cue table for times typed as numbers and move them
    to `VO` first). Add `--fit <original length>` to
-   `voice script` when the translation must keep the original's length.
+   `voice script` when the translation must keep the original's length (run it with `--estimate` first and
+   shorten the wording until it fits).
 4. **Captions.** Point the caption layer at the new `voice/vo.words.json`, or make a sidecar with
    `showtime captions <job>/project/voice/vo.words.json --style clean --size <WxH> -o <job>/caps.ass --srt <job>/final.srt`.
 5. **Check, first look, final, verify** as in the pipeline: `showtime render <job>/project --job <job>`,

@@ -372,6 +372,95 @@ print(json.dumps({"before": before["entries"], "pruned": pr["removed"], "after":
         self.assertLessEqual(d["bytes"], 500000)
         self.assertEqual(d["cleared"], 0)
 
+    def test_08a_script_fit_estimate(self):
+        """`voice script --fit S --estimate` says, before any synthesis, whether the narration can fit S seconds
+        and how many words to cut (or add); a long script gets the same news at the start of a real run."""
+        text = ("Sunlight is photons from the sun, streaming down on every roof in the city. "
+                "Panels turn those photons into electricity, silently, all day long, without any moving parts. "
+                "Clean power, right on your roof, ready the moment the first light arrives.")
+        words = len(text.replace(",", "").split())
+        sp = self.tmp / "estimate.json"
+        sp.write_text(json.dumps({"voice": "af_heart", "gap": 0.6, "lines": [
+            {"id": "a", "text": text.split(". ")[0] + "."}, {"id": "b", "text": text.split(". ")[1] + "."},
+            {"id": "c", "text": text.split(". ")[2]}]}), encoding="utf-8")
+        out = self.tmp / "estimate0"
+        # too long: no audio is made, the word cut comes from the words per second the voice speaks
+        t0 = time.time()
+        cp = st("voice", "script", sp, "-o", out, "--fit", 8, "--estimate", "--json")
+        self.assertLess(time.time() - t0, 20)
+        self.assertFalse(out.exists(), "--estimate must not synthesize or write the voice folder")
+        e = json.loads(cp.stdout)["estimate"]
+        self.assertEqual(e["words"], words)
+        self.assertEqual(e["verdict"], "too long")
+        self.assertTrue(e.get("fast"), e)                 # x1.15 sounds rushed: the same warning as the real run
+        self.assertIn("sounds rushed", cp.stderr)
+        self.assertGreater(e["over"], 0)
+        self.assertGreater(e["cut_words"], 0)
+        self.assertLess(e["cut_words"], words)
+        self.assertRegex(cp.stderr, r"cut about %d words?" % e["cut_words"])
+        # fits: nothing to cut
+        e = js("voice", "script", sp, "-o", out, "--fit", 20, "--estimate", "--json")["estimate"]
+        self.assertEqual(e["verdict"], "fits")
+        self.assertEqual(e["cut_words"], 0)
+        # far too short: how many words would fill the gap
+        e = js("voice", "script", sp, "-o", out, "--fit", 60, "--estimate", "--json")["estimate"]
+        self.assertEqual(e["verdict"], "too short")
+        self.assertGreater(e["add_words"], 0)
+        # --estimate needs a target; a bad one is the usual one-line error
+        cp = st("voice", "script", sp, "-o", out, "--estimate", check=False)
+        self.assertNotEqual(cp.returncode, 0)
+        self.assertIn("--fit", cp.stderr)
+        self.assertFalse(out.exists())
+
+    def test_08b_estimate_matches_recorded_timings(self):
+        """The estimate agrees with a recorded real narration (tests/fixtures/voice/af_heart_narration_timings.json:
+        each line's clip length from Kokoro af_heart) within 10 %, and errs on the side of cutting more; once the
+        voice has spoken in this install its own measured rate is used instead of the default."""
+        sys.path.insert(0, str(SKILL / "lib"))
+        from st.voice import script, tts
+        fx = json.loads((TESTS_DIR / "fixtures" / "voice" / "af_heart_narration_timings.json").read_text(encoding="utf-8"))
+        rows = fx["lines"]
+
+        def build(part, gap=0.5):
+            return script.normalize({"voice": fx["voice"], "gap": gap},
+                                    [{"id": "l%d" % i, "text": r["text"]} for i, r in enumerate(part)], {})
+
+        old = os.environ.get("SHOWTIME_HOME")
+        os.environ["SHOWTIME_HOME"] = str(self.tmp / "est-home")          # no rate recorded yet: the default
+        try:
+            for name, part in (("whole", rows), ("first 7", rows[:7]), ("last 9", rows[7:])):
+                c, lines = build(part)
+                recorded = sum(r["duration"] for r in part) + 0.5 * (len(part) - 1) + c["lead_in"] + c["tail"]
+                e = script.estimate_fit(lines, c, 40)
+                self.assertEqual(e["rate_source"], "default")
+                self.assertLessEqual(abs(e["natural"] / recorded - 1), 0.10, (name, e["natural"], recorded))
+                self.assertGreaterEqual(e["natural"], recorded * 0.97, (name, "must not under-estimate", e["natural"]))
+                # the fastest fit (x1.15, pauses and tail at their floors) against the same arithmetic on the recording
+                fast = (sum(r["duration"] for r in part) / 1.15 + 0.2 * (len(part) - 1) + 0.3)
+                self.assertLessEqual(abs(e["shortest"] / fast - 1), 0.10, (name, e["shortest"], fast))
+                self.assertGreaterEqual(e["shortest"], fast * 0.97, name)
+            # pauses between lines are part of it: a longer gap lengthens natural, not shortest
+            c, lines = build(rows, gap=1.0)
+            e1 = script.estimate_fit(lines, c, 40)
+            c, lines = build(rows, gap=0.5)
+            e0 = script.estimate_fit(lines, c, 40)
+            self.assertAlmostEqual(e1["natural"] - e0["natural"], 0.5 * (len(rows) - 1), places=1)
+            self.assertAlmostEqual(e1["shortest"], e0["shortest"], places=1)
+            # a measured voice rate replaces the default: lines recorded at 14 characters/s read faster
+            for r in rows:
+                tts._record_rate("af_heart", r["text"], tts.spoken_chars(r["text"]) / 14.0)
+            c, lines = build(rows)
+            em = script.estimate_fit(lines, c, 40)
+            self.assertEqual(em["rate_source"], "measured")
+            self.assertLess(em["natural"], e0["natural"])
+            self.assertAlmostEqual(em["natural"], sum(tts.spoken_chars(r["text"]) / 14.0 for r in rows)
+                                   + 0.5 * (len(rows) - 1) + c["tail"], delta=0.5)
+        finally:
+            if old is None:
+                os.environ.pop("SHOWTIME_HOME", None)
+            else:
+                os.environ["SHOWTIME_HOME"] = old
+
     def test_08_script_fit(self):
         """`voice script --fit S`: speed within 0.85-1.15x, then shorter pauses, then an exact word-cut report;
         a short script is padded to the target. vo.srt stays inside qa's caption limits on any aspect."""

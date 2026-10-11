@@ -21,16 +21,19 @@ import { ffmpegPipe } from './ff.mjs';
  * - without one (SwiftShader and the like) every browser already spreads its drawing over many cores. On
  *   a 6-core machine a WebGL showreel was about 10 % faster with 1 browser than with 3, but a DOM page was
  *   about 50 % slower with 1 (35 s against 23.5 s for 150 frames); a 64-core machine was best at 4-16
- *   (8 within 3-30 % of the best for each test film). So: one browser per 8 CPU threads, never fewer than
- *   the 3 of 0.4.0 (CPU threads - 2 on 3-4 threads), at most 8.
+ *   (8 within 3-30 % of the best for each test film); an 8-thread machine was fastest at 8 for a DOM page
+ *   (231 s against 345 s at 3 and 267 s at 6, 180 s at 1080p30) and a WebGL showreel (529 s against 752 s
+ *   at 4), and a canvas film tied (issue #41). So: from 8 CPU threads up, CPU threads - 2 (at most 8);
+ *   below 8, the 3 of 0.4.0 (CPU threads - 2 on 3-4 threads).
  * Then never more than CPU threads - 2, one per 45 frames, one per 3 GB of RAM (half of it), and `cap`
  * ($SHOWTIME_MAX_WORKERS).
  * -> {workers, why}
  */
 export function autoWorkers({ cpus, memGB, software, frames, cap = 0, renderer = '' }) {
-  const base = software ? Math.min(8, Math.max(1, Math.min(3, cpus - 2), Math.floor(cpus / 8))) : 3;
+  const base = !software ? 3 : cpus >= 8 ? Math.min(8, cpus - 2) : Math.max(1, Math.min(3, cpus - 2));
   const what = software
-    ? `no GPU (${shortRenderer(renderer) || 'software GL'}): one browser per 8 of ${cpus} CPU threads, at least 3, at most 8`
+    ? `no GPU (${shortRenderer(renderer) || 'software GL'}): ` +
+      (cpus >= 8 ? `${cpus} CPU threads - 2, at most 8` : `3 below 8 CPU threads (${cpus}), at most CPU threads - 2`)
     : `GPU${renderer && renderer !== 'unknown' ? ` (${shortRenderer(renderer)})` : ''}: 3`;
   const limits = [
     [Math.max(1, cpus - 2), `${cpus} CPU threads`],

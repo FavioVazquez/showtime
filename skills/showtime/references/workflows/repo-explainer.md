@@ -30,10 +30,10 @@ use `explainer.md`.
 | Inputs | 38-44 |
 | Defaults | 46-52 |
 | The structure (five parts, in this order) | 54-67 |
-| Steps | 69-127 |
-| Narration: explain like a good lecturer | 129-156 |
-| Pitfalls | 158-167 |
-| Read next | 169-172 |
+| Steps | 69-128 |
+| Narration: explain like a good lecturer | 130-157 |
+| Pitfalls | 159-168 |
+| Read next | 170-173 |
 
 ## Inputs
 
@@ -112,7 +112,8 @@ A single-module film (30-45 s) keeps parts 1, 3 and 5, and folds 2 and 4 into on
      longest line fits at every frame size (16:9, 1:1, 9:16).
    - The code map is a tree of real folder names (from `git ls-files`), built as DOM text, not a
      screenshot.
-6. **Voice and timing.** `showtime voice script <job>/project/narration.md -o <job>/project/voice --fit <target>`,
+6. **Voice and timing.** `showtime voice script <job>/project/narration.md --fit <target> --estimate` first (cut
+   words until it fits), then `showtime voice script <job>/project/narration.md -o <job>/project/voice --fit <target>`,
    then `showtime retime <job>/project --from-voice <job>/project/voice/timeline.json`, and time each
    highlight to the word that names it (`explainer.md` step 5 covers the cue table).
 7. **First look.** `showtime check <job>/project`, `showtime snap <job>/project --every 2`; read the

@@ -44,7 +44,7 @@ end. The commands are in `audio.md`.
 
 | The video | Music | How |
 |---|---|---|
-| launch, trailer, keynote opener, story, mission, thank-you, recap | a **produced catalog track** (a real recording) | `showtime audio music pick --for launch --dur <len>`, then `{"kind": "music", "catalog": "<id>", "fit": true}` in `audio/mix.json` |
+| launch, trailer, keynote opener, story, mission, thank-you, recap | a **produced catalog track** (a real recording) | `showtime audio music pick --for launch --dur <len>`, then add `{"kind": "music", "catalog": "<id>", "fit": true}` to the `tracks` list in `audio/mix.json` |
 | explainer, tutorial, data story, report, math | a restrained underscore: `--for explainer` / `--for data` (no vocals, low energy), a composed `underscore`, or none | same, ducked under the voice |
 | picture that must land on exact beats, a sting on a given frame, stems, an exact length with sections on cuts | **the composer** | `showtime audio compose` (sections 2-4) |
 

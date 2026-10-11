@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from .. import ff
+from ..job import findings
 from ..common import ShowtimeError, log, read_json, write_json
 from . import images, media, review
 from . import video as qa_video
@@ -567,7 +568,7 @@ HEAD = re.compile(r"^\s*(BLOCKERS?|SHOULD[- ]FIX|POLISH|WHAT WORKS|DECLINED TO J
                   r"WOULD I POST|PREVIOUS|FIRST[- ]VIEWER|HEARING)\b", re.I)
 SEV_OF = {"BLOCKER": "blocker", "BLOCKERS": "blocker", "SHOULD-FIX": "should-fix", "SHOULD FIX": "should-fix",
           "POLISH": "polish"}
-T_RE = re.compile(r"\bt\s*=\s*(\d+(?:\.\d+)?)\s*s\b", re.I)
+T_RE = re.compile(findings.T_PATTERN, re.I)      # one pattern with findings.shape, so the two never disagree
 FRAME_RE = re.compile(r"[\w./\\-]+\.(?:jpe?g|png)\b", re.I)
 LABEL_RE = re.compile(r"\[\s*([XY])\s*\]")
 

@@ -1,0 +1,70 @@
+{
+ "_about": "Recorded Kokoro af_heart speech (24 kHz, speed 1.0): 'duration' is the length of each line's synthesized clip in seconds, as voice script lays it out. Text and timings only, no audio. Recorded 2026-10-09 on Linux with `showtime voice script`'s own synthesis (tts.synthesize), to check script.estimate_fit against real timings.",
+ "voice": "af_heart",
+ "lines": [
+  {
+   "text": "Every morning, a quiet machine on your desk decides how your day will go, and almost nobody notices it.",
+   "duration": 6.43
+  },
+  {
+   "text": "Most video tools ask you to upload your footage, pay a monthly fee, and wait in a queue while someone else's computer does the work.",
+   "duration": 8.051
+  },
+  {
+   "text": "Showtime flips that around. Your agent writes the scenes, and your own laptop renders every frame, with no accounts, no keys and no uploads.",
+   "duration": 9.607
+  },
+  {
+   "text": "Narration comes from a local voice, so the words, the timing and the captions all stay on your machine.",
+   "duration": 6.259
+  },
+  {
+   "text": "Music, sound effects and loudness are mixed to the standard that phones and streaming platforms expect, without a single manual slider.",
+   "duration": 8.297
+  },
+  {
+   "text": "In one afternoon a small team turned a changelog into a sixty second launch film, and nobody opened an editor.",
+   "duration": 7.091
+  },
+  {
+   "text": "That is the whole idea: tell your agent what you want to show, and let your machine put on the show.",
+   "duration": 5.78
+  },
+  {
+   "text": "In 2026, three laureates shared the prize for work that began in 1987, using 4,500 measurements across 12 laboratories.",
+   "duration": 10.61
+  },
+  {
+   "text": "The photosynthetic efficiency of chlorophyll depends on wavelength, temperature, and the concentration of atmospheric carbon dioxide.",
+   "duration": 8.991
+  },
+  {
+   "text": "It works. Try it. You will not go back.",
+   "duration": 2.636
+  },
+  {
+   "text": "A detector the size of a thumbnail records ten million events every second, and a neural network sorts them in real time.",
+   "duration": 7.817
+  },
+  {
+   "text": "We measured it twice, then a third time, because the first two results disagreed by almost forty percent.",
+   "duration": 6.494
+  },
+  {
+   "text": "The committee cited a simple observation: that tiny quantum systems can behave like large electrical circuits.",
+   "duration": 7.485
+  },
+  {
+   "text": "Panels turn those photons into electricity, silently, all day long, without any moving parts.",
+   "duration": 6.343
+  },
+  {
+   "text": "Open the file, read the first line, and you already know what the whole program is trying to say.",
+   "duration": 5.631
+  },
+  {
+   "text": "Researchers at the university announced that the experimental vaccine produced antibodies in ninety-one percent of participants.",
+   "duration": 8.083
+  }
+ ]
+}

@@ -46,6 +46,9 @@ ENV = build_env(showtime_home())
 # are longer than the test's own limit
 ENV["SHOWTIME_TEST_OPEN_TIMEOUT"] = "90"
 ENV["SHOWTIME_SHOT_TIMEOUT"] = "120"
+# a command still stuck after 9 minutes ends itself with an error naming each part's step (SHOWTIME_TIMEOUT), inside
+# the 10 minutes this file waits for one
+ENV["SHOWTIME_TIMEOUT"] = "540"
 RESULTS = {}
 
 

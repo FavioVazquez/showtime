@@ -17,6 +17,7 @@ import _isolate  # noqa: F401  (run from a scratch folder: never write into the 
 
 import importlib.util
 import re
+import shutil
 import sys
 import tempfile
 import time
@@ -181,6 +182,47 @@ class Check(unittest.TestCase):
 
 
 @unittest.skipIf(build is None, "needs markdown-it-py (showtime's venv has it)")
+class OneVersion(unittest.TestCase):
+    """Front matter never renders, and the footer and the landing's "New in" come from the repo."""
+
+    def test_front_matter_is_stripped(self):
+        text = "---\nname: x\ndescription: >\n  a long one\n---\n\n# Title\n\nBody.\n"
+        self.assertEqual(build.strip_front_matter(text), "\n# Title\n\nBody.\n")
+        self.assertEqual(build.strip_front_matter("# No front matter\n---\ntext\n"), "# No front matter\n---\ntext\n")
+        toks = build.MarkdownIt("commonmark").parse(build.strip_front_matter(text))
+        self.assertEqual([t.tag for t in toks if t.type == "heading_open"], ["h1"])
+
+    def test_version_comes_from_the_library(self):
+        init = (REPO / "skills" / "showtime" / "lib" / "st" / "__init__.py").read_text(encoding="utf-8")
+        self.assertEqual(build.repo_version(), re.search(r'__version__\s*=\s*"([^"]+)"', init).group(1))
+        ver, blurb = build.latest_release()
+        self.assertRegex(ver, r"^\d+\.\d+\.\d+$")
+        self.assertTrue(blurb.endswith("."))
+
+    def test_new_in_is_the_newest_released_version(self):
+        notes = ("# What's new\n\n## 0.4.2 (unreleased)\n\n### Not yet\n\n## 0.4.1\n\n### One\n\n### Two\n\n## 0.4.0 (5 October)\n\n### Old\n")
+        self.assertEqual(build.latest_release(text=notes, version="0.4.1"), ("0.4.1", "One; Two."))
+        # notes for a version the repo has not reached yet are not announced, even without the word
+        self.assertEqual(build.latest_release(text=notes.replace(" (unreleased)", ""), version="0.4.1")[0], "0.4.1")
+        self.assertEqual(build.latest_release(text=notes.replace(" (unreleased)", ""), version="0.4.2")[0], "0.4.2")
+        self.assertEqual(build.latest_release(limit=1, text=notes, version="0.4.1"), ("0.4.1", "One; and more."))
+        self.assertEqual(build.latest_release(text="# nothing\n", version="0.4.1"), ("0.4.1", "See what changed."))
+
+    def test_landing_anchors_are_of_open_sections(self):
+        # a heading is linked to the section it is in, never to one that closed before it
+        out = Path(tempfile.mkdtemp(prefix="st-anchor-"))
+        try:
+            (out / "p.html").write_text('<main id="main"><section id="a"><h2>One</h2>x</section>'
+                                        '<section><h2>Two</h2>y</section><section id="c"><div id="inner"></div><h2>Three</h2>z</section></main>')
+            site = type("S", (), {"out": out})()
+            got = {s[0]: s[1] for s in build.built_page_entry(site, "t", "p.html")["s"][1:]}
+            self.assertEqual(got.get("One"), "a")
+            self.assertEqual(got.get("Three"), "c")
+            self.assertNotIn("Two", got)   # no id of its own and no open section with one: folded into the text above
+        finally:
+            shutil.rmtree(out, ignore_errors=True)
+
+
 class PeoplePages(unittest.TestCase):
     """The pages written for people (What's new, the FAQ), the counts, and links to examples without a card."""
 
@@ -196,9 +238,20 @@ class PeoplePages(unittest.TestCase):
         self.assertEqual(pages.get("docs/whats-new.html"), REPO / "docs" / "whats-new.md")
         self.assertEqual(pages.get("docs/faq.html"), REPO / "docs" / "faq.md")
         start = [p for p, _label in build.START_PAGES]
-        self.assertEqual(start[0], "docs/index.html")
-        self.assertIn("docs/whats-new.html", start)
-        self.assertIn("docs/faq.html", start)
+        # Start here is the reading order's start: the first video, then the map, then when something goes wrong
+        self.assertEqual(start[:3], ["docs/guides/first-video.html", "docs/index.html", "docs/troubleshooting.html"])
+        for p in ("docs/whats-new.html", "docs/faq.html", "docs/glossary.html", "docs/agents.html"):
+            self.assertIn(p, start)
+        self.assertEqual(start[-1], "docs/whats-new.html")
+
+    def test_glossary_and_house_vocabulary_have_their_own_pages(self):
+        # docs/glossary.md (the reader's) and CONTEXT.md (the house vocabulary) used to build to one path
+        built = [p for _s, p, _g in build.doc_sources()]
+        self.assertEqual(len(built), len(set(built)), "two sources build to one page")
+        pages = {p: s for s, p, _g in build.doc_sources()}
+        self.assertEqual(pages.get("docs/glossary.html"), REPO / "docs" / "glossary.md")
+        self.assertEqual(pages.get("docs/house-vocabulary.html"), REPO / "CONTEXT.md")
+        self.assertEqual(pages.get("docs/troubleshooting.html"), REPO / "docs" / "troubleshooting.md")
 
     @unittest.skipUnless(HAVE_EXAMPLES, NO_EXAMPLES)
     def test_example_without_a_card_links_to_github(self):
@@ -305,6 +358,102 @@ class GalleryCards(unittest.TestCase):
         self.assertFalse((self.tmp / "out" / "media" / "41-y" / "notes.txt").exists())
 
 
+@unittest.skipIf(build is None, "needs markdown-it-py (showtime's venv has it)")
+class StartHereAndShelves(unittest.TestCase):
+    """The docs proposal (0.4.2): the gallery's shelves come from site/content/gallery.json, Start here names the kind
+    of video, cards carry their number and one duration format, "New in 0.4" covers 0.4.x, and the gallery's film is
+    optional (null in config.json)."""
+
+    def test_one_duration_format(self):
+        cases = {"45 s": "0:45", "2:38": "2:38", "60 s + 64 s": "1:00 + 1:04", "2 \u00d7 90 s": "2 \u00d7 1:30",
+                 "3 clips, 22-46 s": "3 clips, 0:22-0:46", "7.5 s": "0:07.5", "24 s loop": "0:24 loop", "5 s sting": "0:05 sting",
+                 "2:30 + 2:34": "2:30 + 2:34", "4 \u00d7 15 s": "4 \u00d7 0:15"}
+        for spec, want in cases.items():
+            self.assertEqual(build.clock(spec), want, spec)
+        self.assertEqual(build.card_spec({"num": "25", "meta": "2:38 \u00b7 16:9"}), "25 \u00b7 2:38")
+        self.assertEqual(build.card_spec({"num": "looks", "meta": "18 s \u00b7 16:9, no sound"}), "Demo \u00b7 0:18")
+        self.assertEqual(build.example_name({"num": "25", "title": "T"}), "Example 25: T")
+
+    def test_start_here_names_the_kind_of_video(self):
+        start = build.GALLERY["start_here"]
+        self.assertEqual([(c["id"], c["name"]) for c in start["cards"]],
+                         [("01", "Launch video"), ("02", "Narrated explainer"), ("06", "Your footage, edited")])
+        self.assertEqual(build.GALLERY["new"]["name"], "New in 0.4")
+
+    def test_gallery_film_is_optional(self):
+        # config.json "gallery_film": null shows no film above the tabs; an object brings one back
+        out = Path(tempfile.mkdtemp(prefix="st-film-"))
+        saved = build.CONFIG.get("gallery_film")
+        try:
+            site = build.Site(out, [], "o/r", None, "main")
+            build.CONFIG["gallery_film"] = None
+            self.assertEqual(build.gallery_film(site, "gallery.html"), "")
+            build.CONFIG["gallery_film"] = {"folder": "examples/_nofilm", "film": "film.mp4", "label": "The test film", "length": "9 s"}
+            html = build.gallery_film(site, "gallery.html")
+            self.assertIn('id="gallery-film"', html)
+            self.assertIn("Watch the test film (9 s)", html)
+        finally:
+            build.CONFIG["gallery_film"] = saved
+            shutil.rmtree(str(out), ignore_errors=True)
+
+    def test_shelves_check_the_cards(self):
+        exs = [{"num": n} for n in ("01", "02")]
+        saved = build.GALLERY
+        try:
+            build.GALLERY = {"groups": [{"id": "a", "examples": ["01"]}], "start_here": {"cards": []}, "new": {}}
+            with self.assertRaises(SystemExit) as cm:   # 02 is on no shelf
+                build.shelves(exs)
+            self.assertIn("ex-02 is on no shelf", str(cm.exception))
+            build.GALLERY = {"groups": [{"id": "a", "examples": ["01", "02"]}, {"id": "b", "examples": ["02", "09"]}],
+                             "start_here": {"cards": []}, "new": {}}
+            with self.assertRaises(SystemExit) as cm:
+                build.shelves(exs)
+            self.assertIn("ex-02 is in two groups", str(cm.exception))
+            self.assertIn("09 is in site/content/gallery.json but", str(cm.exception))
+            build.GALLERY = {"groups": [{"id": "a", "examples": ["02", "01"]}], "start_here": {"cards": []}, "new": {}}
+            self.assertEqual([e["num"] for e in build.shelves(exs)[0]["cards"]], ["02", "01"], "the file's order")
+        finally:
+            build.GALLERY = saved
+
+    @unittest.skipUnless(HAVE_EXAMPLES, NO_EXAMPLES)
+    def test_every_card_on_one_shelf(self):
+        _groups, exs = build.parse_examples()
+        shelves = build.shelves(exs)
+        on = [e["num"] for g in shelves for e in g["cards"]]
+        self.assertEqual(sorted(on), sorted(e["num"] for e in exs))
+        self.assertEqual([g["name"] for g in shelves], ["Explainers", "Your footage", "Products and brands", "Code and data",
+                                                         "Social and trailers", "Looks and motion"])
+        self.assertEqual(sum(1 for e in exs if e["num"] in build.NEW_IDS), 10)
+
+    def test_new_in_name_follows_the_release_series(self):
+        # the badges and tab (gallery.json) and the landing tile (whats-new.md) must name the same release series
+        self.assertEqual(build.new_name_problem(build.NEW_NAME, build.release_series()), "")
+        self.assertEqual(build.release_series([("0.5.0", "050", "")]), "0.5")
+        problem = build.new_name_problem("New in 0.4", "0.5")
+        self.assertIn('rename it "New in 0.5"', problem)
+        self.assertEqual(build.new_name_problem("New in 0.5", "0.5"), "")
+        self.assertNotEqual(build.new_name_problem("New in 0.45", "0.5"), "")
+
+    def test_whats_new_versions_and_anchors(self):
+        notes = "# What's new\n\n## 0.4.2 (unreleased)\n\n### x\n\n## 0.4.1\n\n### One\n\n## 0.4.0 (5 October 2026)\n\n- y\n"
+        self.assertEqual([(v, h) for v, h, _b in build.released(notes, "0.4.1")],
+                         [("0.4.1", "041"), ("0.4.0", "040-5-october-2026")])
+
+    def test_crumbs_name_the_act(self):
+        site = build.Site(Path(tempfile.mkdtemp(prefix="st-crumb-")), [], "", None, "main")
+        try:
+            anchors = build.map_anchors(site)
+            self.assertEqual(anchors.get("Act IV \u00b7 Sound and voice"), "act-iv--sound-and-voice")
+            self.assertIn("Overture \u00b7 Start here", anchors)
+            html = build.crumbs_html("docs/voice.html", "Act IV \u00b7 Sound and voice", "Voice", anchors)
+            self.assertIn('href="../docs/index.html#act-iv--sound-and-voice">Act IV \u00b7 Sound and voice</a> / Voice', html)
+            self.assertIn('href="../../docs/index.html#overture--start-here">Start here</a>',
+                          build.crumbs_html("docs/guides/first-video.html", "Start here", "Your first video", anchors))
+            self.assertNotIn("<a", build.crumbs_html("docs/crew/critic.html", "The crew's briefs", "Critic", anchors).split("/ ", 1)[1])
+        finally:
+            shutil.rmtree(str(site.out), ignore_errors=True)
+
+
 GUIDE_SECTIONS = ["Say this", "What happens", "What you get", "How long it takes", "Phrases that change it", "Limits",
                   "The example"]
 
@@ -340,8 +489,12 @@ class Guides(unittest.TestCase):
         self.assertEqual(items[0], ("All guides", "docs/guides/index.html"))
         index = (build.GUIDES / "README.md").read_text(encoding="utf-8")
         order = re.findall(r"\]\(([a-z0-9-]+)\.md\)", index)
-        self.assertEqual([pg for _l, pg in items[1:]], ["docs/guides/%s.html" % s for s in order])
         self.assertEqual(sorted(order), [p.stem for p in self.guides()], "the index links every guide once")
+        # a guide in Start here (the first video) is listed there, not twice
+        start = {p for p, _l in build.START_PAGES}
+        order = [s for s in order if "docs/guides/%s.html" % s not in start]
+        self.assertNotIn("first-video", order)
+        self.assertEqual([pg for _l, pg in items[1:]], ["docs/guides/%s.html" % s for s in order])
         first = (build.GUIDES / (order[0] + ".md")).read_text(encoding="utf-8").splitlines()[0]
         self.assertEqual("# " + items[1][0], first, "a guide's label is its h1")
         self.assertEqual(sum(1 for g in groups if g[0] == "Guides"), 1)

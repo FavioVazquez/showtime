@@ -36,12 +36,15 @@ sys.path.insert(0, str(SKILL / "lib"))
 from st.launcher import build_env, showtime_home  # noqa: E402
 from st.manim_run import cues as cues_mod  # noqa: E402
 from st.manim_run import draft as draft_mod  # noqa: E402
+from st.manim_run import tex  # noqa: E402
 from st.manim_run.render import manim_installed  # noqa: E402
 
 ENV = build_env(showtime_home())
 TMP = Path(tempfile.mkdtemp(prefix="st-manim-tpl-"))
 HAVE_MANIM = manim_installed()
 NO_MANIM = "manim extra not installed: showtime setup --with manim"
+HAVE_LATEX = tex.find()["ok"]
+NO_LATEX = "no LaTeX (latex + dvisvgm): the template uses equations; showtime doctor prints the install line"
 PATTERNS = ("equation", "graph", "plane", "refine", "blank")
 
 
@@ -75,6 +78,12 @@ def check(d, *extra):
                                                                              cp.stderr[-2000:]))
 
 
+def needs_latex(template):
+    """The template's scene file uses equations and this machine has no LaTeX (check's latex_missing)."""
+    src = EXAMPLE / "scenes.py" if template == "example" else EXAMPLE.parent / "patterns" / (template + ".py")
+    return not HAVE_LATEX and tex.uses_tex(src.read_text(encoding="utf-8"))
+
+
 def listed(res, levels=("ERROR", "WARN")):
     return ["%s %s [%s] %s" % (i["level"], i["code"], i.get("scene"), i["message"]) for i in res["findings"]
             if i["level"] in levels]
@@ -99,6 +108,8 @@ class T01Static(unittest.TestCase):
 @unittest.skipUnless(HAVE_MANIM, NO_MANIM)
 class T02Example(unittest.TestCase):
     def test_fresh_example_is_clean(self):
+        if needs_latex("example"):
+            self.skipTest(NO_LATEX)
         for aspect in (None, "9:16"):
             with self.subTest(aspect=aspect or "16:9"):
                 d = new("example-%s" % (aspect or "16:9").replace(":", "x"), "example", aspect)
@@ -112,6 +123,8 @@ class T03Patterns(unittest.TestCase):
     def test_patterns_have_no_errors(self):
         for t in PATTERNS:
             with self.subTest(template=t):
+                if needs_latex(t):
+                    self.skipTest(NO_LATEX)
                 res = check(new("pattern-" + t, t))
                 self.assertEqual(res["errors"], 0, listed(res))
                 self.assertFalse([i for i in res["findings"] if i["code"] in ("first_frame_black",

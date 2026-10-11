@@ -11,7 +11,7 @@ Checks:
   versions    .claude-plugin/plugin.json, .claude-plugin/marketplace.json,
               skills/showtime/setup/package.json, server.json (MCP Registry) and packages/npm/package.json
               agree with st.__version__; the npm package's mcpName and name match server.json; the docs
-              follow it too: site/config.json "version" (major.minor, every page's footer), README.md's
+              follow it too: site/config.json "version" (major.minor, the site build's fallback), README.md's
               footer "Status: X.Y" and status badge, every `showtime-X.Y.Z.mcpb` release link and every
               `showtime-video@vX.Y.Z` Action pin (all rewritten when fixing and by --set-version), and
               README.md's "What's new in X.Y.Z" summary (same major.minor, its "## New in" section and
@@ -296,7 +296,7 @@ def doc_version_files(repo: Optional[Path] = None) -> List[Path]:
 
 
 def check_doc_versions(f: Findings, fix: bool, want: str, repo: Optional[Path] = None) -> None:
-    """site/config.json "version" (major.minor, the footer of every page); README.md's "What's new in X" summary,
+    """site/config.json "version" (major.minor, the site build's fallback when the library is absent); README.md's "What's new in X" summary,
     its footer "Status: X.Y" and status badge; every .mcpb release link and every pin of the GitHub Action
     (showtime-video@vX.Y.Z) in the docs. Files that do not exist (a copy without the site) are skipped."""
     repo = repo or REPO
@@ -318,8 +318,8 @@ def check_doc_versions(f: Findings, fix: bool, want: str, repo: Optional[Path] =
                 write_lf(site, SITE_VERSION_RE.sub(lambda m: m.group(1) + minor + m.group(3), text, count=1))
                 f.add("versions", "info", 'site/config.json "version" %s -> %s' % (have, minor), where(site))
             else:
-                f.add("versions", "error", 'site/config.json "version" is %r, expected "%s" (the footer of every '
-                      "page; run scripts/check_release.py to sync)" % (have, minor), where(site))
+                f.add("versions", "error", 'site/config.json "version" is %r, expected "%s" (the site build\'s '
+                      "fallback; run scripts/check_release.py to sync)" % (have, minor), where(site))
 
     readme = repo / "README.md"
     if readme.is_file():
@@ -506,10 +506,15 @@ def doc_files() -> List[Path]:
     return out
 
 
+PEOPLE_PAGES = ("troubleshooting.md", "glossary.md")   # docs/ pages for people that name commands and link guides
+
+
 def people_docs() -> List[Path]:
-    """docs/guides/*.md, the task guides for people: their links and commands are checked like the skill's."""
+    """docs/guides/*.md, the task guides for people, plus docs/troubleshooting.md and docs/glossary.md: their links
+    and commands are checked like the skill's."""
     d = REPO / "docs" / "guides"
-    return sorted(d.glob("*.md")) if d.is_dir() else []
+    pages = [p for p in (REPO / "docs" / name for name in PEOPLE_PAGES) if p.is_file()]
+    return (sorted(d.glob("*.md")) if d.is_dir() else []) + pages
 
 
 def check_links(f: Findings) -> None:

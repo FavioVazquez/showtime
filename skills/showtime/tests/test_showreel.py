@@ -487,11 +487,14 @@ class CheckTests(unittest.TestCase):
 
     def test_template_checks_clean_at_every_aspect(self):
         """The showreel template lays out for 16:9 and recomposes for tall and square frames: `check --size` at 9:16
-        (the platform UI zones) and 1:1 finds no error and no warning."""
+        (the platform UI zones) and 1:1 finds no error and no warning. --no-cuts: the first frames after the cuts do
+        not change with the aspect (test_cut_frames walks the template's), and without a GPU that walk was a third of
+        each check (the macOS Intel nightly ran out of 300 s at 16:9, #14)."""
         proj = self.tmp / "tpl"
         showtime("new", "showreel", proj)
         for size in ("16:9", "9:16", "1:1"):
-            cp = showtime("check", proj, "--json", "--size", size, "--no-determinism", "--samples", "6", check=False, timeout=300)
+            cp = showtime("check", proj, "--json", "--size", size, "--no-determinism", "--no-cuts", "--samples", "6",
+                          check=False, timeout=300)
             rep = json.loads(cp.stdout)
             bad = [(f["code"], f.get("message", "")[:90]) for f in rep["findings"] if f["severity"] in ("error", "warning")]
             self.assertEqual(bad, [], size)

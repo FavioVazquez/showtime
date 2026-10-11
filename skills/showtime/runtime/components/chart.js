@@ -43,7 +43,11 @@ export const Chart = define({
       const explicit = (k) => el.hasAttribute('data-' + kebab(k)) || k in blob || JSON.stringify(o[k]) !== JSON.stringify(DEFAULTS[k]);
       for (const [k, v] of Object.entries(Array.isArray(file) ? { data: file } : file)) if (!explicit(k)) o[k] = v;
     }
-    const states = (Array.isArray(o.states) && o.states.length ? o.states : [{ at: 0, data: o.data }]).map((s) => ({ at: Number(s.at) || 0, title: s.title, ...normalize(s.data) }));
+    // the top-level data and title are the state at 0: with `states` given and none at 0 the chart opens on them
+    // (a first state later than 0 morphs from them, instead of the chart opening on that state)
+    const given = Array.isArray(o.states) && o.states.length ? o.states : null;
+    const first = given && o.data != null && !given.some((s) => !(Number(s.at) > 0)) ? [{ at: 0, data: o.data, title: o.title || undefined }] : [];
+    const states = [...first, ...(given || [{ at: 0, data: o.data }])].map((s) => ({ at: Number(s.at) || 0, title: s.title, ...normalize(s.data) }));
     const labels = [...new Set(states.flatMap((s) => s.labels))];
     const type = ['bar', 'hbar', 'line'].includes(o.type) ? o.type : 'bar';
     // valueLabels: true / "auto" (bars: crowded labels shrink a little, then the least important ones

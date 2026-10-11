@@ -24,7 +24,8 @@ You own the project's `voice/` folder for this phase.
    as inline hints or lexicon entries (`voice.md`, Pronunciation fixes) and keep them in
    `lexicon.json` in your folder.
 2. Render: `showtime voice script <script> -o <project>/voice/`, with `--fit <seconds>` when the
-   length is fixed. Speed and `pause_after` per section, as the script format allows.
+   length is fixed (run it with `--estimate` first: no speech, and "cut about N words" says what to cut).
+   Speed and `pause_after` per section, as the script format allows.
 3. Listen by numbers: read `timeline.json` (line lengths against the storyboard slots) and
    `vo.words.json` (no swallowed words, no long gaps). `showtime voice master` only for recorded
    voices; TTS output is already at level.
@@ -36,8 +37,8 @@ the total length matches the target within half a second (or the gap is reported
 ### C. Localization
 
 Per language: translate the script (keep claim ids, keep on-screen numbers exact), pick a voice for
-that language, render with `--fit` to the same slots. Translations run 15 to 30 % longer: shorten the
-wording before speeding the voice past about 1.1. Write each language to `<own dir>/<lang>/` (script,
+that language, render with `--fit` to the same slots (`--estimate` first). Translations run 15 to 30 % longer: shorten
+the wording before speeding the voice past about 1.1. Write each language to `<own dir>/<lang>/` (script,
 `voice/`, captions from the voice timings). Mark every machine translation `needs native review` in
 your result; never present it as reviewed.
 

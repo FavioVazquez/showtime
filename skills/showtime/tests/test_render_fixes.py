@@ -290,6 +290,54 @@ class ExportSequenceTests(unittest.TestCase):
         finally:
             shutil.rmtree(str(tmp), ignore_errors=True)
 
+# ------------------------------------------------------------------ 5. render --size checks the page it renders
+
+SIZE_PAGE = """<!doctype html><html><head><script src="/_st/stage.js"></script>
+<style>body{margin:0;background:#f2eee3}.s{position:absolute;inset:0;background:#f2eee3;color:#141414;
+font:700 60px sans-serif;padding:60px 80px}.wide{white-space:nowrap}</style></head><body>
+<section class="s" data-start="0" data-dur="2"><p class="%s">%s</p></section>
+</body></html>"""
+
+
+@unittest.skipIf(FAST, "browser check (skipped with --fast)")
+class RenderSizeChecksItsPage(Tmp):
+    def test_the_check_runs_on_the_page_and_reports_in_its_folder(self):
+        proj = self.tmp / "p"
+        proj.mkdir()
+        (proj / "showtime.json").write_text(json.dumps({"width": 1280, "height": 720, "fps": 30, "duration": 2}), encoding="utf-8")
+        (proj / "index.html").write_text(SIZE_PAGE % ("", "Fine"), encoding="utf-8")
+        (proj / "other.html").write_text(SIZE_PAGE % ("wide", "A line that runs far off the frame at any size " * 4), encoding="utf-8")
+        cp = showtime("render", proj, "--page", "other.html", "--size", "9:16", "--quiet", check=False)
+        self.assertNotEqual(cp.returncode, 0, cp.stdout)
+        self.assertIn("the layout breaks at 1080x1920", cp.stderr + cp.stdout)
+        self.assertIn("--page other.html", cp.stderr + cp.stdout, "the hint re-runs check on the same page")
+        # the render's thinner check has its own folder: it never replaces the full `showtime check` report
+        self.assertTrue((proj / "work" / "render-check-other-1080x1920" / "report.json").is_file(), sorted(p.name for p in (proj / "work").iterdir()))
+        self.assertFalse((proj / "work" / "check-other-1080x1920").exists())
+        self.assertFalse((proj / "work" / "check-1080x1920").exists(), "index.html was not the page checked")
+
+    def test_the_page_given_as_a_path_is_named_in_the_hint(self):
+        proj = self.tmp / "p"
+        proj.mkdir()
+        (proj / "showtime.json").write_text(json.dumps({"width": 1280, "height": 720, "fps": 30, "duration": 2}), encoding="utf-8")
+        (proj / "index.html").write_text(SIZE_PAGE % ("", "Fine"), encoding="utf-8")
+        (proj / "other.html").write_text(SIZE_PAGE % ("wide", "A line that runs far off the frame at any size " * 4), encoding="utf-8")
+        cp = showtime("render", proj / "other.html", "--size", "9:16", "--quiet", check=False)
+        out = cp.stderr + cp.stdout
+        self.assertIn("the layout breaks at 1080x1920", out)
+        self.assertIn("--page other.html", out, "the hint checks the page that was rendered, not index.html")
+
+    def test_a_clip_timing_error_is_not_a_layout_break(self):
+        proj = self.tmp / "p"
+        proj.mkdir()
+        (proj / "showtime.json").write_text(json.dumps({"width": 1280, "height": 720, "fps": 30, "duration": 2}), encoding="utf-8")
+        (proj / "index.html").write_text(SIZE_PAGE % ("", "Fine"), encoding="utf-8")
+        (proj / "timing.html").write_text(SIZE_PAGE.replace('data-start="0"', 'data-start="#nosuch"') % ("", "Fine"), encoding="utf-8")
+        cp = showtime("render", proj, "--page", "timing.html", "--size", "9:16", "--quiet", check=False)
+        self.assertNotIn("the layout breaks", cp.stderr + cp.stdout)
+        self.assertEqual(cp.returncode, 0, cp.stderr[-1500:])
+
+
 if __name__ == "__main__":
     argv = [a for a in sys.argv if a != "--fast"]
     unittest.main(argv=argv)

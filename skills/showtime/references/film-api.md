@@ -57,11 +57,11 @@ function of T**. The same `T` must always give the same pixels, whatever frame w
 | 5. Text | 193-233 |
 | 6. Shapes, UI pieces and diagrams | 235-263 |
 | 7. Particles, charts, frames and images | 265-292 |
-| 8. Camera and tutorials | 294-359 |
-| 9. Fonts, images and cross-platform rules | 361-373 |
-| 10. Looks and file size | 375-392 |
-| 11. The pure-function-of-T rules (and the pitfalls they prevent) | 394-417 |
-| 12. Recipes | 419-504 |
+| 8. Camera and tutorials | 294-382 |
+| 9. Fonts, images and cross-platform rules | 384-396 |
+| 10. Looks and file size | 398-415 |
+| 11. The pure-function-of-T rules (and the pitfalls they prevent) | 417-440 |
+| 12. Recipes | 442-527 |
 
 ## 1. Minimal film
 
@@ -316,11 +316,34 @@ F.pulse({x, y, w, h, r: 12}, T, t0, {t1, period: 0.9})   // attention rings arou
 F.clickZoom(T, [{t: 2.2, x: 1400, y: 180}], {zoom: 1.8, lead: 0.45, hold: 1.4})  // auto camera per click
 F.stepTitle(1, 'Create a project', F.win(T, 0.3, 4.5), {x, y, size, sub})
 F.stepBar(['Create', 'Name', 'Render'], currentFloat, {x, y, w, size})
-F.caption('Lower-third caption', F.win(T, 3, 6), {y, size, maxWidth})
+F.caption('Lower-third caption', F.win(T, 3, 6), {y, size, maxWidth})   // plain text on the canvas: no per-word highlight, one style
 F.actLabel('Chapter two', p)
 F.captions(T, [[3, 6, 'Click New project'], [6.2, 9, 'Name it']], {y, size, maxWidth, fill})   // caption track
 F.stepBand(T, [[4, 'Find the board'], [8.6, 'Add a card']], {end: 29, h: 72})  // top band (opaque): badge, title, STEP n OF N, segments
 ```
+
+**Karaoke captions over a canvas film.** `F.caption` and `F.captions` draw plain text on the canvas. For
+the word-by-word highlight and the styles of the `caption-karaoke` component (`components.md`), put the
+DOM component over the canvas: it is supported on a film, and it adapts to 16:9, 9:16 and 1:1 by itself.
+Two lines in `index.html`: the component script in the head, and the layer in the body before the film
+script (it sits outside the canvas, so it runs across every cut):
+
+```html
+<script src="/_st/film.js"></script>
+<script type="module" src="/_st/components/index.js"></script>   <!-- the component runtime -->
+...
+<body>
+  <div data-st="caption-karaoke" data-src="voice/vo.words.json" data-style="clean-pop"></div>
+  <script> Film.start({ /* as in the template */ }); </script>
+```
+
+`data-src` is the voice module's `vo.words.json` (or any `[{text, start, end}]`); every option in the
+component's table works as a `data-` attribute (`data-style`, `data-position`, `data-emphasis`, ...).
+`check` audits the layer like any caption: `caption_zone` (`render.md`) warns when a DOM element sits where
+the cards go. It does not see what the film draws on the canvas, so keep the lower part of your drawing
+clear yourself (cards hang from 62 % of the height on 9:16, 10 % above the bottom on 16:9) and look at
+`showtime snap <dir> --at <t>` in each aspect. On a light ground set `--cap-ink`, `--cap-outline` and
+`--cap-accent` (`components.md`). Do not also call `F.caption` for the same lines.
 
 **Named UI rects.** Draw the product once, describe where its parts are once, and point everything at
 names instead of copying coordinates between the cursor, the camera, spotlights and callouts:

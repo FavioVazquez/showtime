@@ -18,6 +18,7 @@ __pycache__/
 # Media: renders are never committed. The examples and their videos live in
 # FavioVazquez/showtime-examples.
 *.mp4
+!benchmarks/plugin-eval/**/*.mp4
 
 # OS / editor noise
 .DS_Store

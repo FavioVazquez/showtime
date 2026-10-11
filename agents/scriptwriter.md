@@ -4,7 +4,7 @@ description: showtime crew. Dispatched by the showtime skill, not for general re
 tools: Read, Glob, Grep, Write, Edit, Bash, PowerShell
 model: inherit
 effort: high
-maxTurns: 30
+maxTurns: 50
 omitClaudeMd: false
 color: yellow
 ---

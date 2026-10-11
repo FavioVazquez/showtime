@@ -1,0 +1,67 @@
+{
+  "_about": "How the gallery is grouped and ordered (site/build.py build_gallery). examples/README.md (in the examples repository) stays the source of each card: its prompt, what it shows, its videos. This file only says which shelf a card sits on and in what order, so the site can be regrouped without a change to the examples repository. Every card belongs to exactly one group; the build stops when a card is in none or two, or when an id here has no card. Ids are the cards' ids: the number (\"07\") or the demo's name (\"looks\" for examples/_looks).",
+  "start_here": {
+    "name": "Start here",
+    "line": "The three requests people make most: a launch video, a narrated explainer, and an edit of your own footage.",
+    "_cards": "Named by the kind of video, not the example's title; the card keeps the example's own request and details.",
+    "cards": [
+      {"id": "01", "name": "Launch video"},
+      {"id": "02", "name": "Narrated explainer"},
+      {"id": "06", "name": "Your footage, edited"}
+    ],
+    "next": ["Make your first one", "docs/guides/first-video.html"]
+  },
+  "_groups": "The shelves of the All view, in the docs' running order. Within a shelf, strongest first: the owner's call (today the 0.4 examples lead, then number order; Explainers follows the proposal's order). guides: [label, docs page, optional anchor], linked as \"The guides behind these\".",
+  "groups": [
+    {"id": "explainers", "name": "Explainers",
+     "line": "Narrated explainers from a topic, a Wikipedia article, a PDF or a prize announcement; some stop and ask the viewer.",
+     "examples": ["25", "26", "02", "13", "22", "14", "03"],
+     "guides": [["explainer", "docs/workflows/explainer.html"], ["localize", "docs/workflows/localize.html"],
+                ["paper-explainer", "docs/workflows/paper-explainer.html"]]},
+    {"id": "footage", "name": "Your footage",
+     "line": "Real recordings, edited: cards over a talking head, a long panel cut into clips, an interview tightened, a podcast as an audiogram.",
+     "examples": ["23", "24", "06", "16"],
+     "guides": [["footage-edit", "docs/workflows/footage-edit.html"], ["editing", "docs/editing.html"]]},
+    {"id": "products", "name": "Products and brands",
+     "line": "Launch videos, promos, tutorials and brand motion, from a landing page, a running app, a repo or a Claude Design export.",
+     "examples": ["28", "01", "04", "10", "11", "17", "20", "21"],
+     "guides": [["launch-video", "docs/workflows/launch-video.html"], ["tutorial", "docs/workflows/tutorial.html"],
+                ["components", "docs/components.html"]]},
+    {"id": "code", "name": "Code and data",
+     "line": "Charts that move, and videos made from a release or a pull request.",
+     "examples": ["29", "07", "12", "15"],
+     "guides": [["data-story", "docs/workflows/data-story.html"], ["changelog-video", "docs/workflows/changelog-video.html"]]},
+    {"id": "social", "name": "Social and trailers",
+     "line": "Vertical shorts, montages cut on the beat, trailers and a travel slideshow.",
+     "examples": ["05", "08", "09", "18", "19"],
+     "guides": [["social-short", "docs/workflows/social-short.html"], ["trailer", "docs/workflows/trailer.html"],
+                ["slideshow", "docs/workflows/slideshow.html"]]},
+    {"id": "looks", "name": "Looks and motion",
+     "line": "Look signatures, WebGL looks, the shutter blur and the showreel template: what a video looks like before it says a word.",
+     "examples": ["30", "32", "looks", "blur"],
+     "guides": [["components §7", "docs/components.html", "7-looks-webgl-fluted-glass-tilt-shift-liquid-metal-mesh-gradient-god-rays-marble-metaballs"],
+                ["tones", "docs/tones.html"]]}
+  ],
+  "new": {
+    "id": "new",
+    "name": "New in 0.4",
+    "_name": "The badge on the cards, the last tab and the landing's tile: all of 0.4.x.",
+    "examples": ["23", "24", "25", "26", "28", "29", "30", "32", "looks", "blur"],
+    "landing": ["23", "24", "25", "28", "looks"]
+  },
+  "_see_it_done": "Example ids under a docs page's lede (\"See it done: ...\"), by page. Seeded from the docs map's Choose your path cards; voice from the proposal.",
+  "see_it_done": {
+    "docs/workflows/launch-video.html": ["01", "10", "17"],
+    "docs/workflows/explainer.html": ["02", "13", "22"],
+    "docs/workflows/tutorial.html": ["04", "11", "21"],
+    "docs/workflows/social-short.html": ["05", "16"],
+    "docs/workflows/data-story.html": ["07", "12"],
+    "docs/workflows/footage-edit.html": ["06", "14"],
+    "docs/workflows/trailer.html": ["09", "18"],
+    "docs/workflows/slideshow.html": ["08", "19"],
+    "docs/workflows/changelog-video.html": ["15", "29"],
+    "docs/workflows/localize.html": ["03", "13", "14"],
+    "docs/components.html": ["20"],
+    "docs/voice.html": ["02", "13", "26"]
+  }
+}

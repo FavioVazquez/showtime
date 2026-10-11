@@ -183,15 +183,21 @@ try {
   await p.click('.variant[data-v="bed-b"] [data-act="pick"]');
   ok('sound pick', await until(() => fb().state.picks.music === 'bed-b'));
 
-  // audio A/B keeps the playhead
+  // audio A/B keeps the playhead: B starts where A was, not at 0. Waited for, never a fixed sleep: on a busy
+  // runner bed A (preload none) took over 1 s to load and start, so a fixed 1.2 s found it at 0.02-0.17 s.
   await p.click('.variant[data-v="bed-a"] .vplay');
-  await sleep(1200);
-  const tA = await p.evaluate(() => window.StudioBoard.state().audio.music.els['bed-a'].currentTime);
+  const aRan = await until(() => p.evaluate(() => { const a = window.StudioBoard.state().audio.music.els['bed-a']; return !a.paused && a.currentTime > 0.5; }), 30000);
+  // B's and A's positions as B starts playing, both read in the page by B's 'playing' event. The board reads A's
+  // position, pauses A and seeks B to it, so A still holds the position B was given: B must be within 0.1 s of it
+  // on either side (a B that restarts at 0 or skips ahead fails). A reading taken whenever the test gets to it
+  // would also pass a B that started at 0 and has played on since.
+  await p.evaluate(() => { const G = window.StudioBoard.state().audio.music, b = G.els['bed-b']; window.__abB = null;
+    b.addEventListener('playing', () => { if (window.__abB === null) window.__abB = { b: b.currentTime, a: G.els['bed-a'].currentTime }; }, { once: true }); });
   await p.keyboard.press('b');
-  await sleep(350);
-  const ab = await p.evaluate(() => { const G = window.StudioBoard.state().audio.music; return { active: G.active, t: G.els['bed-b'].currentTime, aPaused: G.els['bed-a'].paused }; });
-  ok('A/B shared playhead', tA > 0.2 && ab.active === 'bed-b' && ab.t >= tA - 0.05 && ab.aPaused);
-  R.ab = { tA, tB: ab.t };
+  const ab = await until(() => p.evaluate(() => { const G = window.StudioBoard.state().audio.music;
+    return window.__abB !== null && { active: G.active, tA: window.__abB.a, tB: window.__abB.b, aPaused: G.els['bed-a'].paused }; }), 30000) || {};
+  ok('A/B shared playhead', aRan && ab.tA > 0.5 && ab.active === 'bed-b' && Math.abs(ab.tB - ab.tA) < 0.1 && ab.aPaused);
+  R.ab = { tA: ab.tA, tB: ab.tB };
   await p.keyboard.press('b');
 
   // phone sees the desktop's clicks over SSE

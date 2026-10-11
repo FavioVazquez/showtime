@@ -552,4 +552,4 @@ class TestChapterRules(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    unittest.main(argv=[a for a in sys.argv if a != "--fast"])

@@ -31,6 +31,7 @@ import _isolate  # noqa: F401  (run from a scratch folder: never write into the 
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -592,11 +593,15 @@ function dims(b) {
             self.skipTest("this browser's view does not follow its window after the emulated size is cleared")
         for r in rows:
             self.check(r)
-            # (the window's size, less its browser frame where it has one: 600x113 on a Mac, 600x200 in the headless shell)
-            first = ", not 256x144, at the screenshot" if r["scale"] < 1 else "screenshot was 600x"
-            self.assertTrue(any(first in m for m in r["resized"]), r)
+            # (the window's size, less its browser frame where it has one: 600x113 on a Mac, 600x200 in the headless
+            # shell, 584x105 on Windows)
+            first = (re.compile(r", not 256x144, at the screenshot") if r["scale"] < 1
+                     else re.compile(r"the screenshot was \d+x\d+, not %dx%d" % tuple(SIZE_WANT[r["scale"]])))
+            self.assertTrue(any(first.search(m) for m in r["resized"]), r)
             self.assertNotEqual(r["relaid"], [256, 144], r)
-            self.assertIn("the page was laid out at %dx%d, not 256x144, at 1.000s" % tuple(r["relaid"]), r["resized"])
+            # (the size the page reports can still change between the test's read and the seek's: any wrong layout)
+            self.assertTrue(any(re.fullmatch(r"the page was laid out at \d+x\d+, not 256x144, at 1\.000s", m)
+                                for m in r["resized"]), r)
 
 
 def colour(video, t):

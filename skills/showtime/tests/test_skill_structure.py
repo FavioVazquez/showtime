@@ -106,6 +106,12 @@ class TestRepoHygiene(unittest.TestCase):
                          ("*.cmd", "crlf"), ("*.ps1", "crlf")):
             self.assertRegex(text, r"(?m)^%s\s+.*eol=%s\b" % (pat.replace("*", r"\*").replace(".", r"\."), eol))
 
+    def test_every_test_file_takes_fast(self):
+        """run_all.py --fast (the CI fast tier) passes --fast to every file; a bare unittest.main() exits 2 on it."""
+        bare = [p.name for p in sorted(TESTS_DIR.glob("test_*.py"))
+                if re.search(r"(?m)^\s*unittest\.main\(\)\s*$", p.read_text(encoding="utf-8"))]
+        self.assertEqual(bare, [], "these call unittest.main() with --fast still in sys.argv")
+
 
 CREW = ("creative-director", "brand-designer", "scriptwriter", "storyboard-artist", "motion-designer",
         "sound-designer", "voice-director", "editor", "researcher", "critic")

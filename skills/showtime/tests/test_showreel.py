@@ -495,6 +495,8 @@ class CheckTests(unittest.TestCase):
         for size in ("16:9", "9:16", "1:1"):
             cp = showtime("check", proj, "--json", "--size", size, "--no-determinism", "--no-cuts", "--samples", "6",
                           check=False, timeout=300)
+            self.assertTrue(cp.stdout.strip(), "check --size %s printed no report (rc=%d):\n%s" % (
+                size, cp.returncode, cp.stderr[-3000:]))
             rep = json.loads(cp.stdout)
             bad = [(f["code"], f.get("message", "")[:90]) for f in rep["findings"] if f["severity"] in ("error", "warning")]
             self.assertEqual(bad, [], size)

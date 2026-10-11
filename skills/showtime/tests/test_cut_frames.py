@@ -234,6 +234,7 @@ class CutFrames(unittest.TestCase):
         reel = self.tmp / "reel"
         showtime("new", "showreel", reel)
         cp = showtime("check", reel, "--json", "--no-determinism", "--samples", "3", check=False, timeout=900)
+        self.assertTrue(cp.stdout.strip(), "check printed no report (rc=%d):\n%s" % (cp.returncode, cp.stderr[-3000:]))
         rep = json.loads(cp.stdout)
         self.assertEqual([f for f in rep["findings"] if f["code"] == "late_first_frame"], [])
         self.assertGreaterEqual(len(rep.get("cuts") or []), 5, rep.get("cuts"))

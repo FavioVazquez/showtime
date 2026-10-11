@@ -248,6 +248,7 @@ class Cases(unittest.TestCase):
         self.assertFalse(verdicts("footage-missing-take", "Here is your 45 s edit, captioned.")
                          ["names-the-missing-take"]["passed"])
 
+    @unittest.skipIf(os.name == "nt", "bash on the Windows runners' PATH is not a usable POSIX bash; the fixture is checked on macOS and Linux")
     def test_footage_case_scaffold_puts_two_takes_and_not_the_third(self):
         case = EVALS / "footage-missing-take"
         text = (case / "case.yaml").read_text(encoding="utf-8")

@@ -207,6 +207,13 @@ class NightlyReportJob(unittest.TestCase):
                 self.assertNotIn("${{", s["run"], "expressions go through env:, never into the script")
                 self.assertIn("scripts/nightly_report.py", s["run"])
 
+    def test_a_narrowed_run_never_closes_the_issue(self):
+        # --full (a green run may close the issue) only when every OS image AND every test file ran
+        step = [s for s in self.job["steps"] if "run" in s][0]
+        self.assertEqual(step["env"].get("OS_INPUT"), "${{ inputs.os }}")
+        self.assertEqual(step["env"].get("TESTS_INPUT"), "${{ inputs.tests }}")
+        self.assertIn('[ -z "$OS_INPUT" ] && [ -z "$TESTS_INPUT" ]', step["run"])
+
     def test_pins_match_the_rest_of_the_workflow(self):
         text = CI.read_text(encoding="utf-8")
         pins = set(re.findall(r"uses:\s*actions/checkout@(\S+)", text))

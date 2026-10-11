@@ -47,7 +47,7 @@ on:
         type: boolean
         default: false
       tests:
-        description: "Only these test files (substrings, space-separated; empty: all)"
+        description: "Only these test files (name substrings, space-separated, .py optional; empty: all)"
         type: string
         default: ""
 
@@ -146,7 +146,7 @@ jobs:
         env:
           ONLY: ${{ inputs.tests }}
         run: |
-          only=(); for t in $ONLY; do only+=(-k "$t"); done
+          only=(); set -f; for t in $ONLY; do only+=(-k "${t%.py}"); done; set +f
           python skills/showtime/tests/run_all.py --fast -j 2 --shard "${{ matrix.shard }}/3" "${only[@]}"
 
       - name: 2 s 360p render smoke
@@ -171,7 +171,9 @@ jobs:
       matrix:
         os: ${{ fromJSON(inputs.os || '["ubuntu-24.04", "windows-2022", "macos-14", "macos-15-intel"]') }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 180
+    # the Intel Mac image ran past 3 h on the 0.4.2 release PR (file 77 of 84) and lost the failure details the
+    # suite prints at its end; 300 min stays under GitHub's 360-minute job limit
+    timeout-minutes: 300
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.2.0   # immutable releases: no floating major tag
@@ -201,8 +203,14 @@ jobs:
         run: python skills/showtime/lib/st/launcher.py doctor
       - name: Full test suite
         # each file gets 2400 s, as on a local machine: an unsplit heavy file (test_showreel's three template
-        # checks) runs past run_all's 900 s default on the slowest image (macos-15-intel draws WebGL in software)
-        run: python skills/showtime/tests/run_all.py -j auto --json --timeout 2400
+        # checks) runs past run_all's 900 s default on the slowest image (macos-15-intel draws WebGL in software).
+        # By hand, the "tests" input runs only those files here too (e.g. one heavy file on one image).
+        shell: bash
+        env:
+          ONLY: ${{ inputs.tests }}
+        run: |
+          only=(); set -f; for t in $ONLY; do only+=(-k "${t%.py}"); done; set +f
+          python skills/showtime/tests/run_all.py -j auto --json --timeout 2400 "${only[@]}"
       - name: Release checks
         if: always()
         run: python scripts/check_release.py --check
@@ -228,6 +236,8 @@ jobs:
           RESULT: ${{ needs.nightly.result }}
           EVENT: ${{ github.event_name }}
           OS_INPUT: ${{ inputs.os }}
+          TESTS_INPUT: ${{ inputs.tests }}
         run: |
-          full=(); if [ "$EVENT" = schedule ] || [ -z "$OS_INPUT" ]; then full=(--full); fi
+          # only a run of every test file on every OS image may close the issue
+          full=(); if [ "$EVENT" = schedule ] || { [ -z "$OS_INPUT" ] && [ -z "$TESTS_INPUT" ]; }; then full=(--full); fi
           python3 scripts/nightly_report.py --repo "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" --result "$RESULT" "${full[@]}"

@@ -6,7 +6,8 @@
     to add); the tiling rules (gap, overlap, missing piece, another `total`) with the exact `--chapter N` hint;
     `joinPieces` writes the concatenation with an IDR at each seam and never holds two pieces; pieces with other
     SPS/PPS are not byte-joined; `sourcesHash` is stable across paths and mtimes; the seam audio check (equal
-    audio: step 0, lag 0; a 21 ms shift: caught); `withForcedKeys`
+    audio: step 0, lag 0; a 21 ms shift: caught); `withForcedKeys`; `framePsnr` compares the frame it
+    outputs even when the image's end of stream comes late (the Windows join failure)
   * render (a 6 s fixture, 3 chapters of 2 s, a white frame and a 1 ms click at each seam): a whole render (a
     keyframe at each chapter start); the plan (plan.json only, the one-machine line); `--chapter 1..3` (video-only
     pieces in work/chapters/, never the latest final); `--join` (frames = total, IDR at the seams, captured JPEGs
@@ -25,6 +26,7 @@ import _isolate  # noqa: F401  (run from a scratch folder: never write into the 
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -113,11 +115,10 @@ def mad(a, b):
 
 
 def psnr_frame(a, b, k):
-    """PSNR (dB, 100 = equal) of frame k of two videos."""
+    """PSNR (dB, 100 = equal) of frame k of two videos (both at pts 0: psnr compares the frame it outputs)."""
     cp = subprocess.run([ff.ffmpeg_path(), "-hide_banner", "-nostdin", "-i", str(a), "-i", str(b), "-filter_complex",
-                         "[0:v]select=eq(n\\,%d)[x];[1:v]select=eq(n\\,%d)[y];[x][y]psnr" % (k, k), "-frames:v", "1", "-f", "null", "-"],
+                         "[0:v]select=eq(n\\,%d),setpts=PTS-STARTPTS[x];[1:v]select=eq(n\\,%d),setpts=PTS-STARTPTS[y];[x][y]psnr" % (k, k), "-frames:v", "1", "-f", "null", "-"],
                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8", errors="replace", timeout=120)
-    import re
     m = re.search(r"PSNR .*average:(inf|[\d.]+)", cp.stderr)
     assert m, cp.stderr[-1500:]
     return 100.0 if m.group(1) == "inf" else float(m.group(1))
@@ -303,6 +304,65 @@ class TestChapterUnits(unittest.TestCase):
         r = node("import { withForcedKeys } from '%s';\nconsole.log(JSON.stringify([withForcedKeys(['-crf', '16'], [0, 120, 60]), withForcedKeys(['-crf', '16'], [0])]));" % CHAPTERS_MJS)
         self.assertEqual(r[0], ["-crf", "16", "-force_key_frames", "expr:eq(n,60)+eq(n,120)", "-forced-idr", "1"])
         self.assertEqual(r[1], ["-crf", "16"])
+
+    def test_frame_psnr_compares_the_frame_it_outputs(self):
+        """The seam check's PSNR is computed on the one frame -frames:v 1 keeps, not on a later one.
+
+        The image's end of stream is held back 1.5 s (a pipe): the old graph gave psnr the image at pts 0 and
+        the video frame at pts 0.5/fps, so the first output frame went out uncompared and the comparison waited
+        for that end of stream, after the output had finished: no PSNR line, exit 0 (the Windows CI failure,
+        "could not compare frame 119 of mux.mp4: frame=    1 ... time=00:00:00.00"), on any OS.
+        """
+        v = self.tmp / "psnr.mp4"
+        run_ff("-f", "lavfi", "-i", "testsrc2=s=256x144:r=30:d=6", "-c:v", "libx264", "-preset", "veryfast", "-crf", "16",
+               "-pix_fmt", "yuv420p", "-g", "60", v)
+        png = self.tmp / "f119.png"
+        run_ff("-i", v, "-vf", "select=eq(n\\,119)", "-frames:v", "1", png)
+        raw = run_ff("-i", png, "-f", "rawvideo", "-pix_fmt", "rgb24", "-")
+        self.assertEqual(len(raw), 256 * 144 * 3)
+        vf = "crop=trunc(iw/2)*2:trunc(ih/2)*2,scale=out_color_matrix=bt709:out_range=tv:flags=accurate_rnd+full_chroma_int"
+        r = node("import { framePsnr, framePsnrArgs } from '%s';\nconst [p, v, vf] = %s;\n"
+                 "console.log(JSON.stringify({ args: framePsnrArgs('IMAGE', v, 119, 30, vf), same: await framePsnr(p, v, 119, 30, vf), "
+                 "other: await framePsnr(p, v, 60, 30, vf) }));" % (CHAPTERS_MJS, json.dumps([str(png), str(v), vf])))
+        self.assertGreater(r["same"], 40, "frame 119 against its own capture")
+        self.assertLess(r["other"], r["same"] - 10, "frame 60 is another picture")
+        args = r["args"]
+        i = args.index("IMAGE")
+        args[i - 1:i + 1] = ["-f", "rawvideo", "-pix_fmt", "rgb24", "-s", "256x144", "-i", "-"]
+        p = subprocess.Popen([ff.ffmpeg_path(), "-hide_banner", "-loglevel", "info", "-y"] + args,
+                             stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        try:
+            p.stdin.write(raw)
+            p.stdin.flush()
+            time.sleep(1.5)
+            _, err = p.communicate(timeout=120)
+        finally:
+            if p.poll() is None:
+                p.kill()
+        err = err.decode("utf-8", "replace")
+        self.assertEqual(p.returncode, 0, err[-2000:])
+        m = re.search(r"PSNR .*average:(inf|[\d.]+)", err)
+        self.assertTrue(m, "no comparison before the output finished:\n" + err[-1500:])
+        self.assertAlmostEqual(float(m.group(1)), r["same"], places=2, msg="the late-EOF run compared frame 119 too")
+
+    def test_ff_messages_drop_progress(self):
+        err = ("Input #1, mov,mp4,m4a,3gp,3g2,mj2, from 'mux.mp4':\n"
+               "  Metadata:\n    major_brand     : isom\n"
+               "  Stream #1:0[0x1](und): Video: h264 (High), yuv420p, 256x144, 30 fps\n"
+               "[h264 @ 0x0] first message\n"
+               "[in#1 @ 0x1] Error opening input: No such file or directory\r\n"
+               "Stream mapping:\n  Stream #0:0 (png) -> crop:default\n"
+               "frame=    1 fps=0.0 q=-0.0 Lsize=N/A time=00:00:00.00 bitrate=N/A speed=   0x elapsed=0:00:00.01    \r"
+               "Output #0, null, to 'pipe:':\n  Metadata:\n    encoder         : Lavf63.1.102\n"
+               "  Stream #0:0: Video: wrapped_avframe, yuv420p, 256x144\n      encoder         : Lavc63.1.102 wrapped_avframe\n"
+               "[out#0/null @ 0x2] video:0KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown\n"
+               "frame=    1 fps=0.0 q=-0.0 Lsize=N/A time=00:00:00.00 bitrate=N/A speed=   0x elapsed=0:00:00.01    \n")
+        r = node("import { ffMessages } from '%s';\nconst e = %s;\nconsole.log(JSON.stringify([ffMessages(e), ffMessages(e, 1), ffMessages('')]));"
+                 % (CHAPTERS_MJS, json.dumps(err)))
+        self.assertEqual(r[0], ["[h264 @ 0x0] first message", "[in#1 @ 0x1] Error opening input: No such file or directory"],
+                         "messages only: no progress, stats or stream listing")
+        self.assertEqual(r[1], ["[in#1 @ 0x1] Error opening input: No such file or directory"], "the last n, not the first")
+        self.assertEqual(r[2], [])
 
 
 # --------------------------------------------------------------------------- real renders

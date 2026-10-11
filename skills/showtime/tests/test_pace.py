@@ -23,6 +23,12 @@ seeks, and every wait is its fixed value times a factor of 1-5 (never shorter th
     processes have done no work for 30 s (it waited a flat 10 minutes, longer than any caller) and the frame is
     drawn again in a new browser; check, whose screenshots had no deadline, ends with an error naming its step;
     SHOWTIME_TIMEOUT ends a render at the caller's limit with an error naming each part's step
+  * a clipped screenshot's read of the page's size, which waits for the frame the seek drew (issue #14): a main
+    thread held past the old flat 60 s (3 s at the test scale) while its renderer works is waited for; a stopped
+    renderer still fails the read with the stuck-frame guard's error
+  * a page load that never reaches DOMContentLoaded fails as the page (check's ready_failed, with a report) at the
+    load deadline inside the page-open one, never as a stuck browser; on check's second pages it stays a soft
+    finding (issue #14 review)
   * the stuck-frame guard on a browser that cannot report its work (CDP replies faked, node only): one whose
     SystemInfo.getProcessInfo answers with an error is asked once and then only the screenshot cap applies, a late
     frame still comes through; one that does not answer at all is stuck after twice the idle time
@@ -38,9 +44,11 @@ import _isolate  # noqa: F401  (run from a scratch folder: never write into the 
 import json
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -78,6 +86,12 @@ def showtime(*args, env=None, timeout=600):
                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8", errors="replace",
                           timeout=timeout)
 
+
+# the stuck-frame guard's two verdicts (stagehost guardShot): the drawing processes did no work, or the browser stopped
+# saying what they do. With the GPU process stopped Chrome now and then stops answering SystemInfo.getProcessInfo too
+# (2 of 8 stopped-GPU checks on a 6-core Mac, 11 Oct), so either one is the guard ending a frame that never comes.
+STUCK_FRAME = (r"\((its GPU process and renderers did no work for \d+ s: the frame is not coming|"
+               r"the browser did not say what it was doing for \d+ s)\)")
 
 STUCK_AT = (r"stuck at: (creating the browser context|opening a tab|setting up the tab|loading the page|"
             r"waiting for the page to be ready)")
@@ -300,6 +314,50 @@ process.exit(0);
         self.assertRegex(cp.stderr, STUCK_AT)
         self.assertIn("in a new browser too", cp.stderr)
 
+    def test_load_that_never_finishes_is_the_page(self):
+        """A page whose load never reaches DOMContentLoaded (a parser-blocking script from a local server that never
+        answers) fails as the page: check's ready_failed finding with a report, at the page's load deadline
+        (PAGE_LOAD_MS, 3/5 of the page-open deadline: 18 s here), never as a stuck browser killed and tried again
+        with no report (a load with no deadline of its own ran into the page-open deadline twice)."""
+        with hanging_server() as port:
+            proj = self.tmp / "neverloads"
+            write(proj / "showtime.json", json.dumps({"width": 320, "height": 180, "fps": 10, "duration": 1, "background": "#202830"}))
+            write(proj / "index.html", HEAD + '<script src="http://127.0.0.1:%d/never.js"></script></head><body>'
+                  "<script>ST.onSeek(() => {});</script></body></html>" % port)
+            t0 = time.time()
+            cp = showtime("check", proj, "--json", "--no-determinism", "--no-timeline", "--no-history", "--samples", "2",
+                          env=dict(ENV, SHOWTIME_TEST_OPEN_TIMEOUT="30"), timeout=300)
+            took = time.time() - t0
+        self.assertTrue(cp.stdout.strip(), "check printed no report (rc=%d):\n%s" % (cp.returncode, cp.stderr[-2000:]))
+        rep = json.loads(cp.stdout)
+        ready = [f for f in rep["findings"] if f["code"] == "ready_failed"]
+        self.assertEqual(len(ready), 1, rep["findings"])
+        self.assertIn("could not open", ready[0]["message"])
+        self.assertNotIn("the browser stopped answering", cp.stderr)
+        self.assertNotIn("trying once more", cp.stderr)
+        self.assertLess(took, 120, cp.stderr[-1500:])
+
+    def test_second_page_load_is_a_finding(self):
+        """check's second pages (the determinism load, the cut walk, the no-GPU probe) whose load never finishes stay
+        soft findings: the first page loads its script, every later load waits for ever, and check reports it
+        (cut_probe_failed, determinism_incomplete) and finishes instead of ending with a stuck browser."""
+        with hanging_server(answer_first=True) as port:
+            proj = self.tmp / "secondhangs"
+            write(proj / "showtime.json", json.dumps({"width": 320, "height": 180, "fps": 10, "duration": 1, "background": "#202830"}))
+            write(proj / "index.html", HEAD + '<script src="http://127.0.0.1:%d/once.js"></script></head><body style="margin:0;'
+                  'background:#234"><h1 style="color:#fff;font:40px sans-serif">Hi</h1>'
+                  "<script>ST.onSeek(() => {});</script></body></html>" % port)
+            cp = showtime("check", proj, "--json", "--no-timeline", "--no-history", "--samples", "2",
+                          env=dict(ENV, SHOWTIME_TEST_OPEN_TIMEOUT="30"), timeout=400)
+        self.assertTrue(cp.stdout.strip(), "check printed no report (rc=%d):\n%s" % (cp.returncode, cp.stderr[-2000:]))
+        rep = json.loads(cp.stdout)
+        soft = [f for f in rep["findings"] if f["code"] in ("cut_probe_failed", "determinism_incomplete")]
+        self.assertTrue(soft, [(f["code"], f["message"][:120]) for f in rep["findings"]])
+        for f in soft:
+            self.assertIn(f["severity"], ("info", "warning"), f)
+            self.assertIn("could not open", f["message"])
+        self.assertNotIn("the browser stopped answering", cp.stderr)
+
     @unittest.skipIf(sys.platform == "win32", "SIGSTOP is POSIX")
     def test_check_stopped_browser(self):
         """A browser that really stops answering (SIGSTOP, SHOWTIME_TEST_STOP_BROWSER): stopped before the first
@@ -323,11 +381,145 @@ process.exit(0);
         self.assertEqual(cp.returncode, 1, cp.stderr[-2000:])
         self.assertIn("the browser stopped answering", cp.stderr)
         self.assertIn("check's last step: opened the image lab page", cp.stderr)
-        ps = subprocess.run(["ps", "-axo", "stat=,command="], stdout=subprocess.PIPE, encoding="utf-8", errors="replace").stdout
         # the run's browsers hold a temp profile (--user-data-dir) of their own; the command line never names the
-        # project, so a stopped (state T) Chrome after the run is any stopped Chrome that was not stopped before
-        stopped = [l for l in ps.splitlines() if l.strip().startswith("T") and "--user-data-dir" in l and "chrom" in l.lower()]
-        self.assertEqual([l for l in stopped if l not in before], [], "a stopped browser was left behind")
+        # project, so a stopped (state T) Chrome after the run is any stopped Chrome that was not stopped before.
+        # The stuck browser is killed (SIGKILL) as check ends; on a busy machine ps can still list it for a moment,
+        # so it is asked again for up to 10 s before that counts as left behind.
+        for _ in range(20):
+            ps = subprocess.run(["ps", "-axo", "stat=,command="], stdout=subprocess.PIPE, encoding="utf-8", errors="replace").stdout
+            stopped = [l for l in ps.splitlines() if l.strip().startswith("T") and "--user-data-dir" in l and "chrom" in l.lower()]
+            left = [l for l in stopped if l not in before]
+            if not left:
+                break
+            time.sleep(0.5)
+        self.assertEqual(left, [], "a stopped browser was left behind")
+
+
+class TestSizeReadWaitsForTheFrame(unittest.TestCase):
+    """A clipped screenshot (check's timeline and thumbnails, render's --preview and --scale below 1) first reads the
+    page's layout size (issue #49). That read is the first call on the page's main thread after a seek, so it waits
+    for the frame the seek drew: without a GPU, while SwiftShader draws a WebGL frame in the GPU process (the seek
+    itself returns in milliseconds, so the page's pace stays 1). It had a flat 60 s and ended check on a 4-core CI
+    runner without a GPU ("timed out after 60s: reading the page's size", issue #14). It is now guarded like the
+    screenshot it belongs to (guardShot): waited for while the browser's drawing processes work, failed once they do
+    nothing. Here a renderer kept busy past the old deadline (SHOWTIME_TEST_WAIT_SCALE=0.05: 3 s for the old 60 s)
+    stands in for the GPU process at work, and a stopped renderer for a page that is truly stuck."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = Path(tempfile.mkdtemp(prefix="st-sizeread-"))
+        cls.proj = cls.tmp / "p"
+        write(cls.proj / "showtime.json", json.dumps({"width": 320, "height": 180, "fps": 10, "duration": 1, "background": "#202830"}))
+        write(cls.proj / "index.html", HEAD + "</head><body style=\"margin:0;background:#202830\"><div id=\"box\" style=\""
+              "position:absolute;left:40px;top:40px;width:120px;height:80px;background:#f4f4f4\"></div><script>" + BUSY_JS +
+              "const box = document.getElementById('box');\n"
+              "ST.onSeek((t) => { box.style.transform = 'translateX(' + Math.round(t * 100) + 'px)'; });"
+              "</script></body></html>")
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(str(cls.tmp), ignore_errors=True)
+
+    def run_shot(self, stop):
+        # the main thread is held right after the seek returns (a task queued by a call that returns at once, not
+        # onSeek, which would hold the seek itself and raise the page's pace), then a clipped screenshot is taken
+        code = """
+const S = await import(%s);
+const { startServer } = await import(%s);
+const server = await startServer({ root: %s, port: 0 });
+const b = await S.openBrowser({});
+const stop = %s;
+let out, stopped = [];
+try {
+  const sess = await S.openStage(b.browser, { url: server.url, page: 'index.html', config: { width: 320, height: 180, fps: 10, duration: 1 } });
+  await sess.seek(0.5);
+  await sess.page.evaluate(() => { setTimeout(() => busy(20000), 0); return true; });
+  if (stop) {
+    const cdp = await b.browser.newBrowserCDPSession();
+    const info = await cdp.send('SystemInfo.getProcessInfo');
+    stopped = info.processInfo.filter((p) => p.type === 'renderer').map((p) => p.id);
+    for (const pid of stopped) process.kill(pid, 'SIGSTOP');
+  }
+  const t0 = Date.now();
+  try {
+    const img = await sess.shot({ format: 'jpeg', scale: 0.5 });
+    out = { ok: true, ms: Date.now() - t0, size: S.imageSize(img), pace: sess.pace.factor };
+  } catch (e) { out = { ok: false, ms: Date.now() - t0, error: String(e.message || e) }; }
+  for (const pid of stopped) { try { process.kill(pid, 'SIGCONT'); } catch {} }
+  await sess.close();
+} catch (e) { out = { ok: false, error: 'setup: ' + String(e.message || e) }; }
+for (const pid of stopped) { try { process.kill(pid, 'SIGCONT'); } catch {} }
+await S.closeSoon(b.browser.close());
+await server.close().catch(() => {});
+console.log(JSON.stringify(out));
+process.exit(0);
+""" % (json.dumps(STAGEHOST), json.dumps(SERVER), json.dumps(str(self.proj)), "true" if stop else "false")
+        return node(code, env=dict(ENV, SHOWTIME_TEST_WAIT_SCALE="0.05"), timeout=180)
+
+    def test_busy_page_is_waited_for(self):
+        """The read waits out a main thread held 20 s, past the old deadline (3 s x the page's pace, 15 s at most;
+        60 s x pace on a real machine), because the renderer keeps working. On the CI runner the pace stayed 1 (the
+        seek was fast); a slow runner's page may measure more, and the old deadline grows with it."""
+        r = self.run_shot(stop=False)
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(r["size"], [160, 90], r)
+        self.assertGreater(r["ms"], 3000 * r["pace"], r)
+        self.assertGreaterEqual(r["ms"], 15000, r)
+
+    @unittest.skipIf(sys.platform == "win32", "SIGSTOP is POSIX")
+    def test_stopped_page_still_fails(self):
+        """A renderer that does no work at all (stopped) still fails the read, as a stuck screenshot does (#24), in
+        seconds here (the idle window is 1.5 s at this scale, read every 5 s), naming the step."""
+        r = self.run_shot(stop=True)
+        self.assertFalse(r["ok"], r)
+        self.assertRegex(r["error"], r"timed out after \d+s: reading the page's size " + STUCK_FRAME)
+        self.assertLess(r["ms"], 60000, r)
+
+
+class hanging_server:
+    """A local HTTP server whose requests never get an answer (answer_first: the first one gets a small script, every
+    later one waits): a page load that never reaches DOMContentLoaded. -> its port"""
+
+    def __init__(self, answer_first=False):
+        self.answer_first = answer_first
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.bind(("127.0.0.1", 0))
+        self.sock.listen(16)
+        self.held = []
+        self.done = False
+
+    def serve(self):
+        n = 0
+        while not self.done:
+            try:
+                c, _ = self.sock.accept()
+            except OSError:
+                return
+            self.held.append(c)
+            try:
+                c.settimeout(5)
+                c.recv(65536)
+            except OSError:
+                continue
+            n += 1
+            if self.answer_first and n == 1:
+                body = b"window.__once = 1;"
+                c.sendall(b"HTTP/1.1 200 OK\r\nContent-Type: text/javascript\r\nCache-Control: no-store\r\n"
+                          b"Connection: close\r\nContent-Length: %d\r\n\r\n%s" % (len(body), body))
+                c.close()
+
+    def __enter__(self):
+        threading.Thread(target=self.serve, daemon=True).start()
+        return self.sock.getsockname()[1]
+
+    def __exit__(self, *exc):
+        self.done = True
+        for c in self.held:
+            try:
+                c.close()
+            except OSError:
+                pass
+        self.sock.close()
 
 
 def stopped_gpu_processes():
@@ -366,8 +558,14 @@ class TestFrameNeverComes(unittest.TestCase):
             self.skipTest("this browser has no GPU process to stop: " + cp.stderr[-300:])
 
     def assertNoStoppedGpu(self):
-        time.sleep(1)
-        self.assertEqual(stopped_gpu_processes() - self.stopped_before, set(), "a stopped GPU process was left behind")
+        # the stuck browser is killed as the command ends; on a busy machine ps can still list its stopped GPU process
+        # for a moment, so it is asked again for up to 10 s before that counts as left behind
+        for _ in range(20):
+            time.sleep(0.5)
+            left = stopped_gpu_processes() - self.stopped_before
+            if not left:
+                break
+        self.assertEqual(left, set(), "a stopped GPU process was left behind")
 
     def test_render_draws_the_frame_again(self):
         """The screenshot fails once the GPU process and the renderers have done no work for 30 s (x the page's
@@ -382,8 +580,7 @@ class TestFrameNeverComes(unittest.TestCase):
         rep = json.loads(cp.stdout)
         self.assertEqual(rep["frames"], 20)
         self.assertEqual(rep["capture"]["retries"], 1, rep["capture"])
-        self.assertRegex(cp.stderr, r"timed out after \d+s: screenshot at 0\.500s \(its GPU process and renderers did no work "
-                                    r"for \d+ s: the frame is not coming\); retrying")
+        self.assertRegex(cp.stderr, r"timed out after \d+s: screenshot at 0\.500s " + STUCK_FRAME + r"; retrying")
         # 30 s x the pace (5 at most) and a new browser: never the 10 minutes it was
         self.assertLess(took, 300, cp.stderr[-1500:])
         self.assertNoStoppedGpu()
@@ -395,8 +592,8 @@ class TestFrameNeverComes(unittest.TestCase):
                       env=dict(ENV, SHOWTIME_TEST_STOP_GPU="shot:1"), timeout=400)
         self.injected(cp)
         self.assertEqual(cp.returncode, 1, cp.stderr[-2000:])
-        self.assertRegex(cp.stderr, r"the browser stopped drawing: timed out after \d+s: screenshot \(its GPU process and "
-                                    r"renderers did no work for \d+ s: the frame is not coming\); check's last step: \S")
+        self.assertRegex(cp.stderr, r"the browser stopped drawing: timed out after \d+s: screenshot " + STUCK_FRAME +
+                         r"; check's last step: \S")
         self.assertNoStoppedGpu()
 
     def test_command_timeout_names_the_step(self):

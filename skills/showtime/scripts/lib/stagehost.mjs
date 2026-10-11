@@ -109,6 +109,12 @@ function testStopNow(b, when) {
 // no end.
 // SHOWTIME_TEST_OPEN_TIMEOUT=<seconds> shortens it (tests).
 export const PAGE_OPEN_MS = Number(process.env.SHOWTIME_TEST_OPEN_TIMEOUT) > 0 ? Number(process.env.SHOWTIME_TEST_OPEN_TIMEOUT) * 1000 : 300000;
+// The page's own load (to DOMContentLoaded) ends well inside that deadline, so a page whose load never finishes (a
+// script that never arrives or never ends) fails as the page: `could not open`, check's ready_failed finding or a
+// soft finding for its second pages, render's retry on the same browser. Past PAGE_OPEN_MS it would be taken for a
+// stuck browser instead: killed, tried again, and no report. 3/5 of it: 180 s (the context, the tab and the ready
+// wait share the rest); it was a flat 60 s, which a slow load on a busy machine without a GPU passed (#14).
+export const PAGE_LOAD_MS = Math.round(PAGE_OPEN_MS * 0.6);
 
 /** close() of a browser or page that may not answer: never waits more than ms. */
 export function closeSoon(p, ms = 10000) {
@@ -190,10 +196,12 @@ async function drawingWork(browser, cache) {
 /**
  * The screenshot promise p under the deadline above: browser is its Playwright browser, label names it in the error,
  * cache keeps the browser CDP session. The drawing processes' work is read every SHOT_POLL_MS from the first
- * SHOT_POLL_MS on (a frame that comes in time costs nothing; pollMs is for tests, which shorten it). -> p's result
+ * SHOT_POLL_MS on (a frame that comes in time costs nothing; pollMs is for tests, which shorten it). since: when the
+ * SHOT_MAX_MS budget started (default now): one shot()'s size read and screenshot share one. -> p's result
  */
-export async function guardShot(p, browser, label, pace, cache, pollMs = SHOT_POLL_MS) {
+export async function guardShot(p, browser, label, pace, cache, pollMs = SHOT_POLL_MS, since = null) {
   const t0 = Date.now();
+  const start = since || t0;
   let timer = null, settled = false;
   const watch = new Promise((_, rej) => {
     const samples = [];   // [ms since the screenshot was asked for, CPU seconds, or null: the browser did not answer]
@@ -216,7 +224,7 @@ export async function guardShot(p, browser, label, pace, cache, pollMs = SHOT_PO
       if (settled) return;
       const now = Date.now() - t0;
       samples.push([now, cpu]);
-      if (now >= SHOT_MAX_MS) return fail(`still not there after ${Math.round(SHOT_MAX_MS / 1000)} s, the longest a screenshot may take`);
+      if (Date.now() - start >= SHOT_MAX_MS) return fail(`still not there after ${Math.round(SHOT_MAX_MS / 1000)} s, the longest a screenshot may take`);
       if (cache.noWork) { timer = setTimeout(tick, pollMs); return; }
       // the work done since the newest sample at least idleMs old, from the samples the browser answered (a busy
       // machine may leave one unanswered: that is not idleness); one that answered none for twice that is stuck
@@ -506,7 +514,10 @@ async function openStageOnce(browser, o) {
   const target = `${o.url}/${String(o.page || 'index.html').replace(/^\/+/, '')}`;
   track.step = 'loading the page';
   try {
-    await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    // PAGE_LOAD_MS (180 s), inside the page-open deadline every openStage caller runs under (PAGE_OPEN_MS x pace:
+    // openGuarded, or render's worker open), so a load that never finishes fails here, as the page. A flat 60 s
+    // ended check's cut walk once on a busy 6-core Mac without a GPU (#14).
+    await page.goto(target, { waitUntil: 'domcontentloaded', timeout: PAGE_LOAD_MS });
   } catch (e) {
     await context.close().catch(() => {});
     throw new UserError(`could not open ${target}: ${e.message.split('\n')[0]}`);
@@ -627,10 +638,18 @@ async function openStageOnce(browser, o) {
       if (cs && cs !== 1) params.clip = { x: 0, y: 0, width, height, scale: cs };
       const want = [Math.round(width * dsf * (params.clip ? cs : 1)), Math.round(height * dsf * (params.clip ? cs : 1))];
       // a clipped screenshot has the clip's size whatever the view's: the page's layout size says instead whether
-      // the view lost the page's size (see `metrics`); the frame drawn at the wrong size is drawn again
+      // the view lost the page's size (see `metrics`); the frame drawn at the wrong size is drawn again.
+      // This read is the first call on the page's main thread after a seek, so it waits for the frame the seek
+      // drew: without a GPU the main thread waits there while SwiftShader draws a WebGL frame in the GPU process
+      // (a seek returns in milliseconds and the cost lands here; the page's pace never sees it). On a 4-core CI
+      // runner one such wait passed a flat 60 s (issue #14), so it is guarded like the screenshot it belongs to:
+      // waited for while the drawing processes work, failed once they do nothing (guardShot). The read and the
+      // screenshot share one SHOT_MAX_MS: a shot that keeps working waits 10 minutes at most, not 10 for each.
+      const shotT0 = Date.now();
       for (let k = 1; params.clip; k++) {
-        const v = await withPacedTimeout(page.evaluate(() => [window.innerWidth, window.innerHeight,
-          window.ST && typeof window.ST.t === 'number' ? window.ST.t : null]), 60000, 'reading the page\'s size', pace);
+        const v = await guardShot(page.evaluate(() => [window.innerWidth, window.innerHeight,
+          window.ST && typeof window.ST.t === 'number' ? window.ST.t : null]), browser, 'reading the page\'s size', pace, work,
+          SHOT_POLL_MS, shotT0);
         if (!v || (v[0] === width && v[1] === height)) break;
         const msg = `the page was laid out at ${v[0]}x${v[1]}, not ${width}x${height}, at the ${label}`;
         if (k >= 3) throw new Error(`${msg}, ${k} times in a row (the page's size was set again each time)`);
@@ -640,7 +659,7 @@ async function openStageOnce(browser, o) {
       }
       for (let k = 1; ; k++) {
         if (TEST_GPU) await testStopGpu(browser, work);
-        const r = await guardShot(cdp.send('Page.captureScreenshot', params), browser, label, pace, work);
+        const r = await guardShot(cdp.send('Page.captureScreenshot', params), browser, label, pace, work, SHOT_POLL_MS, shotT0);
         const buf = Buffer.from(r.data, 'base64');
         // the view lost the page's size (see `metrics` above): set it again and take the screenshot again (the
         // page itself kept its layout size, which seek() checks, so the frame needs no new seek)

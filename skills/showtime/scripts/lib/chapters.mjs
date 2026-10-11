@@ -316,13 +316,42 @@ export async function seamAudio(final, masterFile, seams, { rate = 48000, maxLag
   return out;
 }
 
+/**
+ * The ffmpeg arguments that compare a captured frame image with frame k of a video (framePsnr).
+ * Both branches start at pts 0 (setpts=PTS-STARTPTS): psnr pairs its frames by timestamp and has no reference
+ * for a main frame that comes before the video's first one (framesync's EXT_NULL). Without that, the image
+ * (pts 0) went out uncompared as the one frame -frames:v 1 keeps, and the comparison only happened on the
+ * image's EOF, after the output had finished, so a Windows runner now and then stopped before it (no PSNR line).
+ * settb=AVTB gives both the same time base (no "not matching timebases" warning; the values are the same).
+ */
+export function framePsnrArgs(image, video, k, fps, vf) {
+  const at = Math.max(0, (k - 0.5) / fps);
+  return ['-nostats', '-i', image, '-ss', at.toFixed(6), '-i', video, '-filter_complex',
+    `[0:v]${vf},format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[a];[1:v]format=yuv420p,trim=end_frame=1,setpts=PTS-STARTPTS,settb=AVTB[b];[a][b]psnr`,
+    '-frames:v', '1', '-f', 'null', '-'];
+}
+
+/**
+ * ffmpeg's own messages from a stderr, the last n: without its progress and stats lines (frame= ... speed=,
+ * video:0KiB ...) and its input/output listing (Input #, Output #, Stream mapping, the indented stream lines).
+ */
+export function ffMessages(stderr, n = 3) {
+  return String(stderr || '').split(/\r\n|\r|\n/)
+    .filter((l) => l.trim() && !/^\s/.test(l) && !/^(Input|Output) #\d|^Stream (#|mapping:)|^Metadata:/.test(l))
+    .map((l) => l.trim())
+    .filter((l) => !/^(frame|size)=\s*\S/.test(l) && !/\bspeed=\s*\S/.test(l) && !/\bvideo:\S+ audio:\S+/.test(l))
+    .slice(-n);
+}
+
 /** PSNR (dB, Y'CbCr 4:2:0 as encoded; Infinity when equal) of a captured frame image against frame k of a video. */
 export async function framePsnr(image, video, k, fps, vf) {
-  const at = Math.max(0, (k - 0.5) / fps);
-  const r = await ffmpeg(['-i', image, '-ss', at.toFixed(6), '-i', video, '-filter_complex',
-    `[0:v]${vf},format=yuv420p[a];[1:v]format=yuv420p,trim=end_frame=1[b];[a][b]psnr`, '-frames:v', '1', '-f', 'null', '-'],
-  { loglevel: 'info', allowFail: true });
+  const r = await ffmpeg(framePsnrArgs(image, video, k, fps, vf), { loglevel: 'info', allowFail: true });
   const m = /PSNR .*average:(inf|[\d.]+)/.exec(String(r.stderr || ''));
-  if (r.code !== 0 || !m) throw new Error(`could not compare frame ${k} of ${path.basename(video)}: ${String(r.stderr || '').trim().split('\n').pop()}`);
+  if (r.code !== 0 || !m) {
+    const said = ffMessages(r.stderr).join(' | ') || '(nothing but its stream list and progress)';
+    const why = r.code !== 0 ? `ffmpeg failed (exit ${r.code}): ${said}`
+      : `ffmpeg exited 0 but printed no PSNR line (no frame of the video reached the comparison); its last lines: ${said}`;
+    throw new Error(`could not compare frame ${k} of ${path.basename(video)}: ${why}`);
+  }
   return m[1] === 'inf' ? Infinity : Number(m[1]);
 }

@@ -118,6 +118,16 @@ All notable changes to showtime. Each entry says what changed and why, so this f
   `--chapter N` fix re-renders exactly its frames. A piece cut short is refused with its `--chapter N` command, a
   one-chapter film is refused, and the receipt counts each piece's time once. Pieces carry `sources_hash` (the project's sources, the same on a copy at another path): other
   files warn at the join, another length or size is refused. Tests: `test_chapters.py`.
+- **The join's seam check compares each frame on Windows too.** On the Windows CI runner `render --join` stopped
+  at a random frame of the seam check with "could not compare frame 119 of mux.mp4: frame= 1 ... time=00:00:00.00". The PSNR
+  comparison gave ffmpeg's `psnr` the captured image at time 0 and the video's frame half a frame later (the seek
+  lands between frames), so the one frame `-frames:v 1` keeps went out uncompared, and the real comparison only ran
+  when the image's end of stream arrived, after the output had finished. Whether ffmpeg ran it before shutting down
+  was thread timing: it did on macOS and Linux and now and then did not on Windows (no PSNR line, exit 0). Both
+  inputs now start at time 0, so the first frame is the compared one on any OS, and the error quotes ffmpeg's own
+  message instead of its progress line and stream list (`settb=AVTB` also drops psnr's "not matching timebases" warning;
+  same values). Test: `test_chapters.py` (`test_frame_psnr_compares_the_frame_it_outputs` holds the image's end of
+  stream back 1.5 s, which fails the old graph on any OS, and checks the value; `test_ff_messages_drop_progress`).
 - **`test_signatures.py` checks reading time once per motion feel and template, not twelve times.** On the Windows
   nightly the file ran 868 s on its first night (6 Oct), then out of its 900 s on 7 and 8 Oct (680 s on 9 Oct); the
   Intel Mac reached 900 s on 9 Oct. It ran a full `showtime check` per look signature, twelve of them, on 4-thread
@@ -130,16 +140,42 @@ All notable changes to showtime. Each entry says what changed and why, so this f
   first check of each template (the only probe of the data template in the suite). The twelve checks without a GPU
   on a 6-core Intel Mac, one after another, with no probe at all: 994 CPU seconds and 762 s before (load 16-53,
   shared), 658 and 513 s after (load 21-44). Test: `test_signatures.py` `CheckPlan` (issue #13).
-- **`check --no-cuts` skips the cut walk, and the showreel's aspect test uses it.** On the macOS Intel nightly,
-  `test_showreel.py`'s check of the showreel template at 16:9 ran out of its 300 s (7, 8 and 9 Oct; the file passed
-  at 879 s on 6 Oct). Without a GPU the template's WebGL shots (the chrome and heat shaders, the three.js knot) are
-  drawn on the CPU, and every 12th WebGL frame cost the GPU process 8-18 CPU seconds here, whatever the shader, the
+- **Without a GPU a slow WebGL frame no longer ends `check` at 60 s, and `check --no-cuts` skips the cut walk (issue
+  #14).** On the macOS Intel nightly, `test_showreel.py`'s check of the showreel template at 16:9 ran out of its
+  300 s (7, 8 and 9 Oct; the file passed at 879 s on 6 Oct). Without a GPU the template's WebGL shots (the chrome
+  and heat shaders, the three.js knot) are drawn on the CPU, and every 12th WebGL frame cost the GPU process 8-18
+  CPU seconds here, whatever the shader, the
   canvas size or the compositing flags; the cut walk (a second page that seeks every cut four times) paid for those
   frames again, at every aspect, although the first frame after a cut does not change with the aspect and
   `test_cut_frames.py` already walks the template's cuts. `--no-cuts` (next to `--no-timeline`) leaves out the walk,
   report.json's `cuts` and `late_first_frame`; the aspect test passes it. One 16:9 check without a GPU on a 6-core
   Intel Mac: 361 and 364 CPU seconds before, 242 and 244 after (160-183 s against 133-149 s wall at load 15-19).
-  Test: `test_cut_frames.py` `test_no_cuts_skips_the_walk` (issue #14).
+  That was not enough. On 10 Oct the full tier still failed on the 4-core ubuntu-24.04 runner (the aspect test at
+  9:16) and on macos-15-intel (that test, and `test_cut_frames.py`'s template check) with `timed out after 60s:
+  reading the page's size`. A clipped screenshot (check's timeline, thumbnails and cut walk; render's `--scale` below
+  1, and `--preview` of a page above 720p) first reads the page's layout size (#49). That read is the first call on
+  the page's main thread after a seek, and without a GPU the main thread waits there while SwiftShader draws the
+  seek's WebGL frame in the GPU process. The seek itself returns in milliseconds, so the page's pace stayed 1 and the
+  read kept a flat 60 s. Reproduced on a 6-core Intel Mac with `--gpu off` and 8 busy loops: both runs ended this way,
+  after 128 s and 127 s (the read after the seek to 0.9 s took 39 s, the one after 3.0 s passed 60 s), the GPU process
+  working at about 0.45 of a core all the while and the renderers idle. The read is now guarded like the screenshot it
+  belongs to (the stuck-frame guard, #24, below): waited for while the GPU process and renderers work, failed once
+  they have done no work for 30 s (x the page's pace), sooner than before. The longer bound is the same as for
+  screenshots: where the browser cannot report its work, or any of its pages keeps working (the work is summed over
+  all of them), a check or a clipped render frame can now wait up to 10 minutes at that step (render: up to 3
+  attempts, each in a new browser) where it waited 60 s x pace; the read and the screenshot of one capture share those
+  10 minutes. The page load (to DOMContentLoaded) also had a flat 60 s, and on the same Mac under heavier load (23,
+  another session's renders) it ended check's cut walk once after the read was fixed (`Timeout 60000ms exceeded`, no
+  cuts probed; seen once there, not on CI). It now gets 3/5 of the page-open deadline, 180 s: a load that never
+  finishes still fails as the page (check's `ready_failed` with a report; on check's second pages, the cut walk, the
+  determinism load and the no-GPU probe, the soft finding it was), not as a stuck browser killed and tried again after
+  the page-open deadline. With the read fix the two checks pass on that Mac with the busy loops and another session's
+  renders (595 s for the 9:16 check, 886 s for the one with the cut walk, 13 cuts and none late, at load 20-35; single
+  size reads of up to 290 s, the GPU process at work throughout), and with the load deadline the 9:16 check again
+  (435 s at load 11-16). Tests: `test_pace.py` `TestSizeReadWaitsForTheFrame` (a main thread held past the old
+  deadline is waited for, a stopped renderer still fails the read), `TestSlowPages`
+  `test_load_that_never_finishes_is_the_page` and `test_second_page_load_is_a_finding`, `test_cut_frames.py`
+  `test_no_cuts_skips_the_walk`.
 - **`review-findings` accepts `t=a-b s` ranges as a timestamp, and Polish items get ids.** A finding carrying a range
   such as `t=38.73-41.50s` was warned as citing no timestamp (the check only knew `t=3.00s`), and Polish bullets were
   left out of the id scheme, so `showtime review-respond <job> --fixed r1-P1` only printed the list of valid ids

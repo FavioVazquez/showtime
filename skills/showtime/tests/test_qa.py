@@ -316,20 +316,24 @@ class QATests(unittest.TestCase):
         self.assertAlmostEqual(r["t"], 1.5, delta=1.5 / 24)   # the pause starts at 1.5 s (24 fps)
         self.assertAlmostEqual(r["end"], 4.5, delta=2.5 / 24)
         self.assertTrue(Path(r["images"]["bad"]).is_file())
-        # a page that becomes nondeterministic at 1.2 s (a real-time timer only drives the late part)
-        proj = self.tmp / "late-timer"
+        # a page that becomes nondeterministic at 1.2 s: the late part depends on how many seeks came before, so
+        # drawing a late frame again always moves the box (37 and 240 share no factor). It used to come from a
+        # setInterval step, which is timing-dependent: 20 ticks of 13 px between the two draws bring the box back to
+        # the same place (13 x 20 = 260), and on the macos-14 runner the draws matched until 1.33 s.
+        proj = self.tmp / "late-state"
         proj.mkdir(exist_ok=True)
         (proj / "showtime.json").write_text(json.dumps({"width": 320, "height": 180, "fps": 30, "duration": 3}), encoding="utf-8")
         (proj / "index.html").write_text("""<!doctype html><html><head><script src="/_st/stage.js"></script>
 <style>html,body{margin:0;background:#111;overflow:hidden}#b{position:absolute;top:60px;width:40px;height:40px;background:#fc0}</style>
 </head><body><div id="b"></div><script>
-let wall = 0; setInterval(() => { wall = (wall + 13) % 260; }, 7);
-ST.onSeek((t) => { document.getElementById('b').style.left = (t < 1.2 ? 20 + t * 50 : wall) + 'px'; });
+let seeks = 0;   // state carried from one seek to the next: the same late frame never draws twice alike
+ST.onSeek((t) => { seeks += 1; document.getElementById('b').style.left = (t < 1.2 ? 20 + t * 50 : 20 + (seeks * 37) % 240) + 'px'; });
 </script></body></html>""", encoding="utf-8")
         cp = showtime("check", proj, "--find-first", "nondeterministic", "--json", check=False)
         r = json.loads(cp.stdout)
         self.assertTrue(r["found"], r)
-        self.assertAlmostEqual(r["t"], 1.2, delta=2.5 / 30)
+        self.assertAlmostEqual(r["t"], 1.2, delta=1 / 60, msg=r)          # frame 36 exactly: nothing here is timing
+        self.assertAlmostEqual(r["lastGood"], 1.2 - 1 / 30, delta=1 / 60, msg=r)
         cp = showtime("check", self.copy_fixture(FIXTURES / "low-contrast"), "--find-first", "black", "--json", check=False)
         self.assertEqual(cp.returncode, 0)
         self.assertFalse(json.loads(cp.stdout)["found"])

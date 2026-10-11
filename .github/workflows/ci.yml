@@ -200,7 +200,9 @@ jobs:
       - name: Doctor
         run: python skills/showtime/lib/st/launcher.py doctor
       - name: Full test suite
-        run: python skills/showtime/tests/run_all.py -j auto --json
+        # each file gets 2400 s, as on a local machine: an unsplit heavy file (test_showreel's three template
+        # checks) runs past run_all's 900 s default on the slowest image (macos-15-intel draws WebGL in software)
+        run: python skills/showtime/tests/run_all.py -j auto --json --timeout 2400
       - name: Release checks
         if: always()
         run: python scripts/check_release.py --check

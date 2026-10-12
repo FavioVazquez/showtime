@@ -682,6 +682,9 @@
 }
 .harness .loops{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:18px}
 .harness .loop{margin:0;border:1px solid var(--line);background:var(--bg-1);min-width:0}
+.harness .loop video{cursor:pointer}
+.harness .loop-btn{float:right;margin:0 0 6px 12px;font:600 var(--s-xs)/1 var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--text);background:var(--bg-1);border:1px solid var(--line-2);padding:7px 10px;cursor:pointer;opacity:.92}
+.harness .loop-btn:hover{border-color:var(--amber);color:var(--amber);opacity:1}
 .harness .loop video{display:block;width:100%;height:auto;aspect-ratio:16/9;background:var(--bg-2)}
 .harness .loop figcaption{padding:10px 14px 12px;font-size:var(--s-sm);color:var(--text-2);line-height:1.45}
 .harness .loop figcaption b{display:block;font:600 var(--s-xs)/1.3 var(--f-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--amber);margin-bottom:4px}

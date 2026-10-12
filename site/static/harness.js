@@ -1228,15 +1228,33 @@ stepper("#caseStall", "Issue #24", [
     });
   });
   const rm = window.matchMedia("(prefers-reduced-motion: reduce)");
-  const loops = document.querySelectorAll("#drawn video");
+  const loops = [...document.querySelectorAll("#drawn video")];
   const play = v => { const p = v.play(); if (p && p.catch) p.catch(() => {}); };
-  if ("IntersectionObserver" in window) {
+  /* Every loop can be stopped (WCAG 2.2.2): a Pause/Play button on each loop, or a click on the loop, toggles it, and a
+     loop the reader paused stays paused when it scrolls back into view. Reduced motion: native controls, no autoplay. */
+  const held = new WeakSet(), btns = new Map();
+  const label = v => { const b = btns.get(v); if (!b) return; const word = v.paused ? "Play" : "Pause";
+    b.textContent = word; b.setAttribute("aria-label", word + ": " + v.getAttribute("aria-label")); };
+  const toggle = v => { if (v.paused) { held.delete(v); play(v); } else { held.add(v); v.pause(); } };
+  const native = () => loops.forEach(v => { v.pause(); v.controls = true; const b = btns.get(v); if (b) b.hidden = true; });
+  loops.forEach(v => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "loop-btn";
+    b.addEventListener("click", () => toggle(v));
+    v.addEventListener("click", () => { if (!v.controls) toggle(v); });
+    v.addEventListener("play", () => label(v)); v.addEventListener("pause", () => label(v));
+    const cap = v.parentElement.querySelector("figcaption");   /* in the caption, so it never covers the drawing */
+    if (cap) cap.prepend(b); else v.after(b);
+    btns.set(v, b); label(v);
+  });
+  if (rm.matches || !("IntersectionObserver" in window)) native();
+  else {
     const io = new IntersectionObserver(es => es.forEach(e => {
       const v = e.target;
-      if (rm.matches) { v.controls = true; return; }
-      if (e.isIntersecting) play(v); else v.pause();
+      if (rm.matches) return;
+      if (e.isIntersecting) { if (!held.has(v)) play(v); } else v.pause();
     }), {rootMargin: "120px 0px"});
     loops.forEach(v => io.observe(v));
-  } else loops.forEach(v => { v.controls = true; });
-  rm.addEventListener("change", () => loops.forEach(v => { if (rm.matches) { v.pause(); v.controls = true; } }));
+  }
+  rm.addEventListener("change", () => { if (rm.matches) native(); });
 })();

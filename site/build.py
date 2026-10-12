@@ -1443,7 +1443,7 @@ def new_tile(site: Site, page: str, exs, blurb: str) -> str:
 HARNESS_PAGE = "harness/index.html"
 HARNESS_SRC = SITE / "content" / "harness.html"   # the page's body; its first line sets ARTICLE_URL
 HARNESS_MEDIA = "examples/_harness"               # loops, posters, the 0.4.3 film and the link-preview card
-HARNESS_TITLE = "How showtime is built"
+HARNESS_TITLE = "Many hands, one yes: a guide to harness engineering"
 ARTICLE_URL = re.compile(r"\A<!--\s*ARTICLE_URL=(\S+)\s*-->\n")
 
 

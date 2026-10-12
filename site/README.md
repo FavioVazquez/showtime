@@ -12,6 +12,7 @@ the site itself, under their OFL licenses in `static/fonts/`).
 | `config.json` | the one value to set: `repo` (`owner/name`); plus `site_url` (the published address), the version and the hero film (its folder, film, still, length and credit) |
 | `content/crew.json` | the one-line job of each crew member, as the crew page shows it |
 | `content/previews.json` | the 4-second window of each example the gallery previews on hover |
+| `content/harness.html` | the body of "How showtime is built" (`harness/`): the crew's operating manual, in its own design (`static/harness.css`, scoped to `.harness`, and `static/harness.js`; its fonts are in `static/fonts/` under the OFL). Its first line, `<!-- ARTICLE_URL=... -->`, is where section 14's "Favio on X" link goes. `media/NAME` in it is `examples/_harness/NAME` (loops, posters, the 0.4.3 film, the link-preview card) |
 | `static/` | `style.css`, `app.js` (theme, gallery filters and players, copy buttons, search), fonts |
 | `tools/hero_loop.py` | cuts a seamless loop (dissolving its end into its start) from a film; it made the 0.2.0 hero teaser in `examples/_launch/` |
 | `tools/benchmark_pages.py` | the benchmark report pages at `/benchmark/` (one per version, from release assets), with a bar that links the versions and the newest rounds' write-up (`benchmarks/rounds/r5-allout.md`) |
@@ -115,7 +116,7 @@ Do these once, in order, when the repository goes public.
       `<video>` tag), and commit. The README now plays the film with sound; the caption keeps the music
       credit.
 7. **Social preview.** Settings > General > Social preview > Edit > Upload an image:
-   `assets/readme/social/launch-1280x640.jpg` (1280x640: the wordmark and promise, with example 19's request and a frame of its video). The site
+   `assets/brand/social/github-social-preview.png` (1280x640: the wordmark, the tagline and frames of four examples). The site
    already uses it as its `og:image`.
 8. **Check the film in Safari.** Open the site on a Mac and an iPhone: the teaser should loop silently,
    and "Watch the film" should play the film with sound. (Chrome and the WebKit engine are checked

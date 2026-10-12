@@ -528,16 +528,19 @@ def page_url(base: str, page: str) -> str:
     return base + (page[:-len("index.html")] if page == "index.html" or page.endswith("/index.html") else page)
 
 
-def shell(site: Site, page: str, title: str, body: str, active: str = "", desc: str = "") -> str:
+def shell(site: Site, page: str, title: str, body: str, active: str = "", desc: str = "", og_title: str = "",
+          og_image: Optional[Path] = None, og_size: Tuple[int, int] = (1280, 640), head: str = "") -> str:
+    """A site page: header, body, footer. og_title (also the <title>), og_image and og_size override the link preview;
+    head is extra markup for <head> (a page's own stylesheet)."""
     r = lambda p: rel(page, p)  # noqa: E731
     fav = site.copy_asset(REPO / "assets/brand/icon/favicon.svg")
-    og = site.copy_asset(REPO / "assets/readme/social/launch-1280x640.jpg")
+    og = site.copy_asset(og_image or REPO / "assets/brand/social/github-social-preview.png")
     touch = site.copy_asset(REPO / "assets/brand/icon/apple-touch-icon.png")
     nav = [("gallery.html", "Examples", "gallery"), ("crew.html", "Crew", "crew"), ("docs/index.html", "Docs", "docs")]
     links = "".join('<a href="%s"%s>%s</a>' % (r(h), ' aria-current="page"' if k == active else "", t) for h, t, k in nav)
     if site.repo:
         links += '<a href="https://github.com/%s">GitHub</a>' % esc(site.repo)
-    full = title if title.startswith("showtime") else "%s \u00b7 showtime" % title
+    full = og_title or (title if title.startswith("showtime") else "%s \u00b7 showtime" % title)
     d = desc or CONFIG.get("description", "")
     # link previews (Slack, X, iMessage ...) need absolute URLs: the published site's address + the page's path
     base = site_url(site.repo)
@@ -554,8 +557,8 @@ def shell(site: Site, page: str, title: str, body: str, active: str = "", desc: 
 <meta property="og:title" content="{title}">
 <meta property="og:description" content="{desc}">
 <meta property="og:image" content="{og_abs}">{og_url}
-<meta property="og:image:width" content="1280">
-<meta property="og:image:height" content="640">
+<meta property="og:image:width" content="{og_w}">
+<meta property="og:image:height" content="{og_h}">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="{og_abs}">
 <meta name="theme-color" content="#15100E" media="(prefers-color-scheme: dark)">
@@ -563,7 +566,7 @@ def shell(site: Site, page: str, title: str, body: str, active: str = "", desc: 
 <link rel="icon" href="{fav}" type="image/svg+xml">
 <link rel="apple-touch-icon" href="{touch}">
 <link rel="preload" href="{font}" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="{css}">
+<link rel="stylesheet" href="{css}">{head}
 {boot}
 </head>
 <body data-root="{root}">
@@ -579,7 +582,7 @@ def shell(site: Site, page: str, title: str, body: str, active: str = "", desc: 
 </main>
 <footer class="site"><div class="wrap">
 <span><span class="word">showtime</span>&nbsp; {version}, MIT licensed. A local video studio for your coding agent.</span>
-<nav aria-label="Footer"><a href="{gallery}">Examples</a><a href="{crew}">Crew</a><a href="{docs}">Docs</a>{exrepo}</nav>
+<nav aria-label="Footer"><a href="{gallery}">Examples</a><a href="{crew}">Crew</a><a href="{docs}">Docs</a><a href="{harness}">How it\u2019s built</a>{exrepo}</nav>
 <span>No trackers, no cookies. Fonts are served from this site. Film music by Scott Buckley, CC BY 4.0: \u201cSupernova\u201d (the showreel), {launch_music}\u201cArtemis\u201d (the crew film).</span>
 </div></footer>
 <script src="{js}"></script>
@@ -590,6 +593,7 @@ def shell(site: Site, page: str, title: str, body: str, active: str = "", desc: 
            if page_abs else "", fav=r(fav), touch=r(touch), css=r("static/style.css"), boot=THEME_BOOT,
            root="../" * page.count("/"), home=r("index.html"), menu=ICON_MENU, links=links, sun=ICON_SUN, body=body,
            version=esc(VERSION), docs=r("docs/index.html"), gallery=r("gallery.html"), crew=r("crew.html"),
+           harness=r(HARNESS_PAGE), og_w=og_size[0], og_h=og_size[1], head=("\n" + head) if head else "",
            js=r("static/app.js"), font=r("static/fonts/inter.woff2"),
            launch_music="\u201cWith These Hands\u201d (the launch film), " if CONFIG.get("gallery_film") else "",
            exrepo=('<a href="https://github.com/%s">%s</a>' % (esc(EXAMPLES_REPO), esc(EXAMPLES_REPO.split("/")[-1]))) if EXAMPLES_REPO else "")
@@ -1434,6 +1438,44 @@ def new_tile(site: Site, page: str, exs, blurb: str) -> str:
                count_words(n_new).lower(), esc(("In %s: %s" % (vers[0][0], blurb)) if vers else blurb), '<div class="new-films">%s</div>' % thumbs if thumbs else ""))
 
 
+# ----------------------------------------------------------------------------------------------- how it's built
+
+HARNESS_PAGE = "harness/index.html"
+HARNESS_SRC = SITE / "content" / "harness.html"   # the page's body; its first line sets ARTICLE_URL
+HARNESS_MEDIA = "examples/_harness"               # loops, posters, the 0.4.3 film and the link-preview card
+HARNESS_TITLE = "How showtime is built"
+ARTICLE_URL = re.compile(r"\A<!--\s*ARTICLE_URL=(\S+)\s*-->\n")
+
+
+def build_harness(site: Site) -> None:
+    """harness/: the harness manual, the crew's operating manual in its own design (static/harness.css, scoped to
+    .harness, and static/harness.js) inside the site's header and footer. Its media come from the examples tree,
+    like the hero teaser: media/NAME in the source is examples/_harness/NAME."""
+    page = HARNESS_PAGE
+    text = HARNESS_SRC.read_text(encoding="utf-8")
+    m = ARTICLE_URL.match(text)
+    if not m:
+        sys.exit("site/build.py: %s must start with <!-- ARTICLE_URL=https://... -->" % HARNESS_SRC.relative_to(REPO))
+    body = re.sub(r"\A\s*<!--.*?-->\s*", "", text[m.end():], count=1, flags=re.S)   # the note for editors
+    body = body.replace("{{ARTICLE_URL}}", esc(m.group(1)))
+
+    def media(mo: "re.Match[str]") -> str:
+        src = src_path("%s/%s" % (HARNESS_MEDIA, mo.group(2)))
+        if not src.is_file():
+            sys.exit("site/build.py: the harness page needs %s/%s" % (HARNESS_MEDIA, mo.group(2)))
+        return '%s="%s"' % (mo.group(1), rel(page, site.copy_asset(src)))
+    body = re.sub(r'\b(src|poster)="media/([^"/]+)"', media, body)
+    if "{{" in body or 'media/' in re.sub(r'="\.\./a/[^"]*"', "", body):
+        sys.exit("site/build.py: %s has a placeholder or media reference the build did not fill" % HARNESS_SRC.name)
+    desc = ("How Favio V\u00e1zquez and a crew of AI agents build and ship showtime, an open-source video studio for coding "
+            "agents: the studio map, the crew, the gates, one day replayed, and the scars that wrote the rules.")
+    body += '<script src="%s" defer></script>\n' % rel(page, "static/harness.js")
+    write(site, page, shell(site, page, HARNESS_TITLE, body, desc=desc, og_title=HARNESS_TITLE,
+                            og_image=src_path(HARNESS_MEDIA + "/cover-1200x630.jpg"), og_size=(1200, 630),
+                            head='<link rel="stylesheet" href="%s">' % rel(page, "static/harness.css")))
+    site.search.append(built_page_entry(site, HARNESS_TITLE, page))   # its static text: the sections' heads and prose
+
+
 def build_landing(site: Site, exs) -> None:
     page = "index.html"
     hero_cfg = CONFIG.get("hero") or {}
@@ -1526,7 +1568,7 @@ frame and type a note; your agent reads it, fixes and replies. <a href="docs/rev
 
 # ----------------------------------------------------------------------------------------------- share tags, sitemap, llms.txt
 
-SOCIAL_IMAGE = "assets/readme/social/launch-1280x640.jpg"
+SOCIAL_IMAGE = "assets/brand/social/github-social-preview.png"
 SHARE_TAG = re.compile(r'<meta\s+(?:property|name)="(?:og|twitter):[^"]*"\s+content="[^"]*"\s*/?>\s*'
                        r'|<link\s+rel="canonical"\s+href="[^"]*"\s*/?>\s*', re.I)
 
@@ -1665,7 +1707,7 @@ def llms_txt(site: Site) -> str:
         listed.update(p for _label, p in items)
         if rows and name not in skip:
             lines += ["", "## " + name, ""] + rows
-    lines += ["", "## Optional", "", link("crew.html", "The crew"), link("docs/house-vocabulary.html", "House vocabulary (CONTEXT.md)"),
+    lines += ["", "## Optional", "", link("crew.html", "The crew"), link(HARNESS_PAGE, HARNESS_TITLE), link("docs/house-vocabulary.html", "House vocabulary (CONTEXT.md)"),
               link("docs/changelog.html"), link("docs/contributing.html")]
     return "\n".join(lines) + "\n"
 
@@ -1719,6 +1761,7 @@ def main() -> None:
     build_gallery(site, exs)
     build_example_pages(site, exs)
     build_crew(site)
+    build_harness(site)
     build_landing(site, exs)
     videos = tag_html_videos(site, exs)
     nurls = write_sitemap(site, videos)

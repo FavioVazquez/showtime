@@ -84,6 +84,7 @@ def skill_install_line(skill_path: str, linked: bool, link: str, plugin_env: boo
                   "https://github.com/FavioVazquez/showtime/blob/main/docs/agents.md)" % skill_path)
 
 
+TROUBLESHOOTING_URL = "https://faviovazquez.github.io/showtime/docs/troubleshooting.html"   # live from the 0.4.2 release
 SLOW_NOTE_AFTER = 10.0   # seconds a check may take before the "first run after a restart" note appears
 RECENT_BOOT = 30 * 60    # a machine up for less than this gets the note before the checks start
 
@@ -195,6 +196,12 @@ class Live:
 
 
 PROXY_VARS = ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy")
+
+
+def configured_voice_engine() -> str:
+    """The TTS engine $SHOWTIME_VOICE names (kokoro when it is unset)."""
+    from .voice.registry import engine_of
+    return engine_of(os.environ.get("SHOWTIME_VOICE") or "")
 
 
 def node_ignores_proxy(ver: Tuple[int, ...]) -> bool:
@@ -630,9 +637,16 @@ class Doctor:
         key = plat.platform_key()
         items = setup.select_items(man, tier, extras)
         base_tiers = setup.TIER_ORDER[:setup.TIER_ORDER.index(tier) + 1]
-        ok_count = 0
+        voice_engine = configured_voice_engine()
+        ok_count = not_needed = 0
         for it in items:
             st, detail = setup.item_status(it, self.p["home"], key, self.state, verify=self.args.verify)
+            if st not in ("ok", "legacy") and voice_engine != "kokoro" and it["id"].startswith("kokoro-"):
+                not_needed += 1      # the user chose another engine: Kokoro's files are optional for them
+                self.add("model " + it["id"], SKIP,
+                         "not needed: SHOWTIME_VOICE uses the %s engine (%s)" % (voice_engine, st),
+                         "Kokoro voices and the `tts` aligner (non-English alignment) need it: `showtime setup`")
+                continue
             if st == "ok":
                 ok_count += 1
                 if self.args.verbose:
@@ -651,10 +665,10 @@ class Doctor:
             required = it.get("tier") in base_tiers
             self.add("model " + it["id"], FAIL if required else WARN, "%s: %s" % (st, detail),
                      "run `showtime setup%s`" % ((" --with " + it["extra"]) if it.get("extra") else ""))
-        self.add("models", PASS if ok_count == len(items) else WARN,
-                 "%d/%d items for tier %s%s present in %s" % (ok_count, len(items), tier,
-                                                             ("+" + ",".join(extras)) if extras else "",
-                                                             self.p["home"]))
+        self.add("models", PASS if ok_count + not_needed == len(items) else WARN,
+                 "%d/%d items for tier %s%s present in %s%s" % (
+                     ok_count, len(items), tier, ("+" + ",".join(extras)) if extras else "", self.p["home"],
+                     ("; %d not needed for the %s engine" % (not_needed, voice_engine)) if not_needed else ""))
 
     def check_extras(self) -> None:
         lib = self.p["library"] / "catalog.json"
@@ -669,6 +683,7 @@ class Doctor:
                      "optional now: `showtime audio lib fetch` (the whole core library, ~249 MB)")
         self.check_first_use()
         self.check_espeak()
+        self.check_voice_engines()
         self.check_manim()
         link = (Path(os.environ["CLAUDE_CONFIG_DIR"]) if os.environ.get("CLAUDE_CONFIG_DIR")
                 else plat.user_home() / ".claude") / "skills" / "showtime"
@@ -703,6 +718,51 @@ class Doctor:
                     % todo[0]["id"])
         self.add("first-use components", PASS if not todo else SKIP, lazy.status_line(comps), hint,
                  components=comps)
+
+    def check_voice_engines(self) -> None:
+        """Extra local TTS engines: which were found and whether each imports (only shown when there are any)."""
+        from .voice import registry
+        found = registry.discover()
+        want = configured_voice_engine()
+        if want not in registry.BUILTIN and want not in found:
+            self.add("voice engine " + want, FAIL, "SHOWTIME_VOICE names the %s engine, which was not found" % want,
+                     "put %s.py in %s (or a folder on SHOWTIME_ENGINE_PATH), or change the voice setting"
+                     % (want, registry.search_dirs()[-2]))
+        if not found:
+            return
+        vpy = self.p["venv_python"]
+        if not vpy.exists():
+            self.add("voice engines", WARN, "found %s; not checked (the venv is missing)" % ", ".join(sorted(found)),
+                     "run `showtime setup`")
+            return
+        code = ("import json, sys\nfrom st.voice import engines\nout = {}\n"
+                "for n in sys.argv[1:]:\n"
+                "    try:\n        ok, why = engines.get(n).available()\n        out[n] = [bool(ok), str(why)]\n"
+                "    except BaseException as e:\n        out[n] = [None, '%s: %s' % (type(e).__name__, e)]\n"
+                "print(json.dumps(out))\n")
+        env = dict(os.environ)
+        env["PYTHONPATH"] = str(self.p["skill"] / "lib")
+        try:
+            cp = subprocess.run([str(vpy), "-c", code] + sorted(found), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                encoding="utf-8", errors="replace", env=env, timeout=120)
+            res = json.loads((cp.stdout or "").strip().splitlines()[-1])
+        except (OSError, ValueError, IndexError, subprocess.SubprocessError) as e:
+            self.add("voice engines", WARN, "found %s; import check did not run: %s" % (", ".join(sorted(found)), e),
+                     "run `showtime voice list --engine <name>` to see the error")
+            return
+        for name in sorted(found):
+            ok, why = (res.get(name) or [None, "no answer"])[:2]
+            where = str(found[name])
+            if ok:
+                self.add("voice engine " + name, PASS, "extra engine, imports and is available (%s)" % where)
+                continue
+            status = FAIL if name == want else WARN
+            if ok is None:
+                self.add("voice engine " + name, status, "extra engine does not import: %s" % why[:300],
+                         "fix %s%s" % (where, "" if status == WARN else ", or change the voice setting"))
+            else:
+                self.add("voice engine " + name, status, "extra engine imports but is not available: %s" % why[:300],
+                         "see what %s's available() checks" % where)
 
     def check_espeak(self) -> None:
         """Ask the voice module which espeak-ng it would use (it self-tests each candidate)."""
@@ -761,6 +821,9 @@ class Doctor:
             vpy = mr.gl_python()
             if vpy is None:
                 self.add("manimgl", WARN, "the manimgl extra is recorded but its venv is missing",
+                         "showtime setup --with manimgl --force")
+            elif not mr.gl_installed():
+                self.add("manimgl", WARN, "the manimgl extra is recorded but not importable",
                          "showtime setup --with manimgl --force")
             else:
                 prefix, no_display = plat.gl_display_prefix()
@@ -845,6 +908,8 @@ class Doctor:
         mode_line = _mode_line()
         if mode_line:
             out.append(mode_line)
+        if counts[FAIL]:
+            out.append("Still stuck? " + TROUBLESHOOTING_URL)
         text = "\n".join(out) + "\n"
         if brief_output(self.args.verbose):
             # lean mode: problems with their fixes and the verdict; the full table goes to a file
@@ -869,6 +934,8 @@ class Doctor:
             if mode_line:
                 short.append(mode_line)
             short.append("  details %s (--verbose prints them)" % saved if saved else "  --verbose prints every check")
+            if counts[FAIL]:
+                short.append("  Still stuck? " + TROUBLESHOOTING_URL)
             text = "\n".join(short) + "\n"
         try:
             sys.stdout.write(text)

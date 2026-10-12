@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
@@ -418,6 +419,9 @@ def run(video: PathLike, *, project: Optional[PathLike] = None, expect_file: Opt
     _check_must_show(F, proj, expect)
     rep["phone"] = _check_phone(F, vpath, proj, W, H, caps, cap_items)
     _check_reference(F, vpath, say)
+    seams = _check_seams(F, vpath, fps)
+    if seams:
+        rep["seams"] = seams
 
     # ---------------------------------------------------------- frames + sheet
     times = sorted({f["t"] for f in F.items if f.get("t") is not None})
@@ -1331,6 +1335,103 @@ def _check_reference(F: Findings, vpath: Path, say: Any) -> None:
         debug("reference guard failed: %s" % e)
 
 
+def _video_keyframes(vpath: Path) -> Optional[List[bool]]:
+    """Per video frame (decode order = display order: renders use no B-frames): is it a keyframe?"""
+    from .. import ff
+    probe_bin = ff.ffprobe_path()
+    if not probe_bin:
+        return None
+    try:
+        cp = subprocess.run([probe_bin, "-v", "error", "-select_streams", "v:0", "-show_entries", "packet=flags",
+                             "-of", "csv=p=0", str(vpath)], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            encoding="utf-8", errors="replace", timeout=600)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if cp.returncode != 0:
+        return None
+    return ["K" in ln for ln in cp.stdout.split("\n") if ln.strip()]
+
+
+def _audio_md5(path: Path) -> Optional[str]:
+    """md5 of an audio stream's packets (stream copy): the same for a mux of the same master."""
+    from .. import ff
+    try:
+        cp = subprocess.run([ff.ffmpeg_path(), "-v", "error", "-nostdin", "-i", str(path), "-map", "0:a:0", "-c", "copy",
+                             "-f", "md5", "-"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8",
+                            errors="replace", timeout=600)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return cp.stdout.strip() if cp.returncode == 0 and cp.stdout.strip() else None
+
+
+def _check_seams(F: Findings, vpath: Path, fps: float) -> Optional[Dict[str, Any]]:
+    """A joined (`render --join`, #22) or spliced final: its seams. The frames and the keyframes at each seam are
+    read again from the file, the audio is compared with the render's master soundtrack, and the join's own
+    seam check (pixels against the page, loudness step and sync against the master) is reported."""
+    from .review import render_report
+    rj = render_report(vpath)
+    if not isinstance(rj, dict) or rj.get("kind") not in ("joined", "spliced"):
+        return None
+    kind = rj["kind"]
+    fr = _f(rj.get("fps")) or fps or 30.0
+    total = int(rj.get("frames") or 0)
+    if kind == "joined":
+        seams = [int(ch["frames"][0]) for ch in (rj.get("chapters") or [])[1:] if isinstance(ch, dict) and ch.get("frames")]
+    else:
+        seams = sorted({int(round(float(x) * fr)) for sp in ((rj.get("splice") or {}).get("rerendered") or [])
+                        for x in sp if 0 < round(float(x) * fr) < total})
+    out: Dict[str, Any] = {"kind": kind, "seams": [round(s / fr, 3) for s in seams]}
+    bits: List[str] = []
+    keys = _video_keyframes(vpath)
+    if keys is not None:
+        out["frames"] = len(keys)
+        if total and len(keys) != total:
+            F.add("seam_frames", "FAIL", "the %s video has %d frames; its render report says %d" % (kind, len(keys), total),
+                  fix="render it again (render --join --job J, or the whole video)")
+        else:
+            bits.append("%d frames" % len(keys))
+        cut = kind == "joined" or (rj.get("splice") or {}).get("mode") == "cut"
+        notkey = [s for s in seams if not (s < len(keys) and keys[s])]
+        out["keyframes"] = not notkey
+        if cut and notkey:
+            F.add("seam_keyframe", "FAIL", "the seam%s at %s %s not a keyframe" % (
+                "s" if len(notkey) > 1 else "", ", ".join("%.3fs" % (s / fr) for s in notkey), "are" if len(notkey) > 1 else "is"),
+                t=notkey[0] / fr, fix="join the pieces again: showtime render <project> --join --job J")
+        elif cut and seams:
+            bits.append("a keyframe at each seam")
+    master = vpath.with_suffix(".work") / "audio" / "master.m4a"
+    if not master.is_file():
+        master = vpath.parent / "work" / "audio" / "master.m4a"
+    if master.is_file() and (rj.get("audio") or kind == "joined"):
+        a, b = _audio_md5(vpath), _audio_md5(master)
+        if a and b:
+            out["audio_is_master"] = a == b
+            if a == b:
+                bits.append("the soundtrack is the master, bit for bit (no loudness step, no shift)")
+            else:
+                F.add("seam_audio", "WARN", "the audio of %s is not the render's master soundtrack (%s)" % (vpath.name, master),
+                      fix="the file was re-muxed or edited after the render; qa the render's own output")
+    rec = rj.get("seams") if isinstance(rj.get("seams"), dict) else None
+    if rec is not None:
+        out["check"] = {k: rec.get(k) for k in ("ok", "pixels", "audio", "whole", "failures")}
+        if not rec.get("ok"):
+            F.add("seam_check", "FAIL", "the join's seam check failed: %s" % "; ".join(rec.get("failures") or []),
+                  fix="render the chapters on each side of that seam again, then join")
+        px = rec.get("pixels") or {}
+        if px.get("min_db") is not None:
+            bits.append("pixels >= %.1f dB against the page" % px["min_db"])
+        au = rec.get("audio") or {}
+        rows = au.get("seams") or []
+        if rows:
+            bits.append("loudness step <= %.3f dB, lag <= %d samples" % (
+                max(abs(r.get("delta_db") or 0) for r in rows), max(abs(r.get("lag_samples") or 0) for r in rows)))
+    if seams:
+        out["summary"] = "%s, %d seam%s: %s" % (kind, len(seams), "" if len(seams) == 1 else "s", ", ".join(bits) or "not checked")
+        if not any(f["rule"].startswith("seam_") and f["severity"] == "FAIL" for f in F.items):
+            F.ok("seams: %s" % out["summary"])
+    return out
+
+
 def _record_look(vpath: Path, rep: Dict[str, Any]) -> None:
     """A passing qa on the job's latest final records the job's look in the local history (st.variety)."""
     if rep.get("verdict") not in ("PASS", "WARN"):
@@ -1667,6 +1768,8 @@ def format_text(rep: Dict[str, Any], verbose: bool = False, brief: bool = False)
     rh = rep.get("rhythm") or {}
     if rh.get("summary"):
         lines.append("  rhythm  %s" % rh["summary"])
+    if (rep.get("seams") or {}).get("summary"):
+        lines.append("  seams    %s" % rep["seams"]["summary"])
     if (rep.get("hearing") or {}).get("summary"):
         lines.append("  hearing  %s" % rep["hearing"]["summary"])
     if rep.get("sheet"):

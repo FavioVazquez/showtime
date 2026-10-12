@@ -52,14 +52,14 @@ Run `showtime motion` for the live list.
 | Section | Lines |
 |---|---|
 | 1. Setup (two lines) and the time model | 64-114 |
-| 2. Text: kinetic-type, typewriter, caption-karaoke | 116-175 |
-| 3. Identification and numbers: lower-third, count-up, steps, question-beat | 177-218 |
-| 4. Data: chart, world-map | 220-271 |
-| 5. Product and UI: browser-frame / device-frame, cursor and keystrokes, code-block, ... | 273-335 |
-| 6. Camera, stills, closers, texture | 337-378 |
-| 7. Looks (WebGL): fluted-glass, tilt-shift, liquid-metal, mesh-gradient, god-rays, marble, metaballs | 380-550 |
-| 8. Themes (runtime/themes) | 552-565 |
-| 9. Writing your own component | 567-586 |
+| 2. Text: kinetic-type, typewriter, caption-karaoke | 116-176 |
+| 3. Identification and numbers: lower-third, count-up, steps, question-beat | 178-219 |
+| 4. Data: chart, world-map | 221-272 |
+| 5. Product and UI: browser-frame / device-frame, cursor and keystrokes, code-block, ... | 274-336 |
+| 6. Camera, stills, closers, texture | 338-379 |
+| 7. Looks (WebGL): fluted-glass, tilt-shift, liquid-metal, mesh-gradient, god-rays, marble, metaballs | 381-551 |
+| 8. Themes (runtime/themes) | 553-566 |
+| 9. Writing your own component | 568-587 |
 
 ## 1. Setup (two lines) and the time model
 
@@ -169,7 +169,8 @@ can still strand away from its modifier: list such pairs in `keep`. Theme tokens
 edge, glow and drop shadow are all made from `--cap-outline`, so on a light ground set a dark ink and a
 light outline (as `paper` does) and the words stay crisp; the accent must pass 4.5:1 on the ground.
 For a light 9:16 short, `boxed-pill` (a plate behind the card) reads best.
-Put the layer outside the scenes so it runs across cuts; it is marked `data-caption` for QA.
+Put the layer outside the scenes so it runs across cuts; it is marked `data-caption` for QA. It also works over a
+canvas film (`film-api.md`, "Karaoke captions over a canvas film").
 ```html
 <div data-st="caption-karaoke" data-src="voice/vo.words.json" data-style="highlight-box" data-at="0.6"></div>
 ```
@@ -226,7 +227,7 @@ Bar, horizontal-bar and line charts with a story: grow/draw on, highlight one da
 | `type` | `bar` `hbar` (ranked rows that re-order smoothly) `line` |
 | `src` | JSON file with any of the options below (recommended: keep numbers out of HTML) |
 | `data` | bars: `[{label, value}]`; lines: `{labels: [...], series: [{name, values, color?}]}` |
-| `states` | `[{at, data, title?}]`: morph to new data (axis rescales first, then marks move); a title that changes only after " · " (a race's year) swaps without fading |
+| `states` | `[{at, data, title?}]`: morph to new data (axis rescales first, then marks move); a title that changes only after " · " (a race's year) swaps without fading; the top-level `data` and `title` are the state at 0, so give no state at 0 and the chart opens on them and morphs to the first state |
 | `title`, `subtitle` | write the takeaway as the title, computed from the data, never invented (illustration with made-up sample values 42 → 11 min: (42 − 11) / 42 = 74%, so "Median build time fell 74%") |
 | `highlight` | label (bar) or series name (line) in the accent; the rest muted |
 | `annotate` | `{label | index, text, at?}` callout after the marks settle |

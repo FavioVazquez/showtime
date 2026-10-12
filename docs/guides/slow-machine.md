@@ -12,8 +12,8 @@ Your agent picks the cheaper paths below by itself once it knows.
 
 ## What happens
 
-- **Workers.** `showtime render` picks the number of browsers by itself: 3 with a GPU; without one, one per 8 CPU
-  threads, at least 3 (fewer under 5 threads) and at most 8. The log and `render.json` say why. Keep the
+- **Workers.** `showtime render` picks the number of browsers by itself: 3 with a GPU; without one, CPU threads - 2
+  from 8 threads up (at most 8), and 3 below (fewer under 5 threads). The log and `render.json` say why. Keep the
   automatic count unless a machine crashes with several (`--workers 1`).
 - **Drafts first.** `showtime render <project> --preview` is at most 720p with a fast encode.
   `--preview --fps 12` captures 40 % of the frames: the fastest look at layout, story and the timing of cuts.

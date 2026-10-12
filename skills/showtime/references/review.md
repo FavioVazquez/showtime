@@ -53,10 +53,10 @@ The checklists live in `qa.md`; this file is the review protocol (self-review, c
 |---|---|
 | 1. Pick the tier | 61-138 |
 | 2. Build the pack | 140-188 |
-| 3. Dispatch the critic | 190-232 |
-| 4. Act on the findings | 234-274 |
-| 5. Notes from the user | 276-310 |
-| 6. Notes on the finished video | 312-380 |
+| 3. Dispatch the critic | 190-235 |
+| 4. Act on the findings | 237-277 |
+| 5. Notes from the user | 279-313 |
+| 6. Notes on the finished video | 315-383 |
 
 ## 1. Pick the tier
 
@@ -190,6 +190,9 @@ by side, and two briefs: `order-1/CRITIC.md` (X first) and
 ## 3. Dispatch the critic
 
 - Give the sub-agent only the path of `CRITIC.md` and ask it to write `FINDINGS.md` in the same folder.
+  **Wait for the sub-agent to return, not for the file**: if its Write was denied, `FINDINGS.md` never appears
+  and polling for it only runs into your own timeout. When it returns, look in the folder; if `FINDINGS.md` is
+  missing, save the reply as below.
 - **A critic that cannot write files** (some hosts deny Write to sub-agents) returns its whole answer in its
   last message instead. Save that text as it came, never retyped or summarised: put the reply in a file and
   run `showtime review-findings <job> < reply.txt` (`--file reply.txt` works too; `--round N` for an older
@@ -263,7 +266,7 @@ one reason`; pairwise: one per video) and the best poster frame.
 9. **Close every finding before delivery.** Once a critic has answered, each Blocker and Should-fix must be
    marked fixed or waived; `showtime job note <job> --stage deliver` refuses until then and names each open one
    (any review mode; a job no critic answered is not affected; polish never gates). Ids come from the place in
-   FINDINGS.md: `r1-B2` is round 1's second blocker, `r1-S1` its first should-fix, `r2o1-S1` the first
+   FINDINGS.md: `r1-B2` is round 1's second blocker, `r1-S1` its first should-fix, `r1-P1` its first polish (listed and markable, never open), `r2o1-S1` the first
    should-fix of order 1 in pairwise round 2 (there only findings about the version that came out best count).
    `showtime review-respond <job>` lists them; then
    `showtime review-respond <job> --fixed r1-S1 "title raised to 64 px; snap 3.2 s compared"` after a proven

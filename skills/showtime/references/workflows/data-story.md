@@ -115,8 +115,8 @@ data as such. If the data does not support the takeaway the user wants, say so b
    bar scene 2-3 `states` (a before/after): `--duration` far past the template's length stretches
    scenes into still holds, and it warns past 1.5x.
 5. **Voice (optional).** One line per chart state, `## <scene id>` per scene in
-   `<job>/project/narration.md`; `showtime voice script ... --fit <seconds>` and
-   `showtime retime <job>/project --from-voice <job>/project/voice/timeline.json` as in
+   `<job>/project/narration.md`; `showtime voice script ... --fit <seconds> --estimate` first (cut words until it
+   fits), then the same command without `--estimate`, and `showtime retime <job>/project --from-voice <job>/project/voice/timeline.json` as in
    `social-short.md` step 4; reveal each number on the word that says it. Numbers are spelled out in
    the script ("seventy-four percent"), exact on screen.
 6. **Sound.** Keep the calm bed (never a drop, claps or a bright melody under numbers; a team report

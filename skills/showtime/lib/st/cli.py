@@ -157,7 +157,12 @@ def explain(exc: BaseException) -> ShowtimeError:
         return ShowtimeError("file not found: %s" % (exc.filename or exc),
                              hint="check the path (relative paths start from %s)" % os.getcwd())
     if isinstance(exc, PermissionError):
-        return ShowtimeError("permission denied: %s" % (exc.filename or exc),
+        what = exc.filename or exc
+        if exc.filename and getattr(exc, "filename2", None):   # a rename: name both sides
+            what = "%s -> %s" % (exc.filename, exc.filename2)
+        if exc.filename and getattr(exc, "winerror", None):   # str(exc) already carries it otherwise
+            what = "%s [WinError %d]" % (what, exc.winerror)
+        return ShowtimeError("permission denied: %s" % (what,),
                              hint="choose a folder you can write to, or fix the file's permissions")
     if isinstance(exc, OSError) and exc.errno == _errno.ENOSPC:
         return ShowtimeError("the disk is full", why=str(exc),

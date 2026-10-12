@@ -93,8 +93,11 @@ def noflag_copy(skill: Path, dest: Path) -> Path:
         shutil.copytree(str(skill), str(out), ignore=shutil.ignore_patterns("tests", "__pycache__"))
     f = out / "scripts" / "lib" / "chrome-flags.json"
     j = json.loads(f.read_text(encoding="utf-8"))
+    def drop(flags):
+        return [x for x in flags if x != "--disable-frame-rate-limit"]
     for k in ("common", "render"):
-        j[k] = [x for x in j.get(k, []) if x != "--disable-frame-rate-limit"]
+        v = j.get(k, [])
+        j[k] = {o: drop(fl) for o, fl in v.items()} if isinstance(v, dict) else drop(v)
     f.write_text(json.dumps(j, indent=2), encoding="utf-8")
     return out
 

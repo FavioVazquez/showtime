@@ -1,7 +1,9 @@
 # Color: palettes, contrast, banding, grading
 
 Read this when you build a palette for a video, check text contrast, worry about banding in gradients,
-or grade real footage.
+grade real footage, or need the look signature a new project started in. A look signature is a named set of
+palette, type and motion that a new page project starts in; showtime picks one that differs from the recent videos
+on this machine, and `--look <id>` chooses another (§9).
 
 Treat color like typography. Fewer choices, each doing one job, applied the same way everywhere.
 
@@ -32,15 +34,15 @@ Treat color like typography. Fewer choices, each doing one job, applied the same
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| 1. Palette roles | 45-60 |
-| 2. Palettes from the brand | 62-83 |
-| 3. Contrast and color vision | 85-92 |
-| 4. What video compression does to color | 94-107 |
-| 5. UI and motion graphics: don't grade | 109-114 |
-| 6. Grading real footage | 116-134 |
-| 7. LUTs | 136-146 |
-| 8. Checks | 148-154 |
-| 9. Look signatures | 156-180 |
+| 1. Palette roles | 47-62 |
+| 2. Palettes from the brand | 64-85 |
+| 3. Contrast and color vision | 87-94 |
+| 4. What video compression does to color | 96-109 |
+| 5. UI and motion graphics: don't grade | 111-116 |
+| 6. Grading real footage | 118-136 |
+| 7. LUTs | 138-148 |
+| 8. Checks | 150-156 |
+| 9. Look signatures | 158-182 |
 
 ## 1. Palette roles
 

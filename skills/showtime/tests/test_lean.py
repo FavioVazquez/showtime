@@ -162,6 +162,7 @@ class TestBriefOutput(unittest.TestCase):
         self.assertTrue(lines[0].startswith("showtime doctor "), brief)
         self.assertIn("not ready", lines[0], "a fresh home fails: the verdict is on the first line")
         self.assertIn("fix:", brief)
+        self.assertIn("troubleshooting.html", brief, "a failing doctor ends with the troubleshooting link")
         self.assertNotIn("PASS ", brief, "passing checks are only counted")
         details = home / "logs" / "doctor.txt"
         self.assertTrue(details.is_file(), "the full table goes to a file")

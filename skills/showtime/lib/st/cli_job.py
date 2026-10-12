@@ -177,7 +177,7 @@ def register(sub: argparse._SubParsersAction) -> None:
         "Once a critic has answered, every Blocker and Should-fix in the job's FINDINGS.md files must be fixed\n"
         "or waived before `showtime job note <job> --stage deliver` records the delivery (any review mode; a job\n"
         "no critic answered is not affected). Each finding has an id from its place: r1-B2 is round 1's second\n"
-        "blocker, r1-S1 its first should-fix, r2o1-S1 the first should-fix of order 1 in pairwise round 2 (only\n"
+        "blocker, r1-S1 its first should-fix, r1-P1 its first polish (markable, never open), r2o1-S1 the first should-fix of order 1 in pairwise round 2 (only\n"
         "findings about the version that came out best count there).\n\n"
         "--fixed ID NOTE   you fixed it: NOTE says what changed (prove it: showtime snap <new> --at T --compare <old>)\n"
         "--waive ID REASON it ships as is: REASON is one line (a blocker only with the user's OK)\n"
@@ -594,7 +594,7 @@ def cmd_review_respond(args: argparse.Namespace) -> int:
             fid = findings.norm_id(raw_id)
             f = known.get(fid)
             if f is None:
-                raise ShowtimeError("%s names no blocker or should-fix of %s" % (raw_id, job.name),
+                raise ShowtimeError("%s names no finding of %s" % (raw_id, job.name),
                                     hint="showtime review-respond %s lists the ids (%s)" % (
                                         job.name, ", ".join(sorted(known)) or "none"))
             note = " ".join(str(note).split())
@@ -626,18 +626,19 @@ def cmd_review_respond(args: argparse.Namespace) -> int:
               % (job.name, job.name))
         return 0
     for f in g["findings"]:
-        state = f["status"].upper() if f["status"] == "open" else f["status"]
+        state = f["status"].upper() if f["status"] == "open" and f["severity"] != "polish" else f["status"]
         extra = "  (%s: %s)" % (f["by"], f["note"]) if f["status"] != "open" and f.get("note") else ""
         print("%-9s %-10s %-6s %s%s" % (f["id"], f["severity"], state, findings.short(f, 100), extra))
     if not g["findings"]:
-        print("no blockers or should-fix findings in %s" % job.name)
+        print("no findings in %s" % job.name)
     for u in g["unknown"]:
-        print("note: %s is named in a fixed/waived line but is no blocker or should-fix of this job" % u)
+        print("note: %s is named in a fixed/waived line but is no finding of this job" % u)
     if g["open"]:
         print("delivery: held by %d open finding%s; %s" % (len(g["open"]), "" if len(g["open"]) == 1 else "s",
                                                         findings.how_to(job.name, [f["id"] for f in g["open"]])))
     else:
-        print("delivery: clear (%d fixed, %d waived)" % (len(g["fixed"]), len(g["waived"])))
+        gate = lambda xs: [f for f in xs if f["severity"] != "polish"]
+        print("delivery: clear (%d fixed, %d waived)" % (len(gate(g["fixed"])), len(gate(g["waived"]))))
     return 0
 
 
@@ -738,19 +739,10 @@ def cmd_review_findings(args: argparse.Namespace) -> int:
     if args.json:
         print_json(res)
         return 0
-    counts = {s: sum(1 for f in items if f["severity"] == s) for s in ("blocker", "should-fix")}
-    polish = 0
-    sev = None
-    for raw_line in text.splitlines():           # polish never gates, so findings.parse leaves it out
-        h = findings._HEAD.match(raw_line.strip().strip("`").strip())
-        if h and not findings._BULLET.match(raw_line.strip()):
-            sev = h.group(1).upper()
-        elif sev == "POLISH" and findings._BULLET.match(raw_line.strip()) and \
-                not findings._EMPTY.match(findings._BULLET.match(raw_line.strip()).group(1)):
-            polish += 1
+    counts = {s: sum(1 for f in items if f["severity"] == s) for s in ("blocker", "should-fix", "polish")}
     print("%s %s: %d blocker%s, %d should-fix, %d polish%s" % (
         "saved" if res["saved"] else "checked (not written)", dest, counts["blocker"],
-        "" if counts["blocker"] == 1 else "s", counts["should-fix"], polish,
+        "" if counts["blocker"] == 1 else "s", counts["should-fix"], counts["polish"],
         (" (ids %s)" % ", ".join(f["id"] for f in items)) if items else ""))
     if dropped:
         print("  left out %d line%s around the answer (chat before it, or a code fence)" % (dropped, "" if dropped == 1 else "s"))

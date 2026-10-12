@@ -149,8 +149,10 @@ class StillsFromAVideo(Tmp):
         1.5 levels darker than its source (exact rounding and full chroma interpolation: equal)."""
         from st.qa import media
         src, v = self.tmp / "grad.png", self.tmp / "grad.mp4"
-        ff.run_ffmpeg(["-f", "lavfi", "-i", "gradients=s=%dx%d:c0=0x7a2bd6:c1=0xff7a1a:x0=0:y0=0:x1=0:y1=%d:nb_colors=2,"
-                       "format=rgb24" % (W, H, H), "-frames:v", "1", src])
+        # seed and speed fixed: the filter seeds itself at random by default, so every run drew another picture
+        # (mean luma 108.9 to 121.1 across runs) and the margins below moved with it
+        ff.run_ffmpeg(["-f", "lavfi", "-i", "gradients=s=%dx%d:c0=0x7a2bd6:c1=0xff7a1a:x0=0:y0=0:x1=0:y1=%d:nb_colors=2:"
+                       "seed=1:speed=0,format=rgb24" % (W, H, H), "-frames:v", "1", src])
         ff.run_ffmpeg(["-loop", "1", "-framerate", "30", "-t", "1", "-i", src, "-vf", FINAL_VF, "-c:v", "libx264",
                        "-preset", "veryfast", "-crf", "10", "-pix_fmt", "yuv420p"] + FINAL_TAGS + [v])
         want = media.mean_luma(src)
@@ -159,9 +161,14 @@ class StillsFromAVideo(Tmp):
             showtime("deliver", "poster", v, "--at", "0.5", "--out", self.tmp / name)
         [frame] = media.extract_frames(v, [0.5], self.tmp / "frames", duration=1.0, fps=30)
         showtime("snap", v, "--at", "0.5", "-o", self.tmp / "snap.png")
-        for p in (self.tmp / "poster.png", self.tmp / "poster.jpg", frame, self.tmp / "snap.png"):
-            self.assertLess(abs(media.mean_luma(p) - want), 0.75, "%s: %.2f vs the source's %.2f" % (
-                p.name, media.mean_luma(p), want))
+        # a JPEG still reads ~0.15 off from its own quantization; on the arm64 e2e runner qa's review frame came out
+        # 0.754 off (with the unseeded source above), so JPEGs get 0.9. The default 4:2:0 conversion this guards
+        # against reads 1.25-1.5 dark in a PNG and 1.01-1.07 in a JPEG on x86, about 1.8 on the C path (arm64).
+        deltas = {p.name: media.mean_luma(p) - want
+                  for p in (self.tmp / "poster.png", self.tmp / "poster.jpg", frame, self.tmp / "snap.png")}
+        bad = {n: round(d, 3) for n, d in deltas.items() if abs(d) >= (0.9 if n.endswith(".jpg") else 0.75)}
+        self.assertEqual(bad, {}, "signed luma offsets against the source's %.2f: %s" % (
+            want, {n: round(d, 3) for n, d in deltas.items()}))
 
     def test_qa_poster_match_compares_like_with_like(self):
         from st.qa import media

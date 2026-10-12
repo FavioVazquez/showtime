@@ -46,15 +46,24 @@
     });
   });
 
-  // ---------- copy buttons
-  document.querySelectorAll('.copy').forEach(function (box) {
-    var b = document.createElement('button'); b.type = 'button'; b.textContent = 'Copy';
+  // ---------- copy buttons: code blocks (comment lines left out), and each card's request ("Copy the request")
+  function copyButton(label, cls, text) {
+    var b = document.createElement('button'); b.type = 'button'; b.textContent = label; if (cls) b.className = cls;
     b.addEventListener('click', function () {
-      var txt = box.querySelector('code').innerText.split('\n').filter(function (l) { return l.charAt(0) !== '#'; }).join('\n').trim();
-      (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(function () { b.textContent = 'Copied'; }, function () { b.textContent = 'Select to copy'; });
-      setTimeout(function () { b.textContent = 'Copy'; }, 1600);
+      (navigator.clipboard ? navigator.clipboard.writeText(text()) : Promise.reject()).then(function () { b.textContent = 'Copied'; }, function () { b.textContent = 'Select to copy'; });
+      setTimeout(function () { b.textContent = label; }, 1600);
     });
-    box.appendChild(b);
+    return b;
+  }
+  document.querySelectorAll('.copy').forEach(function (box) {
+    box.appendChild(copyButton('Copy', '', function () {
+      return box.querySelector('code').innerText.split('\n').filter(function (l) { return l.charAt(0) !== '#'; }).join('\n').trim();
+    }));
+  });
+  document.querySelectorAll('.film .ask').forEach(function (p) {
+    var said = p.textContent.trim().replace(/^\u201c|\u201d$/g, '');
+    p.appendChild(document.createTextNode(' '));
+    p.appendChild(copyButton('Copy the request', 'copy-ask', function () { return said; }));
   });
 
   // ---------- the film on the landing page: a silent teaser loops (poster only when motion is reduced);
@@ -111,13 +120,19 @@
     frame.appendChild(v); stopOthers(v); v.play().catch(function () {}); v.focus();
   });
 
-  // filters (tabs), with the choice kept in the address
+  // filters (tabs), with the choice kept in the address. A card can sit on two shelves (Start here and its group):
+  // the count is of examples, and a shelf with no card left is hidden whole
   var tabs = document.querySelectorAll('.tab[data-filter]');
   function applyFilter(tag) {
     tabs.forEach(function (c) { c.setAttribute('aria-pressed', c.getAttribute('data-filter') === tag); });
-    var shown = 0;
-    document.querySelectorAll('.film[data-tags]').forEach(function (c) {
-      var on = tag === 'all' || c.getAttribute('data-tags').split(' ').indexOf(tag) >= 0; c.hidden = !on; if (on) shown++;
+    var seen = {}, shown = 0;
+    document.querySelectorAll('.film[data-tags]').forEach(function (c, k) {
+      var on = tag === 'all' || c.getAttribute('data-tags').split(' ').indexOf(tag) >= 0; c.hidden = !on;
+      var id = c.getAttribute('data-ex') || 'card' + k; if (on && !seen[id]) { seen[id] = 1; shown++; }
+    });
+    var first = true;
+    document.querySelectorAll('.shelf').forEach(function (sh) {
+      sh.hidden = !sh.querySelector('.film:not([hidden])'); sh.classList.toggle('first', !sh.hidden && first); if (!sh.hidden) first = false;
     });
     var s = document.querySelector('.count'); if (s) s.textContent = shown + (shown === 1 ? ' video' : ' videos');
   }
@@ -152,6 +167,10 @@
   // runs of ` * _ > | # - become one space, so pr-video, SHOWTIME_MCP_TOOLS and #t= match the indexed text.
   var SEP = /[`*_>|#-]+/g;
   function norm(s) { return s.toLowerCase().replace(SEP, ' ').replace(/\s+/g, ' ').trim(); }
+  // whole phrases only: "first look" (a showtime term) and "start" (data-start, film.start) keep their own ranking
+  var PINS = [[/^(install|installing)\b/, 'docs/agents.html'],
+    [/^(doctor|error|errors|failed|fails|failing|broken|stuck|troubleshoot)/, 'docs/troubleshooting.html'],
+    [/^(first (video|time|run)|getting started|get started|new here|begin)\b/, 'docs/guides/first-video.html']];
   var avg = 1;   // the mean section length, so a long section (a whole release in the changelog) does not win on bulk
   function prep(list) {
     var n = 0, len = 0;
@@ -199,9 +218,19 @@
         + Math.log(1 + Math.min(total, 30)) / 2;   // a page that keeps coming back to the words
       // a page whose title holds every term opens at its top
       if (inTitle === terms.length) best = d.s[0];
-      hits.push([score, d, best]);
+      // d.w: build.py weighs the changelog down so its bulk does not win a command, but a version number
+      // (0.4.0) or "unreleased" asks for it by name: no penalty then
+      var named = /\d+\.\d+/.test(q) || q.indexOf('unreleased') >= 0;
+      hits.push([named ? score : score * (d.w || 1), d, best]);
     });
     hits.sort(function (a, b) { return b[0] - a[0]; });
+    // pinned answers: a query that starts with one of these words opens with the page written for it, at its top
+    var pin = null;
+    PINS.forEach(function (p) { if (!pin && p[0].test(q)) pin = p[1]; });
+    if (pin) {
+      hits = hits.filter(function (h) { return h[1].u !== pin; });
+      index.forEach(function (d) { if (d.u === pin) hits.unshift([0, d, d.s[0]]); });
+    }
     box.innerHTML = hits.slice(0, 10).map(function (r) {
       var d = r[1], c = r[2], x = c[2], lx = c.nx, i = lx.indexOf(phrase || terms[0]);
       if (i < 0) terms.some(function (w) { i = lx.indexOf(w); return i >= 0; });

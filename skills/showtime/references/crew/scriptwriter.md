@@ -40,7 +40,8 @@ source files with a search (`grep` for the UI strings you need), never read them
 4. The call to action and a draft of the share text (`references/platforms.md`), in `script.md`.
 5. Update `claims.json`: every factual line in the script or on screen points to a claim id with a
    scene id. No source, no line.
-6. Optional, only when `TASK.md` lists it: a fit check,
+6. Optional, only when `TASK.md` lists it: a fit check, first
+   `showtime voice script <own dir>/script.md --fit <seconds> --estimate` (no speech; cut words until it fits), then
    `showtime voice script <own dir>/script.md --fit <seconds> -o <own dir>/fit/`, and report the real
    line lengths from `fit/timeline.json` (this is TTS, medium CPU).
 

@@ -1,4 +1,5 @@
 // Lean mode helpers shared by check, look and render: the look budget and "was this checked since the last edit?".
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { workName } from './cli.mjs';
@@ -38,4 +39,34 @@ export function checkFreshness(projDir, page, size) {
     return { state: 'stale', report, changed: src.file, minutes: Math.max(0, Math.round((src.mtime - rm) / 60000)) };
   }
   return { state: 'fresh', report };
+}
+
+/**
+ * The project's sources as one sha256: the files sourcesMtime walks (html, css, js, json, svg, md), each as its
+ * relative path and bytes, in sorted order. The same on a copy of the project at another path or machine and
+ * after a touch; another file content gives another hash (chapter mode's identity of a piece, #22).
+ */
+export function sourcesHash(dir, { limit = 4000 } = {}) {
+  const files = [];
+  const SKIP = new Set(['work', 'node_modules', '.git', 'out', 'showtime-out']);
+  const walk = (d, rel, depth) => {
+    let ents = [];
+    try { ents = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+    ents.sort((x, y) => (x.name < y.name ? -1 : x.name > y.name ? 1 : 0));   // the same subset on every filesystem when the limit hits
+    for (const e of ents) {
+      if (files.length >= limit) return;
+      const r = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) { if (!SKIP.has(e.name) && !e.name.startsWith('.') && depth < 6) walk(path.join(d, e.name), r, depth + 1); continue; }
+      if (/\.(html?|css|m?js|json|svg|md)$/i.test(e.name)) files.push(r);
+    }
+  };
+  walk(dir, '', 0);
+  const h = crypto.createHash('sha256');
+  for (const r of files.sort()) {
+    let buf = null;
+    try { buf = fs.readFileSync(path.join(dir, ...r.split('/'))); } catch { continue; }
+    h.update(`${r}\0${buf.length}\0`);
+    h.update(buf);
+  }
+  return `sha256:${h.digest('hex')}`;
 }

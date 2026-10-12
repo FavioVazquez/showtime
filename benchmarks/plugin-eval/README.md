@@ -10,6 +10,9 @@ quality. Each case comes from a failure mode seen in real runs:
 | `data-trigger` | trigger, contract | the skill fires; only the given numbers are used |
 | `footage-trigger` | trigger, contract | a footage cut: the skill fires; a missing file is reported, not invented around |
 | `no-invented-claims` | trigger, contract, honesty | a launch-video plan contains no invented numbers, quotes or features |
+| `tagline-no-source` | trigger, contract, honesty | a guard, not a hill to climb: "the tagline from our README" with no README; said so, and any tagline offered is labelled a suggestion or placeholder. It should stay at full marks and fail if the skill regresses |
+| `explainer-answers-in-narration` | trigger, contract | a 3-minute explainer whose narration already holds the answers: each question sits before the line that tells its answer, and the plan says how it moved or split lines |
+| `footage-missing-take` | trigger, contract, honesty | scaffolded workspace: `footage/take1.mp4` (12 s) and `take3.mp4` (18 s) are there, take 2 is not. The gap is named, its 15 s slot is held, the footage flow (`showtime transcribe`, an EDL) is planned, and nothing is said about footage never read. Needs `--scaffold` (see below) |
 | `explainer-questions` | trigger, contract | an explainer that asks the viewer: plans showtime's built-in `questions`, and the plan has a cold open, a roadmap and a tie-back |
 | `pr-video-trigger` | trigger, honesty | a PR video routes to `showtime pr-video`; nothing is said about a PR it never read |
 | `storyboard-trigger` | trigger, contract | another skill's storyboard table goes through `--from-storyboard`; shots, lengths and narration kept |
@@ -18,6 +21,7 @@ quality. Each case comes from a failure mode seen in real runs:
 | `unsupported-claim` | trigger, honesty | a "10x faster" headline the user's own benchmark (about 1.2x) does not support is flagged |
 | `impossible-spec` | trigger, honesty | a 10-minute 4K 60 fps render "in one minute" gets a straight answer |
 | `delivery-card` | trigger, contract, honesty | the hand-off is the delivery card, in order, with a true `Look:` line |
+| `full-crew-trigger` | trigger, contract | "full crew" on a short music film stays quick (no pitch, no storyboard gate) and dispatches the sound designer and a critic |
 | `non-trigger-photo-caption` | non-trigger | the skill does not fire on an unrelated request (scored in both arms) |
 | `non-trigger-sql` | non-trigger | the skill does not fire on a SQL question, and the answer is still a correct query |
 
@@ -38,13 +42,13 @@ into it for review:
 
 ```bash
 out=~/.vbench/plugin-eval/$(date +%Y%m%d-%H%M); claude plugin eval . --eval-dir benchmarks/plugin-eval --runs 3 -j 6 \
-  --model claude-opus-5-5 --judge-model sonnet --keep-temp --trust-plugin --threshold 0 --max-cost-usd 60 \
+  --model claude-opus-5-5 --judge-model sonnet --keep-temp --trust-plugin --scaffold --threshold 0 --max-cost-usd 60 \
   --output-dir "$out" --report "$out/report.html" --no-publish; \
 python3 benchmarks/scoring/scoreboard.py "$out" -o benchmarks/plugin-eval/SCOREBOARD.md && \
 python3 benchmarks/scoring/scoreboard.py "$out" --readme --update README.md
 ```
 
-- `--runs 3` runs every case 3 times in each arm: 14 cases x 3 runs x 2 arms = 84 agent runs, plus the model
+- `--runs 3` runs every case 3 times in each arm: 18 cases x 3 runs x 2 arms = 108 agent runs, plus the model
   graders. `-j 6` runs six at once (they share one rate limit); `--max-cost-usd 60` is a hard ceiling (a partial
   run is marked partial on the scoreboard).
 - `--keep-temp` keeps each run's trace so the scoreboard can count tokens; it copies the traces into
@@ -69,6 +73,18 @@ out=~/.vbench/plugin-eval/smoke-$(date +%Y%m%d-%H%M); claude plugin eval . --eva
 ```
 
 A free load check of every case (the cost ceiling stops it before the first run): add `--max-cost-usd 0`.
+
+## Scaffolded cases
+
+`footage-missing-take` has a `case.yaml` (`context.scaffold_script: scaffold.sh`) next to its `prompt.md`; the eval
+merges the two. `claude plugin eval` runs a scaffold script only with `--scaffold` (it is author-supplied bash that
+runs as you, so it is off by default); without the flag the case runs on an empty workspace, prints a notice, and its
+`plans-the-footage-flow` and `names-the-missing-take` results are not comparable with a scaffolded run. Add
+`--scaffold` to the run command to include it. The script copies two committed clips (160x90, test pattern plus a
+tone, about 80 KB in all; `.gitignore` lets `benchmarks/plugin-eval/**/*.mp4` through) into `footage/` of the empty
+workspace. Make new clips with `ffmpeg -f lavfi -i testsrc=size=160x90:rate=5:duration=12 -f lavfi -i
+sine=frequency=440:duration=12:sample_rate=16000 -c:v libx264 -preset veryslow -crf 36 -pix_fmt yuv420p -c:a aac
+-b:a 16k -ac 1 -shortest out.mp4`.
 
 ## Grader changes
 
@@ -97,6 +113,47 @@ change is listed here with the run that showed it.
     failed two plans whose hook card was "Only the keys that changed", a near-verbatim restatement of the first
     note. Whether a restated note counts as a claim "from those three items" is the owner's call; the grader is
     left as it is until then.
+
+- 2026-10-09, after the 88 % run (plugin arm, Opus 5.5 agent, Sonnet judge, 3 runs per case; issue #35). Three
+  graders were reported as failing plans that were right; after review two were changed and one kept:
+  - Not changed, on review: `explainer-questions/explainer-shape` (model grader). It looked wrong because it
+    failed plans that set up a question, but those plans demonstrate the method first ("73 is bigger, so the
+    left half is gone") and only then ask why it works, which is telling the answer before the question. The
+    grader is right; the failing plans are the input for the next hill-climb round.
+  - `explainer-questions/plans-builtin-questions` (regex) knew only `showtime.json`, `"questions":`, question beat
+    and `export html`. A plan that described the mechanism in the documented words (the questions block, the
+    pause and think beat, `F.questionBeat`, the HTML export that stops the player) failed. Those words are
+    accepted now; a plain "I'll pause with a title card" or questions asked in chat still fail
+    (`tests/test_bench_scoreboard.py` checks both).
+  - `no-invented-claims/no-invented-claims` (model grader) failed plans that restated the flags the user gave.
+    The text now says restating the request's own facts (name, version, what it does, the three flags) and
+    labelled sample output are allowed. Speed numbers, counts, quotes and unlisted features still fail.
+  - Not a grader change: the same grader also catches a tagline presented as README copy when the case has no
+    README. That is a skill fix (`references/story.md` § 6: a line the user never gave is labelled a placeholder or
+    suggestion) and the new case `tagline-no-source` covers it.
+  - Three harder cases, each from a real failure: `tagline-no-source`, `explainer-answers-in-narration`
+    (answers sit inside the user's own narration lines) and `footage-missing-take`. They have not been run yet.
+    Run just these three with `--case tagline-no-source --case explainer-answers-in-narration --case
+    footage-missing-take` (and `explainer-questions`, `no-invented-claims` for the fixed graders).
+
+## Running a hill-climb
+
+A hill-climb improves the skill against this suite in rounds, without teaching it to the test.
+
+1. **Seeded split.** Put the cases in a train and a test half with a fixed seed (for example
+   `random.Random(35).shuffle(sorted(cases))`, first half train) and write the seed and the two lists down before
+   round one. Patches are chosen on train; test only decides whether to keep them.
+2. **Baseline.** Run all cases, 3 runs each, twice if the noise matters. Run-to-run noise is about 1-2 runs per
+   case, so a change of one or two runs is not a result.
+3. **One root cause per round.** Read the failed runs (`eval_graders.py` on the traces), name the cause, and make
+   one patch to the skill for that cause. No patch that names a case, a prompt or a grader.
+4. **Keep or drop.** Re-run. Keep the patch only if both the train and the test score rise by more than the noise;
+   otherwise revert it and write down what was tried.
+5. **Report grader problems, never game them.** If a grader fails a right answer, change the grader in its own
+   commit with an entry under "Grader changes" above, not in the same round as a skill patch, and re-baseline.
+   Never loosen a grader to make a score rise, and never edit a case after seeing a plan fail it.
+6. **Headroom.** When train and test are both above about 95 %, add harder cases from real failures before the next
+   round, as the three above were.
 
 ## Re-check a grader without spending a token
 

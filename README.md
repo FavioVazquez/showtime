@@ -52,6 +52,9 @@ OpenCode and any agent that supports <a href="https://agentskills.io">Agent Skil
 
 ## Quick start
 
+New here? [Make your first video](docs/guides/first-video.md): a 5-second test that checks the install and shows
+every step a bigger video goes through.
+
 **1. Install the two prerequisites** (details in [Requirements](#requirements)):
 [uv](https://docs.astral.sh/uv/) and [Node.js](https://nodejs.org) 24 or 22 LTS (20 or newer works).
 Restart your coding agent afterwards so it sees them.
@@ -75,9 +78,10 @@ Make a 20-second launch video for this repo, with a voice-over and upbeat music.
 The first time, your agent checks what is missing, tells you the download size and time (about
 0.5 to 0.75 GB to download and 1.4 to 1.8 GB in `~/.showtime` once installed, depending on your system,
 usually 2 to 6 minutes; outside that folder only uv's and npm's download caches change) and runs setup once
-you say yes. Bigger pieces (the transcription model, Manim, music
-tracks) come the first time a video needs them, announced with their size. After that, a request in Claude
-Code looks like this:
+you say yes. If your agent's sandbox blocks the download, run setup once in a terminal
+([Troubleshooting](docs/troubleshooting.md#setup-never-ran-or-the-sandbox-blocked-it)). Bigger pieces (the
+transcription model, Manim, music tracks) come the first time a video needs them, announced with their size. After
+that, a request in Claude Code looks like this:
 
 <p align="center">
   <picture>
@@ -92,30 +96,35 @@ Your agent states its assumptions in one line (it asks only when a request is ge
 first look (stills or a fast draft) before the full-quality render, then checks the result with
 `showtime qa`. Every request gets its own folder, `showtime-out/<name>-<timestamp>/`, with `final.mp4`,
 `poster.jpg`, `share.txt`, `exports/` and `work/`. Nothing is ever overwritten. Questions about cost, GPUs, disk,
-languages or what leaves your machine: the [FAQ](docs/faq.md).
+languages or what leaves your machine: the [FAQ](docs/faq.md). Something went wrong:
+[Troubleshooting](docs/troubleshooting.md). A word you don't know: the [glossary](docs/glossary.md).
 
 > [!TIP]
-> Say **"show me options first"** (or "studio") and your agent opens a local board where you pick a concept,
-> a look, a music bed and a storyboard before anything is built. Say **"no crew"** to keep the whole job in
-> one session.
+> Two separate settings. **Quick or studio** decides how much your agent asks before building: quick (the
+> default) states its assumptions and starts; studio (say **"show me options first"**) shows a concept, a look, a
+> music bed and a storyboard on a local board first. **Quality or lean** decides how much it checks afterwards:
+> quality (the default) has a critic review every finished video; lean skips the critic unless the video is going
+> to be published. Say **"no crew"** to keep the whole job in one session.
 
-**What's new in 0.4.1** (the list is [below](#new-in-041), and [What's new](docs/whats-new.md) has one sentence
-a feature):
+**What's new in 0.4.2** (the list is [below](#new-in-042), and [What's new](docs/whats-new.md) has a short
+paragraph for each group):
 
-- **Seven looks and a shutter blur, no GPU needed.** Fluted glass, tilt-shift, liquid metal, mesh gradient, god rays,
-  marble and metaballs in showtime's own WebGL, and `data-st-blur` smears a fast move only on the frames it moves.
-- **Talking heads, dressed.** Cards appear as the words are said (name tag, list, data callout, pull-quote, side
-  panel), and a big word can stand behind the speaker, cut out on your CPU.
-- **A long recording to its best clips.** `showtime edit moments` ranks a podcast, talk or panel's best moments on
-  your machine, and `showtime edit clips` makes the ones you pick into captioned vertical clips, each through qa.
-- **Claude Design to MP4.** `showtime adopt <export.zip>` turns a Claude Design animation into a 1080p video with its
-  fonts copied in, ready for music, a voice and captions.
-- **Faster, on any machine.** The encoder runs during the capture and an unchanged soundtrack is reused, so a 1 s
-  fix takes 13-21 s instead of 31-54 s on a busy 6-core Intel Mac; without a GPU the browser count follows your cores, and a 30 s launch film
-  renders in 17.6 s instead of 42.0 s on a 64-core machine with no GPU ([FAQ](docs/faq.md)).
+- **A film in chapters, with one soundtrack.** `showtime render --chapters` plans the pieces and `--join` joins them
+  with a soundtrack built once, so there are none of the loudness steps that joining separately mastered sections gave.
+- **Two render failures under load, fixed.** A browser window resized late no longer ruins a lane, and a frame that
+  never comes is drawn again (render) or ends the check with an error, instead of stalling.
+- **More browsers without a GPU.** On an 8-thread machine without a GPU, `--workers auto` now picks 6 browsers
+  instead of 3.
+- **Narration that fits, and more local voices.** `voice script --fit S --estimate` says up front whether the
+  narration can fit, and extra local voice engines load by name.
+- **Help when something goes wrong.** A first-video guide, a troubleshooting page by symptom and a glossary
+  ([your first video](docs/guides/first-video.md), [troubleshooting](docs/troubleshooting.md),
+  [glossary](docs/glossary.md)).
 
-On the [behaviour scoreboard](#behaviour-scoreboard), which anyone can rerun, an agent scored 35/42 with showtime and
-25/42 without.
+On the [behaviour scoreboard](#behaviour-scoreboard), 14 one-sentence requests were run 3 times each (42 runs). The
+same model did the right thing 35 times with showtime and 25 times without. The cases check that it starts on
+video requests and stays out of others, that it is honest about missing inputs and unsupported claims, and that it
+keeps to the plan and the delivery card. Anyone can rerun it.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/readme/divider-dark.svg">
@@ -326,8 +335,8 @@ setup:
 is the same server from npm ([@faviovazquez/showtime-mcp](https://www.npmjs.com/package/@faviovazquez/showtime-mcp),
 also listed in the [MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.FavioVazquez/showtime)
 as `io.github.FavioVazquez/showtime` and on [Smithery](https://smithery.ai/servers/favio-vazquezp/showtime)), and
-[`showtime-0.4.1.mcpb`](https://github.com/FavioVazquez/showtime/releases/download/v0.4.1/showtime-0.4.1.mcpb) from
-the v0.4.1 release opens in Claude Desktop with a double click. Setup still runs once on your machine: the
+[`showtime-0.4.2.mcpb`](https://github.com/FavioVazquez/showtime/releases/download/v0.4.2/showtime-0.4.2.mcpb) from
+the v0.4.2 release opens in Claude Desktop with a double click. Setup still runs once on your machine: the
 models and tools never travel inside a package. Long tools answer with a task id after about 20 seconds when a
 client stops calls early; the `status` tool reports progress and the result. Besides the tools that mirror the commands,
 `guide` reads a reference by the piece and `receipt` writes a job's receipt (tokens and cost are "not reported by this
@@ -355,8 +364,8 @@ command line: `adopt`, `footage cutout`, `edit cards`, `edit moments`, `edit cli
 
 ## Now showing
 
-<p align="center"><a href="https://faviovazquez.github.io/showtime/gallery.html#launch-film"><img alt="The 0.2.0 launch film: the camera flies through the o of &quot;road&quot;, with the Iceland example seen through it." src="assets/readme/launch/launch-film-poster.jpg" width="100%"></a></p>
-<p align="center"><sub>▶ <a href="https://faviovazquez.github.io/showtime/gallery.html#launch-film"><b>Watch the 0.2.0 launch film</b></a> (40 s, plays on the showtime site; made with showtime, every frame from a real example, <a href="https://github.com/FavioVazquez/showtime-examples/blob/main/examples/_launch/README.md">about the film</a>, <a href="https://github.com/FavioVazquez/showtime-examples/releases/download/examples-media-v1/_launch--launch-16x9.mp4">download</a>).</sub><br><sub>Music: “With These Hands” by Scott Buckley, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a> (<a href="https://github.com/FavioVazquez/showtime-examples/blob/main/examples/_launch/credits.txt">credits</a>).</sub></p>
+<p align="center"><a href="https://faviovazquez.github.io/showtime/gallery.html"><img alt="The 0.2.0 launch film: the camera flies through the o of &quot;road&quot;, with the Iceland example seen through it." src="assets/readme/launch/launch-film-poster.jpg" width="100%"></a></p>
+<p align="center"><sub>▶ <a href="https://github.com/FavioVazquez/showtime-examples/releases/download/examples-media-v1/_launch--launch-16x9.mp4"><b>Watch the 0.2.0 launch film</b></a> (40 s, MP4; made with showtime, every frame from a real example, <a href="https://github.com/FavioVazquez/showtime-examples/blob/main/examples/_launch/README.md">about the film</a>). Every example plays in the <a href="https://faviovazquez.github.io/showtime/gallery.html">gallery on the showtime site</a>.</sub><br><sub>Music: “With These Hands” by Scott Buckley, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a> (<a href="https://github.com/FavioVazquez/showtime-examples/blob/main/examples/_launch/credits.txt">credits</a>).</sub></p>
 
 Every example was made by an agent acting as a user, and ships with its project sources and a README
 that tells the story: the request, the assumptions, the commands, what the critic found and what
@@ -561,8 +570,9 @@ capture fetch pages and files, and send nothing of yours.
 
 ### Quiet, checked and on the record
 
-The 0.2.0 benchmark showed where an agent's budget goes with showtime: images kept in its context, long command
-output and reference files read whole. 0.3.0 trims those without removing a check:
+Every job follows the same order: check the project, render once, then fix only the seconds that changed. Output
+stays short and images stay out of your agent's context, so a video costs fewer tokens without skipping a check.
+Here is how (most of it came in 0.3.0, after the 0.2.0 benchmark showed where an agent's budget went):
 
 - **Check first, then one render.** `showtime check` (with the phone check and the look-repeat warning) runs before
   the full render, and a fix re-renders only the seconds that changed (`render --from S --to S`).
@@ -630,8 +640,8 @@ cost per run, and every failure in plain words, are in [SCOREBOARD.md](benchmark
 
 Your agent is the director. It can hand parts of the job to **ten specialist sub-agents** that ship with
 the plugin. Every finished video gets a critic by default (quality mode); say "lean" to skip it (a video you
-will publish still gets one). A researcher joins when the video states facts or you will publish it, and scene
-builders when it is long. The rest come with studio mode. Each member gets a written brief, works only in its own folder, never asks you anything,
+will publish still gets one). A researcher joins when the video states facts or you will publish it, a sound designer when you will
+publish it and it has music or effects, and scene builders when it is long. The rest come with studio mode, or when you say **"full crew"**. Each member gets a written brief, works only in its own folder, never asks you anything,
 never uploads, and reports back with a short status.
 
 <p align="center"><a href="https://faviovazquez.github.io/showtime/crew.html#film"><img alt="The crew film: the critic's catch in example 13, the old caption struck through with a BLOCKER note." src="assets/readme/crew/crew-film-poster.jpg" width="100%"></a></p>
@@ -650,8 +660,18 @@ never uploads, and reports back with a short status.
 </picture></p>
 
 **Let your agent cast it** (the usual way). Studio mode brings in the company; for a quick video, your agent
-adds the critic on its own, and the researcher when the video states facts or you will publish it. Say
-**"no crew"** to keep everything in one session.
+adds the critic on its own, the researcher when the video states facts or you will publish it, and the sound
+designer when you will publish it and it has music or effects. Say
+**"full crew"** to get every member the job can use without the pitch step, or **"no crew"** to keep
+everything in one session. The words that set each mode:
+
+| You say | Mode | Crew |
+|---|---|---|
+| (nothing special) | quick, quality review | critic; researcher for facts or publish-bound; sound designer for publish-bound with music or effects; motion designers at 6+ scenes |
+| "lean", "quick draft", "don't review" | quick, lean | none; a critic only when publish-bound |
+| "full crew", "use the whole crew" | quick, full crew | every member the job can use, critic twice |
+| "studio", "show me concepts first", "storyboard it first" | studio | pitch, storyboard gate, full crew |
+| "no crew" | any | done inline |
 
 ```text
 Let's make a launch trailer for this repo. Show me options first.
@@ -879,6 +899,51 @@ detectors on it, so a near-black scene or a barely visible change is reported be
   <img alt="" src="assets/readme/divider-light.svg" width="100%">
 </picture>
 
+## New in 0.4.2
+
+[What's new](docs/whats-new.md) has a short paragraph for each group of them.
+
+**Render**
+
+- **Chapter mode.** `showtime render --chapters` plans the pieces from your chapters (or the film's acts),
+  `--chapter N --job J` renders one, and `--join --job J` joins them and builds the soundtrack once for the whole
+  video, so there are none of the loudness steps (2.6 and 0.7 dB) that joining separately mastered sections gave.
+  Every seam is checked against a master before the file is named `final.mp4`, and after a whole render or a
+  join a later fix to one chapter re-renders exactly its frames. On one machine a whole render is faster: use
+  chapters for a second machine (not measured), a later fix of one chapter, or a long film ([render § Speed](skills/showtime/references/render.md#speed), issue #22).
+- **A browser window resized late no longer ruins a render.** With 3 workers, 7 of 40 renders on a 6-core Intel Mac with a
+  GPU had a wrong-sized capture lane under heavy load, and 0 of 30 do after the fix; the same fix makes `--scale 2` real
+  on a Mac. A page with the wrong size is set again and `render.log` says so
+  ([render](skills/showtime/references/render.md), issue #49).
+- **A frame that never comes no longer stalls a render** (when the browser reports its processes' work; otherwise
+  the 10-minute cap stays): the frame is drawn again in a new browser, or the check ends with an error (issue #24).
+  A WebGL canvas that loses its context on the GPU renders again without the GPU (`--gpu off`) instead of shipping
+  white.
+- **More browsers without a GPU.** Without a GPU, `--workers auto` uses CPU threads - 2 from 8 threads up (at most 8,
+  within the frame, memory and `SHOWTIME_MAX_WORKERS` limits): on an 8-thread machine it picks 6 browsers instead of
+  3; with a GPU nothing changes (issue #41, [FAQ](docs/faq.md#do-i-need-a-gpu)).
+
+**Footage and voice**
+
+- **`edit render` keeps the sound in sync** on showtime's own renders: a range could come out with its sound up to
+  21 ms early (issue #38).
+- **Narration that fits.** `showtime voice script narration.md -o voice --fit 15 --estimate` says up front whether
+  the narration can fit before it synthesizes a single line.
+- **Your own local voice engine.** Extra engines load by name, and `doctor` no longer fails on Kokoro when you chose
+  another ([voice](skills/showtime/references/voice.md), issue #8).
+
+**Help**
+
+- **A first-video guide, troubleshooting by symptom and a glossary**; `showtime doctor` ends with a link to the
+  troubleshooting page when a check fails, and the site's docs start on "Start here"
+  ([your first video](docs/guides/first-video.md), [troubleshooting](docs/troubleshooting.md),
+  [glossary](docs/glossary.md)).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/readme/divider-dark.svg">
+  <img alt="" src="assets/readme/divider-light.svg" width="100%">
+</picture>
+
 ## New in 0.4.1
 
 [What's new](docs/whats-new.md) has one sentence and a picture for each.
@@ -930,9 +995,9 @@ detectors on it, so a near-black scene or a barely visible change is reported be
 
 - The encoder runs while the frames are captured, a finished browser takes over half of the largest part left, and
   an unchanged soundtrack is reused: on a busy 6-core Intel Mac a 1 s fix went from 31-54 s to 13-21 s.
-- Without a GPU, the number of browsers follows the cores (one per 8 CPU threads, at least 3 from 6 threads up, at
-  most 8), and waits stretch on a slow page instead of failing: on a 64-core Linux machine with no GPU a 30 s launch
-  film went from 42.0 s to 17.6 s and a 15 s DOM page from 31.8 s to 16.4 s.
+- Without a GPU, the number of browsers follows the cores (CPU threads - 2 from 8 threads up, at most 8, and 3
+  below that, at most CPU threads - 2), and waits stretch on a slow page instead of failing: on a 64-core Linux
+  machine with no GPU a 30 s launch film went from 42.0 s to 17.6 s and a 15 s DOM page from 31.8 s to 16.4 s.
   [Do I need a GPU?](docs/faq.md#do-i-need-a-gpu)
 
 The full list is in the [changelog](CHANGELOG.md).

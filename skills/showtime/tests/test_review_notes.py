@@ -412,6 +412,13 @@ try {
     // edit, mark done, delete in the list
     const id1 = n1.id;
     await p.click(`#list [data-id="${id1}"] [data-act="edit"]`);
+    // the page focuses the edit box with the caret at the end one task after the click (setTimeout 0). fill is two
+    // steps (select all + focus, then insert the text): on a busy runner that late caret move landed between them
+    // and the text was appended to the old one ("Logo too small hereLogo much too small"), so wait for it first.
+    // Only the focus tells the states apart: setting the box's text already put the caret at the end. The caret
+    // part is kept so the check says all that a person sees (a box ready to type on the end of the note).
+    ok('edit box focused, caret at end', await until(() => p.evaluate((id) => { const ta = document.querySelector(`#list [data-id="${id}"] textarea`);
+      return !!ta && document.activeElement === ta && ta.selectionStart === ta.value.length && ta.selectionEnd === ta.value.length; }, id1)));
     await p.fill(`#list [data-id="${id1}"] textarea`, 'Logo much too small');
     // a re-render mid-edit (a late save reply on a busy machine) keeps the text, caret and focus
     await p.evaluate(() => window.reviewPage.render());

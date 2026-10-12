@@ -1188,6 +1188,111 @@ class Batch2FootageTest(unittest.TestCase):
         self.assertIn("side channel", pr["alpha"])
 
 
+class EdlAudioSyncTest(unittest.TestCase):
+    """Sound against picture across an EDL cut. Each 3 s clip has a white frame and a 1 ms click at the same
+    instant over a 440 Hz tone. Showtime's own renders (-bf 0) put the video's edit list at 0 and the audio's
+    after the AAC priming; an input seek into the first AAC frame skipped that priming twice, so a join came out
+    1024 samples (21 ms) early with 21 ms of silence before each cut. B-frame clips joined right and still must."""
+
+    SR = 48000
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = Path(tempfile.mkdtemp(prefix="st-foot-sync-")).resolve()
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def clip(self, name, flash, bf):
+        t = flash / 30.0
+        out = self.tmp / ("%s.mp4" % name)
+        ffrun(["-f", "lavfi", "-i", "color=black:s=320x180:r=30:d=3,drawbox=c=white:t=fill:enable='eq(n\\,%d)'" % flash,
+               "-f", "lavfi", "-i", "aevalsrc='0.1*sin(2*PI*440*t)+0.8*between(t\\,%.6f\\,%.6f)':s=48000:d=3" % (t, t + 0.001),
+               "-map", "0:v", "-map", "1:a", "-c:v", "libx264", "-preset", "veryfast", "-bf", str(bf),
+               "-pix_fmt", "yuv420p", "-g", "60", "-c:a", "aac", "-b:a", "192k", "-ac", "2", "-ar", "48000",
+               "-shortest", out])
+        return out
+
+    def join(self, bf):
+        """a 0-2 s (a seek at 0) + b 2.2-3 s (a seek past the first second): white frames 30 and 69 of the join."""
+        from array import array
+        from st.footage import render_edl as R
+        a, b = self.clip("a%d" % bf, 30, bf), self.clip("b%d" % bf, 75, bf)
+        edl = self.tmp / ("edl%d.json" % bf)
+        edl.write_text(json.dumps({"sources": {"a": str(a), "b": str(b)}, "output": {"width": 320, "height": 180, "fps": 30},
+                                   "ranges": [{"source": "a", "start": 0, "end": 2}, {"source": "b", "start": 2.2, "end": 3}],
+                                   "captions": False, "loudness": False}), encoding="utf-8")
+        out = self.tmp / ("join%d.mp4" % bf)
+        rep = R.render(edl, out, preview=True, captions=False, jobs=1)
+        self.assertTrue(rep["frames_ok"], rep)
+        raw = subprocess.run([ffmpeg(), "-v", "error", "-i", str(out), "-map", "0:v:0", "-vf", "scale=8:8",
+                              "-f", "rawvideo", "-pix_fmt", "gray", "-"], stdout=subprocess.PIPE, check=True).stdout
+        flashes = [i for i in range(len(raw) // 64) if sum(raw[i * 64:(i + 1) * 64]) > 128 * 64]
+        pcm = array("f", subprocess.run([ffmpeg(), "-v", "error", "-i", str(out), "-map", "0:a:0", "-ac", "1",
+                                         "-f", "f32le", "-"], stdout=subprocess.PIPE, check=True).stdout)
+        hot = [i for i, x in enumerate(pcm) if abs(x) > 0.4]
+        clicks = [h for k, h in enumerate(hot) if k == 0 or h - hot[k - 1] > self.SR // 10]
+        self.assertEqual(flashes, [30, 69])
+        self.assertEqual(len(clicks), 2, clicks)
+        for f, c in zip(flashes, clicks):
+            self.assertLessEqual(abs(c / self.SR - f / 30.0), 0.001,
+                                 "-bf %d: the click of frame %d is %+.1f ms off" % (bf, f, (c / self.SR - f / 30.0) * 1000))
+        # 1 ms windows around the cut at 2 s: the tone may only dip (20 dB down) for the old 6 ms fade at most
+        rms = [(sum(x * x for x in pcm[i:i + 48]) / 48) ** 0.5 for i in range(int(1.95 * self.SR), int(2.05 * self.SR), 48)]
+        self.assertLessEqual(sum(r < 0.1 / 2 ** 0.5 / 10 for r in rms), 6, "-bf %d: the sound dips at the cut" % bf)
+
+    def test_showtime_render_join_in_sync(self):
+        self.join(0)
+
+    def test_bframe_join_in_sync(self):
+        self.join(3)
+
+    STARTS = (0, 2.2, 5, 9, 17)
+
+    def test_ranges_match_the_full_decode(self):
+        """Ranges of one 20 s showtime-like render (-bf 0) starting at 0, 2.2, 5, 9 and 17 s, joined with crossfade 0:
+        each range's click (0.3 s in, off the sample grid) must sit where the full, unseeked decode of the source has
+        it, within 1 ms. An input seek on this AAC is off by a seek-dependent 0, 256, 512 or 1024 samples."""
+        from array import array
+        from st.footage import render_edl as R
+        src = self.tmp / "long.mp4"
+        clicks = "+".join("0.8*between(t\\,%.6f\\,%.6f)" % (s + 0.3 + 7.0 / self.SR, s + 0.301 + 7.0 / self.SR)
+                          for s in self.STARTS)
+        ffrun(["-f", "lavfi", "-i", "testsrc2=s=320x180:r=30:d=20",
+               "-f", "lavfi", "-i", "aevalsrc='0.1*sin(2*PI*440*t)+%s':s=48000:d=20" % clicks,
+               "-map", "0:v", "-map", "1:a", "-c:v", "libx264", "-preset", "veryfast", "-bf", "0",
+               "-pix_fmt", "yuv420p", "-g", "60", "-c:a", "aac", "-b:a", "192k", "-ac", "2", "-ar", "48000",
+               "-shortest", src])
+
+        def pcm(path):
+            return array("f", subprocess.run([ffmpeg(), "-v", "error", "-i", str(path), "-map", "0:a:0", "-ac", "1",
+                                              "-f", "f32le", "-"], stdout=subprocess.PIPE, check=True).stdout)
+
+        def onset(x, a, b):
+            return next(i for i in range(a, b) if abs(x[i]) > 0.4)
+
+        full = pcm(src)
+        edl = self.tmp / "long.json"
+        edl.write_text(json.dumps({"sources": {"s": str(src)}, "output": {"width": 320, "height": 180, "fps": 30},
+                                   "ranges": [{"source": "s", "start": s, "end": s + 1} for s in self.STARTS],
+                                   "audio": {"crossfade": 0}, "captions": False, "loudness": False}),
+                       encoding="utf-8")
+        out = self.tmp / "long-join.mp4"
+        rep = R.render(edl, out, preview=True, captions=False, jobs=1)
+        self.assertTrue(rep["frames_ok"], rep)
+        got = pcm(out)
+        off, lags = 0, {}
+        for s, seg in zip(self.STARTS, rep["segments"]):
+            s0 = int(round(s * self.SR))
+            ref = onset(full, s0 + int(0.2 * self.SR), s0 + int(0.5 * self.SR)) - s0
+            o0 = int(round(off * self.SR))
+            lags[s] = ref - (onset(got, o0 + int(0.2 * self.SR), o0 + int(0.5 * self.SR)) - o0)
+            off += seg["frames"] / 30.0
+        self.assertTrue(all(abs(v) <= self.SR // 1000 for v in lags.values()),
+                        "sound early by (samples, per range start): %s" % lags)
+
+
 class StabilizeFallbackTest(unittest.TestCase):
     """The deshake fallback, used when the ffmpeg build has no vid.stab: ffmpeg refuses a deshake
     search radius that is not a multiple of 16, which used to fail `footage stabilize` at most

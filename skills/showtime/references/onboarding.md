@@ -24,10 +24,10 @@ short exchange: what is there, what is missing, one decision, then the install, 
 |---|---|
 | 1. Look before you talk | 32-43 |
 | 2. Tell the user in one table, then ask one thing | 45-63 |
-| 3. Install | 65-91 |
-| 4. What works now, what arrives later | 93-114 |
-| 5. Where things live | 116-120 |
-| 6. If setup fails | 122-127 |
+| 3. Install | 65-92 |
+| 4. What works now, what arrives later | 94-115 |
+| 5. Where things live | 117-121 |
+| 6. If setup fails | 123-128 |
 
 ## 1. Look before you talk
 
@@ -69,7 +69,8 @@ showtime setup                 # the core tier; prints progress, resumes after i
 showtime doctor                # full check, including a real browser launch and test encode
 ```
 
-- setup is idempotent: running it again skips what is present and resumes partial downloads.
+- setup is idempotent: running it again skips what is present and resumes partial downloads. An extra an
+  earlier run recorded but that does not work (manim that failed to build) is installed again.
 - It needs **uv** and **Node.js 20+**. If either is missing, setup stops and prints the exact
   install command for this OS. Installing system software is the user's call: show them the command
   and let them run it (or run it only after they say yes), then run setup again.

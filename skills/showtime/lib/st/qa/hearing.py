@@ -636,7 +636,8 @@ RULES = {
     "readback": "a name, acronym or number of the voice-over is heard differently from the script (the narration "
                 "transcribed again locally); FAIL for a name in the title, the brand or the project's lexicon that "
                 "a second installed recognizer also hears differently; showtime.json \"readback\": {\"ok\": [...]} "
-                "clears a word someone listened to",
+                "clears a word someone listened to, {\"note\": [...]} keeps one listed as a note (INFO) that someone "
+                "listened to and found only respelled by the recognizer",
 }
 
 
@@ -685,14 +686,17 @@ def check_readback(F: Any, rep: Optional[Dict[str, Any]]) -> None:
         return
     for s in sus[:8]:
         note = rb.tag(s)
-        F.add("readback", "FAIL" if rb.is_fail(s) else "WARN",
+        F.add("readback", "INFO" if s.get("noted") else "FAIL" if rb.is_fail(s) else "WARN",
               "voice line %s: the script says \"%s\", the voice is heard as \"%s\"%s" % (
                   s.get("line"), s["word"], s.get("heard") or "nothing", " (%s)" % note if note else ""),
-              t=s.get("t"), fix=rb.fix_for(s, s.get("clip")), word=s["word"], heard=s.get("heard"),
+              t=s.get("t"), fix="" if s.get("noted") else rb.fix_for(s, s.get("clip")), word=s["word"], heard=s.get("heard"),
               confirmed=s.get("confirmed"))
-    if len(sus) > 8:
-        F.add("readback", "WARN", "%d more words heard differently (voice/readback.json, review-pack's audio.txt)"
-              % (len(sus) - 8), t=sus[8].get("t"))
+    more = sus[8:]
+    if more:
+        left = [s for s in more if not s.get("noted")]
+        F.add("readback", "WARN" if left else "INFO",
+              "%d more words heard differently%s (voice/readback.json, review-pack's audio.txt)" % (
+                  len(more), "" if left else ", all listed in readback.note"), t=more[0].get("t"))
 
 
 def speaker_line(sp: Optional[Dict[str, Any]]) -> Optional[str]:
@@ -807,8 +811,9 @@ def summary(h: Dict[str, Any]) -> str:
     rb = h.get("readback") or {}
     if rb and not rb.get("skipped"):
         n = len(rb.get("suspects") or [])
-        parts.append("read-back %s" % ("%d word%s heard differently" % (n, "" if n == 1 else "s") if n else
-                                       "names and numbers as written"))
+        k = sum(1 for s in rb.get("suspects") or [] if s.get("noted"))
+        parts.append("read-back %s" % ("%d word%s heard differently%s" % (n, "" if n == 1 else "s", " (%d noted)" % k if k else "")
+                                       if n else "names and numbers as written"))
     return ", ".join(parts)
 
 

@@ -545,6 +545,47 @@
     };
   }
 
+  // A WebGL canvas whose context the browser took back (a GPU reset, a GPU process that crashed: the Intel Mac
+  // runner lost every one in some renders) is captured white, and nothing else says so. In a render the page's
+  // WebGL canvases are kept here; the host asks after each seek (__stGL.lost()) which of them are lost while
+  // on screen, now or at the seek before. The looks' own canvases are left out: they give contexts back on
+  // purpose and draw a fallback when one is taken (check's look_lost).
+  var glCanvases = [];
+  function watchGL() {
+    var proto = W.HTMLCanvasElement && W.HTMLCanvasElement.prototype;
+    var getContext = proto && proto.getContext;
+    if (typeof getContext !== 'function') return;
+    proto.getContext = function (type) {
+      var ctx = getContext.apply(this, arguments);
+      if (ctx && /webgl/.test(String(type)) && !this.__stGL) { this.__stGL = ctx; glCanvases.push(this); }
+      return ctx;
+    };
+  }
+  function glName(c) {
+    if (c.id) return tagOf(c);
+    var a = c.parentElement && c.parentElement.closest ? c.parentElement.closest('[id]') : null;
+    return a ? tagOf(a) + ' canvas' : tagOf(c);
+  }
+  // fresh: only canvases not already reported at the last seek (the host asks once more after its last frame)
+  function glLost(fresh) {
+    var out = [];
+    for (var i = 0; i < glCanvases.length; i++) {
+      var c = glCanvases[i], shown = false;
+      if (c.__stReleased || (c.classList && c.classList.contains('st-look-canvas')) || !c.isConnected) { c.__stShown = c.__stLostShown = false; continue; }
+      try {
+        shown = c.checkVisibility ? c.checkVisibility({ opacityProperty: true, visibilityProperty: true }) : c.getClientRects().length > 0;
+      } catch (e) { shown = false; }
+      var lost = false;
+      try { lost = !!(c.__stGL.isContextLost && c.__stGL.isContextLost()); } catch (e) { lost = false; }
+      // shown before and not now: lost after the last seek, so that seek's frame was captured white (unless it
+      // was already lost and reported there)
+      if (lost && (shown ? !(fresh && c.__stLostShown) : (c.__stShown && !c.__stLostShown))) out.push(glName(c));
+      c.__stShown = shown;
+      c.__stLostShown = lost && shown;
+    }
+    return out;
+  }
+
   // <video>: seek to the middle of the source frame and wait for 'seeked'.
   function videoTarget(v, t) {
     var base = v.hasAttribute('data-start') ? baseTimeOf(v) : baseTimeOf(v.parentElement);
@@ -1929,6 +1970,9 @@
   if (RENDER) {
     installShim(RENDER.seed);
     holdAnimations();
+    watchGL();
+    // for the renderer: the page's WebGL canvases lost while on screen (see watchGL)
+    W.__stGL = { lost: glLost };
     delegateVideoBoxes();
     return;
   }

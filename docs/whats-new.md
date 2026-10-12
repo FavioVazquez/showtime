@@ -3,6 +3,46 @@
 What each release changes for you, newest first, one sentence a feature. The
 [changelog](../CHANGELOG.md) has every change and the reason for it.
 
+## 0.4.2
+
+### Render a film in chapters, with one soundtrack
+
+`showtime render --chapters` plans the pieces from your chapters (or the film's acts), `--chapter N --job J` renders
+one, and `--join --job J` joins them and builds the soundtrack once for the whole video, so there are none of the
+loudness steps (2.6 and 0.7 dB) that joining separately mastered sections gave. Every seam is checked against a
+master before the file is named `final.mp4`, and after a whole render or a join a later fix to one chapter re-renders
+exactly its frames. On one machine a whole render is faster: use chapters for a second machine (not measured), a
+later fix of one chapter, or a long film
+([render § Speed](../skills/showtime/references/render.md#speed)).
+
+### A browser window resized late no longer ruins a render
+
+Under heavy load a whole capture lane of a normal render could come out at the wrong size: with 3 workers, 7 of 40
+renders on a 6-core Intel Mac with a GPU had a wrong lane, and 0 of 30 do after the fix (the same fix makes `--scale 2` real on a
+Mac). A page that gets the wrong size is set again and the frame captured again, and `render.log` says so
+([render](../skills/showtime/references/render.md)).
+
+### More browsers without a GPU, and a frame that never comes
+
+Without a GPU, `--workers auto` now uses CPU threads - 2 from 8 threads up (at most 8): on an 8-thread machine
+without a GPU, auto now picks 6 browsers instead of 3. A frame that never comes no longer stalls a render (when the
+browser reports its processes' work; otherwise the 10-minute cap stays): it is drawn again in a new browser (render)
+or ends the check with an error. A WebGL canvas that loses its context on the GPU renders again without the GPU
+(`--gpu off`) instead of shipping white (without a GPU, render names the canvas and its white frames)
+([FAQ](faq.md#do-i-need-a-gpu)).
+
+### Narration that fits, and more local voices
+
+`showtime voice script narration.md -o voice --fit 15 --estimate` says up front whether the narration can fit before it synthesizes a
+single line, and extra local voice engines load by name, with `doctor` no longer failing on Kokoro when you chose
+another ([voice](../skills/showtime/references/voice.md)).
+
+### Help when something goes wrong, and a first video step by step
+
+A first-video guide, a troubleshooting page by symptom and a glossary are new, `showtime doctor` ends with a link to
+the troubleshooting page when a check fails, and the site's docs start on "Start here"
+([your first video](guides/first-video.md), [troubleshooting](troubleshooting.md), [glossary](glossary.md)).
+
 ## 0.4.1
 
 ### Seven looks, no GPU needed

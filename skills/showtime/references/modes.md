@@ -4,6 +4,12 @@ Read this when you start a job and need to decide how much to ask and how much t
 wants to steer more (or less) than the current mode allows, or when you write the closing delivery card. The studio
 protocol itself (phases, boards, questions) is in `studio.md`; the board format in `boards.md`.
 
+These are two separate settings. **Quick or studio** decides how much you ask before building: quick (the default)
+states the assumptions and starts; studio shows options on a local board first. **Quality or lean** decides how
+much you check afterwards: quality (the default) has a critic review every finished video; lean skips the critic
+unless the video is going to be published. Any pair works: quick and quality is the default, studio and lean is
+allowed (`--mode studio,lean`).
+
 ## Essentials
 
 - Quick mode is the default: the opening line states the mode, format and assumptions in one sentence (§1)
@@ -19,6 +25,8 @@ protocol itself (phases, boards, questions) is in `studio.md`; the board format 
   line, defaulting to quick, never blocking; never for small edits, captions, cut-downs or re-exports (§2)
 - Start: `showtime job init <slug> --mode studio --goal "..."`, then `showtime studio init <job>`; to quick:
   fill open decisions as assumed, `showtime job note --mode quick`; a switch never deletes work (§2, §3)
+- "Full crew" keeps quick mode (no pitch, no storyboard gate) but dispatches every member the job can use,
+  critic twice; "no crew" does it inline (§4)
 - Crew never render the final, open boards or ask the user; you merge, check and render (§4)
 - End every job with the delivery card, one fixed shape: Done, Files, Length, Loudness, QA, Review, Findings,
   Look (what you or your reviewer actually opened, at what size, and what was seen; never left out), Cost,
@@ -35,12 +43,12 @@ protocol itself (phases, boards, questions) is in `studio.md`; the board format 
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| 1. Quick mode (the default) | 45-92 |
-| 2. Studio mode (opt-in) | 94-115 |
-| 3. Switching | 117-125 |
-| 4. Sub-agents (the crew) | 127-143 |
-| 5. The delivery card | 145-194 |
-| 6. Review mode: quality (default) or lean | 196-233 |
+| 1. Quick mode (the default) | 53-100 |
+| 2. Studio mode (opt-in) | 102-123 |
+| 3. Switching | 125-133 |
+| 4. Sub-agents (the crew) | 135-168 |
+| 5. The delivery card | 170-219 |
+| 6. Review mode: quality (default) or lean | 221-258 |
 
 ## 1. Quick mode (the default)
 
@@ -126,13 +134,30 @@ A switch never loses work: drafts, voice lines and transcripts are cached and re
 
 ## 4. Sub-agents (the crew)
 
-Quick mode stays inline, with three exceptions: the `showtime:critic` on every finished video in quality
+Quick mode stays inline, with four exceptions: the `showtime:critic` on every finished video in quality
 mode (lean: publish-bound only; section 6), the `showtime:researcher` before the final when the video
-states facts, numbers or claims, and parallel scene building for longer videos (6+ scenes: one
+states facts, numbers or claims, the `showtime:sound-designer` in parallel with the build when the video
+is publish-bound with music or effects (not voice only, not lean), and parallel scene building for longer videos (6+ scenes: one
 `showtime:motion-designer` per scene or group of scenes, capped by CPU). Studio can use the whole crew
 (creative director, brand designer, scriptwriter, storyboard artist, motion, sound, voice, editor,
 researcher, critic). Who to dispatch when, the `TASK.md` each gets, merging scene fragments and the
 CPU budget: `crew.md`.
+
+**Full crew.** When the user says "full crew" or "use the whole crew", stay in quick mode (no concept
+pitch, no storyboard gate, no questions beyond quick mode's) but dispatch every member the job can use:
+the sound designer for any film with music, the voice director for any voice-over, a motion designer per
+beat or scene group, the researcher, and two critic rounds. CPU limits still apply (`crew.md` section 6).
+Say in one line who is working, as for any dispatch. "No crew" still does everything inline.
+
+Which words set which mode:
+
+| You say | Mode | Crew |
+|---|---|---|
+| (nothing special) | quick, quality review | critic; researcher for facts or publish-bound; sound designer for publish-bound with music or effects; motion designers at 6+ scenes |
+| "lean", "quick draft", "don't review" | quick, lean | none; a critic only when publish-bound |
+| "full crew", "use the whole crew" | quick, full crew | every member the job can use, critic twice |
+| "studio", "show me concepts first", "storyboard it first" | studio | pitch, storyboard gate, full crew |
+| "no crew" | any | done inline |
 
 Give each one pointers, not the conversation: its brief (`crew/<role>.md`) and a `TASK.md` naming the
 inputs, the folder it owns, what to deliver and the command that proves it done. Crew members never

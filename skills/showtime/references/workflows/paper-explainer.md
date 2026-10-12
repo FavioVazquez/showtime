@@ -28,9 +28,9 @@ extracted tables; for math with no paper behind it use `references/manim.md` dir
 | Defaults | 41-47 |
 | Licenses first (before any figure goes on screen) | 49-63 |
 | The structure | 65-74 |
-| Steps | 76-108 |
-| Pitfalls | 110-118 |
-| Read next | 120-123 |
+| Steps | 76-109 |
+| Pitfalls | 111-119 |
+| Read next | 121-124 |
 
 ## Inputs
 
@@ -98,8 +98,9 @@ the paper's figures are licensed (used and credited, or redrawn from the paper's
    narration talks about (`ken-burns` or `camera` in `components.md`). An unlicensed one: redraw it.
 7. **Assemble.** One page or one Manim project: a Manim clip can be a layer in a DOM page
    (`references/manim.md` section 11), so the usual build is a DOM page with the Manim clips, figures and
-   the citation card; the voice drives the scene lengths (`showtime voice script ... --fit <target>`,
-   then `showtime retime <project> --from-voice ...`).
+   the citation card; the voice drives the scene lengths (`showtime voice script ... --fit <target> --estimate`
+   first, cut words until it fits; then the same command without `--estimate`, then
+   `showtime retime <project> --from-voice ...`).
 8. **Check, render, verify.** `showtime check`, `showtime snap` (read the sheet against claims.md),
    `showtime render <project> --job <job>`, `showtime qa <job>` (it fails without `credits.txt` when a
    CC-BY figure is used). Quality mode (the default; lean: publish-bound only): the critic, and a

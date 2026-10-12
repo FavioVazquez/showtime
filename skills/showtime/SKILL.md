@@ -6,8 +6,7 @@ compatibility: Any Agent Skills client with a shell, on macOS, Linux or Windows.
 
 # showtime
 
-You direct; showtime does the work on this machine: HTML/canvas scenes rendered frame-exactly,
-local voices, music, sound effects, transcript-driven footage edits, captions, QA and exports.
+You direct; showtime makes the video on this machine.
 
 **Running it.** Paths are relative to the folder holding this SKILL.md, `<folder>` (Claude Code:
 `${CLAUDE_SKILL_DIR}`; if that reads `${...}`, use the folder you read this from), never the plugin root (no `bin/`).
@@ -21,44 +20,45 @@ use its latest file.
 
 ## Modes
 
-- **Quick (default).** Open with one line of assumptions ("Quick mode: 20 s, 16:9, upbeat; no
-  voice-over; full review, say 'lean' for a draft pass.") and start
-  working; do not wait for a reply. Ask (1-2 questions, each with a recommended answer) only when
-  the request is ambiguous: nothing to work from, or two readings that make different videos. Wait
-  for a yes only before a destructive step (dropping recorded content, touching their files) or an
-  expensive one (a large install, a render over ~10 min).
+- **Asking: quick (default).** Open with one line of assumptions ("Quick mode: 20 s, 16:9, upbeat; no
+  voice-over; full review, say 'lean' for a draft pass.") and start without waiting for a reply. Ask
+  (1-2 questions, each with a recommended answer) only when the request is ambiguous: nothing to work
+  from, or two readings that make different videos. Wait for a yes only before a destructive step
+  (dropping recorded content, touching their files) or an expensive one (a large install, a render
+  over ~10 min).
+- **Asking: studio (opt-in)** when the user says studio, brainstorm, show me options or concepts first,
+  storyboard it first, or wants control. Offer it once, in the opening line, for high-stakes work
+  with an open direction; follow `references/studio.md`.
 - **Review: quality (default) or lean.** Quality reviews every finished video. Lean
   (`--mode lean`) only when the user says lean, cheap, quick/rough draft or don't review: critic
   only when publish-bound.
-- **Studio (opt-in)** when the user says studio, brainstorm, show me options or concepts first,
-  storyboard it first, or wants control. Offer it once, in the opening line, for high-stakes work
-  with an open direction. Then follow `references/studio.md`.
-- Switching, questions, the delivery card: `references/modes.md`.
+- Switching, questions, cards, "full crew": `references/modes.md`.
 - **Mid-job messages**: sort before acting (change, felt note, question, hold, new video, approval):
   `references/review.md` §5.
 
 ## Pipeline
 
-Log each stage boundary: `showtime job note <job> --stage <name> --verified ... --assumed ... --next ...`.
+Log each stage boundary in the ledger (`SHOWTIME.md`, `job.json`):
+`showtime job note <job> --stage <name> --verified ... --assumed ... --next ...`.
 
 0. **Start.** `showtime job init <slug> --request "<verbatim>"` (`--platform reels|youtube|...` when
    named; qa checks it) checks setup. NOT READY: `showtime setup --estimate`, give size
    and time, then `showtime setup`; skipping it is the user's call, never a bare-ffmpeg
    stand-in (`references/onboarding.md`). *Done when:* it says ready.
 1. **Understand.** Inspect the inputs (repo, URL, footage, brief) before asking; with no path
-   given, look in the working folder (one candidate: use it, say so). Launch/promo:
+   given, look in the working folder (one candidate: use it). Launch/promo:
    `showtime brand capture <repo|url> --job <job>` first; else a kit only if the look must match.
    *Done when:* you can write the one-sentence contract (`references/story.md`) and SHOWTIME.md
    lists the assumptions.
 2. **Plan.** Story, tone, structure, voice script, storyboard with a duration per scene.
-   Voice-led: `showtime voice script <script> --fit <seconds>` first; its `timeline.json`
+   Voice-led: `voice script <script> --fit <seconds> --estimate`, then without `--estimate`; its `timeline.json`
    sets the scene lengths (`showtime retime <project> --from-voice <project>/voice/timeline.json`).
    *Done when:* durations sum to the target and every claim traces to a source.
 3. **First look.** Project: `showtime new <template> <job>/project --duration <len>` (the
    timeline scales; later: `showtime retime`), then `showtime check <project>` and
-   `showtime look <project>`. Footage (EDL in `<job>/edit/`): `showtime edit render <job> --preview`,
-   then `showtime edit view <job>`. Fix what the images show. Quick mode: show the user and keep
-   going; studio: the animatic is the gate.
+   `showtime look <project>`. Footage (EDL, edit decision list: `<job>/edit/edl.json`):
+   `showtime edit render <job> --preview`, then `showtime edit view <job>`. Fix what the images show. Quick
+   mode: show the user and keep going; studio: the animatic is the gate.
    *Done when:* check reports 0 errors and every WARN is read (footage: `edit check` passes and you
    read every view PNG).
 4. **Build.** Project: compose the hook complete at t=0 (`"poster": 0`), then
@@ -152,7 +152,7 @@ Log each stage boundary: `showtime job note <job> --stage <name> --verified ... 
 - Nothing is uploaded (media search and site capture only fetch).
 - Never invent claims, numbers, quotes, logos or UI presented as real, nor pass on the user's own
   unsupported ones (`references/story.md` §6).
-- Prefer CC0/OFL assets; CC-BY needs its credit line shipped with the video.
+- Prefer CC0/OFL assets; CC-BY needs its credit shipped with the video.
 - The user's instructions override every default here.
 
 ## Crew

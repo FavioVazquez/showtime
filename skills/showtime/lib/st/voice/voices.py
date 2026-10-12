@@ -5,6 +5,7 @@ Voice ids:
   af_heart:60+am_michael:40       Kokoro blend (weights are normalized)
   supertonic:F1 / st:M2           Supertonic 3 presets (F1-F5, M1-M5; 31 languages)
   piper:es_MX-claude-high         Piper voice via sherpa-onnx (only commercially usable voices)
+  myengine:somevoice              an extra local engine (st.voice.registry); the voice name is its own
 """
 from __future__ import annotations
 
@@ -118,7 +119,7 @@ class VoiceInfo:
 @dataclass
 class VoiceSpec:
     """A resolved voice request."""
-    engine: str                       # kokoro | supertonic | piper
+    engine: str                       # kokoro | supertonic | piper | an extra engine's name
     name: str                         # canonical id without engine prefix
     lang: str                         # public language code
     blend: List[Tuple[str, float]] = field(default_factory=list)   # kokoro blends
@@ -163,6 +164,9 @@ def configured_voice(lang: str) -> Optional[str]:
     want = (lang or "en").lower().split("-")[0]
     if low.startswith(("supertonic:", "st:")):
         return v
+    from .registry import BUILTIN, engine_of
+    if engine_of(v) not in BUILTIN:      # an extra engine: like Supertonic, it decides what it speaks
+        return v
     if low.startswith("piper:"):
         info = PIPER_VOICES.get(v.split(":", 1)[1])
         return v if info and str(info["lang"]).lower().split("-")[0] == want else None
@@ -180,7 +184,9 @@ def resolve(voice: Optional[str], lang: Optional[str] = None, engine: Optional[s
     v = (voice or "").strip()
     if not v:
         lg = (lang or os.environ.get("SHOWTIME_LANG") or "en").strip().lower() or "en"
-        if eng == "supertonic":
+        if eng not in (None, "kokoro", "supertonic", "piper"):
+            v = ""                     # an extra engine picks its own default voice
+        elif eng == "supertonic":
             v = "supertonic:F1"
         elif eng == "piper":
             v = "piper:" + ("es_MX-claude-high" if lg.startswith("es") else "en_US-ljspeech-high")
@@ -203,6 +209,12 @@ def resolve(voice: Optional[str], lang: Optional[str] = None, engine: Optional[s
             raise ShowtimeError("unknown or excluded Piper voice %r" % name,
                                 hint="commercially usable Piper voices: " + ", ".join(sorted(PIPER_VOICES)))
         return VoiceSpec("piper", name, str(PIPER_VOICES[name]["lang"]))
+    from .registry import BUILTIN, engine_of
+    extra = eng if eng not in (None, "kokoro") else None
+    if not extra and engine_of(v) not in BUILTIN:
+        extra = engine_of(v)
+    if extra:
+        return _resolve_extra(extra, v, lang)
     if low.startswith("kokoro:"):
         v = v.split(":", 1)[1]
     if eng not in (None, "kokoro"):
@@ -221,3 +233,15 @@ def resolve(voice: Optional[str], lang: Optional[str] = None, engine: Optional[s
         raise ShowtimeError("unknown voice %r" % v,
                             hint="run `showtime voice list`" + (" (did you mean %s?)" % ", ".join(close) if close else ""))
     return VoiceSpec("kokoro", v, lang or KOKORO_LANG[v[0]])
+
+
+def _resolve_extra(engine: str, voice: str, lang: Optional[str]) -> VoiceSpec:
+    """A voice of an extra local engine: `<engine>:<voice>`, a bare voice with --engine, or the engine's default."""
+    from .engines import get
+    eng = get(engine)                                  # unknown or bad names fail here, with the list of engines
+    name = voice.split(":", 1)[1] if voice.lower().startswith(engine + ":") else voice
+    name = name or eng.default_voice
+    if not name:
+        raise ShowtimeError("engine %r needs a voice name" % engine,
+                            hint="use -v %s:<voice> (its voices: `showtime voice list --engine %s`)" % (engine, engine))
+    return VoiceSpec(engine, name, (lang or eng.default_lang or "en").lower())

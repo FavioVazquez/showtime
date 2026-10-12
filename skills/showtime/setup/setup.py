@@ -873,6 +873,38 @@ def missing_prereqs(skip: Iterable[str] = ()) -> List[Dict[str, str]]:
     return out
 
 
+# extras whose packages compile native code on macOS and Linux: pycairo and manimpango build against cairo and pango
+BUILDS_NATIVE = ("manim", "manimgl")
+
+
+def forget_doctor_cache(home: Path) -> None:
+    """Drop `showtime doctor --quick`'s cached result (st/doctor.py, reused up to 1 h): this run changed what it saw."""
+    try:
+        (home / "cache" / "doctor-quick.json").unlink()
+    except OSError:
+        pass
+
+
+def missing_build_deps(extras: Iterable[str]) -> List[str]:
+    """What the extras in BUILDS_NATIVE need to compile and this machine lacks, checked in seconds before anything
+    is fetched: a C compiler, pkg-config, and cairo + pangocairo as pkg-config sees them (Windows gets wheels).
+    -> ['a C compiler', 'pkg-config', 'cairo', 'pangocairo'], empty when nothing is missing or no extra builds."""
+    if plat.os_name() == "windows" or not any(e in BUILDS_NATIVE for e in extras):
+        return []
+    out = [] if any(shutil.which(c) for c in ("cc", "gcc", "clang")) else ["a C compiler"]
+    pc = shutil.which("pkg-config") or shutil.which("pkgconf")
+    if not pc:
+        return out + ["pkg-config"]
+    for lib in ("cairo", "pangocairo"):
+        try:
+            ok = run([pc, "--exists", lib], timeout=30).returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            ok = False
+        if not ok:
+            out.append(lib)
+    return out
+
+
 def describe_prereqs(missing: Sequence[Dict[str, str]]) -> str:
     lines = []
     for m in missing:
@@ -1007,12 +1039,37 @@ class Installer:
                    if item_status(it, self.home, self.key)[0] != "ok") + 2 * 1024 ** 3
         if free < need:
             self.report.add("disk", "warn", "%s free at %s; about %s needed" % (human(free), self.home, human(need)))
+        # the build dependencies of manim/manimgl: said now, not after an hour of downloads (setup goes on)
+        native = [e for e in self.extras if e in BUILDS_NATIVE and self.will_install(e)]
+        lacks = missing_build_deps(native)
+        if lacks:
+            msg = "%s compile%s pycairo/manimpango here and this machine lacks %s; install first: %s" % (
+                ", ".join(native), "" if len(native) > 1 else "s", ", ".join(lacks), manim_build_fix())
+            self.report.add("build tools", "warn", msg)
         try:
             est = install_estimate(self.tier, self.extras, self.home, self.man)
             if est["total_bytes"] > 0:
                 say("  plan: %s" % describe_estimate(est))
         except Exception:  # noqa: BLE001 - an estimate must never block setup
             pass
+
+    # --------------------------------------------------------------- extras
+    def extra_broken(self, e: str) -> str:
+        """Why an extra an earlier run recorded is not working, by doctor's checks (the manim package in the main
+        venv, manimlib in the manimgl venv); '' when it works or has no such check."""
+        from st.manim_run import render as mr
+        if e == "manim":
+            return "" if mr.manim_installed(self.vpy) else "the manim extra is recorded but not importable"
+        if e == "manimgl":
+            venv = self.home / mr.GL_VENV
+            if not plat.venv_python(venv).exists():
+                return "the manimgl extra is recorded but its venv is missing"
+            return "" if mr.gl_installed(venv) else "the manimgl extra is recorded but not importable"
+        return ""
+
+    def will_install(self, e: str) -> bool:
+        """An extra this run installs: new, --force, or recorded by an earlier run and not working."""
+        return e not in self.carried or bool(self.args.force) or bool(self.extra_broken(e))
 
     # --------------------------------------------------------------- ffmpeg
     def _ff_check(self, ffmpeg: str, timeout: float = 30) -> Tuple[bool, List[str], List[str], str]:
@@ -1524,6 +1581,7 @@ class Installer:
                 if self.args.prune:
                     self.timed("prune", self.prune)
                 self.state.save()
+                forget_doctor_cache(self.home)
                 return self.finish()
             self.preflight()
             # uv and Node.js are installed by the user: say so before the first download, not after 200 MB
@@ -1556,7 +1614,10 @@ class Installer:
                     self.report.add(e, "skip", "fetched automatically the first time a feature needs it")
                     continue
                 if e in self.carried and not self.args.force:
-                    continue   # installed by an earlier run; its files were re-checked above
+                    why = self.extra_broken(e)
+                    if not why:
+                        continue   # installed by an earlier run; its files were re-checked above
+                    say("  %s: installing it again" % why)
                 if e == "musicgen":
                     self.timed("musicgen", self.step_musicgen)
                 elif e == "manim":
@@ -1582,15 +1643,17 @@ class Installer:
                 "platform": self.key,
             }
             self.state.save()
+            forget_doctor_cache(self.home)
             self.timed("showtime command", self.step_shim)
         finally:
             release_lock(lock)
         return self.finish()
 
     def step_shim(self) -> Tuple[str, str]:
-        """The stable <home>/bin/showtime (+ .cmd/.ps1 on Windows) that runs this skill (st/shim.py)."""
+        """The stable <home>/bin/showtime (+ .cmd/.ps1 on Windows) that runs this skill (st/shim.py).
+        A skill of the same version already recorded stays, unless --link asked for this checkout."""
         from st import shim
-        code, detail = shim.install(self.home, SKILL_DIR)
+        code, detail = shim.install(self.home, SKILL_DIR, claim=bool(self.args.link))
         return ("ok" if code == "ok" else "warn"), detail
 
     def finish(self) -> int:

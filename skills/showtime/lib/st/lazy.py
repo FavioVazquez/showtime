@@ -3,8 +3,8 @@
 The default install stays small; a feature that needs more fetches it the first
 time it runs, the same way from the CLI and from the MCP server:
 
-    showtime: fetching whisper-small.en (486 MB) for transcription (one time; resumable)
-    showtime: fetching whisper-small.en 120/486  24%  31.2 MB/s  ETA 11 s
+    showtime: fetching parakeet-tdt-0.6b-v3-int8 (487 MB) for transcription (one time; resumable)
+    showtime: fetching parakeet-tdt-0.6b-v3-int8 120/487  25%  31.2 MB/s  ETA 11 s
 
 Kinds of component (all listed by `showtime setup --plan`):
 

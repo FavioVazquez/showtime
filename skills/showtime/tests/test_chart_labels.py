@@ -73,6 +73,10 @@ PAGES = {
     "morph.html": page({"title": "Sample data", "prefix": "", "decimals": 0, "states": [
         {"at": 0, "data": [{"label": str(i), "value": 1 + (i * 7) % 9} for i in range(18)]},
         {"at": 2.2, "data": [{"label": str(i), "value": 20000 + ((i * 7) % 9) * 10} for i in range(18)]}]}, dur=5),
+    # issue #44: top-level data and title, and the only state is later than 0
+    "zero.html": page({"title": "Top title", "prefix": "", "decimals": 0, "count": False,
+                       "data": [{"label": "A", "value": 5}, {"label": "B", "value": 7}],
+                       "states": [{"at": 2.5, "title": "State title", "data": [{"label": "A", "value": 6}, {"label": "B", "value": 9}, {"label": "C", "value": 4}]}]}, dur=5),
 }
 
 PROBE = r"""
@@ -110,6 +114,10 @@ try {
   R.morph = {};
   for (const t of [2.1, 3.0, 4.9]) { await s.seek(t); R.morph[t] = await s.page.evaluate(labels); }
   await s.close();
+  const z = await openStage(b.browser, { url: server.url, page: 'zero.html', config: {} });
+  R.zero = {};
+  for (const t of [1.5, 4.5]) { await z.seek(t); R.zero[t] = await z.page.evaluate(() => ({ title: document.querySelector('#ch .st-chart-title').textContent, vals: [...document.querySelectorAll('#ch .st-chart-val')].filter((e) => parseFloat(getComputedStyle(e).opacity) > 0.5).map((e) => e.textContent) })); }
+  await z.close();
 } finally { await b.browser.close(); await server.close(); }
 console.log(JSON.stringify(R));
 """
@@ -165,6 +173,14 @@ class ChartLabels(unittest.TestCase):
         texts = [v["t"] for v in r["vals"]]
         for must in ("+1.05", "−0.27"):   # max and min always show
             self.assertIn(must, texts)
+
+    def test_top_level_data_and_title_show_before_a_first_state_later_than_zero(self):
+        # #44: the chart used to open on the state at 2.5 s and never show its own data and title
+        early, late = self.R["zero"]["1.5"], self.R["zero"]["4.5"]
+        self.assertEqual(early["title"], "Top title")
+        self.assertEqual(sorted(early["vals"]), ["5", "7"], early)
+        self.assertEqual(late["title"], "State title")
+        self.assertEqual(sorted(late["vals"]), ["4", "6", "9"], late)
 
     def test_landscape_labels_clear_of_axis_and_each_other(self):
         r = self.R["auto"]

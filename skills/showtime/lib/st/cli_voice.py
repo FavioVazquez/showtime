@@ -54,6 +54,17 @@ def _read_text(args: argparse.Namespace, what: str = "text") -> str:
     return text
 
 
+def _engine_name(value: str) -> str:
+    """argparse type for --engine: auto, a built-in engine or an extra engine's name (checked when used)."""
+    from .voice import registry
+    v = (value or "").strip().lower()
+    v = registry.ALIASES.get(v, v)
+    if v != "auto" and not registry.valid_name(v):
+        raise argparse.ArgumentTypeError("%r is not an engine name (kokoro, supertonic, piper, or an extra "
+                                         "engine's name: lowercase letters, digits and _)" % value)
+    return v
+
+
 def _say(msg: str) -> None:
     print(msg, file=sys.stderr, flush=True)
 
@@ -87,7 +98,8 @@ def register(sub: argparse._SubParsersAction) -> None:
                      epilog="Examples:\n  showtime voice list\n  showtime voice list --lang es\n"
                             "  showtime voice list --engine piper --json")
     p.add_argument("--lang", "-l", help="filter by language (en, en-gb, es, fr, it, pt, hi, ja, zh)")
-    p.add_argument("--engine", "-e", choices=["kokoro", "supertonic", "piper"], help="only this engine")
+    p.add_argument("--engine", "-e", type=_engine_name, metavar="ENGINE",
+                   help="only this engine: kokoro, supertonic, piper, or an extra local engine's name")
     p.add_argument("--all", action="store_true", help="include low-grade Kokoro voices (D/F)")
     p.add_argument("--json", action="store_true", help="machine-readable output")
     p.set_defaults(func=cmd_list)
@@ -109,8 +121,9 @@ def register(sub: argparse._SubParsersAction) -> None:
     p.add_argument("-v", "--voice", help="voice id (default: af_heart, or the language's default)")
     p.add_argument("-s", "--speed", type=float, default=1.0, help="speaking rate, 0.5-2.0 (default 1.0)")
     p.add_argument("-l", "--lang", help="language override (default: from the voice)")
-    p.add_argument("-e", "--engine", choices=["auto", "kokoro", "supertonic", "piper"], default="auto",
-                   help="TTS engine (default: from the voice id)")
+    p.add_argument("-e", "--engine", type=_engine_name, default="auto", metavar="ENGINE",
+                   help="TTS engine: auto, kokoro, supertonic, piper, or an extra local engine's name "
+                        "(default: from the voice id)")
     p.add_argument("--style", default="neutral", help="delivery: neutral, calm, warm, upbeat, energetic, "
                                                      "tutorial, documentary, trailer (default neutral)")
     p.add_argument("--fit", type=float, metavar="SECONDS", help="adjust the speed so the speech lasts about this long")
@@ -146,7 +159,8 @@ def register(sub: argparse._SubParsersAction) -> None:
                             "  showtime voice script vo.json -o project/voice --voice am_michael --gap 0.5\n"
                             "  showtime voice script narration.md -o project/voice --fit 15   # land on 15 s\n"
                             "--fit S: all lines speed up/slow down together within 0.85-1.15x, then pauses shrink\n"
-                            "(>= 0.2 s), then it prints how many words to cut; a short script gets tail silence.")
+                            "(>= 0.2 s), then it prints how many words to cut; a short script gets tail silence.\n"
+                            "A long script is flagged before the first line is spoken; --fit S --estimate only does that.")
     p.add_argument("script", help="script file (.json, .md or .txt)")
     p.add_argument("-o", "--output", help="output folder (default: voice/ next to the script)")
     p.add_argument("-v", "--voice", help="default voice for lines without one")
@@ -161,6 +175,9 @@ def register(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--fit", type=float, metavar="SECONDS",
                    help="fit the whole narration to this length (speed 0.85-1.15x, then shorter pauses, "
                         "then says how many words to cut)")
+    p.add_argument("--estimate", action="store_true",
+                   help="with --fit: only say whether the narration can fit and how many words to cut or add "
+                        "(counted from the words per second the voice speaks; nothing is synthesized)")
     p.add_argument("--lexicon", action="append", default=[], metavar="FILE", help="extra pronunciation lexicon")
     p.add_argument("--no-readback", action="store_true",
                    help="do not hear the lines back (by default every line is transcribed locally and its names, "
@@ -313,7 +330,7 @@ _LIST_COLS = ("id", "lang", "gender", "grade")
 
 
 def cmd_list(args: argparse.Namespace) -> int:
-    from .voice import models, voices
+    from .voice import models, registry, voices
     rows: List[Dict[str, Any]] = []
     st = models.status()
     if args.engine in (None, "kokoro"):
@@ -334,15 +351,26 @@ def cmd_list(args: argparse.Namespace) -> int:
                                          gender=str(meta["gender"]), notes="fast fallback, robotic",
                                          license=str(meta["license"]), installed=name in st["piper"],
                                          attribution=str(meta.get("attribution", ""))).as_dict())
+    extra = sorted(registry.discover())
+    if args.engine and args.engine not in registry.BUILTIN:
+        from .voice.engines import get as get_engine
+        eng = get_engine(args.engine)
+        ok, _why = eng.available()
+        for name in eng.voices():
+            rows.append(voices.VoiceInfo(id="%s:%s" % (args.engine, name), engine=args.engine, lang=eng.default_lang,
+                                         gender="-", notes="extra local engine", license="your own engine",
+                                         installed=ok).as_dict())
     if args.lang:
         want = args.lang.lower()
         rows = [r for r in rows if r["lang"] == "multi" and want.split("-")[0] in r.get("langs", [])
                 or r["lang"] == want or r["lang"].split("-")[0] == want]
     if args.json:
-        print_json({"voices": rows, "defaults": voices.DEFAULTS, "status": st})
+        print_json({"voices": rows, "defaults": voices.DEFAULTS, "status": st, "extra_engines": extra})
         return 0
     if not rows:
-        raise ShowtimeError("no voices match", hint="try `showtime voice list --all`")
+        raise ShowtimeError("no voices match", hint="try `showtime voice list --all`" + (
+            "" if not args.engine or args.engine in registry.BUILTIN
+            else " (an extra engine lists voices only when its ENGINE.voices() returns them)"))
     print("%-28s %-6s %-3s %-5s %-4s %s" % ("VOICE", "LANG", "SEX", "GRADE", "READY", "NOTES"))
     for r in rows:
         notes = r["notes"] + ("" if r["engine"] == "kokoro" else "  [%s]" % r["license"])
@@ -350,6 +378,8 @@ def cmd_list(args: argparse.Namespace) -> int:
     sys.stdout.flush()
     print("\nDefaults: en af_heart (female) / am_michael (male), en-gb bf_emma, es ef_dora, fr ff_siwis."
           "\nNot installed = downloads on first use (Piper) or `showtime setup --with supertonic`.", file=sys.stderr)
+    if extra and args.engine is None:
+        print("Extra local engines: %s (their voices: --engine NAME)." % ", ".join(extra), file=sys.stderr)
     return 0
 
 
@@ -442,6 +472,12 @@ def cmd_script(args: argparse.Namespace) -> int:
           "lead_in": args.lead_in, "tail": args.tail, "lufs": args.lufs}
     if args.no_master:
         ov["master"] = False
+    if args.estimate:
+        est = script.estimate(args.script, ov, args.fit)
+        _say(script.estimate_message(est))
+        if args.json:
+            print_json({"estimate": est})
+        return 0
     tl = script.build(args.script, args.output, ov, tuple(args.lexicon), fit=args.fit,
                       readback=False if args.no_readback else None)
     out = Path(args.output) if args.output else Path(args.script).parent / "voice"

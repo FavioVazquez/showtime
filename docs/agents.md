@@ -32,14 +32,18 @@ agent's own tools where possible, but no real video was made in it yet.
 
 Tested on Linux x64 (Ubuntu 24.04) on 2026-09-28.
 
-## Before any of them: setup, once, in a normal terminal
+## Setup: your agent runs it, once
 
 showtime renders on your machine, so it needs its tools and models in `~/.showtime`: about 0.73 GB to download
 on Linux x64 and 0.53 to 0.59 GB on macOS and Windows, 1.4 to 1.8 GB once installed (`showtime setup --estimate`
 prints yours and `showtime setup --plan` every download; bigger pieces such as
-Whisper for transcripts arrive the first time a video needs them, with their size announced, and
-`showtime setup --full` fetches them all now). Agent sandboxes often block that download, so run setup
-yourself once:
+the transcription model (about 490 MB) arrive the first time a video needs them, with their size announced, and
+`showtime setup --full` fetches them all now). On your first request your agent finds that setup is missing,
+tells you the size and time, and runs `showtime setup` once you say yes.
+
+Some sandboxes block that download by default: Cursor's and Antigravity's, and Codex's `workspace-write` until
+you allow network access (see their sections below). When yours does (`showtime doctor` fails `home writable` or
+`network`), run setup yourself once, in a normal terminal:
 
 ```bash
 git clone --depth 1 https://github.com/FavioVazquez/showtime ~/showtime
@@ -47,9 +51,14 @@ git clone --depth 1 https://github.com/FavioVazquez/showtime ~/showtime
 ~/showtime/skills/showtime/bin/showtime doctor     # every line PASS (SKIP is fine)
 ```
 
+Or ask your agent to install into the project folder instead, which the sandbox can write:
+`SHOWTIME_HOME=.showtime showtime setup` (PowerShell: `$env:SHOWTIME_HOME=".showtime"; showtime setup`) ([Troubleshooting](troubleshooting.md#setup-never-ran-or-the-sandbox-blocked-it)).
+
 Setup also writes the stable command `~/.showtime/bin/showtime` (Windows: `showtime.cmd`), which keeps
-working when a plugin update moves the skill folder. `showtime` below means that command, or the
-skill's own `bin/showtime`.
+working when a plugin update moves the skill folder. It runs the newest showtime that has run on this
+machine; between two copies of the same version it keeps the installed one (a plugin or a skill in an
+agent's skills folder) over a checkout, and otherwise the one it already runs, so running another checkout
+never moves it. `showtime` below means that command, or the skill's own `bin/showtime`.
 
 Review mode, the same in every agent: quality (the default) reviews every finished video with a critic round
 before delivery; ask your agent for "lean" or run `showtime config mode lean` (or set `SHOWTIME_MODE=lean`;
@@ -308,7 +317,7 @@ Any client that starts local (stdio) servers can use showtime's MCP server on it
 ([@faviovazquez/showtime-mcp](https://www.npmjs.com/package/@faviovazquez/showtime-mcp), also in the MCP Registry as
 `io.github.FavioVazquez/showtime`),
 `{"command": "npx", "args": ["-y", "@faviovazquez/showtime-mcp"]}` (see
-[`packages/npm/README.md`](../packages/npm/README.md)), and [`showtime-0.4.1.mcpb`](https://github.com/FavioVazquez/showtime/releases/download/v0.4.1/showtime-0.4.1.mcpb) from the v0.4.1 release, which
+[`packages/npm/README.md`](../packages/npm/README.md)), and [`showtime-0.4.2.mcpb`](https://github.com/FavioVazquez/showtime/releases/download/v0.4.2/showtime-0.4.2.mcpb) from the v0.4.2 release, which
 Claude Desktop opens with a double click. Setup still runs once on your machine, because the models and tools
 never travel inside a package. Long tools answer with a task id after about
 20 s when a client stops calls early; the `status` tool reports progress and the result.

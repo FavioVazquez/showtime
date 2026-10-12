@@ -254,6 +254,31 @@ class TestHistory(HistoryCase):
         self.assertIn("WARN", text)
         self.assertIn("try:", text)
 
+    def test_message_names_the_matched_property_distance_and_threshold(self):
+        # #47: "this look repeats recent videos" said what repeated, not on which property or by how much
+        from st.variety import history as h
+        h.record(self.look("one"))
+        res = h.check(self.look("two"))
+        by = {r["aspect"]: r for r in res["repeats"]}
+        self.assertIn("fonts identical", by["type"]["why"])
+        self.assertRegex(by["palette"]["why"], r"\d of \d colours match \(.*\d+ apart.*threshold 60, needs \d\)")
+        self.assertRegex(by["camera"]["why"], r"\d+% of the camera moves shared \(needs 67%\)")
+        self.assertRegex(by["structure"]["why"], r"threshold 6%")
+        self.assertIn("matched on fonts identical", res["message"])
+        self.assertIn("threshold 60", res["message"])
+        self.assertIn("matched on", h.format_text(res))
+        self.assertIn("fonts identical (", by["type"]["why"])
+        self.assertIn("against one", res["message"])
+        # the issue's scenario: a page wearing a look signature stays a repeat however its colours are edited by hand
+        a, b = self.look("sig-old"), self.look("sig-new")
+        a["signature"] = b["signature"] = "ember"
+        b["palette"] = ["#101010", "#202020", "#303030", "#404040"]
+        h.record(a)
+        theme = {r["aspect"]: r for r in h.check(b)["repeats"]}["theme"]
+        self.assertIn("not its colours", theme["why"])
+        self.assertIn("showtime signature", theme["why"])
+        self.assertIn("(ember)", theme["why"])
+
     def test_fresh_look_and_self_excluded(self):
         from st.variety import history as h
         a = self.look("a")

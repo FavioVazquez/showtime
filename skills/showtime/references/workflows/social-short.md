@@ -19,7 +19,8 @@ animated captions) is the from-scratch path with the recording as the voice trac
   voice-over unless implied (say so) (§ Defaults)
 - 1: `showtime job init <name>-short --goal "..." --platform reels`. 2: 3-5 beats, the first 2 s carry the
   promise. 3: `showtime new short <job>/project --duration <len>` (§ Steps (from scratch))
-- 4 (voice): `showtime voice script <job>/project/narration.md -o <job>/project/voice --fit <seconds>`
+- 4 (voice): `showtime voice script <job>/project/narration.md --fit <seconds> --estimate` first (cut words until
+  it fits), then `showtime voice script <job>/project/narration.md -o <job>/project/voice --fit <seconds>`
   (`<len>` minus 0.3 s per narrated scene and any end card), then
   `showtime retime <job>/project --from-voice <job>/project/voice/timeline.json`; never edit `data-dur`,
   sections or effect times by hand (§ Steps (from scratch))
@@ -37,13 +38,13 @@ animated captions) is the from-scratch path with the recording as the voice trac
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| Inputs | 48-51 |
-| Defaults | 53-60 |
-| Steps (from scratch) | 62-94 |
-| Audiogram (audio clip with captions) | 96-108 |
-| Steps (cut-down of a longer video) | 110-124 |
-| Pitfalls | 126-135 |
-| Read next | 137-140 |
+| Inputs | 49-52 |
+| Defaults | 54-61 |
+| Steps (from scratch) | 63-98 |
+| Audiogram (audio clip with captions) | 100-112 |
+| Steps (cut-down of a longer video) | 114-128 |
+| Pitfalls | 130-139 |
+| Read next | 141-144 |
 
 ## Inputs
 
@@ -71,7 +72,10 @@ implies one; say so in the opening line.
    `showtime site capture <url> <job>/work/capture --aspect 9:16`).
 4. **Voice (if any).** Write `<job>/project/narration.md` with one `## <scene id>` heading per scene
    (the template's scenes are `hook`, `demo`, `close`; `voice.md` has the format), then:
-   - `showtime voice script <job>/project/narration.md -o <job>/project/voice --fit <seconds>`:
+   - First `showtime voice script <job>/project/narration.md --fit <seconds> --estimate`: it prints "cut about N
+     words" and synthesizes nothing, so cut words until the estimate fits (a real run costs 1-4 minutes, and
+     a slow voice at x1.12 sounds rushed). Then
+     `showtime voice script <job>/project/narration.md -o <job>/project/voice --fit <seconds>`:
      the length minus 0.3 s per narrated scene (the next step puts that much picture before each
      scene's first line) and minus any unnarrated end card; about `<len> - 1` for three scenes. The
      lines change speed together (0.85-1.15x), then pauses shrink; if it prints "cut about N words",

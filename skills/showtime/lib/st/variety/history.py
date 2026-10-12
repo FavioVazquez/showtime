@@ -234,6 +234,45 @@ def _music_match(a: List[Dict[str, Any]], b: List[Dict[str, Any]], composer: boo
     return None
 
 
+def _why(aspect: str, a: Dict[str, Any], b: Dict[str, Any]) -> str:
+    """Which property matched against job `b`, with the distance and the threshold ("" when the aspect says it itself)."""
+    if aspect == "theme":
+        if a.get("signature") or b.get("signature"):
+            # the id named in the page's look comment: recolouring the page does not change it
+            return ("the signature id in the page's look comment (%s), not its colours, so changing colours does not clear "
+                    "it; pick another with `showtime signature`" % a.get("signature"))
+        return ""                           # the same theme name: the value printed already says it
+    if aspect == "palette":
+        pa, pb = [c for c in a.get("palette") or [] if c][:4], [c for c in b.get("palette") or [] if c][:4]
+        near = []
+        for x in pa:
+            d, y = min((L.color_distance(x, y), y) for y in pb)
+            if d < PALETTE_NEAR:
+                near.append("%s ~ %s %.0f apart" % (x, y, d))
+        return "%d of %d colours match (%s; threshold %g, needs %d)" % (len(near), len(pa), ", ".join(near), PALETTE_NEAR, min(3, len(pa)))
+    if aspect == "type":
+        ta, tb = a.get("type") or [], b.get("type") or []
+        return ("fonts identical (%s)" % " + ".join(ta[:2])) if ta[:2] == tb[:2] else "same first font (%s)" % ta[0]
+    if aspect == "transitions":
+        tra, trb = a.get("transitions") or {}, b.get("transitions") or {}
+        j = _jacc(list(tra), list(trb))
+        if j >= 0.5:
+            return "both led by %s; transition kinds shared %d%% (needs 50%%)" % (_primary(tra), round(100 * j))
+        return "both led by %s; its share of the handoffs %d%% and %d%% (needs 50%% in both)" % (
+            _primary(tra), round(100 * _share(tra)), round(100 * _share(trb)))
+    if aspect == "camera":
+        return "%d%% of the camera moves shared (needs 67%%)" % round(100 * _jacc(a.get("camera") or [], b.get("camera") or []))
+    if aspect == "structure":
+        sa, sb = a.get("structure") or {}, b.get("structure") or {}
+        da, db = sa.get("durations") or [], sb.get("durations") or []
+        if da and db and len(da) == len(db):
+            ta, tb = float(sum(da)) or 1.0, float(sum(db)) or 1.0
+            return "same %s scenes, every scene's share of the length within %.0f%% (threshold 6%%)" % (
+                sa["scenes"], 100 * max(abs(x / ta - y / tb) for x, y in zip(da, db)))
+        return "same %s scenes and shape (%s)" % (sa.get("scenes"), sa.get("shape"))
+    return ""
+
+
 def aspect_value(look: Dict[str, Any], aspect: str) -> str:
     v = look.get(aspect)
     if aspect == "palette":
@@ -259,7 +298,7 @@ def aspect_value(look: Dict[str, Any], aspect: str) -> str:
 
 
 def repeats(look: Dict[str, Any], others: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """[{aspect, value, jobs, detail, strong}] for every aspect `look` shares with one of `others`."""
+    """[{aspect, value, jobs, detail, why, strong}] for every aspect `look` shares with one of `others`."""
     out: List[Dict[str, Any]] = []
 
     def hit(aspect: str, o: Dict[str, Any], detail: str = "") -> None:
@@ -269,7 +308,7 @@ def repeats(look: Dict[str, Any], others: List[Dict[str, Any]]) -> List[Dict[str
                     r["jobs"].append(o.get("job") or "?")
                 return
         out.append({"aspect": aspect, "value": aspect_value(look, aspect), "jobs": [o.get("job") or "?"],
-                    "detail": detail, "strong": aspect in STRONG})
+                    "detail": detail, "why": _why(aspect, look, o), "strong": aspect in STRONG})
 
     for i, o in enumerate(others):
         same_brand = bool(look.get("brand")) and look.get("brand") == o.get("brand")
@@ -603,7 +642,8 @@ def message(res: Dict[str, Any]) -> str:
     for r in reps:
         what = ASPECT_NAMES[r["aspect"]]
         val = r.get("detail") or r.get("value")
-        parts.append("%s %s (%d of the last %d: %s)" % (what, val, len(r["jobs"]), k, ", ".join(r["jobs"][:3])))
+        parts.append("%s %s (%d of the last %d: %s%s)" % (what, val, len(r["jobs"]), k, ", ".join(r["jobs"][:3]),
+                                                       "; matched on %s against %s" % (r["why"], r["jobs"][0]) if r.get("why") else ""))
     return "this look repeats recent videos: " + "; ".join(parts)
 
 
@@ -628,6 +668,8 @@ def format_text(res: Dict[str, Any]) -> str:
     lines.append(("WARN  " if res["level"] == "warning" else "info  ") + message(res))
     for r in res["repeats"]:
         lines.append("  %-13s %s  <- %s" % (ASPECT_NAMES[r["aspect"]], r.get("detail") or r.get("value"), ", ".join(r["jobs"])))
+        if r.get("why"):
+            lines.append("      matched on %s (against %s)" % (r["why"], r["jobs"][0]))
         if r.get("intended"):
             lines.append("      kept: %s" % r["intended"])
         for a in r.get("alternatives") or []:

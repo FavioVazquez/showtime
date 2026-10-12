@@ -5,6 +5,363 @@ All notable changes to showtime. Each entry says what changed and why, so this f
 `skills/showtime/lib/st/__init__.py` and `python3 scripts/check_release.py` keeps the plugin manifests, the registry files and
 `setup/package.json` in sync with it.
 
+## 0.4.2 (2026-10-10)
+
+- **On Windows, `audio mix` runs writing into one folder at once no longer fail with "permission denied".**
+  Several `showtime audio mix` runs of one `mix.json` whose outputs go into one folder share its `mix.report.json`.
+  On Windows, replacing a file that another process is replacing or has open at that moment fails for a few
+  milliseconds with "Access is denied", so one mix could exit with `permission denied:
+  ...\.mix.report.json.<random>` (the end-to-end test of the 0.4.2 release PR on windows-2025). Every JSON file
+  showtime writes atomically (`write_json`) now retries that replace for up to 2 s, as run records already did, and
+  a "permission denied" on a rename names both paths and the Windows error code. `showtime render` was not affected:
+  each render mixes into its own folder. Test: `test_foundation.py`
+  (`test_write_json_retries_a_replace_another_process_holds`,
+  `test_permission_denied_names_both_sides_of_a_rename`); `test_audio.py` (`test_08_parallel_mixes_share_the_cache`)
+  is the end-to-end case.
+- **Docs, second pass: stale `--workers` and splice help, the voice Essentials, "Whisper for transcripts", and a doctor pointer.**
+  Left over from the 0.4.2 audit: `render --help` still described the old one-browser-per-8-threads rule and a splice
+  "mixed again" audio it now reuses; the README repeated the old worker rule; `voice.md` listed the fit command without
+  its `--estimate` dry run first and said "9 languages" for 9 Kokoro variants (8 languages); the site said Whisper is
+  fetched for transcripts (it is Parakeet). `showtime doctor` now ends with a link to the troubleshooting page when a
+  check fails. Test: `test_skill_structure.py` (`test_fit_is_estimated_before_synthesis` now scans `voice.md`; the
+  stale-phrase guard now scans `site/build.py` and `harness-notes.md`), `test_lean.py`
+  (`test_doctor_brief_and_verbose` asserts the link).
+- **A capture lane's page keeps its size when its browser window is resized late (issue #49).** Under load, a
+  whole capture lane of a normal render could come out wrong: with 3 workers on a 180-frame film, every frame from 60
+  or 120 on. Playwright sizes a new page with two calls at once, the window (`Browser.setWindowBounds`) and the
+  emulated viewport (`Emulation.setDeviceMetricsOverride`). A headless window on macOS is at least 500 px wide, so
+  there the window always resizes, and when that resize landed after the emulated size, the view the screenshots
+  copy took the window's content size, 500x57 for a 256x144 page, while the page itself still laid out at 256x144.
+  Every screenshot of that lane was 500x57 (the page in the top-left corner, black beside it), and ffmpeg scaled them
+  into the video; a clipped screenshot (`--scale` below 1, `--preview` above 720p) kept the right size with its bottom
+  black. The saved captures of the failing renders show it; the frame writes, the encoder's reads (same bytes) and
+  the frame order were right in every run. `stagehost.mjs` now sets the page's emulated size again from its own
+  DevTools session once the page is ready, which fixes the race wherever it happens. Then it checks: `shot()` checks
+  the size of every unclipped screenshot; a page whose screenshots are clipped gets one unclipped screenshot when it
+  opens (the clipped ones have the clip's size whatever the view's); and every seek and every clipped screenshot
+  read the page's layout size. A wrong size is set again and the screenshot or seek repeated (at most 3 times, then
+  the capture fails and the worker retries on a new page), and render.log says so. Not covered: a clipped
+  screenshot of a view that loses its size after the page opened while the page keeps its layout (not seen; the
+  size set again at ready held through later window resizes in every probe), and `demo.mjs`, `capture.mjs`,
+  `site.mjs` and `probe.mjs`, which take their own screenshots. Setting the size again also fixes `--scale 2`
+  captures, which were 1x on a Mac every time (a 512x288 render came out 256x144). Measured on a 6-core Intel Mac
+  with a GPU, a 256x144 page rendered with `--workers 3` against a 1-worker reference, every frame compared, under
+  eight `yes` loops plus a looping 4 GB `dd` (load 17-78): 7 of 40 renders had a wrong lane before, 0 of 30 after
+  (5 pages in those 30 runs opened with the 500x57 view and were set right when ready); at `--scale 0.5`, 5 of 20
+  before, 0 of 20 after. The `dd` alone did it in 1 of 20 (load about 10), the `yes` loops alone in 0 of 20. Waiting
+  for two equal screenshots before the first frame (tried first) does not catch it: two 500x57 screenshots are equal. Test: `test_render_speed.py`
+  `TestCaptureSize` (a real window resize after the page opened, at scale 1, 0.5 and 2; each of the ready-time
+  call, the screenshot size check, the seek's and the clipped screenshot's layout checks fails it when removed).
+- **Site: "Start here" in four places, the gallery in six shelves, and "New in 0.4" kept low.** A newcomer's first
+  action sat two diagrams and three tables down the docs map, "Get started" only jumped within the landing, the gallery
+  was sorted by history (01 to 32) under a 0.2.0 film, a guide page's crumb was a repo path, and the new glossary
+  (docs/glossary.md) and CONTEXT.md would have built to one page. The docs sidebar's first group is now **Start here**
+  (Your first video, The map, When something goes wrong, Questions people ask, Glossary, Works with your agent, What's
+  new with a version chip), which is also the start of Previous / Next; troubleshooting and the glossary are built,
+  and CONTEXT.md moves to `docs/house-vocabulary.html` ("House vocabulary" in Backstage, linked from the glossary).
+  The docs map opens with an **Overture · Start here** of three steps (install with Copy, your first video, if
+  something goes wrong), and the first-video guide ends on "Next: choose your path". The landing's "Get started"
+  opens the first-video guide, and its "New in 0.4" tile (all of 0.4.x) links each released 0.4 section and shows
+  five of the new examples. The gallery opens on its intro ("Thirty examples and two demos"), then the tabs and a
+  **Start here** shelf named by the kind of video (Launch video, Narrated explainer, Your footage, edited), then six shelves (Explainers, Your footage, Products and brands, Code and data, Social and
+  trailers, Looks and motion), each with a line and the guides behind it. The groups and their order live in
+  `site/content/gallery.json`, so the examples repository does not change, and the build stops when a card is on no
+  shelf or two. The ten 0.4 examples carry a "New in 0.4" badge and a last tab, every card shows its number and one
+  duration format (`25 · 2:38`, `02 · 0:45`) and a "Copy the request" button, example pages are titled "Example 25:
+  ...", guide pages name their act in the crumb ("Docs / Act IV · Sound and voice / Voice") with a "See it done" line
+  of examples, and the docs search opens install, error and first-video questions on the page written for them. The
+  film above the gallery is gone (`"gallery_film": null` in `site/config.json`; an object brings one back), the
+  footer credits its music only while one is set, and README.md's links to `gallery.html#launch-film` now go to the
+  gallery and the film's MP4. The old tab addresses (`gallery.html#data-and-reports`, `#for-developers` ...) open
+  All. The build stops when gallery.json's "New in" name is not the newest release's series, so the badges and the
+  landing tile cannot name different releases. Test:
+  `test_site_build.py` `StartHereAndShelves`, `PeoplePages` `test_glossary_and_house_vocabulary_have_their_own_pages`,
+  `test_site_search.py` `RealBuild`.
+- **A name cleared in `readback.ok` also clears it inside a longer phrase, and `readback.note` keeps a respelled
+  name as a note.** `"readback": {"ok": ["Qwen"]}` cleared the word "Qwen", but the phrase "Qwen Image" failed again,
+  because a cleared entry only matched the whole suspect text (issue #46). A suspect now clears through a run of whole
+  words in it ("Qwen" for "Qwen Image" heard "QN image") when the rest of the phrase was heard as written, so
+  "Hugging Face" does not clear a misheard "Hugging Face Hub", "AI" does not clear a swallowed "Open A I", and
+  "Quenched" stays. A new `"readback": {"note": ["Qwen"]}` list, same shape and matching, is for a word a person
+  listened to and found right (`voice ipa` shows the sound it is told) that the recogniser only spells another way
+  ("QN"): it stays in the read-back as a NOTE (`NOTE ... [listed in readback.note by the project: ...]`), an INFO in
+  qa, never a FAIL, tagged as the project's claim; the receipt and the qa hearing line count it as noted. `ok` wins
+  when a word is in both. Test: `test_readback.py` `ClearedPhraseTests`, `RespelledNameTests`
+  `test_a_noted_word_is_a_note_never_a_fail`.
+- **Site: fixes from the 0.4.2 docs audit.** The live docs/skill.html showed SKILL.md's front matter as one huge heading
+  (`render_md` parsed it as-is, so the closing `---` made it a setext heading); the footer said "0.4", the hero 0.4.1
+  and the landing's "New in 0.4.1" was typed by hand; only sidebar pages had Previous/Next; "doctor" and "estimate"
+  searches put the Changelog first and the landing and gallery were not searchable; and the gallery's film was
+  hard-coded. The build now strips front matter before rendering, reads the footer and `llms.txt` version from
+  `st.__version__` and the landing's "New in" from the newest release in `docs/whats-new.md`, gives the docs map,
+  the Start pages and every example page Previous/Next, indexes the landing and gallery, weighs the changelog at 0.5
+  in search, and reads the gallery film from `gallery_film` in `site/config.json` (`null` since the gallery
+  redesign above: the old 0.2.0 launch film is no longer shown). Test: `test_site_build.py` `OneVersion`,
+  `test_site_search.py` `RealBuild`.
+- **Docs: a first-video guide, troubleshooting by symptom, a glossary, and clearer first explanations.** A docs audit
+  found that newcomers were sent to the 1,382-line README, that troubleshooting answers were written for agents only,
+  and that EDL, ledger and look signature were used before any page defined them. New pages:
+  `docs/guides/first-video.md` (a 5-second test video step by step, timed on a 6-core Intel Mac, in the task-guide
+  shape), `docs/troubleshooting.md` (twelve symptoms, each with what showtime does today, what to say and the
+  command) and `docs/glossary.md` (the reader's glossary with a diagram of the job folder; CONTEXT.md stays the house
+  vocabulary and is linked from it).
+  The README, the docs map, the guides index and the FAQ link them. The two mode settings are now explained as two:
+  quick or studio (how much the agent asks) and quality or lean (how much it checks), in the README, SKILL.md, the
+  docs map and modes.md; the docs map no longer says "quick is lean". EDL, ledger and look signature are defined at
+  first use (SKILL.md, editing.md, color.md). The FAQ's GPU answer leads with the answer, its language count names the
+  eight Kokoro languages and the 32 in all (Kokoro's nine counts American and British English apart), the README's
+  scoreboard sentence says what was measured, and "How it works" opens with today's order instead of the 0.2.0
+  history. agents.md now says your agent runs setup, with terminal setup only for a sandbox that blocks the download,
+  and names the transcription model instead of Whisper. SKILL.md goes from about 1,500 to about 1,490 words with every
+  red flag kept: the new definitions are short there (the glossary has the long ones), and the opening line and a few phrases
+  are tighter. `check_release` now checks the links and commands of the two new
+  docs/ pages. Test: `test_skill_structure.py` `TestCheckersBite` `test_newcomer_pages_are_linked_and_checked`.
+- **Chapter mode: render a film in named pieces and join them with one soundtrack (issue #22).** Rendering
+  sections with `--from/--to` and joining them with `edit render` gave loudness steps of 2.6 and 0.7 dB at the
+  joins (each span mastered its own audio) and cut fades. `render --chapters` prints the plan from showtime.json
+  `"chapters"` (else the film's acts) and says first that on one machine a whole render is faster (measured: see
+  render.md § Speed); `render --chapter N --job J` splices chapter N into the job's full render, or without one
+  writes a video-only piece in `<job>/work/chapters/<W>x<H>/`; `render --join --job J` byte-joins the pieces at
+  their keyframes (or encodes once when their settings differ), builds the soundtrack once for the whole video,
+  muxes it and checks every seam against the master (frames, keyframes, the seam frames captured again against a frame inside the
+  same piece, so grain or a high CRF passes, loudness step <= 0.1 dB, lag 0 +-1 sample) before naming it `final.mp4`, `kind: "joined"`; `qa` adds a seam section.
+  Every whole render now has a keyframe at each chapter start, so after a whole render or a join a later
+  `--chapter N` fix re-renders exactly its frames. A piece cut short is refused with its `--chapter N` command, a
+  one-chapter film is refused, and the receipt counts each piece's time once. Pieces carry `sources_hash` (the project's sources, the same on a copy at another path): other
+  files warn at the join, another length or size is refused. Tests: `test_chapters.py`.
+- **The join's seam check compares each frame on Windows too.** On the Windows CI runner `render --join` stopped
+  at a random frame of the seam check with "could not compare frame 119 of mux.mp4: frame= 1 ... time=00:00:00.00". The PSNR
+  comparison gave ffmpeg's `psnr` the captured image at time 0 and the video's frame half a frame later (the seek
+  lands between frames), so the one frame `-frames:v 1` keeps went out uncompared, and the real comparison only ran
+  when the image's end of stream arrived, after the output had finished. Whether ffmpeg ran it before shutting down
+  was thread timing: it did on macOS and Linux and now and then did not on Windows (no PSNR line, exit 0). Both
+  inputs now start at time 0, so the first frame is the compared one on any OS, and the error quotes ffmpeg's own
+  message instead of its progress line and stream list (`settb=AVTB` also drops psnr's "not matching timebases" warning;
+  same values). Test: `test_chapters.py` (`test_frame_psnr_compares_the_frame_it_outputs` holds the image's end of
+  stream back 1.5 s, which fails the old graph on any OS, and checks the value; `test_ff_messages_drop_progress`).
+- **`test_signatures.py` checks reading time once per motion feel and template, not twelve times.** On the Windows
+  nightly the file ran 868 s on its first night (6 Oct), then out of its 900 s on 7 and 8 Oct (680 s on 9 Oct); the
+  Intel Mac reached 900 s on 9 Oct. It ran a full `showtime check` per look signature, twelve of them, on 4-thread
+  runners without a GPU and next to another test file. The fonts wait raised to 60 s on 5 Oct was not the cause:
+  it landed with the test itself, and it ends as soon as the faces are in. A look changes the palette, the type and
+  the motion feel; the dense timeline (reading time, sizes and zones over the whole video) depends mostly on the
+  motion feel and the template, and the determinism probe on the template only. `check_plan()` now runs the
+  timeline for the first signature of each motion feel and of each template (6 of 12) and `--no-timeline` for the
+  others (contrast, layout, phone size and zones from the samples, as before), and the determinism probe on the
+  first check of each template (the only probe of the data template in the suite). The twelve checks without a GPU
+  on a 6-core Intel Mac, one after another, with no probe at all: 994 CPU seconds and 762 s before (load 16-53,
+  shared), 658 and 513 s after (load 21-44). Test: `test_signatures.py` `CheckPlan` (issue #13).
+- **Without a GPU a slow WebGL frame no longer ends `check` at 60 s, and `check --no-cuts` skips the cut walk (issue
+  #14).** On the macOS Intel nightly, `test_showreel.py`'s check of the showreel template at 16:9 ran out of its
+  300 s (7, 8 and 9 Oct; the file passed at 879 s on 6 Oct). Without a GPU the template's WebGL shots (the chrome
+  and heat shaders, the three.js knot) are drawn on the CPU, and every 12th WebGL frame cost the GPU process 8-18
+  CPU seconds here, whatever the shader, the
+  canvas size or the compositing flags; the cut walk (a second page that seeks every cut four times) paid for those
+  frames again, at every aspect, although the first frame after a cut does not change with the aspect and
+  `test_cut_frames.py` already walks the template's cuts. `--no-cuts` (next to `--no-timeline`) leaves out the walk,
+  report.json's `cuts` and `late_first_frame`; the aspect test passes it. One 16:9 check without a GPU on a 6-core
+  Intel Mac: 361 and 364 CPU seconds before, 242 and 244 after (160-183 s against 133-149 s wall at load 15-19).
+  That was not enough. On 10 Oct the full tier still failed on the 4-core ubuntu-24.04 runner (the aspect test at
+  9:16) and on macos-15-intel (that test, and `test_cut_frames.py`'s template check) with `timed out after 60s:
+  reading the page's size`. A clipped screenshot (check's timeline, thumbnails and cut walk; render's `--scale` below
+  1, and `--preview` of a page above 720p) first reads the page's layout size (#49). That read is the first call on
+  the page's main thread after a seek, and without a GPU the main thread waits there while SwiftShader draws the
+  seek's WebGL frame in the GPU process. The seek itself returns in milliseconds, so the page's pace stayed 1 and the
+  read kept a flat 60 s. Reproduced on a 6-core Intel Mac with `--gpu off` and 8 busy loops: both runs ended this way,
+  after 128 s and 127 s (the read after the seek to 0.9 s took 39 s, the one after 3.0 s passed 60 s), the GPU process
+  working at about 0.45 of a core all the while and the renderers idle. The read is now guarded like the screenshot it
+  belongs to (the stuck-frame guard, #24, below): waited for while the GPU process and renderers work, failed once
+  they have done no work for 30 s (x the page's pace), sooner than before. The longer bound is the same as for
+  screenshots: where the browser cannot report its work, or any of its pages keeps working (the work is summed over
+  all of them), a check or a clipped render frame can now wait up to 10 minutes at that step (render: up to 3
+  attempts, each in a new browser) where it waited 60 s x pace; the read and the screenshot of one capture share those
+  10 minutes. The page load (to DOMContentLoaded) also had a flat 60 s, and on the same Mac under heavier load (23,
+  another session's renders) it ended check's cut walk once after the read was fixed (`Timeout 60000ms exceeded`, no
+  cuts probed; seen once there, not on CI). It now gets 3/5 of the page-open deadline, 180 s: a load that never
+  finishes still fails as the page (check's `ready_failed` with a report; on check's second pages, the cut walk, the
+  determinism load and the no-GPU probe, the soft finding it was), not as a stuck browser killed and tried again after
+  the page-open deadline. With the read fix the two checks pass on that Mac with the busy loops and another session's
+  renders (595 s for the 9:16 check, 886 s for the one with the cut walk, 13 cuts and none late, at load 20-35; single
+  size reads of up to 290 s, the GPU process at work throughout), and with the load deadline the 9:16 check again
+  (435 s at load 11-16). Tests: `test_pace.py` `TestSizeReadWaitsForTheFrame` (a main thread held past the old
+  deadline is waited for, a stopped renderer still fails the read), `TestSlowPages`
+  `test_load_that_never_finishes_is_the_page` and `test_second_page_load_is_a_finding`, `test_cut_frames.py`
+  `test_no_cuts_skips_the_walk`.
+- **`review-findings` accepts `t=a-b s` ranges as a timestamp, and Polish items get ids.** A finding carrying a range
+  such as `t=38.73-41.50s` was warned as citing no timestamp (the check only knew `t=3.00s`), and Polish bullets were
+  left out of the id scheme, so `showtime review-respond <job> --fixed r1-P1` only printed the list of valid ids
+  (issue #48). Ranges (`t=38.73-41.50s`, `t=38.73s-41.50s`, `t=38.73 - 41.50 s`) now count in every finding, and
+  Polish bullets are registered as `r1-P1 ...` beside `r1-B1` and `r1-S1`: they are listed by `review-respond`, can be
+  marked fixed or waived, and are counted by `review-findings`, but are never open, so they still never gate the
+  delivery (and stay out of the receipt's counts and lists and the next round's PREVIOUS list). The pairwise parser
+  `review-verdict` reads uses the same timestamp pattern, so a range-timestamped finding is no longer dropped there.
+  A Polish bullet without a timestamp now gets the "cites no timestamp" warning too, as CRITIC.md asks of each. Test: `test_review_mode.py`
+  `TestReviewFindings` `test_time_ranges_count_as_timestamps`, `TestFindingsGate`
+  `test_polish_ids_register_and_never_gate`.
+- **Voice-led workflows run `voice script --fit S --estimate` before the first synthesis.** `--estimate` already
+  prints "cut about N words" and synthesizes nothing, but only `voice.md` mentioned it: the social-short, explainer
+  and other voice-led routes went straight to `--fit <seconds>`, so an agent with a slow voice (about 2.6 words/s)
+  ran a 1-4 minute fit three times, cutting words between runs, and ended at x1.12 (issue #45). The social-short,
+  explainer, repo-explainer, paper-explainer, data-story, localize and manim guides, the scriptwriter and voice
+  director briefs now say to estimate first and cut words until it fits, and SKILL.md pipeline step 2 names the estimate and then the real run. Test:
+  `test_skill_structure.py` `TestSkillMd` `test_fit_is_estimated_before_synthesis`.
+- **"This look repeats recent videos" names the property that matched, its distance and its threshold.** The warning
+  said which aspect repeated (palette, type pair ...) and listed the look's own values, but not what matched against
+  the earlier job or how close it was, so after changing colours by hand the warning stayed with no way to tell what
+  to change next (issue #47). Each repeat now carries a `why` (in `showtime check`, `history check` and `--json`): the
+  palette colours that matched with their distance and the threshold (`3 of 4 colours match (#a ~ #b 12 apart; threshold
+  60, needs 3)`), `fonts identical (Inter)`, the share of camera moves or transition kinds against its limit, the
+  scene-length spread against 6 %. A page wearing a look
+  signature matches on the signature id in its look comment, not on colours, and says so (changing colours does not
+  clear it; `showtime signature` picks another). The `why` names the job it was measured against. Test: `test_variety.py` `TestHistory`
+  `test_message_names_the_matched_property_distance_and_threshold`.
+- **`render --size` checks the page it renders, and a timing error is not "the layout breaks".** The layout check that
+  runs before a `--size` render started `check` without `--page`, so it ran on `index.html`: a page whose text runs
+  off the frame at 9:16 rendered anyway while `index.html` was fine, a broken `index.html` stopped the render of a
+  clean page, and the report landed in `index.html`'s `work/check-<WxH>/`. The stop rule also matched any error code
+  containing "clip", so a `clip_timing` error (not a layout problem) stopped the render with "the layout breaks".
+  Render now passes `--page`, the thinner report goes to its own `work/render-check-<page>-<WxH>/` (it never replaces
+  a full `showtime check` report), the hint names the page however it was given, `clip_timing` no longer stops it, and
+  the check runs with `--no-timeline --no-history` (nothing those phases find can stop a render; 69 s to 24 s in the
+  issue's measurement of a 30 s 9:16 check). Not done: skipping the check for a splice whose page is byte-identical to
+  the base render's. Test: `test_render_fixes.py` `RenderSizeChecksItsPage` (issue #43).
+- **A chart with `states` and none at 0 now opens on its own `data` and `title`.** The top-level `data` and `title`
+  were dropped as soon as `states` was given, so a chart whose first state was at 5.86 s opened on that state and its
+  title, and its own 6-row view never appeared (and `check` and `qa` passed; only a contact sheet showed it, issue #44).
+  The top-level `data` and `title` are now the implicit state at 0 whenever no state starts at 0, and the first state
+  morphs from them; `components.md` §4 says so. Charts with a state at 0, or with no `data`, are unchanged. Test:
+  `test_chart_labels.py` `ChartLabels` `test_top_level_data_and_title_show_before_a_first_state_later_than_zero`.
+- **Without a GPU, `--workers auto` uses more browsers from 8 CPU threads up.** It picked one browser per 8 CPU
+  threads, at least 3, so an 8-thread machine with software GL got 3, while a 180 s 1080p30 DOM page rendered in
+  231 s with 8 against 345 s with 3, and a WebGL showreel in 529 s with 8 against 752 s with 4 (issue #41). Auto is
+  now CPU threads - 2 from 8 threads up (at most 8, and still within the frame, memory and `SHOWTIME_MAX_WORKERS`
+  limits); below 8 threads and with a GPU nothing changes. Test: `test_render_speed.py`
+  `test_auto_workers_and_software_gl`.
+- **`edit render` keeps the sound in sync with the picture on showtime's own renders (issue #38).** A range cut from a
+  render made by showtime (`-bf 0`: its video edit list starts at 0, its audio's after the 1024-sample AAC priming) could
+  come out with its sound up to 1024 samples (21 ms) early: the input seek that cut each range is not sample-accurate
+  on this audio, and its error depends on where it lands (1024 samples at `"start": 0`, the usual case for span or
+  chapter files, which also left 21 ms of silence before every cut; 256, 512 or 1024 at some later starts, e.g. 2, 4
+  and 8 s). Each range's sound is now decoded from the file's start, with no input seek, and trimmed to the exact
+  sample; the video keeps its fast seek. Decoding the AAC of a 10-minute source takes about 1 s, so a range near its
+  end renders about 1 s slower. Cached segments are rebuilt once. Test: `test_footage.py` `EdlAudioSyncTest`.
+- **Extra local voice engines load by name, and doctor stops failing on Kokoro when you chose another engine.**
+  The engine list was closed in three places (`engines.get()`, the `--engine` choices and `$SHOWTIME_VOICE`), and
+  doctor failed on Kokoro's model files even after `setup --skip models` with another engine selected. An engine of
+  your own is a Python module `<name>.py` exposing `ENGINE` (Piper-shaped: `has_timings = False` gets the usual
+  alignment), found on `$SHOWTIME_ENGINE_PATH`, then in `~/.showtime/engines/` (it survives an update), then next to
+  the built-in engines; a built-in name always means the built-in engine. Names must match `^[a-z][a-z0-9_]{0,31}$`
+  and are checked before any import; an unknown name lists the engines found. `$SHOWTIME_VOICE=<engine>:<voice>`
+  selects one; doctor skips Kokoro's files when the voice names another engine (an unset voice still expects
+  Kokoro) and lists each extra engine and whether it imports. `references/voice.md` has a "Bring your own voice
+  engine" section: your engine, your network; showtime ships no network engine. Proposed and designed by @heavygee
+  in issue #8, who also wrote a matching PR (#36). Test: `test_voice_engines.py`.
+- **The scriptwriter and the storyboard artist get more turns, and the director is told how to stay inside them.** A heavy
+  storyboard brief ran out of turns before it finished (issue #42). `scriptwriter` now has `maxTurns: 50` (was 30) and
+  `storyboard-artist` `maxTurns: 80` (was 50). `references/crew.md` §3 tells the director to split a heavy brief (the
+  board first, the animatic as a second task) and, when a member stops at its cap, to resume it with a follow-up
+  `SendMessage` instead of dispatching it again. Test: `test_skill_structure.py` checks that every crew agent
+  declares `maxTurns` between 20 and 100.
+- **A fix to a `--size` variant is spliced too.** `render --from/--to --job` spliced a fix into the job's last
+  full render, but with `--size` it always wrote a span clip, so an audio-only fix to the 9:16 cut
+  (`<job>/1080x1920.mp4`) took a full re-render (about 2.5 min instead of 43 s for the 16:9 final). With `--size` the
+  span is now spliced into the job's newest render of that size (`<W>x<H>*.mp4`, the same project, frame rate and
+  length checks), written as the next `<W>x<H>-N.mp4` (a variant: the job's final is unchanged), with the soundtrack
+  reused when its inputs did not change; with no earlier render of that size it stays a span clip and says why.
+  Test: `test_splice.py` `TestSpliceSize` (issue #29).
+- **`check` and `render` reject a malformed audio mix spec before any frame is captured.** A `showtime.json`
+  `"audio"` pointing to a mix spec with no `tracks` list passed `check`, and the render then only warned
+  (`AUDIO FALLBACK`) and shipped the simple mixer's soundtrack (issue #27), which cost a whole re-render. `check` now
+  validates the audio (a missing file or spec, no or empty `tracks`, an unknown track `kind`, a track without exactly
+  one source, a missing track file, a non-numeric `start`/`at`/`gain_db`...) and reports an `audio_mix` error; `render`
+  runs the same validation at its start and stops with that message and a non-zero exit (not with `--no-audio`).
+  The same rules run alone, without rendering, as `showtime audio mix <spec> --validate`. Catalog and library
+  sources are not resolved. A mix that passes validation but fails while mixing still falls back as before.
+- **`voice script --fit` says up front when the narration cannot fit.** It used to synthesize every line, then
+  re-synthesize them all at up to four speeds, and only then report how many words to cut (issue #28). Now the
+  characters are counted at the voice's own rate before the first line, a script that is too long gets "cut about N
+  words" (and the rushed-speech warning) at once, and `--fit S --estimate` prints that estimate alone without making any audio.
+- **`voice_to_music_db` is no longer empty when the music is `ST.score`.** The score is rendered offline and
+  combined after the mix, so a voice-over mix plus `ST.score` had no music bus and `mix.report.json` said
+  `"voice_to_music_db": null` (qa's hearing facts read the same field), although the guides tell the reader to
+  check it (issue #30). `render` already measured the voice-over-score gap into `render.json`
+  (`audio.voice_over_score_db`); it now also writes it into the mix report as `voice_to_music_db`, with
+  `voice_to_music_source: "score"`, unless the mix measured one itself. Test: `test_render.py` `test_19`.
+
+- **A frame that never comes no longer stalls a render or a check (issue #24).** A screenshot used to be waited
+  for up to 10 minutes in a render and for ever in a check. Now once the browser's GPU process and renderers have done
+  no work for 30 s (x the page's pace) the screenshot fails: render draws the frame again in a new browser
+  (`capture.retries` in `render.json`) and check ends with an error naming its step. A browser that cannot report its
+  processes' work keeps the old cap (10 minutes, `SHOWTIME_SHOT_TIMEOUT`), and so does a frame whose renderer keeps
+  working (a page with its own timer loop). `SHOWTIME_TIMEOUT=<seconds>` gives a render or check its caller's limit:
+  past it the command ends with an error naming where each of its parts is. Tests: `test_pace.py`
+  `TestFrameNeverComes`, `TestSlowPages`.
+- **`--disable-frame-rate-limit` stays on Linux only.** 0.4.1 shipped it in render's browsers on every OS. With it,
+  a renderer keeps spending CPU after the GPU process stops, so on macOS the guard above never saw a stopped GPU
+  process (measured on an Intel Mac with a GPU: the stall test fails with the flag and passes without), and it bought
+  about 2 % there, inside run-to-run spread, for about 22 % more CPU while rendering; it is the likely cause of the
+  stalls on the macOS CI runners, where this has not been re-run. On an 8-thread Linux machine without a GPU it is
+  about 10 % faster than without it (5 % faster than 0.4.1, which has the flag but not the guard) and the guard still ends a frame that never comes. `"render"` in
+  `scripts/lib/chrome-flags.json` is now per OS like `"gpu"` (`renderFlags()` still takes a plain list): on Linux only;
+  off on macOS and Windows, which is untested with the guard and goes back to its state before 0.4.1. Tests:
+  `test_pace.py` `test_no_frame_rate_limit_flag`, `test_render_speed.py` `test_auto_workers_and_software_gl`.
+
+- **A WebGL canvas that loses its context no longer ships white.** On the Intel Mac CI runner some renders lost
+  every WebGL context on the GPU, and each of those canvases was captured white with no word from `render`
+  (nightly `test_cut_frames`, issue #12). In a render the page's WebGL canvases are now watched after every seek:
+  one lost while on screen stops a render on the GPU, which runs once more without it (`--gpu off`, into the same
+  folder, with a warning that says so); without a GPU, where the page itself is the cause (more contexts at once
+  than the browser keeps), the warnings name each canvas and its white frames. Showtime's looks are left out: they
+  give contexts back on purpose and draw their fallback (`check`'s `look_lost`).
+- **`setup` installs a failed extra again on a plain re-run (issue #39).** When `setup --full` failed on manim (pycairo
+  and manimpango could not build without the cairo headers), the extra was recorded anyway: the next `setup` exited 0
+  in a second and skipped it, doctor said "the manim extra is recorded but not importable", and only `--force`
+  fixed it. A re-run now checks every recorded extra with doctor's own check (the manim package in the main venv,
+  manimlib in the manimgl venv) and installs a broken one again, with one line saying why; a working one is still
+  skipped. Doctor's manimgl row checked only that the venv existed, so a failed package install passed; it now
+  says "the manimgl extra is recorded but not importable". setup also drops doctor's cached `--quick` result
+  (`cache/doctor-quick.json`, reused up to 1 h), so the next `showtime doctor --quick` checks again instead of
+  showing the WARN from before.
+- **`setup` names the missing build dependencies of manim/manimgl before it downloads anything (issue #40).** They only
+  showed up when pycairo failed to build, after about 55 min of `setup --full` downloads. When the plan installs
+  manim or manimgl on macOS or Linux, setup first checks for a C compiler, pkg-config, and cairo + pangocairo
+  (`pkg-config --exists`), and a missing one is a WARN with the install line for this OS (the one the manim
+  failure already printed) at the start; setup goes on. Test: `test_os_install.py` `TestExtras`.
+
+- **`retime --from-voice` counts a silent scene once before a later pin (issue #21).** When a pinned line (`at`) came
+  after a silent scene but not directly after it, the line right after the silence lost the pin and the silence was
+  counted twice: once by the voice holding the gap up to the pin and once as the silent scene's own length. The first
+  pinned line after the silent scene now counts, even with unpinned lines between them, so the silent scene fills the
+  gap before the pin and keeps its length when the gap allows; render.md says so. Test: `test_storyboard.py` `TestSilentShots`
+  `test_a_later_pin_holds_the_silent_shot_once`, `test_two_lines_after_a_silent_shot_one_pinned`.
+- **The stable `showtime` command keeps the installed skill when two copies have the same version (issue #23).**
+  On a tie the command used to follow whichever folder ran last, so running a second checkout or a scratch copy of the
+  installed version re-pointed it for every agent and script sharing the home. Now an installed skill (a plugin, or a
+  skill in an agent's skills folder) wins a tie over a checkout or a copy run by path, and otherwise the recorded one
+  stays; a newer version still wins, and `showtime setup --link` points the command at its checkout on purpose.
+  `showtime doctor` no longer reports such a kept tie as drift. agents.md, harness-notes.md and CONTRIBUTING.md say so.
+  Test: `test_portable.py` `test_same_version_keeps_the_installed_skill`.
+- **The `mix.json` examples use the `tracks` list the mixer requires, and the review guide says to wait for the critic's
+  reply (issues #26 and #32).** The explainer and music-video workflows and music.md showed a track object at the top
+  level of `audio/mix.json`, which the mixer rejects; they now show `{"tracks": [...]}`. The review and crew guides
+  told the agent to wait for `FINDINGS.md` to appear, which never happens when the critic's Write is denied (it returns
+  the findings as its reply); they now say to wait for the critic to return and save its reply when the file is
+  missing, and the critic's brief says to reply with the whole block when it cannot write files.
+- **A caption-karaoke overlay on a canvas film is documented (issue #31).** `F.caption` draws plain text with no
+  per-word highlight, and nothing said that the DOM `caption-karaoke` component can sit over a canvas film. film-api.md
+  now has "Karaoke captions over a canvas film" (the two lines to add, `data-src` pointing at the voice module's
+  `vo.words.json`, how `check` audits the layer and what it cannot see on the canvas); components.md and the explainer
+  workflow link it.
+- **"Full crew" is a trigger, and the guides carry one table of the words that set each mode (issue #33).** Saying
+  "full crew" or "use the whole crew" keeps quick mode (no pitch, no storyboard gate) and dispatches every member the
+  job can use (the sound designer for any film with music, the voice director for any voice-over, motion designers,
+  the researcher, the critic twice); CPU limits still apply. The README, modes.md and crew.md show the same table of
+  what you say, the mode and the crew. A new plugin-eval case, `full-crew-trigger`, checks it.
+- **Publish-bound quick jobs with music or effects dispatch the sound designer (issue #34).** Quick mode named the
+  critic, the researcher and scene builders, so a publish-bound film with a music bed or effects was mixed inline
+  without the sound designer. modes.md, crew.md and the README now add the sound designer, in parallel with the build,
+  when the video is publish-bound and has music or effects (not voice only, not lean).
+
 ## 0.4.1 (2026-10-08)
 
 - **Renders are faster, most of all without a GPU.** Measured on a 64-core Linux machine with no GPU, default

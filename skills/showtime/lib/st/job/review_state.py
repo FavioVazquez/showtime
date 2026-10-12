@@ -19,7 +19,7 @@ The quality floor (quality mode; lean only warns):
     ready", even when the pairwise preferred the new version; a missing line keeps the round pending.
 
 Open findings: st.job.findings.collect alone decides which findings count (every Blocker and Should-fix of a
-single round; in a pairwise round only those about the version that came out best) and which are closed (`fixed
+single round, polish never; in a pairwise round only those about the version that came out best) and which are closed (`fixed
 <id>` or `waived <id>: <reason>`, `showtime review-respond`). In quality mode an open one keeps the review pending
 ("findings open") after the rounds are done; lean warns; `job note --stage deliver` refuses in both, so qa,
 status, SHOWTIME.md and the delivery gate agree. The 0.3.x caption rule (a word-matched `fixed` / `won't fix:`

@@ -42,7 +42,7 @@ from ..common import ShowtimeError, debug, ensure_dir, info, warn, write_json
 from . import edl as E
 from . import util as U
 
-RENDER_REV = 6
+RENDER_REV = 8
 HDR_TRC = ("smpte2084", "arib-std-b67")
 TONEMAP = ("zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,"
            "zscale=t=bt709:m=bt709:r=tv,format=yuv420p")
@@ -401,11 +401,18 @@ def _segment(seg: Dict[str, Any], ctx: Ctx, quality: str, denoised: Dict[str, Op
     args: List[str] = ["-ss", "%.6f" % seg["start"], "-t", "%.6f" % dur_in, "-i", str(src["path"])]
     den = denoised.get(seg["source"])
     track = int(src.get("audio_track", 0))
+    a_skip = 0
     if den:
         args += ["-ss", "%.6f" % seg["start"], "-t", "%.6f" % dur_in, "-i", str(den)]
         a_in = "[1:a]"
     elif pr.get("has_audio") and track < len(pr.get("audio_streams") or []):
-        a_in = "[0:a:%d]" % track
+        # the sound has its own input, decoded from the file's start (no input seek) and trimmed to the exact sample:
+        # an input seek on AAC is off by a seek-dependent 0-1024 samples (showtime's own renders, -bf 0, whose audio
+        # edit list starts after the 1024-sample priming: 1024 at -ss 0 or 8, 512 at 4, 256 at 2), so the sound came
+        # out up to 21 ms early. Decoding AAC from the start is cheap; the video keeps its fast seek
+        args += ["-t", "%.6f" % (seg["start"] + dur_in), "-i", str(src["path"])]
+        a_in = "[1:a:%d]" % track
+        a_skip = int(round(seg["start"] * 48000))
     else:
         args += ["-f", "lavfi", "-t", "%.6f" % dur_in, "-i", "anullsrc=r=48000:cl=stereo"]
         a_in = "[1:a]"
@@ -425,6 +432,8 @@ def _segment(seg: Dict[str, Any], ctx: Ctx, quality: str, denoised: Dict[str, Op
         # range "fade_out": a long fade at its end, quadratic so the last frames are quiet (no abrupt end)
         fout, curve_out = min(float(seg["fade_out"]), dur_a / 2.0), ":curve=qua"
     pre = ["aresample=48000", "aformat=sample_fmts=fltp:channel_layouts=stereo", "asetpts=PTS-STARTPTS"]
+    if a_skip:
+        pre += ["atrim=start_sample=%d" % a_skip, "asetpts=PTS-STARTPTS"]
     held = int(seg.get("hold_frames") or 0)
     if held:
         # a held range: the source sound to the range's end (faded out over its last 0.25 s), then silence

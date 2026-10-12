@@ -23,7 +23,7 @@ transform, geometry), build it with Manim instead: `references/manim.md`.
 - Script first: one line per scene, 6-20 words, numbers and acronyms spelled out; on screen show the payload,
   never the narration word for word (§ Steps, § Pitfalls)
 - `showtime new film <job>/project --title "..." --duration <target>`; `showtime voice script ... --fit
-  <target>`; `showtime voice cues` into `voice/cues.js`; time reveals from `VO`, never type a time (§ Steps)
+  <target> --estimate` (cut words until it fits), then without `--estimate`; `showtime voice cues` into `voice/cues.js`; time reveals from `VO`, never type a time (§ Steps)
 - Voice into `audio/mix.json` + `"audio"` in `showtime.json`, 10-20 dB above the music (§ Steps, § Pitfalls)
 - `showtime check`, `showtime look`, show the user the script; `showtime render <job>/project --job <job>`,
   `showtime qa <job>` (§ Steps)
@@ -33,9 +33,9 @@ transform, geometry), build it with Manim instead: `references/manim.md`.
 |---|---|
 | Inputs | 40-43 |
 | Defaults | 45-55 |
-| Steps | 57-107 |
-| Pitfalls | 109-119 |
-| Read next | 121-124 |
+| Steps | 57-111 |
+| Pitfalls | 113-123 |
+| Read next | 125-128 |
 
 ## Inputs
 
@@ -70,6 +70,8 @@ file's steps 2-3 (subject and script); `film` works vertically only if you re-la
 4. **Project.** `showtime new film <job>/project --title "..." --duration <target>` (the cue table and
    score scale to the target).
 5. **Voice.** Save the script as `<job>/project/narration.md` (one `## id` heading per scene), then
+   `showtime voice script <job>/project/narration.md --fit <target> --estimate` (nothing is synthesized; it
+   prints "cut about N words": cut them until the estimate fits), then
    `showtime voice script <job>/project/narration.md -o <job>/project/voice --fit <target>`. `--fit`
    lands the narration on the target: all lines change speed together (0.85-1.15x), then pauses
    shrink; if it is still long it prints "cut about N words": cut them from the script and rerun
@@ -85,16 +87,18 @@ file's steps 2-3 (subject and script); `film` works vertically only if you re-la
    `showtime retime <job>/project -d <duration>` first, then write the cues.
    *Done when:* every storyboard row has a scene function timed from `timeline.json`.
 6. **Sound.** Keep `score.js` sections on the same cues. Add the voice to the project's sound: create
-   `audio/mix.json` with `{"kind": "voice", "file": "voice/vo.wav", "start": 0}` and set
+   `audio/mix.json` with `{"tracks": [{"kind": "voice", "file": "voice/vo.wav", "start": 0}]}` and set
    `"audio": "audio/mix.json"` in `showtime.json` (the score still plays; render combines both).
-   Hold the score 10-20 dB under speech (the mix report's `voice_to_music_db`) with `m.level('music', ...)` at line starts
+   Hold the score 10-20 dB under speech (the mix report's `voice_to_music_db`; with `ST.score`, `render` fills it in by measuring the voice against the score) with `m.level('music', ...)` at line starts
    (`synth-score.md` section 6). Check the music alone in seconds: `showtime score <job>/project`.
    *Done when:* section levels rise and fall with the story and none sits near silence by mistake.
 7. **First look.** `showtime check <job>/project` (canvas text is audited through `Film.frameInfo()`),
    `showtime look <job>/project` (`looking.md`), and show it to the user together
    with the script, then carry on (quick mode does not wait; the script is the cheapest thing to
    change if they reply). *Done when:* 0 check errors, and the user has seen the script.
-8. **Captions.** Burned-in on the canvas: `F.caption` driven by the same word times; then skip
+8. **Captions.** Burned-in on the canvas: `F.caption` driven by the same word times (plain text, one
+   style); for word-by-word highlight and the karaoke styles, lay the DOM `caption-karaoke` overlay over
+   the canvas instead (`film-api.md`, "Karaoke captions over a canvas film"). Then skip
    sidecars (for Reels and TikTok burned is enough; `showtime captions` says the files are optional
    when the video already burns captions). Sidecar only, or an extra `.srt` for YouTube, LinkedIn
    or X: `showtime captions <job>/project/voice/vo.words.json --style clean --aspect 16:9
@@ -111,7 +115,7 @@ file's steps 2-3 (subject and script); `film` works vertically only if you re-la
 - On-screen text repeating the narration word for word. Show the payload (a number, a name, a diagram
   label); the voice carries the sentence.
 - Scene lengths set by hand and then a voice that does not fit. Fit the voice to the target
-  (`--fit`), take the scene times from `timeline.json`, and re-read it after any script change.
+  (`--fit`, after `--estimate`), take the scene times from `timeline.json`, and re-read it after any script change.
 - A 9:16 request built on `film`: letterboxed. Use the `short` template (Defaults).
 - A score competing with the voice: the voice should sit 10-20 dB above the music while speaking.
 - Diagram labels too small at 1080p: check's small-text notes matter here (`typography.md`).

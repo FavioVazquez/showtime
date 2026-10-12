@@ -12,7 +12,8 @@ Fast (no browser):
   * the look history reads the signature, and two pages on one theme in different signatures do not
     repeat the theme.
 Browser (skipped with --fast): every signature passes `showtime check` (contrast, text layout, phone
-size) on a sample project; the templates take turns, so each is checked with three or more looks.
+size) on a sample project; the templates take turns, so each is checked with three or more looks; reading time
+(the dense timeline) once per motion feel and per template (check_plan).
 
 usage: python tests/test_signatures.py [--fast] [-v]
 """
@@ -239,24 +240,57 @@ class NewProject(unittest.TestCase):
         self.assertIn("theme", {r["aspect"] for r in history.repeats(la, [dict(la, job="a2")])})
 
 
+def check_plan():
+    """The checks EverySignaturePassesCheck runs: [(signature id, template, extra check args)]. Each signature on one
+    template (the templates take turns). The dense timeline (reading time, and sizes, caption zones and dead air over
+    the whole video) depends mostly on the motion feel and the template, less on the palette or the type, so it runs
+    for the first signature of each motion feel and of each template, and the others check with --no-timeline
+    (contrast, layout, phone size and zones from the samples). The determinism probe depends on the template only:
+    it runs on the first check of each template (the only probe of the data template in the suite). Without a GPU
+    the timeline was about half of each check and the probe about 7 %; twelve full checks ran out of the 900 s on
+    Windows (#13)."""
+    order = list(S.TEMPLATES)
+    plan, motions, tpls_seen = [], set(), set()
+    for i, s in enumerate(S.catalog()):
+        tpl = [t for t in order[i % len(order):] + order[:i % len(order)] if s["polarity"] in S.TEMPLATES[t]][0]
+        first = tpl not in tpls_seen
+        full = first or s["motion"] not in motions
+        motions.add(s["motion"])
+        tpls_seen.add(tpl)
+        plan.append((s["id"], tpl, ([] if first else ["--no-determinism"]) + ([] if full else ["--no-timeline"])))
+    return plan
+
+
+class CheckPlan(unittest.TestCase):
+    def test_reading_time_once_per_motion_and_template(self):
+        plan = check_plan()
+        self.assertEqual([sid for sid, _t, _a in plan], [s["id"] for s in S.catalog()])
+        self.assertEqual({t for _s, t, _a in plan}, set(S.TEMPLATES))
+        full = [(sid, t) for sid, t, a in plan if "--no-timeline" not in a]
+        self.assertEqual({S.get(sid)["motion"] for sid, _t in full}, set(S.MOTION))
+        self.assertEqual({t for _s, t in full}, set(S.TEMPLATES))
+        self.assertLessEqual(len(full), len(plan) // 2 + 1,
+                             "a budget, not a rule: without a GPU a full check costs about twice a --no-timeline one, "
+                             "and twelve full checks ran out of the 900 s on Windows (#13): %s" % full)
+        # every template once with the determinism probe (nothing else in the suite probes the data template)
+        probed = [t for _s, t, a in plan if "--no-determinism" not in a]
+        self.assertEqual(sorted(probed), sorted(S.TEMPLATES), plan)
+
+
 @unittest.skipIf(FAST, "--fast: needs a browser (check)")
 class EverySignaturePassesCheck(unittest.TestCase):
-    """Each signature on one sample project (the templates take turns): `showtime check` finds no error
+    """Each signature on one sample project (check_plan: the templates take turns): `showtime check` finds no error
     (contrast, text off the frame or clipped, overlaps, fonts) and the phone check passes."""
 
     def test_check(self):
         env = env_for(TMP / "check-hist")
-        order = list(S.TEMPLATES)
-        jobs = []
-        for i, s in enumerate(S.catalog()):
-            tpls = [t for t in order[i % len(order):] + order[:i % len(order)] if s["polarity"] in S.TEMPLATES[t]]
-            jobs.append((s["id"], tpls[0]))
+        jobs = check_plan()
 
         def run(job):
-            sid, tpl = job
+            sid, tpl, extra = job
             p = TMP / "check" / ("%s-%s" % (tpl, sid))
             showtime("new", tpl, p, "--look", sid, env=env)
-            cp = showtime("check", p, "--no-history", "--json", env=env, check=False, timeout=900)
+            cp = showtime("check", p, "--no-history", "--json", *extra, env=env, check=False, timeout=900)
             return sid, tpl, json.loads(cp.stdout)
 
         with ThreadPoolExecutor(2) as ex:
@@ -265,7 +299,7 @@ class EverySignaturePassesCheck(unittest.TestCase):
                     errs = [f for f in rep.get("findings", []) if f.get("severity") == "error"]
                     self.assertEqual(errs, [], "%s on %s: %s" % (sid, tpl, [(f["code"], f["message"][:120]) for f in errs]))
                     self.assertTrue((rep.get("phone") or {}).get("ok"), "phone check: %s" % {k: v for k, v in (rep.get("phone") or {}).items() if k in ("ok", "min_pt", "smallest")})
-        self.assertEqual({t for _s, t in jobs}, set(S.TEMPLATES))
+        self.assertEqual({t for _s, t, _a in jobs}, set(S.TEMPLATES))
 
 
 if __name__ == "__main__":

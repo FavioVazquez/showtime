@@ -2,13 +2,14 @@
 
 Read this when a video needs a voice-over. That covers picking a voice or language (Spanish included), writing narration, sizing a script to a length, fixing how a word is said, timing scenes or captions to the voice, and aligning a recorded take to its script.
 
-Everything runs locally. Kokoro is the default engine. It gives exact word timings and 54 voices across 9 languages. The text never leaves the machine.
+Everything runs locally. Kokoro is the default engine. It gives exact word timings and 54 voices across 9 language variants (8 languages, English counted once). The text never leaves the machine.
 
 ## Essentials
 
 - Defaults: `af_heart` (English), `ef_dora` (Spanish), `bf_emma` (British English), `ff_siwis` (French). Never
   swap a voice the user named; otherwise use the default and say which voice you used (§ Choosing a voice)
-- Narration: `showtime voice script narration.md -o voice/`, one `## <scene id>` per scene; `--fit 15` lands
+- Narration: `showtime voice script narration.md -o voice/ --fit 15 --estimate` first (it prints the estimate and
+  speaks nothing), then the same command without `--estimate`; one `## <scene id>` per scene, `--fit 15` lands
   it on 15 s; on "cut about N words", cut them and rerun (§ Script → timeline → scenes)
 - Outputs: `vo.wav` (−16 LUFS, the `voice` track in `audio/mix.json`), `timeline.json` (slots, word times),
   `vo.words.json` (for `showtime captions`), `vo.srt`, `lines/NN-id.wav` (§ Script → timeline → scenes)
@@ -40,18 +41,19 @@ Everything runs locally. Kokoro is the default engine. It gives exact word timin
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| Commands | 56-68 |
-| Choosing a voice | 70-109 |
-| Writing for the ear | 111-122 |
-| Word budgets | 124-135 |
-| Script → timeline → scenes (timing-driven editing) | 137-190 |
-| Captions from TTS timings | 192-198 |
-| Pronunciation fixes | 200-242 |
-| Aligning a recorded voice (or another engine's output) | 244-259 |
-| Mastering | 261-277 |
-| Engines and licensing | 279-289 |
-| Performance (measured on a 6-core Intel i5-8500, CPU only, load ~3) | 291-306 |
-| Platform notes and troubleshooting | 308-321 |
+| Commands | 58-70 |
+| Choosing a voice | 72-111 |
+| Writing for the ear | 113-124 |
+| Word budgets | 126-137 |
+| Script → timeline → scenes (timing-driven editing) | 139-194 |
+| Captions from TTS timings | 196-202 |
+| Pronunciation fixes | 204-247 |
+| Aligning a recorded voice (or another engine's output) | 249-264 |
+| Mastering | 266-282 |
+| Engines and licensing | 284-294 |
+| Bring your own voice engine | 296-317 |
+| Performance (measured on a 6-core Intel i5-8500, CPU only, load ~3) | 319-334 |
+| Platform notes and troubleshooting | 336-349 |
 
 ## Commands
 
@@ -59,7 +61,7 @@ Everything runs locally. Kokoro is the default engine. It gives exact word timin
 |---|---|
 | `showtime voice list [--lang es] [--json]` | Lists voices with language, gender, quality grade, notes and whether each is installed. |
 | `showtime voice say "text" -v af_heart -o vo.wav` | Writes `vo.wav` (48 kHz, −16 LUFS) and `vo.words.json` (start and end time of every word). |
-| `showtime voice script narration.md -o voice/` | Writes per-line clips, `vo.wav`, `timeline.json`, `vo.words.json`, `vo.srt` and `readback.json` (the read-back, § Pronunciation fixes). `--fit 15` lands the whole narration on 15 s. |
+| `showtime voice script narration.md -o voice/` | Writes per-line clips, `vo.wav`, `timeline.json`, `vo.words.json`, `vo.srt` and `readback.json` (the read-back, § Pronunciation fixes). `--fit 15` lands the whole narration on 15 s (`--fit 15 --estimate` first says if it can). |
 | `showtime voice align take.wav -f script.txt -o take.words.json` | Gives word timings for a recording and its known text. |
 | `showtime voice master raw.wav -o vo.wav [--preset podcast]` | Runs high-pass, de-ess and gentle compression, then two-pass loudness normalization. |
 | `showtime voice ipa "Kubernetes" [--lang es]` | Shows the phonemes espeak-ng produces, so you can write a pronunciation fix. |
@@ -165,13 +167,15 @@ JSON works the same way: `{"voice": ..., "gap": ..., "lines": [{"id", "text", "v
 - `fit: 3.2` adjusts that line's speed (within 0.8–1.25x of its own speed) so it lasts about 3.2 s. Use it when a scene has a fixed length, such as a beat-locked cut.
 - `at: 12.0` pins a line to start at 12 s, for example on a music drop. Later lines follow on from it. If the pinned line would overlap the one before, you get a warning.
 
-**Fitting the whole script to a length:** `showtime voice script narration.md -o voice --fit 15` (or a top-level `"fit": 15` in the JSON, `fit: 15` in the front matter). It works in three steps and stops as soon as the narration is on target (within 1 %, at least 0.1 s; then a small overshoot trims the pauses and a short result is padded, so `vo.wav` lasts the target):
+**Fitting the whole script to a length:** `showtime voice script narration.md -o voice --fit 15` (run it with `--estimate` first to see if it fits). The target can also be a top-level `"fit": 15` in the JSON or `fit: 15` in the front matter. It works in three steps and stops as soon as the narration is on target (within 1 %, at least 0.1 s; then a small overshoot trims the pauses and a short result is padded, so `vo.wav` lasts the target):
 
 1. Every line without its own `fit` changes speed together, within 0.85–1.15x. A new speed means every line re-synthesizes (up to four tries; it says so first), so a 13-line script can take a few minutes. Each try's lines are cached.
 2. Still long: the pauses between lines shrink (never below 0.2 s) and so does the tail (never below 0.3 s).
 3. Still long: it prints `still Xs over ... cut about N words (of M; the voice speaks W words/s)`. Cut them from the script and run it again; nothing is dropped for you.
 
 When the fit leaves any line faster than x1.1 (its own speed times the fit factor), it warns that the voice sounds rushed and says how many words to cut to fit at x1.0: explainers and documentaries read best at x0.9-1.0, so cut words rather than accept x1.15. A script that ends short is slowed (down to 0.85x), then padded with silence at the end so `vo.wav` lasts exactly the target; the output estimates how many words would fill the gap. It prints `fit T: before -> result (speed xF, pauses -Xs, tail +Ys of silence)`, and `timeline.json` gets a `fit` block (`target`, `before`, `result`, `speed_factor`, `pauses_trimmed`, `tail_padded`, `cut_words`, `add_words`, `wps`, `tolerance`); line `pause_after` values and `tail` show the trimmed times.
+
+**Know before it speaks:** with `--fit`, the run first estimates the length with the same arithmetic as the fit (speed 0.85–1.15x, then pauses and tail down to their floors) and prints `fit T, estimated before any speech: ...`. Each line's length is its letters and digits at the voice's own rate, measured from lines that voice spoke earlier in this install (`~/.showtime/cache/voice/rates.json`, after 20 s of speech), else an assumed 11.8 characters/s that errs on the side of cutting more. A script that cannot fit says `cut about N words` right there, as a warning, before the first line is synthesized, and the same "x1.15 sounds rushed, cut about N words instead" warning as the real run; stop and cut instead of waiting for the passes. `showtime voice script narration.md --fit 57 --estimate` prints only that estimate (also as JSON under `estimate`) and synthesizes nothing. It is a count, not a measure: against recorded narrations it lands within 10 % of the real length, and the real run still reports the exact cut.
 
 `showtime voice script narration.md` writes `voice/` next to the script:
 
@@ -235,8 +239,9 @@ What to do with a WARN:
 - Do not ship a line it flags until someone listened to it. The clip is `lines/NN-id.wav`.
 - If it sounds wrong, run `showtime voice ipa "Word"` to see what the voice is told. Fix the word with a lexicon `say` or `ipa` entry, or write it the way the voice reads it right, then rerun `voice script` until the read-back passes.
 - If it sounds right, clear the word in the project's `showtime.json`: `"readback": {"ok": ["JSON"]}`. `voice script`, `voice say` and qa then list it as cleared, not as a WARN. Clear only words someone listened to.
+- If you listened and the voice is right, and `voice ipa` shows the sound it is told, but the recognizer keeps spelling the word another way ("QN" for "Qwen"), list it in `"readback": {"note": ["Qwen"]}` instead of `ok`: it stays in the read-back as a NOTE (`NOTE ... "Qwen" heard as "QN" [listed in readback.note by the project: ...]`, INFO in qa) and never fails qa. `voice ipa` alone proves nothing, since the voice is always told its lexicon entry: `note` is for after a person has listened, the same as `ok`, and the tag says it is the project's claim, not a check. `ok` and `note` also cover a name inside a longer phrase ("Qwen" for "Qwen Image") when the phrase's other words were heard as written; `ok` wins when a word is in both.
 - Do not spell names letter by letter with a lone "A" ("Open A I"): espeak reads it as the article and the voice swallows it. Write the name as one word ("OpenAI"), or give it a lexicon entry.
-- `readback.json` (next to `vo.wav`) has each line's script and heard text, and for each flagged word what the voice was told (`said`), what was heard (`heard_sounds`) and the second recognizer's verdict (`confirmed`, `second`).
+- `readback.json` (next to `vo.wav`) has each line's script and heard text, and for each flagged word what the voice was told (`said`), what was heard (`heard_sounds`) and the second recognizer's verdict (`confirmed`, `second`), and `noted` when the word is listed in `readback.note`.
 - qa checks the same thing on the project's `voice/vo.wav` (the `readback` item, § Hearing in qa.md), and review-pack puts the table into the critic's `audio.txt`. qa FAILs a word only when it is a name in the title, the brand or the project lexicon and the second recognizer also heard it differently; otherwise it is a WARN.
 
 It runs for the 25 languages of the local recognizer (Parakeet v3, English and Spanish included) when that recognizer is installed: it arrives with the first transcription, or `showtime setup --fetch parakeet-tdt-0.6b-v3-int8` (about 490 MB; the read-back never downloads it on its own). Without it the read-back is skipped with a note. `--no-readback` or `SHOWTIME_READBACK=0` turns it off, for example when a flag is wrong and you cannot clear the word in `showtime.json`.
@@ -287,6 +292,29 @@ The final video mix is normalized again (−14 by default), so keep narration at
 
 - **No cloning:** no engine here clones a real person's voice. Do not imitate a real person.
 - **Disclosure:** say that the voice is synthetic where the platform or audience expects it. Platforms increasingly ask for an "AI voice" label.
+
+## Bring your own voice engine
+
+Kokoro stays the default. To narrate with a local engine you already run, write a Python module that sets
+`ENGINE` to an instance of `st.voice.engines.base.Engine` and save it as `<name>.py`, where the name matches
+`^[a-z][a-z0-9_]{0,31}$`. A copy of `st/voice/engines/piper.py` is a good start: the module is loaded as
+`st.voice.engines.<name>`, so its relative imports (`from .base import Engine`, `from ...common import
+ShowtimeError`) work from any folder. showtime looks for it in the folders
+on `$SHOWTIME_ENGINE_PATH` (separated like `PATH`), then `~/.showtime/engines/` (it survives an update), then
+next to `piper.py`. The names kokoro, supertonic and piper always mean the built-in engines.
+
+- `synth()` returns mono float32 audio. With `has_timings = False` (the usual case) the words are aligned
+  afterwards like Piper's: `ctc` for English, otherwise `tts`, `whisper` or `even` (§ Aligning a recorded voice).
+- `available()` is a cheap readiness check; `default_voice`, `default_lang` and `voices()` are optional.
+- Use it with `-v <name>:<voice>`, `--engine <name>`, or `SHOWTIME_VOICE=<name>:<voice>` (the plugin's voice
+  setting) as the default. `showtime voice list --engine <name>` lists what `voices()` returns.
+- `showtime doctor` lists each engine it finds and whether it imports. When the voice setting names another
+  engine, missing Kokoro files are a SKIP, not a FAIL; Kokoro is still needed for Kokoro voices and the `tts`
+  aligner.
+
+It is your code on your machines. If your engine talks to a process on localhost or a box you own on your
+network, that is your call, and showtime just loads it. showtime itself never calls a hosted service and never
+asks for a key, and it ships no network engine.
 
 ## Performance (measured on a 6-core Intel i5-8500, CPU only, load ~3)
 

@@ -6,11 +6,12 @@ open, and `qa`, `status`, `deliver exports` and the receipt name what is open. A
 its old behaviour (quality mode says "review pending"; lean says nothing). Polish never gates.
 
 Each finding has an id from its place in the file, so the maker and a later critic can name it:
-  r1-B2     round 1's FINDINGS.md, the second bullet under BLOCKERS (S: SHOULD-FIX)
+  r1-B2     round 1's FINDINGS.md, the second bullet under BLOCKERS (S: SHOULD-FIX, P: POLISH)
   r2o1-S1   round 2 is pairwise: order-1/FINDINGS.md, the first SHOULD-FIX bullet
 Which findings count: every Blocker and Should-fix bullet of a single round ("none" is no finding); in a
 pairwise round only those tagged with the version that came out best (review-verdict's winner; before the
 verdict, the new version). A finding about the version that lost is not about the video that ships.
+Polish bullets have ids too (r1-P1), so `review-respond --fixed r1-P1` records them, but they are never "open".
 
 Statements, one per line (a bullet, backticks or bold around them are fine):
   fixed r1-S2: what changed            the maker (review/round-N/RESPONSE.md) or a later critic (PREVIOUS)
@@ -35,7 +36,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 KEYS = ".pairwise-keys"            # st.qa.pairwise.KEYS
 RESPONSE = "RESPONSE.md"
-SEVERITY = {"B": "blocker", "S": "should-fix"}
+SEVERITY = {"B": "blocker", "S": "should-fix", "P": "polish"}
 
 # a section heading: "BLOCKERS:", "**SHOULD-FIX:**", "## Polish", "FIRST VIEWER (one line per part):"
 _HEAD = re.compile(r"^\W*(BLOCKERS?|SHOULD[- ]?FIX(?:ES)?|POLISH|WHAT WORKS|DECLINED TO JUDGE|BEST POSTER FRAME|"
@@ -45,7 +46,7 @@ _EMPTY = re.compile(r"^\W*(none|n/?a|nothing|no\s+(blockers?|should[- ]?fix(es)?
                     re.I)
 _LABEL = re.compile(r"\[\s*([XY])\s*\]")
 _SIDE_FRAME = re.compile(r"(?:^|[\s(`/\\])\.\./([XY])[/\\]|(?:^|[\s(`])([XY])[/\\]frames[/\\]")
-ID = r"r\d+(?:o[12])?-[BS]\d+"
+ID = r"r\d+(?:o[12])?-[BSP]\d+"
 _ID = re.compile(ID, re.I)
 _STATEMENT = re.compile(r"^(not\s+fixed|fixed|waived?|won['\u2019]?t\s+fix|will\s+not\s+fix)\s*[:(\[]?\s*"
                         r"(%s(?:\s*[\])]?\s*(?:,|&|\band\b)\s*[\[(]?\s*%s)*)\s*[\])*_]*\s*(?:[:\-–—]+\s*(.*))?$"
@@ -68,7 +69,7 @@ def _text(f: Path) -> str:
 
 def norm_id(s: str) -> str:
     """'R1-s2' -> 'r1-S2' (ids are matched without regard to case)."""
-    m = re.fullmatch(r"\s*r(\d+)(?:o([12]))?-([BS])(\d+)\s*", s, re.I)
+    m = re.fullmatch(r"\s*r(\d+)(?:o([12]))?-([BSP])(\d+)\s*", s, re.I)
     if not m:
         return s.strip()
     return "r%s%s-%s%s" % (m.group(1), "o" + m.group(2) if m.group(2) else "", m.group(3).upper(), m.group(4))
@@ -77,12 +78,12 @@ def norm_id(s: str) -> str:
 # ------------------------------------------------------------------ parsing one FINDINGS.md
 
 def parse(text: str, prefix: str) -> List[Dict[str, Any]]:
-    """The Blocker and Should-fix bullets of one FINDINGS.md, in order: [{id, severity, text, video}].
+    """The Blocker, Should-fix and Polish bullets of one FINDINGS.md, in order: [{id, severity, text, video}].
     prefix is "r1" (a single round) or "r2o1" (order 1 of pairwise round 2); video is the [X]/[Y] tag of a
     pairwise finding (None when it names neither)."""
     out: List[Dict[str, Any]] = []
     sev: Optional[str] = None
-    count = {"B": 0, "S": 0}
+    count = {"B": 0, "S": 0, "P": 0}
     for raw in text.splitlines():
         line = raw.strip().strip("`").strip()
         b = _BULLET.match(line)
@@ -92,7 +93,7 @@ def parse(text: str, prefix: str) -> List[Dict[str, Any]]:
             h = _HEAD.match(line)
             if h:
                 word = h.group(1).upper()
-                sev = "B" if word.startswith("BLOCKER") else "S" if word.startswith("SHOULD") else None
+                sev = "B" if word.startswith("BLOCKER") else "S" if word.startswith("SHOULD") else "P" if word == "POLISH" else None
             # a finding on the heading's own line ("BLOCKERS: t=0.00s frames/... black"), not a "(...)" note
             body = line[h.end():].lstrip(" :*_") if h and sev else ""
             if not body or body.startswith("("):
@@ -165,7 +166,7 @@ def _best_label(root: Path, n: int, d: Path) -> Optional[str]:
 
 
 def collect(job: Path) -> Dict[str, Any]:
-    """Every gating finding of the job with its state:
+    """Every finding of the job with its state (polish included; only blockers and should-fix can be open):
     {applies, findings: [{id, round, severity, text, file, status, by, note}], open, fixed, waived, unknown}.
     applies: a critic answered at least once (otherwise nothing here gates)."""
     rounds = _round_dirs(job)
@@ -197,10 +198,10 @@ def collect(job: Path) -> Dict[str, Any]:
                 unknown.append(i)
                 continue
             f.update(status=s["status"], by=s["by"], note=s["note"])
-    sev = {"blocker": 0, "should-fix": 1}
+    sev = {"blocker": 0, "should-fix": 1, "polish": 2}
     found.sort(key=lambda f: (f["status"] != "open", sev[f["severity"]], f["round"], f["id"]))
     return {"applies": applies, "findings": found,
-            "open": [f for f in found if f["status"] == "open"],
+            "open": [f for f in found if f["status"] == "open" and f["severity"] != "polish"],   # polish never gates
             "fixed": [f for f in found if f["status"] == "fixed"],
             "waived": [f for f in found if f["status"] == "waived"],
             "unknown": sorted(set(unknown))}
@@ -256,7 +257,9 @@ def gate_error(job: Path, g: Dict[str, Any]) -> Tuple[str, str]:
 
 _START = re.compile(r"^\W*(SELF-REVIEW|VERDICT|PREFERENCE)\b", re.I)
 _FENCE = re.compile(r"^\s*(```|~~~)")
-_T = re.compile(r"\bt\s*=\s*\d+(?:\.\d+)?\s*s\b", re.I)
+# a timestamp: t=3.00s, or a range t=38.73-41.50s / t=38.73s-41.50s / t=38.73 - 41.50 s
+T_PATTERN = r"\bt\s*=\s*(\d+(?:\.\d+)?)\s*(?:s\s*)?(?:[-\u2013\u2014]\s*\d+(?:\.\d+)?\s*)?s\b"
+_T = re.compile(T_PATTERN, re.I)             # st.qa.pairwise.T_RE is the same pattern: group 1 is the start
 
 
 def _filled(lines: Sequence[str]) -> int:

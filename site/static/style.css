@@ -125,6 +125,14 @@ p{margin:0}
 .facts p{color:var(--muted);font-size:.95rem}
 .facts .new{grid-column:1/-1;padding-top:24px;border-top:1px solid var(--line)}
 .facts .new p{max-width:var(--read)}
+.new-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px 24px;flex-wrap:wrap;margin-bottom:6px}
+.new-head h3{margin-bottom:0}
+.facts .new-head p{font-size:.9rem;max-width:none}
+.new-films{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;margin-top:16px}
+.new-films a{text-decoration:none;color:var(--ink-2);font-size:.82rem;line-height:1.4}
+.new-films img{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:8px;background:var(--screen);margin-bottom:6px}
+.new-films .n{color:var(--muted);font-variant-numeric:tabular-nums}
+@media (max-width:760px){.new-films{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:1100px){.facts{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:760px){.facts{grid-template-columns:1fr;gap:20px}}
 .more{margin-top:40px}
@@ -163,6 +171,20 @@ p{margin:0}
 .film .ask{margin-top:8px;color:var(--ink-2);font-size:.98rem;line-height:1.55}
 .film .shows{margin-top:6px;color:var(--muted);font-size:.9rem}
 .film .links{margin-top:12px;display:flex;gap:20px;flex-wrap:wrap;font-size:.9rem;font-weight:500}
+.film .badge{position:absolute;top:12px;left:12px;z-index:3;background:var(--accent);color:var(--accent-ink);font:600 .72rem var(--sans);padding:4px 9px;border-radius:999px;letter-spacing:.01em;pointer-events:none}
+.copy-ask{margin-left:4px;appearance:none;border:1px solid var(--line-2);background:var(--raise);color:var(--muted);border-radius:6px;font:600 .72rem var(--sans);padding:2px 8px;vertical-align:1px;cursor:pointer;white-space:nowrap}
+.copy-ask:hover{color:var(--ink);border-color:var(--muted)}
+/* the gallery's shelves: Start here, then one per group; the tabs hide a shelf with no card left */
+.shelf{margin-top:8px}
+.shelf+.shelf{margin-top:72px;padding-top:28px;border-top:1px solid var(--line)}
+.shelf[hidden]{display:none}
+.shelf.first{margin-top:8px;padding-top:0;border-top:0}
+.shelf-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px 24px;margin:8px 0 24px;flex-wrap:wrap}
+.shelf-head .title{font-size:1.9rem}
+.shelf-head .title .c{font:500 1rem var(--sans);color:var(--muted);letter-spacing:0;margin-left:4px}
+.shelf-head .lede{font-size:1rem;margin-top:6px;max-width:40rem}
+.shelf-head .guides{font-size:.9rem;color:var(--muted)}
+.shelf-head .link-arrow{white-space:nowrap}
 .interactive{margin-top:120px;padding-top:56px;border-top:1px solid var(--line)}
 .interactive .htmlvid{margin-top:32px}
 .htmllist{list-style:none;padding:0;margin:28px 0 0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 40px}
@@ -228,6 +250,11 @@ p{margin:0}
 .prose th,.prose td{text-align:left;vertical-align:top;padding:10px 20px 10px 0;border-bottom:1px solid var(--line)}
 .prose th{font-weight:600;color:var(--ink);border-bottom-color:var(--line-2);white-space:nowrap}
 .prose td code{white-space:nowrap}
+.prose td pre{white-space:pre-wrap;font-size:.72rem;padding:10px 12px;margin:10px 0 8px}
+.prose td pre code{white-space:inherit}
+/* the docs map's Overture (three steps, one with the install block): one step under another on a phone */
+@media (max-width:700px){.prose table:has(td .copy),.prose table:has(td .copy) tbody,.prose table:has(td .copy) tr,.prose table:has(td .copy) td{display:block;width:auto}
+  .prose table:has(td .copy) td{padding-right:0}}
 .prose blockquote{margin:1.6em 0;padding:16px 20px;background:var(--tint);border-radius:8px;color:var(--ink-2)}
 .prose blockquote > * + *{margin-top:.6em}
 .prose .alert-title{font-size:.8rem;font-weight:600;letter-spacing:.04em;color:var(--ink);text-transform:uppercase}
@@ -238,6 +265,8 @@ p{margin:0}
 .crumbs a{color:var(--muted);text-decoration:none}
 .crumbs a:hover{color:var(--ink)}
 .crumbs code{background:none;padding:0;font-size:.8rem}
+.see-it-done{font-size:.92rem;color:var(--muted);margin-top:12px}
+.chip{font:600 .66rem var(--mono);color:var(--mark);margin-left:6px;letter-spacing:.02em}
 .pager{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:72px}
 .pager a{display:block;padding:16px 18px;border:1px solid var(--line);border-radius:12px;text-decoration:none;color:var(--ink);font-weight:600;transition:border-color .15s}
 .pager a:hover{border-color:var(--line-2)}

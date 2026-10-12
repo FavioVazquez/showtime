@@ -6,6 +6,7 @@ look at. The references in `skills/showtime/references/` are written for your ag
 
 | Guide | When you want |
 |---|---|
+| [Make your first video](first-video.md) | to start: a 5-second test that checks the install, and every step it goes through |
 | [Dress up a talking head](talking-head.md) | cards over an interview or a founder update, captions with emphasis, a word behind the speaker, 16:9 and 9:16 |
 | [Turn a Claude Design animation into an MP4](claude-design-to-mp4.md) | a Claude Design HTML export rendered as a video, then music, voice and captions |
 | [Turn a long recording into short clips](long-recording-to-clips.md) | the best 30-60 s moments of a talk, panel or podcast as vertical clips |
@@ -20,5 +21,6 @@ look at. The references in `skills/showtime/references/` are written for your ag
 Times in these guides are measured, never guessed. Each one names its machine: a 6-core Intel Mac that other
 jobs kept busy, or a 64-core Linux machine with no GPU. Where nothing was measured, the guide says so.
 
-New to showtime? Start with the [README](../../README.md). The [documentation map](../README.md) lists every
-reference your agent reads.
+New here? Start with the first row, then pick the guide that matches what you want to make.
+Something failed: [Troubleshooting](../troubleshooting.md). A word you don't know: the [glossary](../glossary.md).
+The [documentation map](../README.md) lists every reference your agent reads.

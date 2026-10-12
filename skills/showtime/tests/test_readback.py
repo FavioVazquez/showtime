@@ -308,11 +308,13 @@ JSON_WHISPER = "Open the JSON file in Visual Studio Code, then press the Enter k
 class RespelledNameTests(Base):
     """A right read the first recognizer respells: one recognizer is not enough to FAIL qa, a person can clear it."""
 
-    def json_project(self, ok=None):
+    def json_project(self, ok=None, note=None):
         d = Path(tempfile.mkdtemp(prefix="st-rb-json-"))
         cfg = {"title": "JSON for teams", "duration": 10}
         if ok is not None:
             cfg["readback"] = {"ok": ok}
+        if note is not None:
+            cfg.setdefault("readback", {})["note"] = note
         (d / "showtime.json").write_text(json.dumps(cfg), encoding="utf-8")
         (d / "narration.md").write_text("## l5\n%s\n" % JSON_LINE, encoding="utf-8")
         tl = {"file": "vo.wav", "script": "../narration.md", "lines": [
@@ -376,6 +378,38 @@ class RespelledNameTests(Base):
         self.assertEqual(calls, ["auto"])
         self.assertNotIn("confirmed", rep["suspects"][0])
         self.assertEqual(self.qa(rep).items[0]["severity"], "WARN")
+
+    def test_a_noted_word_is_a_note_never_a_fail(self):
+        # note vs ok vs neither: both recognizers hear "JSO", so with nothing listed it is a FAIL
+        rep, _ = self.run_project(self.json_project(), second_hears=JSON_PARAKEET)
+        self.assertEqual(self.qa(rep).items[0]["severity"], "FAIL")
+        rep, _ = self.run_project(self.json_project(note=["json"]), second_hears=JSON_PARAKEET)
+        s = rep["suspects"][0]
+        self.assertTrue(s["noted"] and s["confirmed"] and s["critical"])
+        self.assertFalse(self.rb.is_fail(s))
+        F = self.qa(rep)
+        self.assertEqual([(f["rule"], f["severity"]) for f in F.items], [("readback", "INFO")])
+        self.assertIn("listed in readback.note", F.items[0]["message"])
+        self.assertFalse(F.items[0].get("fix"))
+        lines = "\n".join(self.rb.report_lines(rep))
+        self.assertIn("NOTE", lines)
+        self.assertNotIn("fix:", lines)
+        self.assertNotIn("cleared", rep)
+        # ok clears it altogether, and wins over note
+        rep, _ = self.run_project(self.json_project(ok=["JSON"], note=["JSON"]), second_hears=JSON_PARAKEET)
+        self.assertEqual(rep["suspects"], [])
+        self.assertEqual([s["word"] for s in rep["cleared"]], ["JSON"])
+
+    def test_note_matches_whole_words_in_a_phrase(self):
+        rep = {"lines": [{"id": "l1"}], "checked": 3, "suspects": [
+            {"word": "Qwen Image", "heard": "QN image", "kind": "name", "line": "l1", "t": 1.0, "critical": True, "confirmed": True},
+            {"word": "Quenched", "heard": "x", "kind": "name", "line": "l1", "t": 2.0, "critical": True, "confirmed": True},
+            {"word": "Qwen Edit", "heard": "QN edict", "kind": "name", "line": "l1", "t": 3.0, "critical": True, "confirmed": True}]}
+        out = self.rb.apply_cleared(rep, [], ["Qwen"])
+        self.assertEqual([(s["word"], bool(s.get("noted")), self.rb.is_fail(s)) for s in out["suspects"]],
+                         [("Qwen Image", True, False), ("Quenched", False, True), ("Qwen Edit", False, True)])
+        self.assertIn("(1 noted)", out["summary"])
+        self.assertIn("by the project", self.rb.tag(out["suspects"][0]))
 
     def test_a_word_cleared_after_listening(self):
         rep, _ = self.run_project(self.json_project(ok=["json"]), second_hears=JSON_PARAKEET)
@@ -534,6 +568,79 @@ class LexiconTests(Base):
             if w.startswith("_"):
                 continue
             self.assertTrue(isinstance(e, (str, dict)) and (isinstance(e, str) or {"ipa", "say"} & set(e)), w)
+
+
+class ClearedPhraseTests(unittest.TestCase):
+    """A cleared name also clears the name as whole words inside a longer phrase, but only when the phrase's other
+    words were heard as written (issue #46)."""
+
+    def rep(self, *items):
+        return {"lines": [{"id": "l1"}], "checked": len(items), "suspects": [
+            dict({"word": w, "heard": h, "kind": "name", "line": "l1", "t": float(i)}, **(x[2] if len(x) > 2 else {}))
+            for i, x in enumerate(items) for w, h in [x[:2]]]}
+
+    def test_a_name_clears_the_phrases_that_contain_it(self):
+        from st.voice import readback as rb
+        out = rb.apply_cleared(self.rep(("Qwen", "QN"), ("Qwen Image", "QN image"), ("the Qwen Image Edit", "the QN image edit"),
+                                        ("Quenched", "x")), ["Qwen"])
+        self.assertEqual([s["word"] for s in out["cleared"]], ["Qwen", "Qwen Image", "the Qwen Image Edit"])
+        self.assertEqual([s["word"] for s in out["suspects"]], ["Quenched"], "only whole words clear, not pieces of a word")
+
+    def test_words_nobody_listened_to_are_not_cleared(self):
+        from st.voice import readback as rb
+        out = rb.apply_cleared(self.rep(("Hugging Face Hub", "hugging face hob"), ("GPT 4o", "GPT for oh"),
+                                        ("Open A I", "open eye", {"lone_a": True}), ("Hugging Face Hub", "hugging face hub")),
+                               ["Hugging Face", "GPT", "AI", "I"])
+        self.assertEqual([(s["word"], s["heard"]) for s in out["cleared"]], [("Hugging Face Hub", "hugging face hub")])
+        self.assertEqual([s["word"] for s in out["suspects"]], ["Hugging Face Hub", "GPT 4o", "Open A I"])
+
+    def test_a_phrase_and_a_respelling_still_clear(self):
+        from st.voice import readback as rb
+        out = rb.apply_cleared(self.rep(("Hugging Face", "hugging faced"), ("Open A I", "open eye"), ("Face", "x")),
+                               ["Hugging Face", "OpenAI"])
+        self.assertEqual([s["word"] for s in out["cleared"]], ["Hugging Face", "Open A I"])
+        self.assertEqual([s["word"] for s in out["suspects"]], ["Face"])
+
+    def test_accents_match_inside_a_phrase(self):
+        from st.voice import readback as rb
+        out = rb.apply_cleared(self.rep(("Caf\u00e9 Image", "cafe image")), ["Cafe"])
+        self.assertEqual([s["word"] for s in out["cleared"]], ["Caf\u00e9 Image"])
+
+    def test_a_stale_noted_flag_is_dropped_once_cleared(self):
+        from st.voice import readback as rb
+        out = rb.apply_cleared(self.rep(("Qwen", "QN")), [], ["Qwen"])
+        self.assertTrue(out["suspects"][0]["noted"])
+        out = rb.apply_cleared(out, ["Qwen"], ["Qwen"])
+        self.assertNotIn("noted", out["cleared"][0])
+
+
+class NotedWordsShowEverywhere(unittest.TestCase):
+    """readback.note: a NOTE in the overflow line, the receipt and the summary, never a FAIL or WARN (issue #46)."""
+
+    def sus(self, n, noted=True):
+        return [{"word": "Qwen%d" % i, "heard": "QN", "kind": "name", "line": "l1", "t": float(i), "critical": True,
+                 "confirmed": True, "noted": noted} for i in range(n)]
+
+    def test_overflow_counts_only_the_words_not_noted(self):
+        from st.qa import hearing
+        from st.qa.video import Findings
+        sus = self.sus(10)
+        F = Findings()
+        hearing.check_readback(F, {"lines": [{"id": "l1"}], "checked": 10, "suspects": sus, "summary": "s"})
+        self.assertEqual({f["severity"] for f in F.items}, {"INFO"})
+        sus[9]["noted"] = False
+        F = Findings()
+        hearing.check_readback(F, {"lines": [{"id": "l1"}], "checked": 10, "suspects": sus, "summary": "s"})
+        self.assertEqual(F.items[-1]["severity"], "WARN", "an un-noted word past the 8th still warns")
+
+    def test_the_receipt_marks_a_noted_word(self):
+        from st.job import receipt
+        rec = {"delivery": {"final": "final.mp4", "qa": "WARN", "readback": {"summary": "s", "words": [
+            {"word": "Qwen", "heard": "QN", "t": 1.0, "noted": True}, {"word": "Hub", "heard": "hob", "t": 2.0}]}}}
+        qa = [l for l in receipt.card_facts(rec) if l.startswith("QA:")][0]
+        self.assertIn('"Qwen" heard as "QN" at 1.0s (noted: listed in readback.note)', qa)
+        self.assertIn('"Hub" heard as "hob" at 2.0s', qa)
+        self.assertNotIn('"hob" at 2.0s (noted', qa)
 
 
 if __name__ == "__main__":

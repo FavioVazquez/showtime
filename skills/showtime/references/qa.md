@@ -61,9 +61,9 @@ Batch visual checks: one `showtime look` per phase, not dozens of single frames 
 | Section | Lines |
 |---|---|
 | 1. Pre-render (on the project) | 68-114 |
-| 2. Post-render (on the MP4) | 116-157 |
-| 3. The critic pass | 159-169 |
-| Tools | 171-386 |
+| 2. Post-render (on the MP4) | 116-162 |
+| 3. The critic pass | 164-174 |
+| Tools | 176-391 |
 
 ## 1. Pre-render (on the project)
 
@@ -154,6 +154,11 @@ Batch visual checks: one `showtime look` per phase, not dozens of single frames 
 - [ ] A credits file ships whenever any CC-BY asset was used (`credits.txt` beside `final.mp4`, or
       `<stem>.credits.txt`; render writes it), and the user has been told to paste it into the description.
 - [ ] Platform exports each pass their own caps and safe zones.
+- [ ] A joined final (`render --join`, render.json `kind: "joined"`) or a spliced one: qa's seam section passes.
+      It reads the frames again (count = the render's, a keyframe at each seam), checks the audio stream is the
+      render's master bit for bit (no loudness step, no shift), and reports the join's own seam check (the seam
+      frames against a fresh capture from the page, PSNR >= 40 dB or at most 3 dB under a frame inside the same piece (never under 25 dB); loudness at each seam = the master's +-0.1 dB;
+      sync lag 0 +-1 sample). A failed join leaves `work/chapters/joined-failed.mp4`, never a final.
 - [ ] The report to the user lists paths, actual duration, the angle in one sentence, the contact sheet, and scene ids for targeted changes.
 
 ## 3. The critic pass
@@ -229,7 +234,7 @@ export itself (`showtime qa <export> --platform github`); without one it FAILs w
 | `voice_masked` | WARN | a voice line sits under 8 dB (`hearing.voice_over_bed_min_db`) over the music under its words. Measured only when the render's narration stem lines up with the file's audio (render keeps `work/audio/mix.voice.wav`; an edit render its speech stem; a voice-only mix over an `ST.score` bed): the stem is aligned (±50 ms) and scaled to the delivered audio, the rest is the bed. Without a stem `review-pack` still estimates it for the critic, never a WARN |
 | `quiet_stretch` | WARN | near silence for 2 s or more mid-video: 100 ms blocks more than 20 LU under the integrated loudness (`quiet_stretch_s`, `quiet_under_lu`), not already a `silent_gap` |
 | `level_jump` | WARN | the level changes more than 6 LU (`level_jump_lu`) across a cut (planned scene starts and hard cuts), 1 s each side, like with like: the bed with the bed (stem), else both sides speech or both not; a cut where speech starts or stops, an effect within 1 s or a music section change at the cut does not count |
-| `readback` | WARN; FAIL for a name in the title, brand or project lexicon that a second installed recognizer (Whisper small.en for English) also hears differently | the project's `voice/vo.wav` transcribed again locally and lined up with the script sound by sound: a name, acronym or number heard differently ("Open A I" heard as "OpenI"). Reuses `voice/readback.json` when `voice script` wrote it for that `vo.wav`; else transcribes the line clips (cached), or `vo.wav` itself. INFO when the recognizer is not installed. A word someone listened to and found right is cleared with `"readback": {"ok": ["JSON"]}` in showtime.json. Fix: [voice.md](voice.md) § Pronunciation fixes |
+| `readback` | WARN; FAIL for a name in the title, brand or project lexicon that a second installed recognizer (Whisper small.en for English) also hears differently | the project's `voice/vo.wav` transcribed again locally and lined up with the script sound by sound: a name, acronym or number heard differently ("Open A I" heard as "OpenI"). Reuses `voice/readback.json` when `voice script` wrote it for that `vo.wav`; else transcribes the line clips (cached), or `vo.wav` itself. INFO when the recognizer is not installed. A word someone listened to and found right is cleared with `"readback": {"ok": ["JSON"]}` in showtime.json. A word someone listened to, whose voice is right and only the recognizer's spelling differs, is listed in `"readback": {"note": [...]}` (the project's claim, shown as such): INFO, never FAIL. Fix: [voice.md](voice.md) § Pronunciation fixes |
 | `speaker_loudness` | WARN over 10 LU, FAIL over 18 (`speaker_gap_lu`, `speaker_gap_fail_lu`) for a showtime mix (a mix report or an ST.score bed); only WARN for sound showtime did not mix (your own song, a footage edit's sound); INFO when the mix turned `speaker_safe` off | heard on a phone: the integrated loudness of the mix above 300 Hz (and above 1 kHz), measured like `ffmpeg -af "highpass=f=300,highpass=f=300,ebur128"`, against the full mix. Phone and laptop speakers play little under 300 Hz, so a mix of kick, bass and sub at -14 LUFS plays quiet there. Calibrated on 7 Oct 2026: every posted film 0.7-8.2 LU, a bass-led showreel preview 13.6 LU (-27.6 LUFS above 300 Hz, about 9 dB quieter on a phone than the voice-led films). The fix: `showtime audio mix` (its speaker-safe step, on by default, cuts the bed's lows; `audio.md` § Heard on a phone), a bed with more in the mids, a mid transient on sub hits. The numbers are in every qa run (`qa.json` `hearing.speaker`, the PASS line, the `hearing` line) |
 | `abrupt_end` | WARN | the last 0.2 s (of the bed, with a stem) are within 10 dB (`abrupt_end_db`) of the 3 s before and audible: music, or a word, cut off on the last frame. A seamless loop may ignore it |
 | `first_frame_black` | FAIL | frame 0 is black (no poster baked) |

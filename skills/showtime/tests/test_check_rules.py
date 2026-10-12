@@ -223,6 +223,51 @@ class CheckRules(unittest.TestCase):
         # a real failure is still reported next to the cancelled loads
         self.assertTrue([f for f in failed if f["code"] == "request_failed" and "gone.png" in f["message"]], rep["findings"])
 
+    # ------------------------------------------------------------------ the soundtrack
+    def audio_project(self, name, audio, mix=None):
+        proj = self.tmp / name
+        write(proj / "showtime.json", json.dumps({"width": 640, "height": 360, "fps": 30, "duration": 2,
+                                                   "background": "#101010", "audio": audio}))
+        write(proj / "index.html", HEAD + "</head><body><h1 style=\"color:#fff\">hi</h1></body></html>")
+        if mix is not None:
+            write(proj / "audio" / "mix.json", json.dumps(mix))
+        return proj
+
+    def test_malformed_mix_spec_is_an_error(self):
+        # issue #27: no "tracks" list passed check, then the render only warned (AUDIO FALLBACK)
+        proj = self.audio_project("mix-bad", "audio/mix.json", {"kind": "voice", "file": "voice/vo.wav", "start": 0})
+        rep = check(proj, "--samples", "1")
+        errs = [f for f in rep["findings"] if f["code"] == "audio_mix" and f["severity"] == "error"]
+        self.assertTrue(errs, rep["findings"])
+        self.assertIn("tracks", errs[0]["message"])
+        self.assertIn("showtime audio mix", errs[0].get("fix", ""))
+
+    def test_missing_mix_spec_and_unknown_kind_are_errors(self):
+        rep = check(self.audio_project("mix-gone", "audio/nope.json"), "--samples", "1")
+        self.assertTrue([f for f in rep["findings"] if f["code"] == "audio_mix" and f["severity"] == "error"], rep["findings"])
+        proj = self.audio_project("mix-kind", "audio/mix.json", {"tracks": [{"kind": "foley", "synth": {"type": "click"}}]})
+        rep = check(proj, "--samples", "1")
+        self.assertTrue([f for f in rep["findings"] if f["code"] == "audio_mix" and "foley" in f["message"]], rep["findings"])
+
+    def test_valid_mix_spec_and_no_audio_pass_the_audio_rule(self):
+        proj = self.audio_project("mix-good", "audio/mix.json", {"tracks": [{"kind": "sfx", "synth": {"type": "click"}, "at": 0.5}]})
+        rep = check(proj, "--samples", "1")
+        self.assertEqual([f for f in rep["findings"] if f["code"] == "audio_mix"], [], rep["findings"])
+        rep = check(self.audio_project("mix-none", None), "--samples", "1")
+        self.assertEqual([f for f in rep["findings"] if f["code"] == "audio_mix"], [], rep["findings"])
+
+    def test_render_stops_before_capture_on_a_rejected_mix_spec(self):
+        # issue #27: an explicit mix the mixer rejects stops the render at its start with check's message; no fallback
+        proj = self.audio_project("mix-render", "audio/mix.json", {"kind": "voice", "file": "voice/vo.wav", "start": 0})
+        rep = check(proj, "--samples", "1")
+        want = [f for f in rep["findings"] if f["code"] == "audio_mix"][0]["message"]
+        cp = showtime("render", proj, "--preview", timeout=120)
+        self.assertNotEqual(cp.returncode, 0, cp.stdout[-1500:] + cp.stderr[-1500:])
+        err = cp.stdout + cp.stderr
+        self.assertIn(want, err)
+        self.assertNotIn("AUDIO FALLBACK", err)
+        self.assertEqual(list(proj.rglob("*.mp4")), [], "no video may be written")
+
 
 def png(path, w, h):
     """A noisy RGB PNG (large enough that a load is still running when the next src replaces it)."""

@@ -40,6 +40,7 @@ import concurrent.futures
 import functools
 import http.server
 import json
+import math
 import os
 import re
 import shutil
@@ -117,6 +118,14 @@ try {
         HTMLMediaElement.prototype.canPlayType = function (t) { return /mp4a|^audio\/mp4/.test(String(t)) ? '' : o.call(this, t); };
       });
     }
+    if (c.coarseClock) {  // an audio clock that moves in coarse steps, as on a busy machine (parallel test files)
+      await page.addInitScript((step) => {
+        const d = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'currentTime');
+        Object.defineProperty(HTMLMediaElement.prototype, 'currentTime', { configurable: true,
+          get() { const t = d.get.call(this); return this.paused ? t : Math.floor(t / step) * step; },
+          set(v) { d.set.call(this, v); } });
+      }, c.coarseClock);
+    }
     const t0 = Date.now();
     await page.goto(c.url, { waitUntil: 'load', timeout: 60000 });
     try {
@@ -155,9 +164,20 @@ try {
             barOpacity: getComputedStyle(q('.stp-bar')).opacity, vw: innerWidth, vh: innerHeight };
         });
       }
-      // every frame drawn from the click on: [frame, audio time]; and the transport events, for failure messages
+      // every frame drawn from the click on: [frame, audio time, age]; and the transport events, for failure messages.
+      // audio time: the audio element's clock, its highest reading since the last play or seek, read every animation
+      // frame as the player reads it; age: seconds since that reading came (null until the clock has moved once).
+      // A busy machine updates that clock in coarse steps; between steps the player extrapolates it (by at most
+      // 0.25 s, ElementSound.time in player.js), and the sound plays on past the reading by that age.
       await T.evaluate(() => { const p = window.showtimePlayer; window.__fs = []; window.__ev = []; const t0 = performance.now();
-        p.on('frame', (f) => { const A = p.audio; window.__fs.push([f, A && !A.paused ? A.currentTime : null]); });
+        const ck = { at: null, p: 0, moved: false };
+        const look = () => { const A = p.audio, n = performance.now();
+          if (!A || A.paused) { ck.at = null; ck.moved = false; return; }
+          const at = A.currentTime;
+          if (ck.at === null) { ck.at = at; ck.p = n; } else if (at > ck.at) { ck.at = at; ck.p = n; ck.moved = true; } };
+        const loop = () => { look(); requestAnimationFrame(loop); }; requestAnimationFrame(loop);
+        p.on('frame', (f) => { look(); window.__fs.push([f, ck.at, ck.moved ? +((performance.now() - ck.p) / 1000).toFixed(4) : null]); });
+        for (const e of ['play', 'seek']) p.on(e, () => { ck.at = null; ck.moved = false; });
         for (const e of ['play', 'pause', 'ended', 'seek', 'loop']) p.on(e, () => { const A = p.audio;
           if (window.__ev.length < 40) window.__ev.push([e, Math.round(performance.now() - t0), +p.currentTime.toFixed(3),
             A ? +A.currentTime.toFixed(3) : null, A ? A.paused : null]); }); });
@@ -504,6 +524,9 @@ class ExportTest(unittest.TestCase):
             case("fixture", cls.rep["fixture"]["output"], 640, 360, shots=cls.times["fixture"], audio=False),
             case("short-file", cls.rep["short"]["output"], 540, 960, audio="element"),
             dict(case("short-http", cls.rep["short"]["output"], 540, 960), url=origin + "/short/index.html", origin=origin),
+            # the same over an audio clock that moves in 0.12 s steps: the player extrapolates between them
+            dict(case("short-coarse", cls.rep["short"]["output"], 540, 960), url=origin + "/short/index.html", origin=origin,
+                 coarseClock=0.12),
             # a host that sandboxes the page without allow-same-origin (the stage frame gets its own origin)
             dict(case("sandboxed", cls.rep["dom"]["output"], 960, 540), url=origin + "/host.html", origin=origin,
                  frame="/launch.html"),
@@ -599,11 +622,25 @@ class ExportTest(unittest.TestCase):
         fps = r["info"]["fps"]
         back = [(a[0], b[0]) for a, b in zip(fr, fr[1:]) if b[0] < a[0]]
         self.assertEqual(back, [], "%s: the picture stepped back while playing: %s" % (name, back[:5]))
-        # 2.5 frames; on a machine with 2 cores or fewer the audio element's clock can update in coarse steps,
-        # and between steps the player extrapolates it by at most 0.25 s (ElementSound.time in player.js)
-        tol = 2.5 / fps if (os.cpu_count() or 1) > 2 else 0.25 + 1.0 / fps
-        ahead = [(f, round(t, 3)) for f, t in fr if t is not None and f / fps - t > tol]
-        self.assertEqual(ahead, [], "%s: the picture ran ahead of the sound (frame, audio time): %s" % (name, ahead[:5]))
+        ahead = self.picture_ahead(fr, fps, os.cpu_count() or 1)
+        self.assertEqual(ahead, [], "%s: the picture ran ahead of the sound (frame, audio time, seconds since that audio "
+                         "time was read): %s" % (name, ahead[:5]))
+
+    @staticmethod
+    def picture_ahead(fr, fps, cores):
+        """The frames ([frame, audio time, age] from the driver) that ran ahead of the sound: [(frame, time, age)].
+        A frame may lead the audio element's clock by 2.5 frames plus the age of its reading (at most 0.25 s): the
+        clock moves in coarse steps on a machine with 2 cores or fewer and on any machine under load, and between
+        steps the player extrapolates it by at most 0.25 s (ElementSound.time in player.js), while the sound plays
+        on past the reading. Until the clock has moved once after play() (age None) only the 2.5 frames apply:
+        the picture must wait for the sound to start."""
+        base = 2.5 / fps if cores > 2 else 0.25 + 1.0 / fps
+        out = []
+        for x in fr:
+            f, t, age = x[0], x[1], (x[2] if len(x) > 2 else None)
+            if t is not None and f / fps - t > max(base, 2.5 / fps + min(0.25, age or 0.0)):
+                out.append((f, round(t, 3), age))
+        return out
 
     def check_frames(self, name):
         r = self.res[name]
@@ -772,6 +809,7 @@ class ExportTest(unittest.TestCase):
         self.assertLess((out / "index.html").stat().st_size, 300 * 1024, "index.html should only hold the player and page")
         self.check_common("short-file", audio="element")
         self.check_common("short-http")
+        self.check_common("short-coarse")
         self.assertEqual(self.res["short-http"]["info"]["height"], 1920)
 
     def test_sandboxed_host(self):
@@ -1549,6 +1587,45 @@ class ExportFilesTest(unittest.TestCase):
         self.assertNotIn("the title is", cp.stderr)
         self.assertNotIn('"Shot 1"', cp.stderr)
 
+
+
+class PictureAheadTest(unittest.TestCase):
+    """The rule check_start applies, on frames made up as the driver records them ([frame, audio time, age], 30 fps,
+    8 cores): a clock read every frame passes, and so does one that moves in coarse steps with the picture
+    extrapolating at most 0.25 s past each step; a picture that runs on while the sound has not started, or that
+    extrapolates past 0.25 s, still fails."""
+
+    @staticmethod
+    def frames(step, extra=0.0, cap=0.25, start_hold=0.0):
+        """The frames of 1.5 s of playback: the audio clock reads in `step` s steps (0: exact), the picture shows
+        that reading plus its age (at most cap) plus `extra`; for the first start_hold s the clock has not moved."""
+        out = []
+        for k in range(45):
+            now = k / 30.0
+            if now < start_hold:
+                out.append([int((now + extra) * 30), 0.0, None])
+                continue
+            t = now - start_hold
+            at = math.floor(t / step) * step if step else t
+            age = t - at
+            out.append([int((at + min(cap, age) + extra) * 30 + 1e-9), round(at, 4), round(age, 4)])
+        return out
+
+    def test_exact_and_coarse_clocks_pass(self):
+        for step in (0, 0.05, 0.12, 0.25):
+            self.assertEqual(ExportTest.picture_ahead(self.frames(step, extra=1.5 / 30), 30, 8), [], step)
+
+    def test_running_ahead_fails(self):
+        # the picture runs on by the wall clock while the sound has not started yet
+        self.assertTrue(ExportTest.picture_ahead(self.frames(0.0, start_hold=0.3), 30, 8))
+        # a frame 4 frames ahead of an exact clock
+        self.assertTrue(ExportTest.picture_ahead(self.frames(0.0, extra=4 / 30), 30, 8))
+        # extrapolating a stopped clock past 0.25 s
+        self.assertTrue(ExportTest.picture_ahead(self.frames(0.6, cap=0.6), 30, 8))
+        # the old rule's tolerance on a coarse clock, for the record: 0.12 s steps lead the reading by more than
+        # 2.5 frames, which is why it failed on a busy machine
+        fr = self.frames(0.12, extra=1.5 / 30)
+        self.assertTrue([x for x in fr if x[0] / 30 - x[1] > 2.5 / 30])
 
 if __name__ == "__main__":
     argv = [a for a in sys.argv if a != "--fast"]

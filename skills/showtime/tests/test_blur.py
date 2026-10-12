@@ -11,8 +11,8 @@ the check rules in scripts/lib/blurcheck.mjs).
     while slow or on the frame it lands; a slow drift never blurs; `threshold`, `off` and `max` work; a pose given
     to ST.blur blurs; motion from a plain onSeek handler is not seen; page code never meets the copies
   * frame-exact: DOM and canvas-film pages rendered with 1 and with 3 workers give the same PNG frames; against the
-    same page without the blur, only the fast frames differ (the landing frame and every frame at rest are byte for
-    byte the same), and the fast frames really are smeared
+    same page without the blur, only the fast frames differ (the landing frame and every frame at rest are the same
+    picture, up to a few pixels of raster noise: NOISE_PX), and the fast frames really are smeared
   * `showtime check` warns blur_slow, blur_text, blur_container, blur_unsampled and blur_inline on a page that has
     each, says nothing on a clean snap, and reads a film's F.motionBlur too
 
@@ -40,6 +40,7 @@ LAUNCHER = SKILL / "lib" / "st" / "launcher.py"
 RUNTIME = SKILL / "runtime"
 sys.path.insert(0, str(SKILL / "lib"))
 
+from st import ff  # noqa: E402
 from st import platform as plat  # noqa: E402
 from st.launcher import build_env, showtime_home  # noqa: E402
 
@@ -188,6 +189,36 @@ def frames_of(out):
 
 def digest(p):
     return hashlib.sha256(p.read_bytes()).hexdigest()
+
+
+# A frame at rest may differ from the same page without the blur by raster noise alone: Chrome keeps raster and
+# compositing state from earlier frames (render.mjs warms each worker up for this), and on a loaded machine with a
+# GPU (a Mac running parallel test files) that state can leave a few edge pixels some levels apart. Copies drawn
+# where none belong smear the element: the faintest smear frame of the page in test_04 (the pose's last fast frame)
+# has about 180 pixels more than 16 levels apart at 480x270, the others hundreds to thousands. A frame with at most
+# NOISE_PX such pixels counts as the same picture.
+NOISE_LEVELS = 16
+NOISE_PX = 20
+
+
+def rgb(p):
+    return subprocess.run([ff.ffmpeg_path(), "-v", "error", "-nostdin", "-i", str(p), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, timeout=60).stdout
+
+
+def pixels_apart(a, b):
+    """How many pixels of two same-size PNG frames differ by more than NOISE_LEVELS in a channel, and the largest
+    difference: (count, levels)."""
+    A, B = rgb(a), rgb(b)
+    if len(A) != len(B):
+        return (len(A) // 3, 255)
+    n = top = 0
+    for i in range(0, len(A), 3):
+        d = max(abs(A[i] - B[i]), abs(A[i + 1] - B[i + 1]), abs(A[i + 2] - B[i + 2]))
+        if d:
+            top = max(top, d)
+            n += d > NOISE_LEVELS
+    return (n, top)
 
 
 class BlurTests(unittest.TestCase):
@@ -356,19 +387,26 @@ console.log(JSON.stringify(out));
             n = len(hashes["w1"])
             self.assertEqual(n, len(hashes["w3"]))
             self.assertEqual([i for i in range(n) if hashes["w1"][i] != hashes["w3"][i]], [], "%s: frames differ between 1 and 3 workers" % name)
-            differ = [i for i in range(n) if hashes["w1"][i] != hashes["plain"][i]]
+            # the frames that differ from the page without the blur, beyond raster noise (NOISE_PX above)
+            apart = {i: pixels_apart(files["w1"][i], files["plain"][i]) for i in range(n) if hashes["w1"][i] != hashes["plain"][i]}
+            differ = sorted(i for i, (px, _) in apart.items() if px > NOISE_PX)
+            seen = "frames apart from the page without the blur (frame: pixels more than %d levels apart, largest " \
+                "difference): %s" % (NOISE_LEVELS, {i: apart[i] for i in sorted(apart)})
             if name == "dom":
                 # only the fast frames of the whip (10-17), the punch (28-36), the mask (43-50) and the pose (55-62) differ
-                self.assertTrue(differ, name)
+                self.assertTrue(differ, "%s: %s" % (name, seen))
                 for i in differ:
-                    self.assertTrue(10 <= i <= 17 or 27 <= i <= 37 or 42 <= i <= 51 or 54 <= i <= 63, "%s: frame %d differs at rest" % (name, i))
+                    self.assertTrue(10 <= i <= 17 or 27 <= i <= 37 or 42 <= i <= 51 or 54 <= i <= 63, "%s: frame %d differs at rest; %s" % (name, i, seen))
                 for i in (0, 9, 18, 20, 38, 52, 64, 74):
-                    self.assertNotIn(i, differ, "%s: frame %d (at rest, or the landing) is not sharp" % (name, i))
-                self.assertTrue(any(10 <= i <= 17 for i in differ) and any(27 <= i <= 37 for i in differ), differ)
+                    self.assertNotIn(i, differ, "%s: frame %d (at rest, or the landing) is not sharp; %s" % (name, i, seen))
+                self.assertTrue(any(10 <= i <= 17 for i in differ) and any(27 <= i <= 37 for i in differ), seen)
+                # the noise allowance keeps a wide margin: the whip's and the punch's middle frames are smeared far past it
+                for i in (11, 12, 13, 14, 28, 29, 30, 31):
+                    self.assertGreater(apart.get(i, (0, 0))[0], 10 * NOISE_PX, "%s: frame %d is not smeared; %s" % (name, i, seen))
             else:
-                self.assertTrue(differ and all(9 <= i <= 18 or 24 <= i <= 34 for i in differ), "film: %s" % differ)
+                self.assertTrue(differ and all(9 <= i <= 18 or 24 <= i <= 34 for i in differ), "film: %s" % seen)
                 for i in (0, 9, 20, 40, 44):
-                    self.assertNotIn(i, differ, "film: frame %d is not sharp" % i)
+                    self.assertNotIn(i, differ, "film: frame %d is not sharp; %s" % (i, seen))
 
     def test_05_check_warnings(self):
         css = """

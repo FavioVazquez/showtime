@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -199,6 +200,51 @@ def prune_cache(limit: Optional[int] = None, clear: bool = False) -> Dict[str, A
     return {"removed": removed, "freed_bytes": freed}
 
 
+def spoken_chars(text: str) -> int:
+    """Letters and digits the voice has to say (markup and punctuation left out): what a line's length scales with."""
+    return len(re.sub(r"[\W_]+", "", plain_text(text)))
+
+
+def _rates_path() -> Path:
+    return home() / "cache" / "voice" / "rates.json"
+
+
+def voice_rate(voice_id: str, min_seconds: float = 20.0) -> Optional[float]:
+    """Characters per second this voice has spoken at speed 1.0 in earlier runs (from the synthesized lines),
+    or None until it has spoken `min_seconds` of speech here. Used by `voice script --fit` to estimate a cut
+    before synthesizing."""
+    try:
+        r = json.loads(_rates_path().read_text(encoding="utf-8")).get(voice_id)
+        if r and float(r["seconds"]) >= min_seconds:
+            return float(r["chars"]) / float(r["seconds"])
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    return None
+
+
+def _record_rate(voice_id: str, text: str, seconds_at_1x: float) -> None:
+    """Add one freshly synthesized line to the voice's running rate (lines under 20 characters are mostly padding)."""
+    n = spoken_chars(text)
+    if os.environ.get("SHOWTIME_NO_CACHE") == "1" or n < 20 or seconds_at_1x <= 0.5:
+        return
+    try:
+        path = _rates_path()
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            data = {}
+        r = data.get(voice_id) or {"chars": 0, "seconds": 0.0}
+        r["chars"] = int(r["chars"]) + n
+        r["seconds"] = round(float(r["seconds"]) + seconds_at_1x, 3)
+        if r["seconds"] > 1200:                      # a running average that follows recent lines
+            r["chars"], r["seconds"] = int(r["chars"] / 2), round(r["seconds"] / 2, 3)
+        data[voice_id] = r
+        path.parent.mkdir(parents=True, exist_ok=True)
+        write_json(path, data)
+    except OSError as e:
+        debug("voice rate not recorded: %s" % e)
+
+
 def synthesize(text: str, voice: Optional[str] = None, speed: float = 1.0, lang: Optional[str] = None,
                engine: Optional[str] = None, lexicon=None, style: Optional[str] = None,
                align_method: str = "auto", pad: Tuple[float, float] = (0.0, 0.12),
@@ -215,8 +261,11 @@ def synthesize(text: str, voice: Optional[str] = None, speed: float = 1.0, lang:
     eng = get_engine(spec.engine)
     ok, why = eng.available()
     if not ok:
+        from .registry import BUILTIN
         raise ShowtimeError("the %s engine is not available: %s" % (spec.engine, why),
-                            hint="run `showtime setup`" + (" --with supertonic" if spec.engine == "supertonic" else ""))
+                            hint=("run `showtime setup`" + (" --with supertonic" if spec.engine == "supertonic" else ""))
+                            if spec.engine in BUILTIN
+                            else "this is an engine of your own: see what its available() checks")
     st = STYLES.get(style or "neutral")
     if st is None:
         raise ShowtimeError("unknown style %r" % style, hint="styles: " + ", ".join(STYLES))
@@ -298,6 +347,8 @@ def synthesize(text: str, voice: Optional[str] = None, speed: float = 1.0, lang:
                     lang=spec.lang, speed=eff_speed, timing=timing, model=model,
                     phonemes=" | ".join(phon) if phon else None, synth_seconds=dt,
                     meta={"engine_seconds": round(engine_s, 3), "align_seconds": round(max(0.0, dt - engine_s), 3)})
+    if align_method != "none" and "[pause" not in text.lower():
+        _record_rate(spec.id, text, speech.duration * eff_speed)
     if use_cache and timing != "none":
         _cache_store(key, audio, sr, {"words": words, "timing": timing, "model": model, "phonemes": speech.phonemes,
                                       "synth_seconds": dt, "voice": spec.id, "created": time.time(),

@@ -90,8 +90,9 @@ Do these once, in order, when the repository goes public.
    `examples/_showreel041/` (the 0.4.1 showreel) with the rest of the media. The landing page loops the 0.4.1
    showreel's silent teaser (`examples/_showreel041/teaser-16x9.mp4` and `.webm`, in git) over its still (`teaser-16x9.jpg`), and its
    one button, "Watch the film", plays `showreel-16x9.mp4` with sound (downloaded from the release at deploy
-   time); `hero` in `config.json` names these files. The 0.2.0 launch film plays at the top of the gallery
-   (`gallery.html#launch-film`) and the crew film on the crew page (`crew.html#film`). Viewers who ask for
+   time); `hero` in `config.json` names these files. `gallery_film` in `config.json` can put a film above the
+   gallery's tabs; it is `null` (none), and the 0.2.0 launch film's files stay in `examples/_launch/`. The crew
+   film plays on the crew page (`crew.html#film`). Viewers who ask for
    reduced motion see the still only. Each film's music credit is under it and in the footer; the
    composer's terms mean the audio never ships as a separate file.
 4. **Turn on Pages.** Settings > Pages > Build and deployment > Source: **GitHub Actions**. Then

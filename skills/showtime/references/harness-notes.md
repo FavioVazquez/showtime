@@ -31,10 +31,10 @@ long commands time out, images cannot be viewed, there is no terminal.
 | Section | Lines |
 |---|---|
 | 1. Claude Code | 39-58 |
-| 2. Any other agent host | 60-88 |
-| 3. Host behaviour that matters | 90-106 |
-| 4. Environment variables | 108-139 |
-| 5. Scripts and CI | 141-155 |
+| 2. Any other agent host | 60-92 |
+| 3. Host behaviour that matters | 94-110 |
+| 4. Environment variables | 112-144 |
+| 5. Scripts and CI | 146-160 |
 
 ## 1. Claude Code
 
@@ -76,6 +76,10 @@ commands can use it:
    and `showtime.ps1` on Windows): it runs whichever showtime skill is installed, keeps working when a
    plugin update moves the skill folder (every run records the newest skill in `~/.showtime/skill-path`;
    `showtime doctor` repairs it), and is the path to put in scripts, hand-written agent configs and PATH.
+   Between two folders of the same version it stays put: an installed skill (a plugin, a skill in the
+   host's skills folder) wins over a checkout or a copy run by path, and otherwise the one recorded first
+   stays, so running a second checkout never re-points it. `showtime setup --link` from a checkout points
+   it at that checkout on purpose.
    Setup and doctor print how to put it on PATH; showtime never edits shell profiles itself.
 4. Optional: hosts that speak MCP can use showtime's MCP server instead of (or next to) the shell;
    `mcp.md` has the config for Claude Desktop, Cursor and Codex.
@@ -98,7 +102,7 @@ checkouts can share one install.
 | Cannot view images | The "look at it" gates in SKILL.md still apply: rely on `showtime qa` and `showtime check` text findings, and tell the user you could not inspect the frames yourself |
 | No sub-agents | Skip parallel scene authoring; for the critic round (quality mode, or publish-bound) answer `CRITIC.md` yourself as a SELF-REVIEW and give the user the `review-pack` folder for a second look |
 | Sandboxed commands (no network, writes only inside the folder the agent works in) | Run `showtime doctor`: it tests writing the showtime folder and reaching the download hosts, and names the setting to change in the host that runs it (Codex: the `network_access` and `writable_roots` sandbox settings in `~/.codex/config.toml`, doctor prints the lines; Antigravity: `read_url` / `write_file` rules; Cursor: the domains for `sandbox.json`; the Copilot cloud agent: `copilot-setup-steps.yml`). Two ways out work in every host: run `showtime setup` once in a normal terminal, or keep showtime inside that folder with `SHOWTIME_HOME=.showtime showtime setup`; from then on every command run in that project finds `./.showtime` by itself (its `.gitignore` keeps it out of git) |
-| Sandboxed network | Setup needs HTTPS to its download hosts, and so does the first use of anything outside the default install (Whisper before the first transcription, Manim, the audio library's packs, icons, the aligner, Piper voices, rembg; `showtime setup --plan` lists them all). A machine that will be offline later runs `showtime setup --full` first. Media search queries public archives and site capture fetches the pages you point it at; nothing is uploaded. `SHOWTIME_OFFLINE=1` turns off every download (fonts, voices, media search); a feature that would need one says so instead |
+| Sandboxed network | Setup needs HTTPS to its download hosts, and so does the first use of anything outside the default install (the transcription model, Parakeet, before the first transcription; Whisper only for languages outside its 25; Manim, the audio library's packs, icons, the aligner, Piper voices, rembg; `showtime setup --plan` lists them all). A machine that will be offline later runs `showtime setup --full` first. Media search queries public archives and site capture fetches the pages you point it at; nothing is uploaded. `SHOWTIME_OFFLINE=1` turns off every download (fonts, voices, media search); a feature that would need one says so instead |
 | Windows | Use the `.cmd` shim from cmd and from PowerShell (in PowerShell, call a quoted path with `&`: `& "<path>\bin\showtime.cmd" doctor`); it needs no execution-policy change. `showtime.ps1` runs only where the policy allows local scripts (for example `RemoteSigned`); if PowerShell answers "running scripts is disabled", type `showtime.cmd` instead of `showtime`. Paths with spaces and parentheses work. `job init` warns when the job folder is so deep that files showtime writes in it would pass the 260-character path limit, and names the longest slug that fits; use it or a folder nearer the drive root (`--base C:\st`) |
 
 Exit codes worth handling: `0` ok; `1` a failure the command explains (qa FAIL, check errors); `3` a
@@ -123,6 +127,7 @@ missing extra (prints the `showtime setup --with` line) or, for `showtime site c
 | `SHOWTIME_STUDIO_IDLE_MIN` | studio server idle timeout (default 240 minutes) |
 | `SHOWTIME_TTS_CACHE_MB` | voice cache cap (default 1024 MB) |
 | `SHOWTIME_VOICE`, `SHOWTIME_LANG` | default narration voice and language (the plugin settings set them too) |
+| `SHOWTIME_ENGINE_PATH` | folders with your own voice engines (`<name>.py`), searched before `~/.showtime/engines/` (voice.md § Bring your own voice engine) |
 | `SHOWTIME_MAX_WORKERS` | cap on parallel render browsers (and, unless `SHOWTIME_THREADS` is set, CPU threads) |
 | `SHOWTIME_OPEN_BROWSER=1` | `showtime studio open` opens the board in the browser |
 | `SHOWTIME_SOUND=1` | play a short sound logo when a command that ran over 20 s finishes (your own terminal only) |

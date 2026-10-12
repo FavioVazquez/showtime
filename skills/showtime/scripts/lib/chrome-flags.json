@@ -1,5 +1,5 @@
 {
-  "_comment": "Chrome/Chromium launch flags for showtime capture. Read by scripts/lib/chrome.mjs and lib/st/platform.py. 'common' always applies; 'gpu' is per OS for the hardware path; 'software' replaces it when GPU is off. 'render' is added for showtime render only (0.4.1: --disable-frame-rate-limit draws a frame when asked, not on the next 60 Hz tick; renders 0-9 % faster with the same frames in the 0.4.1 measurements on macOS with a GPU and Linux with SwiftShader; not for live playback, where it broke the HTML video's audio start in the export tests; empty the list to go back).",
+  "_comment": "Chrome/Chromium launch flags for showtime capture. Read by scripts/lib/chrome.mjs and lib/st/platform.py. 'common' always applies; 'gpu' is per OS for the hardware path; 'software' replaces it when GPU is off. 'render' is added for showtime render only, per OS like 'gpu' (a plain list applies on every OS). --disable-frame-rate-limit draws a frame when asked, not on the next 60 Hz tick: 0-9 % faster renders in the 0.4.1 measurements, about 10 % against the same code without it for a 20 s 1080p DOM page with SwiftShader on an 8-thread Linux machine (2026-10-09). It is on Linux only. With it a renderer keeps spending CPU after the GPU process stops, so on macOS the stuck-frame guard (stagehost.mjs guardShot) never sees a stopped GPU process: on an Intel Mac with a GPU the stall test fails with it and passes without, and it bought about 2 % (inside run-to-run spread) for about 22 % more CPU while rendering (2026-10-09). It is the likely cause of the stalls of renders and the tests around them on the 3-thread macOS CI runners in 0.4.1 (where an idle render page was seen drawing back to back at about 0.4 of a core; not reproduced since: about 0.015 of a core either way on Linux, under 1 % for a static page on that Mac; not measured inside the render harness). Windows is untested with the guard and stays without it, as before 0.4.1. On Linux the guard still ends a frame that never comes with the flag on (test_pace.py TestFrameNeverComes). Not for live playback either (it broke the HTML video's audio start in the export tests).",
   "common": [
     "--force-color-profile=srgb",
     "--font-render-hinting=none",
@@ -28,7 +28,11 @@
     "windows": ["--use-angle=d3d11", "--enable-gpu-rasterization", "--ignore-gpu-blocklist"],
     "linux": ["--enable-gpu-rasterization", "--ignore-gpu-blocklist", "--enable-unsafe-swiftshader"]
   },
-  "render": ["--disable-frame-rate-limit"],
+  "render": {
+    "mac": [],
+    "windows": [],
+    "linux": ["--disable-frame-rate-limit"]
+  },
   "software": [
     "--use-gl=angle",
     "--use-angle=swiftshader",

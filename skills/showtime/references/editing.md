@@ -3,7 +3,9 @@
 Read this when the user hands you real video (a talking head, an interview, a screen recording
 with narration, a pile of takes) and wants it cut, tightened, captioned, reframed for vertical,
 or turned into a short. It covers the workflow, the EDL format, the render and the rules that keep
-an edit correct. Caption styles and numbers live in `captions.md`; the individual tools (scenes,
+an edit correct. An EDL (edit decision list) is a JSON file, `<job>/edit/edl.json`, that lists which stretches of
+the recordings to keep, in order; showtime renders from it, so the original footage is never changed. Caption
+styles and numbers live in `captions.md`; the individual tools (scenes,
 reframe, denoise, stabilize, grade, looks, timeline views) are in `footage-tools.md`.
 
 Everything runs locally: speech recognition, speaker labels, audio events, face tracking, grading.
@@ -53,16 +55,16 @@ You cannot watch or listen to the result, so every step below ends with somethin
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| 1. The workflow | 67-84 |
-| 2. Transcripts | 86-136 |
-| 3. Reading the material | 138-143 |
-| 4. The EDL | 145-199 |
-| 5. Hard rules (correctness) | 201-236 |
-| 6. Self-evaluation (you cannot watch it) | 238-258 |
-| 7. Recipes | 260-272 |
-| 8. Red flags | 274-283 |
-| 9. Cards: graphics anchored to the words | 285-379 |
-| 10. Highlights: a long recording's best moments as clips | 381-432 |
+| 1. The workflow | 69-86 |
+| 2. Transcripts | 88-138 |
+| 3. Reading the material | 140-145 |
+| 4. The EDL | 147-201 |
+| 5. Hard rules (correctness) | 203-238 |
+| 6. Self-evaluation (you cannot watch it) | 240-260 |
+| 7. Recipes | 262-274 |
+| 8. Red flags | 276-285 |
+| 9. Cards: graphics anchored to the words | 287-381 |
+| 10. Highlights: a long recording's best moments as clips | 383-434 |
 
 ## 1. The workflow
 

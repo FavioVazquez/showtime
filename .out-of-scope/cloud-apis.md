@@ -14,6 +14,8 @@ token or sign-in.
 
 **What is allowed:** downloading pinned, checksummed models and permissively licensed assets during setup
 or on first use of a feature, and fetching public web pages the user points at (`showtime site capture`).
+A voice engine the user writes and runs (`~/.showtime/engines/<name>.py`) is their code on their machines:
+showtime loads it and does not police where it sends text. The repository ships no network engine.
 
 **Instead:** local engines cover each need (Kokoro/Piper/Supertonic voices, faster-whisper/Parakeet
 transcription, the procedural composer and synth, the local audio library).

@@ -3,9 +3,9 @@
 
   * units (no browser): CaptureQueue hands every frame of a plan out exactly once while workers finish at
     different times, and moves the back half of the largest part to a worker that is done (never a part
-    smaller than the warm-up makes worth it); autoWorkers picks 3 with a GPU, one per 8 CPU threads (3-8)
-    without one, within the frame, memory and SHOWTIME_MAX_WORKERS limits; the software-GL pattern knows
-    SwiftShader, llvmpipe and WARP and no hardware GPU; --disable-frame-rate-limit is in render's flags only
+    smaller than the warm-up makes worth it); autoWorkers picks 3 with a GPU, CPU threads - 2 (at most 8)
+    from 8 threads up without one (3 below), within the frame, memory and SHOWTIME_MAX_WORKERS limits; the software-GL pattern knows
+    SwiftShader, llvmpipe and WARP and no hardware GPU; only Linux renders get --disable-frame-rate-limit
   * OrderedFeed (real ffmpeg, no browser): frames that land out of order are fed in order through a pipe and
     the H.264 file is byte for byte the encode of the same frames read from disk; a held frame 0 (the poster
     bake) waits for its stand-in; a stopped feed kills the encoder
@@ -13,6 +13,12 @@
     the file is the same as the encode after the capture (SHOWTIME_PIPE_ENCODE=0) and 3 workers with hand-overs
     give the same file as 1 worker, and so do 2 workers with two parts each; render.json says how many workers and why; a poster baked into frame 0
     while the encoder runs; a splice into a render made with another preset uses that preset and still cuts
+  * capture size (issue #49, real browser): a page's screenshots stay at its size and show its bottom and right
+    edges when its browser window is resized after it opened (Playwright resizes the window and sets the emulated
+    size at the same time; a resize that lands last gave a busy Mac's capture lanes 500x57 frames, which ffmpeg
+    scaled into the video), with nothing to repair afterwards, at --scale 1, 0.5 (clipped) and 2 (a 2x page's
+    screenshots were 1x on a Mac), JPEG and PNG; a view that loses the size later is repaired by the screenshot
+    size check (unclipped) or the seek's layout check (clipped), and the session says so
   * soundtrack reuse: an unchanged mix is reused by the next render (same bytes), a page edit keeps it, a
     changed audio file mixes it again, SHOWTIME_AUDIO_CACHE=0 never reuses
 
@@ -25,6 +31,7 @@ import _isolate  # noqa: F401  (run from a scratch folder: never write into the 
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -38,6 +45,7 @@ LAUNCHER = SKILL / "lib" / "st" / "launcher.py"
 PIPELINE = (SKILL / "scripts" / "lib" / "pipeline.mjs").as_uri()
 STAGEHOST = (SKILL / "scripts" / "lib" / "stagehost.mjs").as_uri()
 CHROME = (SKILL / "scripts" / "lib" / "chrome.mjs").as_uri()
+SERVER = (SKILL / "scripts" / "server.mjs").as_uri()
 AUDIOCACHE = (SKILL / "scripts" / "lib" / "audiocache.mjs").as_uri()
 sys.path.insert(0, str(SKILL / "lib"))
 
@@ -159,13 +167,15 @@ console.log(JSON.stringify({
   box: a({ cpus: 64, software: true }), mac_off: a({ cpus: 6, software: true }), mac_gpu: a({ cpus: 6, software: false }),
   big_gpu: a({ cpus: 64, software: false }), quad_gpu: a({ cpus: 4, software: false }), sw16: a({ cpus: 16, software: true }),
   sw256: a({ cpus: 256, software: true }), sw4: a({ cpus: 4, software: true }), sw32: a({ cpus: 32, software: true }), short: a({ cpus: 64, software: true, frames: 100 }),
+  swn: [3, 5, 6, 7, 8, 9, 10, 12, 16, 24].map((cpus) => a({ cpus, software: true })), gpu: [8, 12, 16].map((cpus) => a({ cpus, software: false })),
+  why8: autoWorkers({ cpus: 8, memGB: 32, software: true, frames: 5400 }).why, why6: autoWorkers({ cpus: 6, memGB: 32, software: true, frames: 5400 }).why,
   capped: a({ cpus: 64, software: true, cap: 2 }), lowmem: autoWorkers({ cpus: 64, software: true, frames: 2700, memGB: 8 }).workers,
   why: autoWorkers({ cpus: 64, memGB: 128, software: true, frames: 2700, renderer: 'ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)' }).why,
   why_cap: autoWorkers({ cpus: 6, memGB: 32, software: false, frames: 60 }).why,
   lim_box: machineLimits({ totalBytes: 128 * 2 ** 30, constrained: 4 * 2 ** 30, cpuMax: '400000 100000\\n' }),
   lim_free: machineLimits({ totalBytes: 16 * 2 ** 30, constrained: 0, cpuMax: 'max 100000\\n' }),
   lim_here: machineLimits(),
-  render_flag: renderFlags().includes('--disable-frame-rate-limit'),
+  render_flag: ['mac', 'windows', 'linux'].map((o) => renderFlags(o).includes('--disable-frame-rate-limit')),
   common_flag: [...chromeFlags('auto', 'mac'), ...chromeFlags('auto', 'windows'), ...chromeFlags('auto', 'linux'), ...chromeFlags('off')].includes('--disable-frame-rate-limit'),
   sw: ['ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)', 'llvmpipe (LLVM 20.1.2, 256 bits)',
        'ANGLE (Microsoft, Microsoft Basic Render Driver (0x0000008C) Direct3D11 vs_5_0 ps_5_0, D3D11)', 'Google SwiftShader'].map((s) => SOFTWARE_GL.test(s)),
@@ -175,11 +185,18 @@ console.log(JSON.stringify({
 }));
 """ % (PIPELINE, STAGEHOST, CHROME))
         self.assertEqual((r["box"], r["mac_off"], r["mac_gpu"], r["big_gpu"], r["quad_gpu"]), (8, 3, 3, 3, 2))
-        # without a GPU never fewer than 0.4.0's 3 (DOM pages were 50 % slower with 1 on 6 threads), 2 on 4 threads
-        self.assertEqual((r["sw4"], r["sw16"], r["sw32"], r["sw256"]), (2, 3, 4, 8))
+        # without a GPU, below 8 threads 0.4.0's 3 (DOM pages were 50 % slower with 1 on 6 threads), 2 on 4 threads
+        self.assertEqual((r["sw4"], r["sw16"], r["sw32"], r["sw256"]), (2, 8, 8, 8))
+        # from 8 threads up CPU threads - 2, at most 8: an 8-thread machine without a GPU was fastest with the
+        # most browsers (DOM 231 s at 8, 267 s at 6, 345 s at 3; WebGL 529 s at 8, 752 s at 4) (issue #41)
+        self.assertEqual(r["swn"], [1, 3, 3, 3, 6, 7, 8, 8, 8, 8])
+        self.assertEqual(r["gpu"], [3, 3, 3], "with a GPU the count does not follow the cores")
         self.assertEqual((r["short"], r["capped"], r["lowmem"]), (2, 2, 2))
         self.assertIn("SwiftShader", r["why"])
-        self.assertIn("one browser per 8 of 64 CPU threads", r["why"])
+        self.assertIn("64 CPU threads - 2, at most 8", r["why"])
+        self.assertTrue(r["why8"].startswith("no GPU (software GL): 8 CPU threads - 2"), r["why8"])
+        self.assertNotIn("because", r["why8"], "nothing else caps 6 on 8 threads with 32 GB")
+        self.assertIn("3 below 8 CPU threads (6)", r["why6"])
         self.assertIn("1 because of 60 frames", r["why_cap"])
         # a container's memory limit caps the memory the worker count sees; its CPU quota is reported (review S4)
         self.assertEqual((r["lim_box"]["memGB"], r["lim_box"]["quotaCpus"]), (4, 4))
@@ -189,8 +206,10 @@ console.log(JSON.stringify({
         self.assertGreater(r["lim_here"]["memGB"], 0)
         self.assertEqual(r["sw"], [True] * 4)
         self.assertEqual(r["hw"], [False] * 5)
-        # the frame-rate flag is for render's browsers only (live playback, e.g. an HTML video's audio start, breaks with it)
-        self.assertEqual((r["render_flag"], r["common_flag"]), (True, False))
+        # only Linux renders get the frame-rate flag: live playback broke with it (an HTML video's audio start), and
+        # on macOS it keeps the renderer working after the GPU process stops, so the stuck-frame guard never fires
+        # (likely the macOS CI runners' 0.4.1 stalls; see test_pace.py)
+        self.assertEqual((r["render_flag"], r["common_flag"]), ([False, False, True], False))
 
 
 @unittest.skipUnless(NODE, "Node.js is not installed")
@@ -437,6 +456,152 @@ ST.onSeek((t) => {
 });
 </script></body></html>
 """
+
+
+# a page with a magenta band along its bottom edge and a yellow one along its right edge: a screenshot of a view that
+# lost the page's size (cropped, or the page re-laid out at the window's size) does not end in both
+SIZE_HTML = """<!doctype html><html><head><script src="/_st/stage.js"></script></head>
+<body style="margin:0;background:#12203a"><div id="m" style="position:absolute;top:20px;width:40px;height:60px;background:#8fd"></div>
+<div style="position:absolute;left:0;right:0;bottom:0;height:16px;background:#ff00ff"></div>
+<div style="position:absolute;right:0;top:0;bottom:16px;width:16px;background:#ffff00"></div>
+<script>ST.onSeek((t) => { document.getElementById('m').style.left = (t * 40) + 'px'; });</script></body></html>
+"""
+SIZE_WANT = {1: [256, 144], 0.5: [128, 72], 2: [512, 288]}
+
+
+@unittest.skipUnless(NODE, "Node.js is not installed")
+class TestCaptureSize(unittest.TestCase):
+    """Issue #49: under load, a capture lane's page could keep its own size (innerWidth, layout metrics) while the
+    view its screenshots copy took the size of its browser window, because Playwright's window resize landed after
+    its emulated size. Reproduced here with the same real browser call, a window resize after the page opened.
+    Each screenshot must be the page's size and end in the page's bottom and right bands, at --scale 1, 0.5 (a
+    clipped screenshot: the clip's size whatever the view's) and 2."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = Path(tempfile.mkdtemp(prefix="st-capsize-"))
+        write(cls.tmp / "proj" / "index.html", SIZE_HTML)
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(str(cls.tmp), ignore_errors=True)
+
+    def sizes(self, tag, clear_first=False):
+        """For each scale: open the page, resize its window (after clearing the page's emulated size when
+        clear_first), take screenshots; -> [{scale, opened, jpeg, png, inner, resized, moved, files}]"""
+        out = self.tmp / tag
+        out.mkdir(exist_ok=True)
+        code = """
+import fs from 'node:fs';
+const S = await import(%(stagehost)s);
+const { startServer } = await import(%(server)s);
+const server = await startServer({ root: %(root)s, port: 0 });
+const b = await S.openBrowser({});
+const bs = await b.browser.newBrowserCDPSession();
+const out = [];
+for (const scale of [1, 0.5, 2]) {
+  const sess = await S.openStage(b.browser, { url: server.url, page: 'index.html', config: { width: 256, height: 144, fps: 30, duration: 2 }, scale });
+  const file = (k, ext) => %(out)s + '/s' + scale + '-' + k + '.' + ext;
+  const take = async (k, o) => {
+    try { const buf = await sess.shot(o); fs.writeFileSync(file(k, o.format === 'png' ? 'png' : 'jpg'), buf); return dims(buf); }
+    catch (e) { return String(e.message || e); }
+  };
+  const r = { scale, opened: await take('opened', { format: 'png' }) };
+  // the page's window, resized after the page opened: what Playwright's own resize does when it lands last
+  const { targetInfo } = await sess.cdp.send('Target.getTargetInfo');
+  const { windowId } = await bs.send('Browser.getWindowForTarget', { targetId: targetInfo.targetId });
+  // clearing the page's emulated size first lets the resize reach the view after the ready-time size call (its
+  // repair is then a fresh size from the same session; in real use it is the same size sent again, which Chrome
+  // also applies: it sets the emulated view size before it compares the parameters)
+  if (%(clear)s) await sess.cdp.send('Emulation.clearDeviceMetricsOverride');
+  await bs.send('Browser.setWindowBounds', { windowId, bounds: { width: 600, height: 200 } });
+  // did the view move? (an unchecked screenshot; a platform whose view does not follow the window cannot show the loss)
+  const raw = await sess.cdp.send('Page.captureScreenshot', { format: 'png', fromSurface: true });
+  r.moved = JSON.stringify(dims(Buffer.from(raw.data, 'base64'))) !== JSON.stringify([256 * Math.max(1, scale), 144 * Math.max(1, scale)]);
+  // and, with the size cleared, until the page has been laid out at the window's size (a busy machine lags)
+  if (%(clear)s && r.moved) for (let k = 0; k < 50 && (await sess.page.evaluate(() => innerWidth)) === 256; k++) await new Promise((x) => setTimeout(x, 100));
+  // first a screenshot with no seek (the view lost its size, the page may have kept its layout), then a seek and both formats
+  r.direct = await take('direct', { format: 'png' });
+  // again, then a seek first: the seek finds the page laid out at the window's size
+  if (%(clear)s) {
+    await sess.cdp.send('Emulation.clearDeviceMetricsOverride');
+    await bs.send('Browser.setWindowBounds', { windowId, bounds: { width: 640, height: 220 } });
+    // until the page has been laid out at the window's size (it follows the view a moment later)
+    for (let k = 0; k < 50 && (await sess.page.evaluate(() => innerWidth)) === 256; k++) await new Promise((x) => setTimeout(x, 100));
+    r.relaid = await sess.page.evaluate(() => [innerWidth, innerHeight]);
+  }
+  await sess.seek(1);
+  r.jpeg = await take('jpeg', { format: 'jpeg', quality: 90 });
+  r.png = await take('png', { format: 'png' });
+  r.inner = await sess.page.evaluate(() => [innerWidth, innerHeight]);
+  r.resized = sess.resized || null;
+  out.push(r);
+  await sess.close();
+}
+await b.browser.close();
+server.close();
+console.log(JSON.stringify(out));
+process.exit(0);
+// the size in a JPEG's or PNG's header (the old stagehost has no imageSize)
+function dims(b) {
+  if (b.readUInt32BE(0) === 0x89504e47) return [b.readUInt32BE(16), b.readUInt32BE(20)];
+  for (let i = 2; i + 9 < b.length; i += 2 + b.readUInt16BE(i + 2)) if (b[i + 1] >= 0xc0 && b[i + 1] <= 0xc2) return [b.readUInt16BE(i + 7), b.readUInt16BE(i + 5)];
+  return null;
+}
+""" % {"stagehost": json.dumps(STAGEHOST), "server": json.dumps(SERVER), "root": json.dumps(str(self.tmp / "proj")),
+       "out": json.dumps(str(out)), "clear": "true" if clear_first else "false"}
+        rows = node(code)
+        for r in rows:
+            r["bands"] = {k: self.bands(out / ("s%s-%s.%s" % (r["scale"], k, "jpg" if k == "jpeg" else "png")))
+                          for k in ("opened", "direct", "jpeg", "png")}
+        return rows
+
+    def bands(self, img):
+        """(bottom band, right band) of a screenshot as names: "magenta", "yellow" or "other (r, g, b)"."""
+        if not img.is_file():
+            return None
+
+        def px(crop):
+            r, g, b = run_ff("-i", img, "-vf", crop + ",scale=1:1:flags=area,format=rgb24", "-f", "rawvideo", "-")[:3]
+            return "magenta" if r > 200 and b > 200 and g < 60 else "yellow" if r > 200 and g > 200 and b < 60 else "other %s" % ((r, g, b),)
+        # the middle third of the last 4% rows; the middle third of the last 4% columns
+        return (px("crop=iw/3:max(1\\,ih/25):iw/3:ih-max(1\\,ih/25)"), px("crop=max(1\\,iw/25):ih/3:iw-max(1\\,iw/25):ih/3"))
+
+    def check(self, r):
+        w = SIZE_WANT[r["scale"]]
+        self.assertEqual((r["opened"], r["direct"], r["jpeg"], r["png"]), (w, w, w, w), r)
+        for k, v in r["bands"].items():
+            self.assertEqual(v, ("magenta", "yellow"), "%s screenshot at scale %s: %s" % (k, r["scale"], r))
+        self.assertEqual(r["inner"], [256, 144], r)
+
+    def test_window_resized_after_the_page_opened(self):
+        """The ready-time size call keeps the view: nothing needed repairing afterwards (resized stays empty, so a
+        build without that call fails here even where the per-screenshot and per-seek checks would repair it)."""
+        for r in self.sizes("late"):
+            self.check(r)
+            self.assertEqual(r["resized"], [], r)
+
+    def test_a_view_that_loses_the_size_later_is_set_again(self):
+        """With the emulated size cleared before the resize the view does take the window's size. An unclipped
+        screenshot is checked and taken again (scale 1 and 2: the "direct" one, before any seek); a clipped one
+        (scale 0.5) has the clip's size whatever the view's, so the screenshot reads the page's layout size first.
+        After a second loss, a seek finds the page laid out at the window's size and repairs it before it draws.
+        No wrong screenshot is returned, and the session lists each repair for the render log. (Not reachable
+        here: the unclipped check right after the ready-time call on a clipped page; the load runs count it.)"""
+        rows = self.sizes("clear", clear_first=True)
+        if not any(r["moved"] for r in rows):
+            self.skipTest("this browser's view does not follow its window after the emulated size is cleared")
+        for r in rows:
+            self.check(r)
+            # (the window's size, less its browser frame where it has one: 600x113 on a Mac, 600x200 in the headless
+            # shell, 584x105 on Windows)
+            first = (re.compile(r", not 256x144, at the screenshot") if r["scale"] < 1
+                     else re.compile(r"the screenshot was \d+x\d+, not %dx%d" % tuple(SIZE_WANT[r["scale"]])))
+            self.assertTrue(any(first.search(m) for m in r["resized"]), r)
+            self.assertNotEqual(r["relaid"], [256, 144], r)
+            # (the size the page reports can still change between the test's read and the seek's: any wrong layout)
+            self.assertTrue(any(re.fullmatch(r"the page was laid out at \d+x\d+, not 256x144, at 1\.000s", m)
+                                for m in r["resized"]), r)
 
 
 def colour(video, t):

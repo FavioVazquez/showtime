@@ -13,8 +13,28 @@ showtime's guides live next to the skill, in
 They are written for your agent first and for you second: each one opens with a "Read this when" line, so
 you can tell in one sentence whether it is the page you need. This map puts them in running order.
 
-New here? Start with the [README](../README.md), then come back for the act you need. The map below is
-the whole programme at a glance; the tables under it link every guide.
+## Overture · Start here
+
+Three steps before Act I. Setup takes 2 to 6 minutes the first time, and the test video's commands about 2 more
+([measured](guides/first-video.md#how-long-it-takes) on a 6-core Intel Mac), plus your agent's writing.
+
+<table>
+<tr>
+<td width="33%" valign="top"><sub>STEP 1</sub><br><b>Install it in your agent</b>
+<div class="copy"><pre><code>/plugin marketplace add FavioVazquez/showtime
+/plugin install showtime@showtime</code></pre></div>
+<sub>Claude Code. <a href="agents.md">Other agents →</a></sub></td>
+<td width="33%" valign="top"><sub>STEP 2</sub><br><b>Your first video</b><br>
+Ask for a 5-second test video, watch it render, read the delivery card.<br>
+<sub><a href="guides/first-video.md">Make your first video →</a></sub></td>
+<td width="33%" valign="top"><sub>STEP 3</sub><br><b>If something goes wrong</b><br>
+Find the symptom, say the line, your agent runs the fix.<br>
+<sub><a href="troubleshooting.md">Troubleshooting</a> · <a href="glossary.md">Glossary</a></sub></td>
+</tr>
+</table>
+
+Then choose your path below, and open an act when you want to know why. The map below is the whole
+programme at a glance; the tables under it link every guide.
 
 > [!TIP]
 > You never have to read these to make a video: ask your agent in one sentence and it picks the right
@@ -25,9 +45,12 @@ Written for people rather than for your agent:
 
 | Page | Read it when |
 |---|---|
+| [Your first video](guides/first-video.md) | you are new: a 5-second test video and what each step does |
 | [Task guides](guides/README.md) | you want a recipe: what to say, what your agent runs, what you get, how long it takes |
 | [What's new](whats-new.md) | you want each release's new features, one sentence each |
 | [Questions people ask](faq.md) | you want short answers: GPU, cost, agents, privacy, licences, disk, time, platforms, languages |
+| [Troubleshooting](troubleshooting.md) | something failed or looks wrong: find the symptom, what to say, the command your agent runs |
+| [Glossary](glossary.md) | a word you don't know: EDL, ledger, critic, look signature, splice, quick and studio, quality and lean |
 
 <p align="center"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/diagrams/docs-map-dark.svg">
@@ -72,7 +95,7 @@ What are you making? Each card opens the workflow guide your agent follows; the 
 |---|---|
 | [showtime in your coding agent](agents.md) | you want the exact install for Claude Code, Codex, Cursor, Devin, OpenCode or another agent, and to know which were tested |
 | [onboarding](../skills/showtime/references/onboarding.md) | it is your first run, setup is missing, or you want to know what showtime needs and downloads |
-| [modes](../skills/showtime/references/modes.md) | you want to know how much your agent asks, quick versus studio (quick is lean on strong models), and what the delivery card says |
+| [modes](../skills/showtime/references/modes.md) | you want the two separate settings: how much your agent asks before building (quick or studio) and how much it checks afterwards (quality or lean); and what the delivery card says |
 | [studio](../skills/showtime/references/studio.md) | you want options first: concepts, looks, beds, storyboard and animatic on local boards |
 | [boards](../skills/showtime/references/boards.md) | you are writing or changing a studio board (`board.json`) |
 | [crew](../skills/showtime/references/crew.md) | you want to know how the ten specialist sub-agents are used ([their briefs](../skills/showtime/references/crew/)) |
@@ -91,7 +114,7 @@ What are you making? Each card opens the workflow guide your agent follows; the 
 | [pacing](../skills/showtime/references/pacing.md) | holds, cut rhythm, beat sync, narration word budgets, durations |
 | [motion-craft](../skills/showtime/references/motion-craft.md) | easing, timing, stagger and camera moves |
 | [typography](../skills/showtime/references/typography.md) | fonts, sizes, spacing and safe areas for type |
-| [color](../skills/showtime/references/color.md) | palettes, contrast, grading footage, and the look signatures new projects start in (`--look`, `showtime signature`) |
+| [color](../skills/showtime/references/color.md) | palettes, contrast, grading footage, and the look signatures new projects start in: a named palette, type pair and motion, picked to differ from your recent videos (`--look`, `showtime signature`) |
 | [brand-kit](../skills/showtime/references/brand-kit.md) | there is a brand, or a repo or site with a visual identity; launches start with `showtime brand capture` |
 | [reference](../skills/showtime/references/reference.md) | you want a video "like this one", or one that does not look like your last five (`showtime reference`, `showtime history`, `look_repeat`) |
 | [platforms](../skills/showtime/references/platforms.md) | delivery specs, safe zones, posters, thumbnails, README loops, cut-downs and share copy |
@@ -148,7 +171,7 @@ These guides are also a searchable site: **[faviovazquez.github.io/showtime/docs
 |---|---|
 | [SKILL.md](../skills/showtime/SKILL.md) | the skill itself: what your agent reads first on every request |
 | [references/index.md](../skills/showtime/references/index.md) | the same map in the agent's own words |
-| [CONTEXT.md](../CONTEXT.md) | the glossary: the words showtime uses and the ones it avoids |
+| [CONTEXT.md](../CONTEXT.md) | the house vocabulary for whoever writes showtime: one word per idea, and the words it avoids ([the glossary](glossary.md) is the reader's version) |
 | [.out-of-scope/](../.out-of-scope/README.md) | what showtime deliberately does not do, and why |
 | [CONTRIBUTING.md](../CONTRIBUTING.md) | tests, release checks, how to send a change |
 | [CHANGELOG.md](../CHANGELOG.md) | what changed and why, so it also answers "where did X go?" ([What's new](whats-new.md) is the short version) |

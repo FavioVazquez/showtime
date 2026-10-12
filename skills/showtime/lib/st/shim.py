@@ -9,10 +9,13 @@ never changes, so setup writes three small launchers into <home>/bin:
 They hold no paths of their own. Each one runs the launcher of the skill folder named in
 <home>/skill-path, and when that folder is gone it tries $SHOWTIME_SKILL, <home>/skill, then the usual
 skill folders (SKILL_GLOBS), taking the last match. A skill that runs from npm's cache (npx) is never
-recorded as it is: npm deletes that cache, so it is copied to <home>/skill first (stable_skill). Every run of any skill's launcher keeps skill-path current (`remember`): it
-records itself when the recorded folder is missing or holds an older or the same showtime version, so a plugin
-update is picked up by the first command the new version runs. `showtime doctor` rewrites damaged or
-outdated launchers (`repair`).
+recorded as it is: npm deletes that cache, so it is copied to <home>/skill first (stable_skill). Every run of any
+skill's launcher keeps skill-path current (`remember`): it records itself when the recorded folder is missing or
+holds an older showtime version, so a plugin update is picked up by the first command the new version runs. A tie
+(the same version) never follows whichever folder ran last: an installed skill (`installed`: a plugin or a skill
+in the usual folders, or the kept copy) takes the record from one that is not (a checkout, a scratch copy), and
+otherwise the recorded one stays. `showtime setup --link` claims a tie for its checkout on purpose. `showtime
+doctor` rewrites damaged or outdated launchers (`repair`).
 
 Nothing here edits shell profiles or PATH. `path_hint` prints how to make `showtime` callable from any
 terminal, for the user to run (or not).
@@ -109,9 +112,10 @@ def remember(home: Path, skill: Path) -> bool:
         return False
 
 
-def _update_record(home: Path, skill: Path) -> bool:
-    """Record the newer of the recorded skill and `skill` (a tie goes to `skill`), through a copy
-    in <home>/skill when it lives somewhere that gets deleted (is_ephemeral). True when it wrote."""
+def _update_record(home: Path, skill: Path, claim: bool = False) -> bool:
+    """Record the newer of the recorded skill and `skill`, through a copy in <home>/skill when it lives
+    somewhere that gets deleted (is_ephemeral). On a tie (`preferred`) the installed one wins, then the
+    recorded one; `claim` (setup --link) gives a tie to `skill`. True when it wrote."""
     rec = recorded_skill(home)
     rec_ok = valid_skill(rec)
     if rec_ok and _same(rec, skill) and not is_ephemeral(rec):
@@ -119,14 +123,47 @@ def _update_record(home: Path, skill: Path) -> bool:
     cands = ([rec] if rec_ok else []) + ([skill] if valid_skill(skill) else [])
     if not cands:
         return False
-    # a tie goes to the skill running now: two folders of the same version can hold different code (a
-    # plugin and a checkout, two agent hosts), and the command must run the one the agent is using
-    best = max(cands, key=lambda p: (skill_version(p), p is not rec))
+    best = cands[0] if len(cands) == 1 else preferred(home, rec, skill, claim)
     target = stable_skill(home, best)
     if rec_ok and _same(target, rec):
         return False
     record(home, target)
     return True
+
+
+def preferred(home: Path, rec: Path, skill: Path, claim: bool = False, user_home: Optional[Path] = None) -> Path:
+    """Which of the recorded skill and the running `skill` the command should run: the newer version; on a
+    tie `skill` when claimed, else an installed one over one that is not, else `rec`. The tie must not follow
+    the last run: a second checkout or a scratch copy of the same version would re-point the command for every
+    agent and script that shares this home (#23)."""
+    rv, sv = skill_version(rec), skill_version(skill)
+    if rv != sv:
+        return skill if sv > rv else rec
+    if claim:
+        return skill
+    return skill if installed(skill, user_home, home) and not installed(rec, user_home, home) else rec
+
+
+def installed(skill: Optional[os.PathLike], user_home: Optional[Path] = None, home: Optional[Path] = None) -> bool:
+    """Is `skill` an installed showtime rather than a checkout or a copy run by path: a skill in the usual
+    folders (SKILL_GLOBS, which holds the agent plugins and `setup --link`), this agent's plugin
+    ($CLAUDE_PLUGIN_ROOT), or <home>/skill, the kept copy."""
+    if not valid_skill(skill):
+        return False
+    p = Path(skill)
+    if home is not None and _same(p, Path(home) / COPY_NAME):
+        return True
+    plugin = os.environ.get("CLAUDE_PLUGIN_ROOT")
+    if plugin and _same(p, Path(plugin) / "skills" / "showtime"):
+        return True
+    h = Path(user_home) if user_home else Path(os.path.expanduser("~"))
+    for pat in SKILL_GLOBS:
+        try:
+            if any(_same(p, d) for d in h.glob(pat)):
+                return True
+        except OSError:
+            continue
+    return False
 
 
 # --------------------------------------------------------------------------- skills in caches
@@ -377,8 +414,9 @@ def status(home: Path) -> Dict[str, object]:
             "ok": not missing and not outdated and skill_ok and not cached}
 
 
-def install(home: Path, skill: Path) -> Tuple[str, str]:
-    """Write (or rewrite) the launchers and record `skill`. ("ok"|"fail", detail); never raises."""
+def install(home: Path, skill: Path, claim: bool = False) -> Tuple[str, str]:
+    """Write (or rewrite) the launchers and record `skill` (unless the recorded one is newer, or
+    preferred on a tie and `claim` is off). ("ok"|"fail", detail); never raises."""
     home = Path(home)
     try:
         default = Path(os.path.expanduser("~")) / ".showtime"
@@ -387,7 +425,7 @@ def install(home: Path, skill: Path) -> Tuple[str, str]:
             _write_atomic(home / ".gitignore", "# showtime's tools, models and caches (showtime setup)\n*\n")
         for name, (text, nl) in texts().items():
             _write_atomic(home / "bin" / name, text, newline=nl, mode=0o755 if name == "showtime" else None)
-        _update_record(home, Path(skill))
+        _update_record(home, Path(skill), claim=claim)
         rec = recorded_skill(home)
     except OSError as e:
         return "fail", "could not write %s: %s" % (home / "bin", e)
@@ -425,8 +463,8 @@ def _vstr(v: Tuple[int, ...]) -> str:
 def drift(home: Path, running: Path, user_home: Optional[Path] = None) -> Optional[Dict[str, str]]:
     """When <home>/bin/showtime and the skill running now are not the same showtime: {problem, fix}, else None.
 
-    Every run keeps the record on the newest skill (remember), so what is left after it is either a
-    record on a newer skill than this one (this agent runs an older copy: the command and the agent
+    Every run keeps the record on the newest skill (remember; a tie stays on the installed or the recorded
+    one, which is no drift), so what is left after it is either a record on a newer skill than this one (this agent runs an older copy: the command and the agent
     disagree on templates and flags), or this skill recorded while a newer one sits in the usual skill
     folders (an agent updated showtime but has not run it yet)."""
     home, running = Path(home), Path(running)
@@ -438,12 +476,14 @@ def drift(home: Path, running: Path, user_home: Optional[Path] = None) -> Option
     cmd = shim_path(home)
     rv, sv = skill_version(rec), skill_version(running)
     if not _same(rec, running):
+        if rv == sv and _same(preferred(home, rec, running, user_home=user_home), rec):
+            return None                     # a tie kept on purpose (an installed or the recorded skill)
         if rv > sv:
             return {"problem": "%s runs showtime %s at %s, but this is showtime %s at %s: the two differ in templates "
                                "and flags" % (cmd, _vstr(rv), rec, _vstr(sv), running),
                     "fix": "update showtime in the agent that runs %s (reinstall or update the plugin), then run "
                            "`showtime doctor` again; until then use one of them for every command" % running}
-        # remember() re-records a newer or equal running skill; it failing means the record is not writable
+        # remember() re-records a newer (or preferred) running skill; it failing means the record is not writable
         return {"problem": "%s still runs %s (showtime %s), not this skill %s (showtime %s)"
                            % (cmd, rec, _vstr(rv), running, _vstr(sv)),
                 "fix": "make %s writable and run `%s doctor` again (it re-points the command)"

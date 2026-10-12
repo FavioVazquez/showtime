@@ -971,6 +971,30 @@ Film.start({ look: 'paper', fonts: ['650 1em "Inter Variable"'], scenes: functio
         self.assertTrue(rep["narrated"])
         self.assertFalse(any("very quiet" in w for w in rep["warnings"]), rep["warnings"])
 
+    def test_19_voice_over_score_gap_lands_in_the_mix_report(self):
+        """A voice-over mix under `ST.score`: the score is not a track of the mix spec, yet the mix report's
+        `voice_to_music_db` (the number the guides tell the reader to check) is measured against the score
+        and qa's hearing facts read it."""
+        proj = self.tmp / "vo-score"
+        (proj / "voice").mkdir(parents=True, exist_ok=True)
+        subprocess.run([ff.ffmpeg_path(), "-v", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=220:duration=3:sample_rate=44100",
+                        "-af", "volume=-8dB", str(proj / "voice" / "vo.wav")], check=True, timeout=60)
+        write(proj / "showtime.json", json.dumps({"width": 320, "height": 180, "fps": 30, "duration": 3, "audio": "audio/mix.json"}))
+        write(proj / "audio" / "mix.json", json.dumps({"tracks": [{"kind": "voice", "file": "voice/vo.wav"}]}))
+        write(proj / "index.html", CANVAS_HTML)
+        out = self.out / "vo-score"
+        cp = showtime("render", proj, "--out-dir", out, "--poster", "none", "--json")
+        rep = json.loads(cp.stdout)
+        self.assertEqual(rep["audio"]["sources"], ["score", "mix"])
+        gap = rep["audio"]["voice_over_score_db"]
+        self.assertIsNotNone(gap)
+        reports = sorted(out.rglob("mix.report.json"))
+        self.assertTrue(reports, "no mix.report.json under %s" % out)
+        mr = json.loads(reports[0].read_text(encoding="utf-8"))
+        self.assertIsNotNone(mr["voice_to_music_db"], "the mix report has no voice-to-music gap with an ST.score bed")
+        self.assertAlmostEqual(mr["voice_to_music_db"], gap, delta=0.15)
+        self.assertEqual(mr.get("voice_to_music_source"), "score")
+
 
 if __name__ == "__main__":
     argv = [a for a in sys.argv if a != "--fast"]

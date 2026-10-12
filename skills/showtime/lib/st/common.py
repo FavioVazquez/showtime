@@ -416,6 +416,23 @@ def _file_mode() -> int:
     return 0o666 & ~old
 
 
+# Windows refuses to replace a file another process is replacing or has open, for a few milliseconds
+# (several `audio mix` runs writing into one folder share its mix.report.json): retry before giving up.
+REPLACE_RETRY_S = 2.0
+
+
+def _replace(src: str, dst: str) -> None:
+    t_end = time.time() + REPLACE_RETRY_S
+    while True:
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if time.time() > t_end:
+                raise
+            time.sleep(0.05)
+
+
 def write_json(path: PathLike, data: Any, indent: int = 2) -> Path:
     """Write JSON atomically (temp file + replace), UTF-8, trailing newline, normal file permissions."""
     p = Path(path)
@@ -429,7 +446,7 @@ def write_json(path: PathLike, data: Any, indent: int = 2) -> Path:
             os.chmod(tmp, _file_mode())
         except OSError:
             pass
-        os.replace(tmp, str(p))
+        _replace(tmp, str(p))
     except BaseException:
         try:
             os.unlink(tmp)

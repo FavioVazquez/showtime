@@ -7,6 +7,17 @@ All notable changes to showtime. Each entry says what changed and why, so this f
 
 ## 0.4.2 (2026-10-10)
 
+- **On Windows, `audio mix` runs writing into one folder at once no longer fail with "permission denied".**
+  Several `showtime audio mix` runs of one `mix.json` whose outputs go into one folder share its `mix.report.json`.
+  On Windows, replacing a file that another process is replacing or has open at that moment fails for a few
+  milliseconds with "Access is denied", so one mix could exit with `permission denied:
+  ...\.mix.report.json.<random>` (the end-to-end test of the 0.4.2 release PR on windows-2025). Every JSON file
+  showtime writes atomically (`write_json`) now retries that replace for up to 2 s, as run records already did, and
+  a "permission denied" on a rename names both paths and the Windows error code. `showtime render` was not affected:
+  each render mixes into its own folder. Test: `test_foundation.py`
+  (`test_write_json_retries_a_replace_another_process_holds`,
+  `test_permission_denied_names_both_sides_of_a_rename`); `test_audio.py` (`test_08_parallel_mixes_share_the_cache`)
+  is the end-to-end case.
 - **Docs, second pass: stale `--workers` and splice help, the voice Essentials, "Whisper for transcripts", and a doctor pointer.**
   Left over from the 0.4.2 audit: `render --help` still described the old one-browser-per-8-threads rule and a splice
   "mixed again" audio it now reuses; the README repeated the old worker rule; `voice.md` listed the fit command without

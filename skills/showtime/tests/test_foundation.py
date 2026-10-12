@@ -225,6 +225,40 @@ class TestCommon(TempDirCase):
         self.assertEqual(common.parse_time("1:02.5"), 62.5)
 
 
+    def test_write_json_retries_a_replace_another_process_holds(self):
+        # Windows: os.replace fails with PermissionError while another process replaces the same file
+        from unittest import mock
+        real, calls = os.replace, []
+
+        def flaky(src, dst):
+            calls.append(dst)
+            if len(calls) < 3:
+                raise PermissionError(13, "Access is denied", dst)
+            real(src, dst)
+        with mock.patch.object(common.os, "replace", flaky):
+            p = common.write_json(self.tmp / "r.json", {"ok": 1})
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(common.read_json(p), {"ok": 1})
+        self.assertEqual([f.name for f in self.tmp.iterdir()], ["r.json"], "no temp file left behind")
+        with mock.patch.object(common, "REPLACE_RETRY_S", 0.1), \
+                mock.patch.object(common.os, "replace", mock.Mock(side_effect=PermissionError(13, "denied"))):
+            with self.assertRaises(PermissionError):
+                common.write_json(self.tmp / "s.json", {"ok": 2})
+        self.assertEqual(sorted(f.name for f in self.tmp.iterdir()), ["r.json"], "a failed write cleans up")
+
+    def test_permission_denied_names_both_sides_of_a_rename(self):
+        from st import cli
+        e = PermissionError(13, "Access is denied")
+        e.filename, e.filename2 = "a.tmp", "a.json"
+        self.assertIn("permission denied: a.tmp -> a.json", str(cli.explain(e)))
+        self.assertIn("permission denied: b.json", str(cli.explain(PermissionError(13, "denied", "b.json"))))
+        e.winerror = 5                                    # Windows sets it; settable by hand on every OS
+        self.assertIn("a.tmp -> a.json [WinError 5]", str(cli.explain(e)))
+        bare = PermissionError(13, "Access is denied")
+        bare.winerror = 5                                 # no file name: only Windows' str(exc) prints the code
+        self.assertEqual(str(cli.explain(bare)).count("WinError 5"), 1 if os.name == "nt" else 0)
+
+
 class TestWindowsText(TempDirCase):
     """Text that Windows produces: UTF-8 files with a byte-order mark (Windows PowerShell 5.1's
     Set-Content/Out-File -Encoding utf8, older Notepad) and ANSI-code-page pipes (cp1252)."""

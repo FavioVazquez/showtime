@@ -531,7 +531,8 @@ print(json.dumps({"path": p.name, "names": sorted(x.name for x in d.iterdir()), 
 
     # ------------------------------------------------------------------ final pass: parallel renders, license
     def test_08_parallel_mixes_share_the_cache(self):
-        """Three renders of one project (16:9, 1:1, 9:16) mix at the same moment: synth hits, a typewriter and
+        """Three `audio mix` runs of one mix.json into one folder at the same moment (as three renders of one
+        project, 16:9, 1:1, 9:16, share the cache): synth hits, a typewriter and
         a composed bed land in the shared cache without a collision (a per-process temp name + atomic
         rename, a lock per entry), every mix succeeds and they are identical. No temp or lock file is left."""
         import numpy as np

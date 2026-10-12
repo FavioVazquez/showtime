@@ -54,7 +54,7 @@
 .harness *{box-sizing:border-box}
 .harness [hidden]{display:none!important}
 .harness{-webkit-text-size-adjust:100%}
-.harness{margin:0;background-color:var(--bg);background-image:linear-gradient(var(--gridline) 1px,transparent 1px),linear-gradient(90deg,var(--gridline) 1px,transparent 1px);background-size:48px 48px;color:var(--text);font:400 var(--s-body)/1.6 var(--f-body);font-variant-numeric:tabular-nums;overflow-x:hidden}
+.harness{margin:0;background-color:var(--bg);background-image:linear-gradient(var(--gridline) 1px,transparent 1px),linear-gradient(90deg,var(--gridline) 1px,transparent 1px);background-size:48px 48px;color:var(--text);font:400 var(--s-body)/1.6 var(--f-body);font-variant-numeric:tabular-nums;overflow-x:clip}
 .harness ::selection{background:var(--amber);color:var(--on-amber)}
 .harness a{color:var(--cyan);text-underline-offset:3px}
 .harness button{font:inherit;color:inherit}

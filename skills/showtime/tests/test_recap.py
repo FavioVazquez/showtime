@@ -72,7 +72,8 @@ def make_repo(root: Path) -> tuple:
 def fixture_copy(dest: Path, repo: Path, sha: str, *, sub: bool = False) -> Path:
     """The fixture with its placeholder repository path (and commit hash) pointing at a real temporary repo."""
     src = FIX / ("subagents/agent-a1.jsonl" if sub else "session.jsonl")
-    text = src.read_text(encoding="utf-8").replace(PLACEHOLDER_ROOT, str(repo)).replace("abc1234", sha)
+    # JSON-escaped: a Windows path has backslashes, and the session lines are JSON
+    text = src.read_text(encoding="utf-8").replace(PLACEHOLDER_ROOT, json.dumps(str(repo))[1:-1]).replace("abc1234", sha)
     text = text.replace("@@GITHUB_TOKEN@@", GH_TOKEN)        # built here: the repository's secret scanner
     if sub:
         (dest / "subagents").mkdir(parents=True, exist_ok=True)
@@ -83,6 +84,11 @@ def fixture_copy(dest: Path, repo: Path, sha: str, *, sub: bool = False) -> Path
         out = dest / "session.jsonl"
     out.write_text(text, encoding="utf-8")
     return out
+
+
+def nrm(p) -> str:
+    """A path as recap compares paths (forward slashes, lower-case drive letter): the same string on macOS and Linux."""
+    return rc._norm(str(p))
 
 
 def showtime(*args, check=True, cwd=None, env=None):
@@ -219,7 +225,7 @@ class TestAllowList(Base):
     def test_nothing_planted_reaches_the_script_or_the_facts(self):
         lines, _ = rc.hard_filter(rc.script_lines(self.facts))
         text = rc.write_script(lines, self.facts["ref"]) + json.dumps(self.facts)
-        for bad in PLANTED + (str(self.repo),):
+        for bad in PLANTED + (str(self.repo), nrm(self.repo)):
             self.assertNotIn(bad, text, bad)
 
     def test_repo_must_be_known(self):
@@ -227,10 +233,10 @@ class TestAllowList(Base):
         with self.assertRaises(ShowtimeError):
             rc.repo_roots(ses)
         top, roots = rc.repo_roots(ses, str(self.repo))
-        self.assertEqual(top, str(self.repo))
+        self.assertEqual(top, nrm(self.repo))
 
     def test_removed_worktree_paths(self):
-        roots = [str(self.repo) + "/.claude/worktrees/agent-x", str(self.repo)]
+        roots = [nrm(self.repo) + "/.claude/worktrees/agent-x", nrm(self.repo)]
         self.assertEqual(rc.rel_path(str(self.repo) + "/.claude/worktrees/agent-x/src/a.py", roots), "src/a.py")
         self.assertEqual(rc.rel_path(str(self.repo) + "/.claude/worktrees/agent-y/src/b.py", roots), "src/b.py")
         self.assertIsNone(rc.rel_path(str(self.repo) + "/.git/config", roots))
@@ -366,8 +372,8 @@ class TestCommands(Base):
         ses = dict(self.ses, cwds=rc.Counter({str(self.repo): 5, str(self.repo / "build" / "gone"): 2,
                                               str(self.repo / ".claude" / "worktrees" / "agent-x"): 1}))
         top, roots = rc.repo_roots(ses)
-        self.assertNotIn(str(self.repo / "build" / "gone"), roots)
-        self.assertIn(str(self.repo / ".claude" / "worktrees" / "agent-x"), roots)
+        self.assertNotIn(nrm(self.repo / "build" / "gone"), roots)
+        self.assertIn(nrm(self.repo / ".claude" / "worktrees" / "agent-x"), roots)
         self.assertEqual(rc.rel_path(str(self.repo / "build" / "x.py"), roots), "build/x.py")
 
     def test_outside_cwd_in_a_transcript(self):
@@ -699,6 +705,7 @@ class TestRobustness(Base):
         self.assertEqual(rc.active_seconds([0, 60, 120, 120 + 8 * 3600, 120 + 8 * 3600 + 30]), 150.0)
         self.assertLessEqual(self.facts["duration"], self.facts["span"])
 
+    @unittest.skipIf(os.name == "nt", "recap resolves symlinked folders on macOS and Linux only")
     def test_symlinked_paths(self):
         """S8: a transcript that names the repository through a symlink still maps its files."""
         link = self.tmp / "link-to-acme"
@@ -835,7 +842,7 @@ class TestCli(Base):
         page = (out / "project" / "index.html").read_text(encoding="utf-8")
         self.assertIn("Edited: ", page)
         text = all_text(out / "project") + (out / "facts.json").read_text(encoding="utf-8")   # script.md is the user's
-        for bad in PLANTED + (str(self.repo),):
+        for bad in PLANTED + (str(self.repo), nrm(self.repo)):
             self.assertNotIn(bad, text, bad)
 
     def test_yes_never_renders_the_script_it_writes(self):
@@ -1308,7 +1315,7 @@ class TestCli(Base):
         self.assertTrue(Path(res["video"]).is_file(), cp.stderr[-2000:])
         self.assertIn(res["qa"]["verdict"], ("PASS", "WARN"), res["qa"])
         text = all_text(out)
-        for bad in PLANTED + (str(self.repo),):
+        for bad in PLANTED + (str(self.repo), nrm(self.repo)):
             self.assertNotIn(bad, text, bad)
 
 

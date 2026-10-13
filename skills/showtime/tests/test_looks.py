@@ -512,7 +512,10 @@ class LooksTests(unittest.TestCase):
                     return
                 super().do_GET()
 
-        srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Flaky)
+        class Server(http.server.ThreadingHTTPServer):
+            request_queue_size = 128     # three pages ask for ~30 modules at once; Windows refuses past the backlog (5)
+
+        srv = Server(("127.0.0.1", 0), Flaky)
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         env = dict(ENV, SHOWTIME_TEST_HOLD_START="1")
         try:

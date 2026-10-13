@@ -54,7 +54,7 @@ Written for people rather than for your agent:
 
 <p align="center"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/diagrams/docs-map-dark.svg">
-  <img alt="The documentation map: fourteen workflows, then five acts and a finale of guides, from onboarding to qa and review." src="../assets/readme/diagrams/docs-map-light.svg" width="100%">
+  <img alt="The documentation map: seventeen workflows, then five acts and a finale of guides, from onboarding to qa and review." src="../assets/readme/diagrams/docs-map-light.svg" width="100%">
 </picture></p>
 
 ## Choose your path
@@ -86,6 +86,11 @@ What are you making? Each card opens the workflow guide your agent follows; the 
 <td width="33%" valign="top"><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/20-curtain-call-pack"><img src="../assets/readme/gallery/20-curtain-call-pack.webp" width="100%" alt="A preview of example 20"></a><br><sub>A logo sting, lower thirds, transitions</sub><br><b><a href="../skills/showtime/references/components.md">components</a></b><br><sub>see it done: <a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/20-curtain-call-pack">20</a></sub></td>
 <td width="33%" valign="top"><a href="../skills/showtime/references/workflows/repo-explainer.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/icons/html-dark.svg"><img src="../assets/readme/icons/html-light.svg" width="56" alt=""></picture></a><br><sub>A codebase explained, traced through real code</sub><br><b><a href="../skills/showtime/references/workflows/repo-explainer.md">repo-explainer</a></b><br><sub>see it done: no example yet</sub></td>
 <td width="33%" valign="top"><a href="../skills/showtime/references/workflows/paper-explainer.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/icons/manim-dark.svg"><img src="../assets/readme/icons/manim-light.svg" width="56" alt=""></picture></a><br><sub>A paper or technical PDF explained</sub><br><b><a href="../skills/showtime/references/workflows/paper-explainer.md">paper-explainer</a></b><br><sub>see it done: no example yet</sub></td>
+</tr>
+<tr>
+<td width="33%" valign="top"><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/_diagram"><img src="../assets/readme/gallery/_diagram.webp" width="100%" alt="A preview of the living diagram demo"></a><br><sub>How a system works, as a figure that builds itself or one people poke</sub><br><b><a href="../skills/showtime/references/workflows/diagram.md">diagram</a></b><br><sub>see it done: <a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/_diagram">the demo</a> · a live figure: <code>export html --interactive</code></sub></td>
+<td width="33%" valign="top"><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/_recap"><img src="../assets/readme/gallery/_recap.webp" width="100%" alt="A preview of the recap demo"></a><br><sub>What your coding agent did in a session</sub><br><b><a href="../skills/showtime/references/workflows/recap.md">recap</a></b><br><sub>see it done: <a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/_recap">the demo</a></sub></td>
+<td width="33%" valign="top"><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/_repro"><img src="../assets/readme/gallery/_repro.webp" width="100%" alt="A preview of the repro demo"></a><br><sub>A failing browser test, for a bug report</sub><br><b><a href="../skills/showtime/references/workflows/repro.md">repro</a></b><br><sub>see it done: <a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/_repro">the demo</a></sub></td>
 </tr>
 </table>
 
@@ -131,7 +136,7 @@ What are you making? Each card opens the workflow guide your agent follows; the 
 | [film-api](../skills/showtime/references/film-api.md) | drawing a canvas film or tutorial with `Film` |
 | [series](../skills/showtime/references/series.md) | several episodes that share one look, sound and pacing |
 | [manim](../skills/showtime/references/manim.md) | equations, proofs, graphs and grid transforms with Manim |
-| [html-export](../skills/showtime/references/html-export.md) | a single-file interactive HTML video: player, chapters, keys, deep links, range links that loop a part, questions that pause and ask the viewer; link previews and GitHub Pages (`--share-url`, `--folder`) |
+| [html-export](../skills/showtime/references/html-export.md) | a single-file interactive HTML video: player, chapters, keys, deep links, range links that loop a part, questions that pause and ask the viewer; link previews and GitHub Pages (`--share-url`, `--folder`); a living diagram as a live figure (`--interactive`) |
 | [debugging-renders](../skills/showtime/references/debugging-renders.md) | a render fails, flickers, shows black or frozen frames, or differs from the preview |
 
 ## Act IV · Sound and voice

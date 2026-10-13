@@ -1,0 +1,8 @@
+{
+  "_comment": "A quiet bed under the build. For narration add {\"id\": \"voice\", \"kind\": \"voice\", \"file\": \"voice/vo.wav\", \"start\": 0.4} and a \"duck\": {\"under\": \"voice\", \"depth_db\": 14} on the bed (references/workflows/diagram.md).",
+  "sample_rate": 48000,
+  "tracks": [
+    {"id": "bed", "kind": "music", "compose": {"style": "underscore", "sections": "0:intro,7.2:verse,16:outro", "seed": "auto"}, "gain_db": -4, "fade_out": 1.5}
+  ],
+  "master": {"lufs": -14, "true_peak": -1}
+}

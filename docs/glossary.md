@@ -122,6 +122,18 @@ the stage, what was verified and what was only assumed, the open questions and t
 writes it at every stage; `showtime status`, qa and a resumed session read it. An agent that opens the folder later
 starts there.
 
+## live figure
+
+A [living diagram](#living-diagram) as one offline page people poke instead of watch: no player, the board is live
+from the first frame. Hover a part, pick a step, turn a knob, and the numbers under it answer. `showtime export html
+<project> --interactive` makes one. See [html-export § Live figure](../skills/showtime/references/html-export.md#live-figure).
+
+## living diagram
+
+A system explained over time as an isometric figure: parts arrive in the order that explains them, flows and
+labels move through them, the camera chooses what to look at. `showtime new diagram` starts one. See
+[diagram](../skills/showtime/references/workflows/diagram.md).
+
 ## look
 
 `showtime look <project|video|job>` makes one small composite image (1280 px) of a video's key frames, and a brief

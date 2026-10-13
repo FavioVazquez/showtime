@@ -3,6 +3,59 @@
 What each release changes for you, newest first, one sentence a feature. The
 [changelog](../CHANGELOG.md) has every change and the reason for it.
 
+## 0.4.3
+
+### Living diagrams: a system that explains itself
+
+![The Enter loop at work: your machine with the terminal, Claude Code, Bash and a permission check, a request flying up to a glass cube labelled cloud.](../assets/readme/gallery/_diagram.webp)
+
+`showtime new diagram` draws how something works as an isometric figure that builds over time: parts arrive in the
+order that explains them, flows, packets and state changes move through them, labels land when their part matters,
+and the camera chooses what to look at, in a light, dark or white theme. `--example enter` (a coding agent's loop),
+`--example market` and `--example econ-lab` start from finished scenes
+([guide](guides/living-diagram.md), [diagram](../skills/showtime/references/workflows/diagram.md), [the demo](https://github.com/FavioVazquez/showtime-examples/blob/main/examples/_diagram/README.md)).
+
+### Live figures people poke
+
+![The economics live figure: households, firms and a central bank on a board; the cost-shock step runs, the rule's strength turns from 1.5 to 3, and the readouts change from inflation +1.28 to +0.84.](../assets/readme/whats-new/live-figure.webp)
+
+`showtime export html <project> --interactive` writes the same scene as one offline page with no player: hover a part
+to light it and read its value, pick a step to run it on the board, turn a knob and the numbers answer at once.
+Keys, deep links to a state, reduced motion and a phone layout come with it, and `showtime check` walks every state
+before you share it ([html-export § Live figure](../skills/showtime/references/html-export.md#live-figure),
+[try one](https://faviovazquez.github.io/showtime/examples/_diagram.html)).
+
+### A recap of your agent's session
+
+![Red to green, from a Claude Code session: one red test run, then two green ones, and 12/12 test files passed.](../assets/readme/gallery/_recap.webp)
+
+`showtime recap --latest` turns a Claude Code session into a 30-60 s narrated film of what the agent did, made from
+the session log on your machine through an allow-list of facts (repository-relative paths, program names, test
+counts, git stats), never the transcript's own text; nothing renders until you have read `script.md`
+([guide](guides/session-recap.md), [recap](../skills/showtime/references/workflows/recap.md), [the demo](https://github.com/FavioVazquez/showtime-examples/blob/main/examples/_recap/README.md)).
+
+### A failing test as a bug-report video
+
+![A failing Playwright step: the page says Welcome back, Ada; expected "Welcome, Ada!", received "Welcome back, Ada", and the console error.](../assets/readme/gallery/_repro.webp)
+
+`showtime repro` turns a failing Playwright test into a narrated video of its steps and the failure, slowed down,
+with `repro.md` to paste into the issue; typed values are never shown or spoken
+([guide](guides/bug-report-video.md), [repro](../skills/showtime/references/workflows/repro.md), [the demo](https://github.com/FavioVazquez/showtime-examples/blob/main/examples/_repro/README.md)).
+
+### Steadier renders and quieter sound
+
+Every render worker now captures from a page set up like the first one, so a busy machine no longer ships bare
+frames from a worker whose page opened short ([render](../skills/showtime/references/render.md)). Recap and repro
+pick their music per session or test (a rerun keeps it, `--music` pins it; a catalog track is downloaded once from its
+creator's site, nothing is sent, and `SHOWTIME_OFFLINE=1` keeps it all local), and generated videos no longer put a
+sound on every cut (`--cut-sounds` adds a soft swoosh back); the transition sounds are softer everywhere.
+
+### How showtime is built
+
+A new page on the site, [how showtime is built](https://faviovazquez.github.io/showtime/harness/), is the crew's
+operating manual: who does what, and how a task becomes a merged pull request or a film. The site and the repository
+now share one link-preview image.
+
 ## 0.4.2
 
 ### Render a film in chapters, with one soundtrack

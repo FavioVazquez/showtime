@@ -12,6 +12,7 @@ showtime export html <project> --folder -o site/   # index.html + assets/ for we
 showtime export html <project> --target artifact -o launch.html   # to publish as an HTML artifact
 showtime export html <job>                         # a job: its project/ folder, written into the job folder
 showtime export html <job> --folder out            # a job as a folder: ./out/index.html + assets/
+showtime export html <diagram> --interactive       # a living diagram's live figure: -> <slug>-figure.html
 ```
 
 ## Essentials
@@ -43,6 +44,8 @@ showtime export html <job> --folder out            # a job as a folder: ./out/in
   (Shift + drag on the scrubber picks one, `c` copies its link) (§ What you get)
 - Videos that ask: showtime.json `"questions"` (`at` = seconds or a narration line id) stop the player at each
   one; it goes on from the end of the MP4's pause and think beat; `socratic.json` is written beside it (§ Questions)
+- A living diagram also exports as a live figure people poke: `--interactive` (`--target artifact` for an artifact)
+  writes `<slug>-figure.html`, no player and no timeline (§ Live figure)
 - A video report (charts, numbers) is a data story first: build and pace it with `workflows/data-story.md` (a
   change about every 2 s, holds as long as reading needs, callouts that name their year), then export it
 - Use the MP4 for footage-led videos and slow-to-draw pages: playing is drawing. Sound always needs a click;
@@ -51,14 +54,15 @@ showtime export html <job> --folder out            # a job as a folder: ./out/in
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| What you get | 63-129 |
-| MP4 or HTML? | 131-141 |
-| Audio modes (--audio): How the live score streams (and why seeking is exact) | 143-174 |
-| Size budget | 176-199 |
-| Sharing and hosting | 201-250 |
-| Questions | 252-295 |
-| Options | 297-327 |
-| Limitations | 329-363 |
+| What you get | 67-133 |
+| MP4 or HTML? | 135-145 |
+| Audio modes (--audio): How the live score streams (and why seeking is exact) | 147-178 |
+| Size budget | 180-203 |
+| Sharing and hosting | 205-254 |
+| Questions | 256-299 |
+| Options | 301-332 |
+| Live figure | 334-346 |
+| Limitations | 348-382 |
 
 ## What you get
 
@@ -300,6 +304,7 @@ controls; on a phone held upright it sits under the picture, so the paused frame
 |---|---|---|
 | `-o FILE` / `--job JOB` | new job folder | never overwrites (`-2`, `-3` ...); `-o` an existing folder (or `dir/`) writes `<dir>/<title>.html`; `--job J -o embed.html` writes that name inside the job folder |
 | `--folder` | off | `-o` is then a folder |
+| `--interactive` | off | a living diagram's live figure (§ Live figure): one file, `<slug>-figure.html` |
 | `--controls full\|minimal\|none` | full | minimal: play, scrubber, mute, fullscreen |
 | `--autoplay-muted` | off | starts muted as soon as it loads, with a "Tap for sound" button |
 | `--loop` | off | the viewer can toggle it |
@@ -325,6 +330,20 @@ with steps (a tutorial, a demo) one chapter per step.
 
 A tutorial series (`showtime new series`) exports all at once: `showtime series export <series> -o
 site/` writes every episode and the opener as single files plus an `index.html` listing them.
+
+## Live figure
+
+`showtime export html <project> --interactive` packs a living diagram's `figure.html` (the template's when the
+project has none) into one file named `<slug>-figure.html`: the scene, `/_st/diagram.js`, `figure-film.js`,
+`figure.js` and `figure.css` inlined, fonts as data: URLs (faces for scripts no word uses dropped), no player. The
+board is live from the first frame: the viewer hovers parts, picks steps and turns knobs; an idle tour plays until
+touched; `#step=<id>&<knob>=<value>&part=<id>` opens a state. The page's `<title>`, `og:title` and `og:description`
+are the scene's (`interactive.title` and `sub`, else the film page's title block) while the project is still named
+after the template (read as text from scene.js: the export runs none of the project's code; `--title` sets it). Like
+every export it makes no network request, and it carries every word and number of the scene: publishing it shares
+all of that. A comment at its top names the packed fonts and their licence (SIL Open Font License) and the project's
+credits. `--target artifact`, `-o`, `--job`, `--max-mb` and `--minify` apply;
+`--folder` does not. What a scene declares and what `showtime check` walks: `workflows/diagram.md` § Interactive.
 
 ## Limitations
 

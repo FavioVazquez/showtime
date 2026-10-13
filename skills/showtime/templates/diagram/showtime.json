@@ -1,0 +1,14 @@
+{
+  "title": "Living Diagram",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "duration": 20,
+  "background": "#F4F3EF",
+  "theme": "light",
+  "poster": 17.25,
+  "render": {
+    "poster_bake": "off"
+  },
+  "audio": "audio/mix.json"
+}

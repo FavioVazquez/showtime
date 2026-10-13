@@ -21,13 +21,13 @@ use its latest file.
 ## Modes
 
 - **Asking: quick (default).** Open with one line of assumptions ("Quick mode: 20 s, 16:9, upbeat; no
-  voice-over; full review, say 'lean' for a draft pass.") and start without waiting for a reply. Ask
+  voice-over; full review, say 'lean' for a draft pass.") and start without waiting. Ask
   (1-2 questions, each with a recommended answer) only when the request is ambiguous: nothing to work
   from, or two readings that make different videos. Wait for a yes only before a destructive step
   (dropping recorded content, touching their files) or an expensive one (a large install, a render
   over ~10 min).
 - **Asking: studio (opt-in)** when the user says studio, brainstorm, show me options or concepts first,
-  storyboard it first, or wants control. Offer it once, in the opening line, for high-stakes work
+  storyboard it first, or wants control. Offer it once for high-stakes work
   with an open direction; follow `references/studio.md`.
 - **Review: quality (default) or lean.** Quality reviews every finished video. Lean
   (`--mode lean`) only when the user says lean, cheap, quick/rough draft or don't review: critic
@@ -45,28 +45,26 @@ Log each stage boundary in the ledger (`SHOWTIME.md`, `job.json`):
    named; qa checks it) checks setup. NOT READY: `showtime setup --estimate`, give size
    and time, then `showtime setup`; skipping it is the user's call, never a bare-ffmpeg
    stand-in (`references/onboarding.md`). *Done when:* it says ready.
-1. **Understand.** Inspect the inputs (repo, URL, footage, brief) before asking; with no path
-   given, look in the working folder (one candidate: use it). Launch/promo:
+1. **Understand.** Inspect the inputs (repo, URL, footage, brief) before asking; with no path,
+   look in the working folder (one candidate: use it). Launch/promo:
    `showtime brand capture <repo|url> --job <job>` first; else a kit only if the look must match.
    *Done when:* you can write the one-sentence contract (`references/story.md`) and SHOWTIME.md
    lists the assumptions.
-2. **Plan.** Story, tone, structure, voice script, storyboard with a duration per scene.
+2. **Plan.** Story, tone, structure, voice script, storyboard with scene durations.
    Voice-led: `voice script <script> --fit <seconds> --estimate`, then without `--estimate`; its `timeline.json`
    sets the scene lengths (`showtime retime <project> --from-voice <project>/voice/timeline.json`).
    *Done when:* durations sum to the target and every claim traces to a source.
-3. **First look.** Project: `showtime new <template> <job>/project --duration <len>` (the
-   timeline scales; later: `showtime retime`), then `showtime check <project>` and
-   `showtime look <project>`. Footage (EDL, edit decision list: `<job>/edit/edl.json`):
-   `showtime edit render <job> --preview`, then `showtime edit view <job>`. Fix what the images show. Quick
-   mode: show the user and keep going; studio: the animatic is the gate.
-   *Done when:* check reports 0 errors and every WARN is read (footage: `edit check` passes and you
-   read every view PNG).
+3. **First look.** Project: `showtime new <template> <job>/project --duration <len>` (later:
+   `showtime retime`), then `showtime check <project>` and
+   `showtime look <project>`. Footage (EDL: `<job>/edit/edl.json`):
+   `showtime edit render <job> --preview`, then `showtime edit view <job>`. Fix what the images show. Quick: show the user and keep going; studio: the animatic is the gate.
+   *Done when:* check reports 0 errors and every WARN is read (footage: `edit check` passes, every
+   view PNG read).
 4. **Build.** Project: compose the hook complete at t=0 (`"poster": 0`), then
-   `showtime render <project> --job <job>` (`final.mp4`, `poster.jpg`; a later poster is baked into
-   frame 0 only when it matches the opening).
+   `showtime render <project> --job <job>` (`final.mp4`, `poster.jpg`; a later poster is baked in only when it matches the opening).
    Footage: `showtime edit render <job> -o <job>/final.mp4`; poster via
-   `showtime deliver poster <job> --at <t> --bake` (it becomes the latest final). Say the time for
-   anything over 30 s.
+   `showtime deliver poster <job> --at <t> --bake` (it becomes the latest final). Say the time if
+   over 30 s.
    *Done when:* the render finished cleanly.
 5. **Verify.** `showtime qa <job>` in the same turn, then `showtime look <job>`, then the critic
    round qa names (`showtime review-pack`, `references/review.md`).
@@ -88,7 +86,8 @@ Log each stage boundary in the ledger (`SHOWTIME.md`, `job.json`):
 | a launch or promo from a repo, URL or site folder | `launch-video` |
 | a Claude Design export: `showtime adopt <zip>` | `adopt` |
 | an explainer or how-it-works film | `explainer` |
-| one that stops and asks the viewer: showtime.json `"questions"`; cold open, roadmap, tie-back | `explainer`, `html-export` |
+| a system shown building and flowing, or explored by hand (`new diagram`, `--interactive`) | `diagram` |
+| one that stops and asks the viewer: showtime.json `"questions"` | `explainer`, `html-export` |
 | another skill's storyboard table: `showtime new dom <dir> --from-storyboard <file>` | `explainer` |
 | a repo or codebase explained | `repo-explainer` |
 | a paper or PDF explained | `paper-explainer` |
@@ -98,6 +97,8 @@ Log each stage boundary in the ledger (`SHOWTIME.md`, `job.json`):
 | their footage cut, captioned, reframed, cleaned (even a reel), or a talking head with cards | `footage-edit` |
 | picture cut to a song | `music-video` |
 | a PR (`showtime pr-video <N>`), release or changelog | `changelog-video` |
+| an agent session as a film (`showtime recap <transcript>`) | `recap` |
+| a failing browser test as a bug-report video (`showtime repro`) | `repro` |
 | a trailer, teaser | `trailer` |
 | a showreel, hype reel, "go all out" | `tones` |
 | photos, screenshots with music | `slideshow` |

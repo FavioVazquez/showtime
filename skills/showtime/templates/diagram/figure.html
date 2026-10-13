@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en" data-theme="white" data-st-live>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Living diagram</title>
+<!-- the live figure of the same scene: `showtime export html <project> --interactive` packs this page into one
+     offline file. The board is live from the first frame: hover a part, pick a step, turn a knob. -->
+<link rel="stylesheet" href="/_st/themes/fonts/inter.css">
+<link rel="stylesheet" href="/_st/themes/fonts/jetbrains-mono.css">
+<link rel="stylesheet" href="/_st/diagram.css">
+<link rel="stylesheet" href="/_st/figure.css">
+<script src="/_st/diagram.js"></script>
+<script src="/_st/figure-film.js"></script>
+<script src="/_st/figure.js"></script>
+</head>
+<body>
+<div id="figure"></div>
+<script src="scene.js"></script>
+<script>Figure.mount(SCENE);</script>
+</body>
+</html>

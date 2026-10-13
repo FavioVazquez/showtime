@@ -463,6 +463,121 @@ class LooksTests(unittest.TestCase):
                     self.assertGreater(moved[3], 200, "the metaballs fallback does not move: %s" % moved)
                     self.assertEqual(moved[:3], [0, 0, 0], "a still fallback moved: %s" % moved)
 
+    def test_07b_a_page_that_opened_short_is_opened_again(self):
+        """A page whose components module failed to load while it opened (a reset connection on a busy machine)
+        draws none of its components, and every frame its worker captures is the bare page: the four looks
+        missing from frames 31-92, workers 2 and 3 of a 3-worker render (macOS Intel nightly, 12 Oct). Here the
+        components come from a server that fails marble.js for chosen page loads (counted by index.js requests):
+          * no reply, the 2nd and 3rd loads (the pages of workers 2 and 3) of a 3-worker render, no worker taking a
+            frame until every page is open (SHOWTIME_TEST_HOLD_START), so each captures its own lane: each page is opened again
+            (render.log says so), no frame is handed over, and the frames are those of a render where nothing failed;
+          * no reply, and HTTP 500, on the 1st load of a 1-worker render (its only page): the page is opened again;
+          * a 404 on the first page only (a failure the page's requests do not count, like a setup that threw): the
+            workers' pages differ from it, a second first page agrees with them, and the render fails with an error
+            instead of shipping the first page's bare frames."""
+        import http.server
+        import threading
+        hits, fail, lock = {"n": 0}, {}, threading.Lock()   # n: page loads (requests of index.js); fail: {n: how}
+
+        class Flaky(http.server.SimpleHTTPRequestHandler):
+            def __init__(self, *a, **k):
+                super().__init__(*a, directory=str(RUNTIME), **k)
+
+            def log_message(self, *a):
+                pass
+
+            def guess_type(self, path):
+                # modules need a JavaScript type, whatever the OS's own table says (Windows reads it from the registry)
+                ext = str(path).rsplit(".", 1)[-1].lower()
+                return {"js": "text/javascript", "css": "text/css"}.get(ext) or super().guess_type(path)
+
+            def end_headers(self):
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Cache-Control", "no-store")
+                super().end_headers()
+
+            def do_GET(self):
+                p = self.path.split("?")[0]
+                with lock:
+                    if p == "/components/index.js":
+                        hits["n"] += 1
+                    how = fail.get(hits["n"]) if p == "/components/marble.js" else None
+                if how == "reset":
+                    # no reply at all (the browser sees an empty response), to every request of marble.js while that
+                    # page loads, so a request the browser makes again by itself fails too
+                    self.close_connection = True
+                    return
+                if how in (500, 404):
+                    self.send_error(how)
+                    return
+                super().do_GET()
+
+        class Server(http.server.ThreadingHTTPServer):
+            request_queue_size = 128     # three pages ask for ~30 modules at once; Windows refuses past the backlog (5)
+
+        srv = Server(("127.0.0.1", 0), Flaky)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        env = dict(ENV, SHOWTIME_TEST_HOLD_START="1")
+        try:
+            base = "http://127.0.0.1:%d" % srv.server_address[1]
+            html = page2(NO_WEBGL).replace("/_st/components/index.js", base + "/components/index.js")
+            proj = self.project("opened-short", html, dur=1)
+
+            def render(tag, workers, failing):
+                with lock:
+                    hits["n"] = 0
+                    fail.clear()
+                    fail.update(failing)
+                out = self.tmp / ("short-" + tag) / "v.mp4"
+                cp = subprocess.run([sys.executable, str(LAUNCHER), "render", str(proj), "-o", str(out), "--workers", str(workers),
+                                     "--gpu", "off", "--format", "png", "--keep-frames", "--no-audio", "--poster", "none", "--quiet"],
+                                    env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8", errors="replace", timeout=900)
+                skip_if_listen_refused(cp)
+                logs = list(out.parent.rglob("render.log"))
+                log = logs[0].read_text(encoding="utf-8", errors="replace") if logs else ""
+                files = sorted(p for p in (out.parent / "v.work" / "frames").glob("*.png")) if cp.returncode == 0 else []
+                return cp, log, files
+
+            cp, log, clean = render("clean", 1, {})
+            self.assertEqual(cp.returncode, 0, cp.stderr[-2000:])
+            self.assertEqual(len(clean), 30)
+            # the looks are drawn: the bare page is the ground (about 6 in grey) in every quadrant
+            q = self.gray(clean[20], 2, 2)
+            self.assertGreaterEqual(sum(v > 20 for v in q), 3, "the looks are not drawn (grey per quadrant: %s)" % q)
+            ref = [hashlib.sha256(p.read_bytes()).hexdigest() for p in clean]
+            for tag, workers, failing in (("w3", 3, {2: "reset", 3: "reset"}), ("w1", 1, {1: "reset"}), ("w1-500", 1, {1: 500})):
+                cp, log, files = render(tag, workers, failing)
+                self.assertEqual(cp.returncode, 0, "%s: %s" % (tag, cp.stderr[-2000:]))
+                got = [hashlib.sha256(p.read_bytes()).hexdigest() for p in files]
+                self.assertEqual(len(got), 30, tag)
+                diff = [i for i in range(30) if got[i] != ref[i]]
+                where = [(i, quad_diff(clean[i], files[i])) for i in diff[:3]]
+                self.assertEqual(diff, [], "%s: frames that differ from the render where nothing failed: %s; first "
+                                 "differences (frame, changed pixels per quadrant, largest change): %s" % (tag, diff[:12], where))
+                if workers == 3:
+                    # a worker's page that lost marble.js was opened again (both, unless a slow browser let the second
+                    # first page take one of the two failing loads), and each worker captured its own lane
+                    reopened = sorted(set(re.findall(r"worker (\d): the page in worker \1 did not set up as the first page did", log)))
+                    self.assertTrue(reopened, "%s: no worker's page was opened again:\n%s" % (tag, log[-3000:]))
+                    self.assertNotIn("could not open the page", log)
+                    self.assertRegex(log, r"capture: 3 worker\(s\), 1 part\(s\) each, 0 hand-over\(s\)", "%s: a lane was handed over" % tag)
+                else:
+                    self.assertIn("first page: 1 request(s) failed while it opened", log, "%s:\n%s" % (tag, log[-3000:]))
+            # the first page is the one that opened short, and nothing in its requests says so: the render fails
+            cp, log, _ = render("first-404", 3, {1: 404})
+            self.assertNotEqual(cp.returncode, 0, "a render whose first page lost its components finished: %s" % log[-2000:])
+            # the error names the difference, and what it points to is there: the first page's own HTTP error in
+            # render.log, and its diagnostics
+            m = re.search(r"the first page did not set up as the pages opened after it did \((.*?)\), so its frames cannot be used", cp.stderr)
+            self.assertTrue(m, cp.stderr[-2000:])
+            self.assertIn("marble: ready", m.group(1))
+            self.assertIn('lines "first page: ..."', cp.stderr)
+            self.assertRegex(log, r"first page: http 404: http://127\.0\.0\.1:\d+/components/marble\.js")
+            self.assertTrue(list((self.tmp / "short-first-404").rglob("first-page.json")), "no first-page diagnostics")
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
     def test_08_newer_looks_fallbacks(self):
         """Without WebGL each newer look draws its fallback: check lists four, each quadrant is drawn (not flat) and
         differs from the WebGL frame."""

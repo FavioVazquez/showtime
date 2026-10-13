@@ -61,7 +61,7 @@ STDLIB_CLI = ("paths", "new", "retime", "data", "install", "guide", "config")   
 GROUPS = [
     ("make", "Make a video from an HTML/canvas project",
      ["new", "retime", "data", "adopt", "preview", "render", "export", "check", "look", "snap", "score", "motion", "code",
-      "server", "manim", "release-video", "pr-video"],
+      "server", "manim", "release-video", "pr-video", "recap", "repro"],
      ["showtime new dom my-launch --aspect 16:9",
       "showtime retime my-launch -d 20            # or --from-voice voice/timeline.json",
       "showtime preview my-launch",
@@ -405,6 +405,9 @@ def build_env(home: Path) -> dict:
     env.setdefault("PYTHONUTF8", "1")
     env.setdefault("PYTHONIOENCODING", "utf-8")
     env.update(node_proxy_env(env))
+    # what this added that the user's environment did not have (`showtime repro` runs the user's tests without it)
+    env.setdefault("SHOWTIME_ADDED_ENV", ",".join(sorted(k for k in env if k not in os.environ
+                                                         and not k.startswith("SHOWTIME_"))))
     return env
 
 

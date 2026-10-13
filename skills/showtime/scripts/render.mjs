@@ -12,7 +12,7 @@ import {
 import { checkFreshness, sourcesHash } from './lib/lean.mjs';
 import { FILM_HOOK } from './lib/export/probe.mjs';
 import { chapterTable, checkTiling, checkPieces, joinPieces, reencodePieces, withForcedKeys, seamAudio, framePsnr, pieceName, piecesDir, ONE_MACHINE, SEAM_PSNR_DB, SEAM_PSNR_REL_DB, SEAM_PSNR_FLOOR_DB, seamThreshold, SEAM_LOUDNESS_DB, SEAM_LAG_SAMPLES } from './lib/chapters.mjs';
-import { openBrowser, openStage, openPage, abandonBrowser, PAGE_OPEN_MS, writeDiagnostics, pullScore, parseSize, glRenderer, withTimeout, withPacedTimeout, newPace, paceSummary } from './lib/stagehost.mjs';
+import { openBrowser, openStage, openPage, abandonBrowser, PAGE_OPEN_MS, writeDiagnostics, pullScore, parseSize, glRenderer, withTimeout, withPacedTimeout, newPace, paceSummary, pageSetup, setupDiff, loadFailures } from './lib/stagehost.mjs';
 import { resolveFF, ffmpeg, probe, ebur128, writeWavFloat, fpsArg, hasEncoder, setLogFile, logLine, meanFrameDiff, JPEG_VF } from './lib/ff.mjs';
 import { CaptureQueue, OrderedFeed, autoWorkers, machineLimits } from './lib/pipeline.mjs';
 import { renderFlags } from './lib/chrome.mjs';
@@ -419,6 +419,20 @@ async function main(retry = null) {
       openOpts.config = cfg;
       sessions.push(await openFirst(openOpts));
     }
+    // What the first page set up (its components, looks and failed requests): every other page this render
+    // captures from must set up the same (openWorkerPage), or its frames are another page's. A request of the
+    // page's own that failed in the network while it opened (a reset connection on a busy machine: one
+    // components module missing and no component draws) can be gone on the next open, so this page opens
+    // again, twice at most; one that fails every time is part of the page as it is here (a warning says so).
+    let baseSetup = await pageSetup(sessions[0]);
+    for (let k = 1; baseSetup.failed.length && k <= 2; k++) {
+      logLine(`first page: ${baseSetup.failed.length} request(s) failed while it opened (${baseSetup.failed.slice(0, 4).join(', ')}); opening it again (${k}/2)`);
+      await closeSoon(sessions[0].close());
+      sessions.length = 0;
+      sessions.push(await openFirst(openOpts));
+      baseSetup = await pageSetup(sessions[0]);
+    }
+    if (baseSetup.failed.length) addWarn(`the page's request(s) failed on each of 3 opens, so the video is drawn without them: ${baseSetup.failed.slice(0, 4).join(', ')}`);
     const info0 = sessions[0].info;
     timings.load = Date.now() - t;
     stage('main', 'preparing the capture');
@@ -732,6 +746,36 @@ async function main(retry = null) {
       for (const x of ts) await sess.seek(x);
     };
 
+    // SHOWTIME_TEST_HOLD_START=1 (tests only): no worker takes a frame until every worker has opened its page (or
+    // given up), so each lane is captured by its own worker's page, as in a long render (in a short one a worker whose
+    // page opened first takes the lanes of the others while they still open: frames handed over, all of them right)
+    const holdStart = workers > 1 && process.env.SHOWTIME_TEST_HOLD_START === '1';
+    const openDone = Array.from({ length: workers }, () => { let r; const p = new Promise((x) => { r = x; }); p.done = r; return p; });
+    // A worker's page that differs from the first page's: which one is wrong? The first time, one more page is opened
+    // (in the first browser) and read. When it opened with no failed request and agrees with the worker and not with
+    // the first page, the first page is the one that opened short (a failure that left no trace in its requests, such
+    // as a setup that threw), and its frames are already in the video: the render stops with an error instead of
+    // shipping them. Otherwise the worker's page is the odd one and is opened again.
+    let referee = null;
+    const judgeFirst = () => referee || (referee = (async () => {
+      const pace = newPace();
+      const p = openStage(b0.browser, { ...openOpts, pace });
+      let ref;
+      try { ref = await withPacedTimeout(p, PAGE_OPEN_MS, 'opening a second first page', pace); } catch (e) { p.then((x) => x.close(), () => {}); throw e; }
+      try { return await pageSetup(ref); } finally { await closeSoon(ref.close()); }
+    })().catch((e) => { logLine(`a second first page could not be read: ${String(e && e.message || e).split('\n')[0]}`); return null; }));
+    // what decides the tie: the components and the failed requests (a look on its fallback in two pages and on WebGL
+    // in the first is a GPU that stopped giving contexts, not a first page that opened short)
+    const setupCore = (x) => ({ failed: x.failed, comps: x.comps });
+    // before the render stops on the first page: what that page itself logged, in render.log, and its diagnostics
+    const logFirstPage = async () => {
+      const s0 = sessions[0], L = s0.log;
+      for (const f of loadFailures(s0).slice(0, 20)) logLine(`first page: request failed: ${f.url} (${f.error}, ${f.type})`);
+      for (const h of L.http.slice(0, 20)) logLine(`first page: http ${h.status}: ${h.url}`);
+      for (const e of L.errors.slice(0, 20)) logLine(`first page: page error: ${e.message}`);
+      for (const m of L.console.filter((x) => x.type === 'error').slice(0, 20)) logLine(`first page: console error: ${m.text}`);
+      await withTimeout(writeDiagnostics(s0, diagDir, 'first-page'), 30000, 'diagnostics').catch(() => {});
+    };
     const wsess = [sessions[0]];   // one page per worker, kept across its runs
     const drawn = [];              // per worker: the frame after the last one its page drew (null: a new page)
     // a worker's page. A browser that never answers while it opens one is closed after PAGE_OPEN_MS and
@@ -765,6 +809,23 @@ async function main(retry = null) {
         browsers[w] = null;
         if (b) abandonBrowser(b);   // closed if it can, its process killed
         throw e;
+      }
+      // the same setup as the first page, or this lane's frames would be another page's (pageSetup)
+      const got = await pageSetup(sess).catch((e) => ({ error: String(e && e.message || e).split('\n')[0] }));
+      const diff = got.error ? `its setup could not be read: ${got.error}` : setupDiff(baseSetup, got);
+      if (diff) {
+        await closeSoon(sess.close());
+        logLine(`worker ${w}: its page's setup against the first page's: ${diff}`);
+        const ref = got.error ? null : await judgeFirst();
+        // the second first page decides only when nothing failed while it opened (else it may be as short as the worker's)
+        if (ref && !ref.failed.length && !setupDiff(ref, got) && setupDiff(setupCore(baseSetup), setupCore(ref))) {
+          await logFirstPage();
+          const err = new UserError(`the first page did not set up as the pages opened after it did (${setupDiff(baseSetup, ref, 2)}), so its frames cannot be used`,
+            `re-run the render (a request or a component setup failed while the first page opened, as on a busy machine); render.log has the first page's HTTP errors, page errors and console errors (lines "first page: ..."), and ${diagDir} its screenshot, DOM and log (first-page.*)`);
+          err.firstPageWrong = true;
+          throw err;
+        }
+        throw new Error(`the page in worker ${w} did not set up as the first page did (${got.error ? diff : setupDiff(baseSetup, got, 2)})`);
       }
       sessions.push(sess);
       wsess[w] = sess;
@@ -827,6 +888,7 @@ async function main(retry = null) {
           stage(who, null);
           return;
         } catch (err) {
+          if (err && err.firstPageWrong) { interrupted = true; throw err; }
           if (interrupted) return;
           if (err && err.glLost) throw err;   // not this worker's: the whole render runs again without the GPU
           if (drawing !== null) queue.unclaim(w, drawing);
@@ -879,17 +941,22 @@ async function main(retry = null) {
         const pre = early[w - 1];
         browsers[w] = pre ? await pre.catch(() => openBrowser({ gpu, ownSignals: true, args: renderFlags() })) : await openBrowser({ gpu, ownSignals: true, args: renderFlags() });
       }
-      for (let k = 1; !wsess[w]; k++) {
-        if (interrupted || queue.left() === 0) return;
-        try {
-          await openWorkerPage(w);
-        } catch (e) {
-          if (interrupted) return;
-          const msg = String(e.message || e).split('\n')[0];
-          logLine(`worker ${w}: ${msg}`);
-          if (k >= 3) { prog.clear(); warn(`worker ${w} could not open the page (${msg}); the other workers take its frames`); return; }
+      try {
+        for (let k = 1; !wsess[w]; k++) {
+          if (interrupted || queue.left() === 0) return;
+          try {
+            await openWorkerPage(w);
+          } catch (e) {
+            if (e && e.firstPageWrong) { interrupted = true; throw e; }
+            // the others drew every frame while this page opened: render closes the browsers, and this open ends there
+            if (interrupted || queue.left() === 0) return;
+            const msg = String(e.message || e).split('\n')[0];
+            logLine(`worker ${w}: ${msg}`);
+            if (k >= 3) { prog.clear(); warn(`worker ${w} could not open the page (${msg}); the other workers take its frames`); return; }
+          }
         }
-      }
+      } finally { openDone[w].done(); }
+      if (holdStart) await Promise.all(openDone);
       for (;;) {
         if (interrupted || (feed && feed.dead)) return;
         const run = queue.take(w);
@@ -915,7 +982,15 @@ async function main(retry = null) {
       addWarn(`${missing.length} frame(s) missing after capture; re-capturing`);
       const b = await openBrowser({ gpu, ownSignals: true, args: renderFlags() });
       browsers.push(b);
-      const sess = await openPage(b, openOpts, { onRetry: (m) => { warn(m); logLine(m); } });
+      let sess = null;
+      for (let k = 1; !sess; k++) {
+        const s = await openPage(b, openOpts, { onRetry: (m) => { warn(m); logLine(m); } });
+        const diff = await pageSetup(s).then((g) => setupDiff(baseSetup, g), (e) => `its setup could not be read: ${String(e && e.message || e).split('\n')[0]}`);
+        if (!diff) { sess = s; break; }
+        await closeSoon(s.close());
+        if (k >= 3) throw new UserError(`the page opened for the missing frames did not set up as the first page did, 3 times (${diff})`);
+        logLine(`missing frames: the page did not set up as the first page did (${diff}); opening it again`);
+      }
       sessions.push(sess);
       for (const i of missing) {
         await sess.seek(i / fps);
@@ -935,6 +1010,7 @@ async function main(retry = null) {
     for (const e of pageLog.errors.slice(0, 50)) logLine(`browser page error: ${e.message}`);
     for (const m of pageLog.console.filter((x) => x.type === 'error' || x.type === 'warning').slice(0, 100)) logLine(`browser console ${m.type}: ${m.text}${m.url ? ` (${m.url}:${m.line})` : ''}`);
     for (const u of pageLog.blocked.slice(0, 20)) logLine(`browser blocked request: ${u}`);
+    for (const s of sessions) for (const f of loadFailures(s).slice(0, 20)) logLine(`browser request failed: ${f.url} (${f.error}, ${f.type})`);
     for (const h of pageLog.http.filter((x) => x.status >= 400).slice(0, 50)) logLine(`browser http ${h.status}: ${h.url}`);
     stage('main', 'closing the pages and the workers\' browsers');
     const diag = await sessions[0].diag().catch(() => null);
@@ -1445,6 +1521,12 @@ async function buildAudio({ proj, cfg, info, browser, openOpts, audioDir, from, 
     const sess = await openPage({ browser }, { ...openOpts, scale: 1 }, { label: 'opening the page for the soundtrack' });
     try {
       const sc = await pullScore(sess.page, { duration: fullDur, sampleRate: 48000 });
+      // the first page has a score: a page without one opened short (a module that set ST.score did not load); the
+      // audio retry opens it again, and a project with audio never ships silent
+      if (!sc) {
+        const lost = loadFailures(sess).map((f) => `${f.url} (${f.error})`);
+        throw new Error(`the page for the soundtrack has no ST.score, though the first page had one${lost.length ? `; failed while it opened: ${lost.slice(0, 3).join(', ')}` : ''}`);
+      }
       if (sc) {
         const f = path.join(audioDir, 'score.wav');
         writeWavFloat(f, sc.channels, sc.sampleRate);

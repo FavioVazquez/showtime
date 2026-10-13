@@ -193,7 +193,9 @@ class TestPlanAndPage(unittest.TestCase):
             self.assertEqual(cfg["expect"]["must_show"], ["acme-tool"])
             mix = json.loads((tmp / "p" / "audio" / "mix.json").read_text(encoding="utf-8"))
             self.assertEqual(mix["tracks"][0]["compose"]["style"], "minimal-pulse")
-            self.assertEqual(len([t for t in mix["tracks"] if t["kind"] == "sfx"]), len(p["scenes"]) - 1)
+            self.assertEqual([t for t in mix["tracks"] if t["kind"] == "sfx"], [])           # no sound on the cuts
+            self.assertEqual(len([t for t in rv.build_mix(p, cut_sounds=True)["tracks"] if t["kind"] == "sfx"]),
+                             len(p["scenes"]) - 1)                                           # --cut-sounds: opt in
             scenes = re.findall(r'data-dur="([\d.]+)"', (tmp / "p" / "index.html").read_text(encoding="utf-8"))
             self.assertAlmostEqual(sum(map(float, scenes)), cfg["duration"], places=1)
             with self.assertRaises(FileExistsError):

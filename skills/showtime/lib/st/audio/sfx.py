@@ -45,6 +45,10 @@ class Spec:
         self.dur_range, self.tonal, self.doc, self.tags = dur_range, tonal, doc, tags
 
 
+# Bump when a synth's sound changes: mix.py keys its cache of rendered hits (~/.showtime/cache/audio) on it, so a
+# changed synth is re-rendered instead of an old hit being reused.
+SYNTH_VERSION = 2
+
 REGISTRY: Dict[str, Spec] = {}
 
 
@@ -69,14 +73,14 @@ def whoosh(dur, intensity, seed, key, direction=1.0):
     N = n(dur)
     peak = 0.5 + 0.15 * (r.random() - 0.5)
     b = bell_curve(N, peak, 1.6, 1.2)
-    lo, hi = 220 + 150 * r.random(), 1800 + 3000 * intensity
+    lo, hi = 220 + 150 * r.random(), 1100 + 1500 * intensity       # soft: the sweep stays in the low mids
     fc = lo * (hi / lo) ** b
-    src = 0.65 * noise(N, "pink", r) + 0.35 * noise(N, "white", r)
-    body = svf(src, fc, 1.1 + 1.2 * intensity, "bp")
-    air = svf(noise(N, "white", r), np.minimum(fc * 2.2, 16000), 0.9, "bp") * 0.3
-    x = (body + air) * b ** 1.3
+    src = 0.8 * noise(N, "pink", r) + 0.2 * noise(N, "white", r)
+    body = svf(src, fc, 0.8 + 0.6 * intensity, "bp")
+    air = svf(noise(N, "white", r), np.minimum(fc * 2.0, 4000), 0.7, "bp") * 0.08
+    x = svf((body + air) * b ** 1.3, 3200, 0.707, "lp")             # no hiss above ~3 kHz
     st = pan(x, direction * np.tanh(4 * (np.linspace(0, 1, N) - peak)) * 0.85)
-    return _rev(widen(fade(st, 0.01, 0.02), 9, 0.4), 0.8, 0.12), {}
+    return _rev(widen(fade(st, 0.12, 0.08), 9, 0.4), 0.8, 0.12, bright=3500), {}
 
 
 @sfx("peak", "transition", 1.8, (0.6, 6), tags=["whoosh", "heavy", "cinematic", "transition", "low"])
@@ -94,29 +98,31 @@ def whoosh_heavy(dur, intensity, seed, key):
     return _rev(widen(fade(st, 0.02, 0.03), 14, 0.5), 1.6, 0.18, 3000), {}
 
 
-@sfx("end", "transition", 0.45, (0.1, 3), tags=["swoosh", "whoosh-in", "transition", "rise"])
+@sfx("end", "transition", 0.6, (0.1, 3), tags=["swoosh", "whoosh-in", "transition", "rise"])
 def swoosh_in(dur, intensity, seed, key):
-    """Short fast rising swoosh that lands on its last sample."""
+    """Soft rising swoosh that swells into the cut and eases out on its last 70 ms (no hard stop, no hiss)."""
     r = rng(seed)
     N = n(dur)
     tt = np.linspace(0, 1, N)
-    e = tt ** 2.5
-    fc = 400 * (6000 * (0.6 + 0.4 * intensity) / 400) ** (tt ** 1.5)
-    x = svf(noise(N, "white", r) * 0.6 + noise(N, "pink", r) * 0.4, fc, 1.6, "bp") * e
-    return fade(pan(x, -0.6 + 1.2 * tt), 0.005, 0.004), {"hit": dur}
+    e = tt ** 2.0
+    fc = 300 * (2400 * (0.6 + 0.4 * intensity) / 300) ** (tt ** 1.5)
+    x = svf(noise(N, "pink", r) * 0.85 + noise(N, "white", r) * 0.15, fc, 0.9, "bp") * e
+    x = svf(x, 3200, 0.707, "lp")
+    return fade(pan(x, -0.5 + 1.0 * tt), 0.1, 0.07), {"hit": dur}
 
 
-@sfx("onset", "transition", 0.6, (0.15, 3), tags=["swoosh", "whoosh-out", "transition", "exit"])
+@sfx("onset", "transition", 0.7, (0.15, 3), tags=["swoosh", "whoosh-out", "transition", "exit"])
 def swoosh_out(dur, intensity, seed, key):
-    """Short falling swoosh that starts on the hit (exits, dismissals)."""
+    """Soft falling swoosh that eases in over ~200 ms from the hit (exits, dismissals)."""
     r = rng(seed)
     N = n(dur)
     tt = np.linspace(0, 1, N)
-    k = min(N, n(0.01))
-    e = np.concatenate([np.linspace(0, 1, k), (1 - tt[k:]) ** 2.2])[:N]
-    fc = 6000 * (300 / 6000) ** (tt ** 0.7)
-    x = svf(noise(N, "white", r), fc, 1.5, "bp") * e
-    return _rev(pan(x, 0.6 - 1.2 * tt), 0.6, 0.1), {}
+    k = min(N, n(0.2))
+    e = np.concatenate([0.5 - 0.5 * np.cos(np.linspace(0, np.pi, k)), (1 - tt[k:]) ** 2.2])[:N]
+    fc = 2600 * (260 / 2600) ** (tt ** 0.7)
+    x = svf(noise(N, "pink", r) * 0.85 + noise(N, "white", r) * 0.15, fc, 0.9, "bp") * e
+    x = svf(x, 3200, 0.707, "lp")
+    return _rev(pan(x, 0.5 - 1.0 * tt), 0.6, 0.1, bright=3500), {}
 
 
 @sfx("end", "transition", 3.0, (0.5, 16), tonal=True, tags=["riser", "build", "tension", "transition", "uplifter"])

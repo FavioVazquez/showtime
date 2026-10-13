@@ -1,0 +1,53 @@
+/* showtime living diagrams: the page around the figure (frame, title block, corner metadata, footer, steps),
+   in two themes. <html data-theme="light"> (paper, the default) or data-theme="dark" (night schematic).
+   Fonts are linked by the page (light: Geist, Geist Mono, Instrument Serif; dark: IBM Plex Sans, IBM Plex
+   Mono, Space Grotesk). Text sizes keep the check's 25 px floor; every readable colour is >= 4.5:1. */
+:root {
+  --ld-ground: #F4F3EF; --ld-ink: #1E2024; --ld-ink-2: #4A4C50; --ld-hair: #B9B6AE; --ld-accent: #B8431D;
+  --ld-title-font: 'Instrument Serif', serif; --ld-title-weight: 400; --ld-title-size: 76px; --ld-title-track: -0.01em;
+  --ld-title-style: italic; --ld-sans: 'Geist', sans-serif; --ld-mono: 'Geist Mono', monospace;
+  --ld-backdrop: var(--ld-ground);
+}
+:root[data-theme="white"] {
+  --ld-ground: #FFFFFF; --ld-ink: #111827; --ld-ink-2: #4B5563; --ld-hair: #E5E7EB; --ld-accent: #2563EB;
+  --ld-title-font: 'Inter', sans-serif; --ld-title-weight: 650; --ld-title-size: 64px; --ld-title-track: -0.02em;
+  --ld-title-style: normal; --ld-sans: 'Inter', sans-serif; --ld-mono: 'JetBrains Mono', monospace;
+  --ld-backdrop: #FFFFFF;
+}
+:root[data-theme="dark"] {
+  --ld-ground: #0A0F19; --ld-ink: #EEF2F8; --ld-ink-2: #A9B6C8; --ld-hair: #23314A; --ld-accent: #FFB04A;
+  --ld-title-font: 'Space Grotesk', sans-serif; --ld-title-weight: 600; --ld-title-size: 64px; --ld-title-track: -0.025em;
+  --ld-title-style: normal; --ld-sans: 'IBM Plex Sans', sans-serif; --ld-mono: 'IBM Plex Mono', monospace;
+  --ld-backdrop: radial-gradient(1200px 760px at 62% 58%, #111A2A 0%, #0C1320 55%, #0A0F19 100%);
+}
+html, body { margin: 0; background: var(--ld-ground); }
+.ld-stage { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; overflow: hidden; background: var(--ld-backdrop); }
+#ld { position: absolute; inset: 0; }
+.ld-frame { position: absolute; inset: 44px; border: 1.5px solid var(--ld-hair); border-radius: 4px; pointer-events: none; }
+.ld-tick { display: none; position: absolute; width: 18px; height: 18px; border-color: #5D7396; border-style: solid; }
+:root[data-theme="dark"] .ld-tick { display: block; }
+.ld-tick.a { left: 38px; top: 38px; border-width: 2px 0 0 2px; } .ld-tick.b { right: 38px; top: 38px; border-width: 2px 2px 0 0; }
+.ld-tick.c { left: 38px; bottom: 38px; border-width: 0 0 2px 2px; } .ld-tick.d { right: 38px; bottom: 38px; border-width: 0 2px 2px 0; }
+.ld-meta { position: absolute; font-family: var(--ld-mono); font-weight: 500; font-size: 25px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ld-ink-2); white-space: nowrap; }
+:root[data-theme="dark"] .ld-meta { letter-spacing: 0.1em; }
+.ld-kicker { left: 112px; top: 100px; } .ld-kicker b { font-weight: 500; color: var(--ld-ink-2); }
+:root[data-theme="dark"] .ld-kicker b { color: var(--ld-accent); }
+.ld-figno { right: 112px; top: 100px; }
+.ld-title { position: absolute; left: 108px; top: 138px; margin: 0; font-family: var(--ld-title-font); font-weight: var(--ld-title-weight);
+  font-size: var(--ld-title-size); line-height: 1.02; letter-spacing: var(--ld-title-track); color: var(--ld-ink); white-space: nowrap; }
+:root[data-theme="dark"] .ld-title { top: 146px; }
+.ld-title em { font-style: var(--ld-title-style); color: var(--ld-accent); }
+.ld-dek { position: absolute; left: 112px; top: 236px; width: 560px; font-family: var(--ld-sans); font-size: 27px; line-height: 1.32; color: var(--ld-ink-2); }
+.ld-foot { bottom: 90px; }  /* the runtime fades plates (only) out under each footer line: an SVG mask on the floor layer */
+.ld-foot:empty { display: none; }
+.ld-foot.l { left: 112px; }
+.ld-foot.r { right: 112px; text-transform: none; letter-spacing: 0.04em; color: var(--ld-ink); }
+.ld-foot .k { color: var(--ld-ink-2); }
+/* steps: one line per beat (Diagram fills .ld-steps from the scene's steps) */
+.ld-steps { position: absolute; left: 112px; top: 330px; width: 520px; height: 150px; }
+.ld-step { position: absolute; left: 0; top: 0; width: 100%; visibility: hidden; opacity: 0; }
+.ld-step-k { display: block; font-family: var(--ld-mono); font-weight: 500; font-size: 25px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ld-accent); margin-bottom: 8px; }
+:root:not([data-theme="dark"]) .ld-step-k { color: #A23A17; }
+:root[data-theme="white"] .ld-step-k { color: #1D4ED8; }
+:root[data-theme="white"] .ld-frame { border-width: 1px; border-radius: 14px; }
+.ld-step-t { display: block; font-family: var(--ld-sans); font-weight: 500; font-size: 31px; line-height: 1.28; color: var(--ld-ink); }

@@ -359,6 +359,29 @@ class GalleryCards(unittest.TestCase):
 
 
 @unittest.skipIf(build is None, "needs markdown-it-py (showtime's venv has it)")
+@unittest.skipUnless(HAVE_EXAMPLES and (build.EXAMPLES / "_harness").is_dir(), NO_EXAMPLES)
+class HarnessPage(unittest.TestCase):
+    """harness/: the harness manual is a whole site page with its own title, the editor's note (ARTICLE_URL) stripped,
+    the article link filled in, and a search entry whose anchors exist."""
+
+    def test_build_harness_writes_the_page(self):
+        tmp = Path(tempfile.mkdtemp(prefix="st-harness-"))
+        self.addCleanup(shutil.rmtree, tmp, True)
+        site = build.Site(tmp, [], "owner/repo", None, "main")
+        build.build_harness(site)
+        text = (tmp / build.HARNESS_PAGE).read_text(encoding="utf-8")
+        self.assertIn("<title>Many hands, one yes: a guide to harness engineering</title>", text)
+        self.assertNotIn("ARTICLE_URL", text)
+        self.assertNotIn("{{", text)
+        url = build.ARTICLE_URL.match(build.HARNESS_SRC.read_text(encoding="utf-8")).group(1)
+        self.assertIn('href="%s"' % url, text)
+        self.assertNotIn('"media/', text)
+        self.assertEqual(build.check_pages(tmp, site.written, site.h2_expect), [])
+        self.assertEqual([e["u"] for e in site.search], [build.HARNESS_PAGE])
+        self.assertEqual(build.check_search(site), [])
+
+
+@unittest.skipIf(build is None, "needs markdown-it-py (showtime's venv has it)")
 class StartHereAndShelves(unittest.TestCase):
     """The docs proposal (0.4.2): the gallery's shelves come from site/content/gallery.json, Start here names the kind
     of video, cards carry their number and one duration format, "New in 0.4" covers 0.4.x, and the gallery's film is
@@ -423,7 +446,17 @@ class StartHereAndShelves(unittest.TestCase):
         self.assertEqual(sorted(on), sorted(e["num"] for e in exs))
         self.assertEqual([g["name"] for g in shelves], ["Explainers", "Your footage", "Products and brands", "Code and data",
                                                          "Social and trailers", "Looks and motion"])
-        self.assertEqual(sum(1 for e in exs if e["num"] in build.NEW_IDS), 10)
+        self.assertEqual(sum(1 for e in exs if e["num"] in build.NEW_IDS), 13)
+
+    @unittest.skipUnless(HAVE_EXAMPLES, NO_EXAMPLES)
+    def test_live_figures_are_the_cards_html_not_its_videos(self):
+        # a diagram card lists its --interactive exports after "Live figures:"; they are its HTML, never a video
+        _groups, exs = build.parse_examples()
+        d = next(e for e in exs if e["num"] == "diagram")
+        self.assertEqual(d["watch"], ["_diagram/enter-720p.mp4"])
+        self.assertEqual(d["html"], ["_diagram/econ-lab-figure.html", "_diagram/enter-figure.html"])
+        for e in exs:
+            self.assertFalse(any(w.endswith(".html") for w in e["watch"]), e["num"])
 
     def test_new_in_name_follows_the_release_series(self):
         # the badges and tab (gallery.json) and the landing tile (whats-new.md) must name the same release series

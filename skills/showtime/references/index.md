@@ -17,9 +17,12 @@ for that step) with a table of its sections; read only what the current step nee
 | `references/workflows/tutorial.md` | a tutorial, walkthrough or product demo (recorded app or drawn) |
 | `references/workflows/social-short.md` | a reel, TikTok, Short, vertical cut-down or audiogram |
 | `references/workflows/data-story.md` | numbers or charts animated into a story |
+| `references/workflows/diagram.md` | how a system works as a living diagram: parts, flows, states and labels that build over time (light, dark or white); the same scene as a live figure people poke (`export html --interactive`) |
 | `references/workflows/footage-edit.md` | recorded footage cut, captioned, reframed, cleaned or graded; a long recording's best moments as short clips |
 | `references/workflows/music-video.md` | picture cut or animated to a song |
 | `references/workflows/changelog-video.md` | a pull request, release or changelog turned into a video (unattended, in CI: `showtime release-video`; a PR video for its description: `showtime pr-video`) |
+| `references/workflows/recap.md` | a coding agent's session turned into a short film of what it did (`showtime recap`: allow-listed facts only, script.md read first) |
+| `references/workflows/repro.md` | a failing browser test (a Playwright trace, or the test command) as a short narrated video for a bug report or PR: `showtime repro` |
 | `references/workflows/trailer.md` | a teaser or trailer |
 | `references/workflows/slideshow.md` | photos or screenshots set to music |
 | `references/workflows/voiceover-only.md` | narration added to an existing video |
@@ -66,7 +69,7 @@ for that step) with a table of its sections; read only what the current step nee
 | `references/transitions.md` | choosing scene handoffs (CSS and WebGL) |
 | `references/film-api.md` | drawing a canvas film or tutorial with `Film` |
 | `references/series.md` | a tutorial series: several episodes for one product sharing one kit (`showtime series`) |
-| `references/html-export.md` | sharing a project as a single-file interactive HTML video (`showtime export html`); a video that stops and asks the viewer (showtime.json `questions`); links to a moment or a looping part (`#t=10-20`) |
+| `references/html-export.md` | sharing a project as a single-file interactive HTML video (`showtime export html`); a video that stops and asks the viewer (showtime.json `questions`); links to a moment or a looping part (`#t=10-20`); a living diagram's live figure (`--interactive`) |
 | `references/manim.md` | equations, proofs, graphs, grid transforms: math and diagram animation with Manim |
 | `references/synth-score.md` | writing music or sound design in code with `Synth` |
 | `references/debugging-renders.md` | a render fails, flickers, shows black or frozen frames, or differs from the preview |

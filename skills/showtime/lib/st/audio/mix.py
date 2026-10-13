@@ -128,6 +128,11 @@ def _cache_dir() -> Path:
     return d
 
 
+def sfx_cache_key(spec: Dict[str, Any]) -> str:
+    """Cache name of a rendered synth hit: its parameters and the synth version (sfx.SYNTH_VERSION)."""
+    return "sfx-" + _hash(dict(spec, v=sfx.SYNTH_VERSION))
+
+
 def _hash(obj: Any) -> str:
     return hashlib.sha256(json.dumps(obj, sort_keys=True, default=str).encode("utf-8")).hexdigest()[:16]
 
@@ -331,7 +336,7 @@ def _click_track(times: List[float]) -> np.ndarray:
     """One synthesized key click per time (six seeded variants, slight level variation)."""
     variants = []
     for sd in range(1, 7):
-        key = "sfx-" + _hash({"t": "keyclick", "dur": None, "intensity": 0.6, "seed": sd, "key": "C"})
+        key = sfx_cache_key({"t": "keyclick", "dur": None, "intensity": 0.6, "seed": sd, "key": "C"})
         cp = _cache_dir() / (key + ".wav")
         if not cp.is_file():
             with cache_lock(cp):
@@ -472,7 +477,7 @@ def load_source(tr: dict, idx: int, bases: List[Path], mix_dur: float) -> Source
             raise ShowtimeError("track %d: synth needs a 'type' (see `showtime audio sfx-types`)" % idx)
         params = {"dur": spec.get("dur"), "intensity": float(spec.get("intensity", 0.7)),
                   "seed": int(spec.get("seed", 0)), "key": str(spec.get("key", "C"))}
-        key = "sfx-" + _hash({"t": spec["type"], **params})
+        key = sfx_cache_key({"t": spec["type"], **params})
         cp = _cache_dir() / (key + ".wav")
         cj = _cache_dir() / (key + ".json")
         if not (cp.is_file() and cj.is_file()):

@@ -106,20 +106,20 @@ languages or what leaves your machine: the [FAQ](docs/faq.md). Something went wr
 > quality (the default) has a critic review every finished video; lean skips the critic unless the video is going
 > to be published. Say **"no crew"** to keep the whole job in one session.
 
-**What's new in 0.4.2** (the list is [below](#new-in-042), and [What's new](docs/whats-new.md) has a short
-paragraph for each group):
+**What's new in 0.4.3** (the list is [below](#new-in-043), and [What's new](docs/whats-new.md) has a short
+paragraph for each):
 
-- **A film in chapters, with one soundtrack.** `showtime render --chapters` plans the pieces and `--join` joins them
-  with a soundtrack built once, so there are none of the loudness steps that joining separately mastered sections gave.
-- **Two render failures under load, fixed.** A browser window resized late no longer ruins a lane, and a frame that
-  never comes is drawn again (render) or ends the check with an error, instead of stalling.
-- **More browsers without a GPU.** On an 8-thread machine without a GPU, `--workers auto` now picks 6 browsers
-  instead of 3.
-- **Narration that fits, and more local voices.** `voice script --fit S --estimate` says up front whether the
-  narration can fit, and extra local voice engines load by name.
-- **Help when something goes wrong.** A first-video guide, a troubleshooting page by symptom and a glossary
-  ([your first video](docs/guides/first-video.md), [troubleshooting](docs/troubleshooting.md),
-  [glossary](docs/glossary.md)).
+- **Living diagrams.** `showtime new diagram` explains a system over time as an isometric figure that builds
+  itself: parts arrive in the order that explains them, and flows, packets and labels move through them.
+- **Live figures.** `showtime export html <project> --interactive` turns the same scene into one offline page
+  people poke: hover a part, pick a step, turn a knob, and the numbers answer
+  ([try one](https://github.com/FavioVazquez/showtime-examples/blob/main/examples/_diagram/README.md)).
+- **A recap of your agent's session.** `showtime recap --latest` turns a Claude Code session into a 30-60 s
+  narrated film of what the agent did, built only from allow-listed facts, never the transcript's text.
+- **A failing test as a bug-report video.** `showtime repro` turns a Playwright trace into a narrated film of the
+  steps and the failure, with a Markdown summary for the issue; typed values are never shown.
+- **Steadier renders, quieter cuts.** Every render worker now captures from a page set up like the first one; recap
+  and repro pick their music per session or test, and generated videos no longer put a sound on every cut.
 
 On the [behaviour scoreboard](#behaviour-scoreboard), 14 one-sentence requests were run 3 times each (42 runs). The
 same model did the right thing 35 times with showtime and 25 times without. The cases check that it starts on
@@ -335,8 +335,8 @@ setup:
 is the same server from npm ([@faviovazquez/showtime-mcp](https://www.npmjs.com/package/@faviovazquez/showtime-mcp),
 also listed in the [MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.FavioVazquez/showtime)
 as `io.github.FavioVazquez/showtime` and on [Smithery](https://smithery.ai/servers/favio-vazquezp/showtime)), and
-[`showtime-0.4.2.mcpb`](https://github.com/FavioVazquez/showtime/releases/download/v0.4.2/showtime-0.4.2.mcpb) from
-the v0.4.2 release opens in Claude Desktop with a double click. Setup still runs once on your machine: the
+[`showtime-0.4.3.mcpb`](https://github.com/FavioVazquez/showtime/releases/download/v0.4.3/showtime-0.4.3.mcpb) from
+the v0.4.3 release opens in Claude Desktop with a double click. Setup still runs once on your machine: the
 models and tools never travel inside a package. Long tools answer with a task id after about 20 seconds when a
 client stops calls early; the `status` tool reports progress and the result. Besides the tools that mirror the commands,
 `guide` reads a reference by the piece and `receipt` writes a job's receipt (tokens and cost are "not reported by this
@@ -358,7 +358,7 @@ command line: `adopt`, `footage cutout`, `edit cards`, `edit moments`, `edit cli
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/readme/marquee-dark.svg">
     <source media="(prefers-color-scheme: light)" srcset="assets/readme/marquee-light.svg">
-    <img alt="Now showing: 32 videos, every frame rendered by showtime." src="assets/readme/marquee-light.svg" width="100%">
+    <img alt="Now showing: 35 videos, every frame rendered by showtime." src="assets/readme/marquee-light.svg" width="100%">
   </picture>
 </p>
 
@@ -481,6 +481,14 @@ changed. Click a preview to open the example. Each one has a card with its promp
 <td width="50%" valign="top"><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/29-pr-video-showtime"><img src="assets/readme/gallery/29-pr-video-showtime.webp" width="400" alt="68 files changed, +1138 -159: a file tree with green and red bars, from showtime&#x27;s pull request #7."></a></td>
 <td width="50%" valign="top"><b><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/29-pr-video-showtime">A pull request becomes a video</a></b> · 40 s, one command<br><sub><code>showtime pr-video 7</code> on showtime's own pull request: the PR's title and words, the files it changed with their +/- counts, a real hunk and its URL, secrets masked, a copy under GitHub's 10 MB attachment limit and the Markdown to paste.</sub></td>
 </tr>
+<tr>
+<td width="50%" valign="top"><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/_recap"><img src="assets/readme/gallery/_recap.webp" width="400" alt="Red to green, from a Claude Code session: one red test run, then two green ones, and 12/12 test files passed."></a></td>
+<td width="50%" valign="top"><b><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/_recap">A recap of an agent's session</a></b> · 37 s, narrated<br><sub><code>showtime recap</code> on showtime's test session: 17 minutes of an agent fixing a parser test as the numbers, a minute-by-minute timeline, the edit, the tests red to green and the commit, built from allow-listed facts only.</sub></td>
+</tr>
+<tr>
+<td width="50%" valign="top"><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/_repro"><img src="assets/readme/gallery/_repro.webp" width="400" alt="A failing Playwright step: the page says Welcome back, Ada; expected &quot;Welcome, Ada!&quot;, received &quot;Welcome back, Ada&quot;, and the console error."></a></td>
+<td width="50%" valign="top"><b><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/_repro">A failing test as a bug-report video</a></b> · 34 s, narrated<br><sub><code>showtime repro</code> on a Playwright trace: each step on the trace's screenshots, the failure slowed down with expected and received, the typed values covered, and <code>repro.md</code> for the issue.</sub></td>
+</tr>
 </table>
 
 Two more kinds of developer video have a workflow but no example in this gallery yet: a **repo explainer** (what the
@@ -498,10 +506,11 @@ it (with gh, or from GitHub's API for a public one) and renders a video under 10
 > The **HTML videos** are single files you can open in any browser, offline: the same frames as the
 > MP4, a player with chapters, keyboard shortcuts, links to a moment or to a part that loops, questions
 > that pause the video until the viewer answers, and no network requests. Make one from any project with
-> `showtime export html`. On GitHub, download the file to play it.
+> `showtime export html`. On GitHub, download the file to play it. A living diagram also exports as a live figure
+> (`--interactive`): no player, a board people hover, step through and tune, in one offline file.
 
 <details>
-<summary><b>The 32 prompts behind the examples</b>: copy one into your agent</summary>
+<summary><b>The 35 prompts behind the examples</b>: copy one into your agent</summary>
 
 | # | Prompt |
 |---|---|
@@ -537,6 +546,9 @@ it (with gh, or from GitHub's API for a public one) and renders a video under 10
 | [32](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/32-twelve-looks) | Show one project in each of the twelve look signatures: a contact sheet of all twelve, and a 24-second loop that changes look every 2 seconds. |
 | [_looks](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/_looks) | Show the seven WebGL looks in one short page, one scene each, rendered without a GPU. |
 | [_blur](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/_blur) | Show the shutter blur on four snaps: a whip, a slam, a scale punch, and the same whip without and with it. |
+| [_diagram](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/_diagram) | Show what happens when you press Enter in a coding agent, as a diagram that builds itself, and a live version people can poke. |
+| [_recap](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/_recap) | Make a short video of what my agent did in this Claude Code session. |
+| [_repro](https://github.com/FavioVazquez/showtime-examples/tree/main/examples/_repro) | Turn this failing Playwright test into a video I can attach to the bug report. |
 
 </details>
 
@@ -806,7 +818,8 @@ video until the viewer answers ([guide](skills/showtime/references/html-export.m
 
 Also: 30 motion components (seven of them WebGL looks), 26 transitions (15 CSS, 11 WebGL) and 6 themes, 12 look signatures that new
 dom, launch, short and data projects start in (a palette, a type pair and a motion feel, picked away from your
-recent videos; `showtime signature`), a showreel template for a dense 15-second reel, website capture
+recent videos; `showtime signature`), a showreel template for a dense 15-second reel, living diagrams (a system as an isometric figure that builds itself,
+also exported as a live figure people poke), website capture
 (screenshots, copy, brand colours and fonts), scripted app recordings with smooth auto-zoom, cursor and keycaps, PDF import, CSV and JSON to charts, a brand kit, posters baked into frame
 0, exports for YouTube, X, LinkedIn, Reels, TikTok, Shorts and square feeds, README loops (animated WebP
 and GIF, like the previews on this page), credits written automatically when an asset needs
@@ -820,7 +833,7 @@ Claude Design export (`showtime adopt`), and a receipt for every job.
 
 | Group | Commands |
 |---|---|
-| Make | `new` (templates: data, dom, film, launch, series, short, showreel, tutorial, manim), `adopt`, `release-video`, `pr-video`, `retime`, `data`, `preview`, `render`, `export`, `check`, `snap`, `look`, `score`, `motion`, `code`, `server`, `manim` |
+| Make | `new` (templates: data, diagram, dom, film, launch, series, short, showreel, tutorial, manim), `adopt`, `release-video`, `pr-video`, `recap`, `repro`, `retime`, `data`, `preview`, `render`, `export`, `check`, `snap`, `look`, `score`, `motion`, `code`, `server`, `manim` |
 | Audio | `audio compose`, `sfx`, `lib`, `beats`, `fit`, `mix`, `meter`, `master` |
 | Voice | `voice say`, `voice script` (narration with word timings, fitted to a length) |
 | Footage | `transcribe`, `pack`, `edit` (`cut`, `check`, `render`, `view`, `cards`, `moments`, `clips`), `captions`, `footage` (`scenes`, `reframe`, `cutout`, `denoise`, `stabilize`, `grade` and more), `autozoom` |
@@ -848,6 +861,10 @@ showtime adopt my-page/                      # a page that already has seek(t) g
 showtime adopt design-html.zip               # a Claude Design animation's HTML export to a 1080p video, its fonts local
 showtime release-video notes.md -o my-video  # release notes to a ready-to-render project, no agent needed
 showtime pr-video 123                        # a pull request to a video under 10 MB for its description
+showtime recap --latest                      # this folder's newest Claude Code session as a short film: script.md first, then --yes
+showtime repro -- npx playwright test tests/login.spec.ts   # a failing test as a bug-report video: script.md first, then --yes
+showtime new diagram how-it-works --example enter          # a living diagram: a system that builds and explains itself
+showtime export html how-it-works --interactive            # the same scene as a live figure people poke, one offline file
 showtime review open my-job                  # a local page to leave notes on frames or stretches of the finished video
 showtime edit cards suggest edit/transcripts/talk.json   # moments in a talking head for cards (name tag, quote, list)
 showtime footage cutout talk.mp4             # the speaker cut out on the CPU: a video with alpha, a matte, a sheet
@@ -893,6 +910,69 @@ scene files written for it. `showtime manim check` also renders a draft and runs
 detectors on it, so a near-black scene or a barely visible change is reported before the full render.
 
 </details>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/readme/divider-dark.svg">
+  <img alt="" src="assets/readme/divider-light.svg" width="100%">
+</picture>
+
+## New in 0.4.3
+
+[What's new](docs/whats-new.md) has a short paragraph for each.
+
+<table>
+<tr>
+<td width="33%" valign="top"><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/_diagram"><img src="assets/readme/gallery/_diagram.webp" width="260" alt="The Enter loop at work: your machine with the terminal, Claude Code, Bash and a permission check, a request flying up to a glass cube labelled cloud."></a><br><b>Living diagrams and live figures</b></td>
+<td width="33%" valign="top"><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/_recap"><img src="assets/readme/gallery/_recap.webp" width="260" alt="Red to green, from a Claude Code session: one red test run, then two green ones, and 12/12 test files passed."></a><br><b>A recap of your agent's session</b></td>
+<td width="33%" valign="top"><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/_repro"><img src="assets/readme/gallery/_repro.webp" width="260" alt="A failing Playwright step: the page says Welcome back, Ada; expected &quot;Welcome, Ada!&quot;, received &quot;Welcome back, Ada&quot;, and the console error."></a><br><b>A failing test as a video</b></td>
+</tr>
+</table>
+
+**Explain a system**
+
+- **Living diagrams.** `showtime new diagram` draws a system as an isometric figure that builds itself over time:
+  parts arrive in the order that explains them, pipes and links join them, flows, packets and state changes move
+  through them, labels land when their part matters, and the camera chooses what to look at. Light, dark or white;
+  `--example enter` (a coding agent's loop), `--example market` and `--example econ-lab` start from finished scenes.
+  `showtime check` reports a label that collides or never shows whole
+  ([diagram](skills/showtime/references/workflows/diagram.md), issue #51).
+- **Live figures.** `showtime export html <project> --interactive` writes the same scene as one offline file,
+  `<slug>-figure.html`: no play button, the board is live from the first frame. Hover a part to light it and read
+  its value, pick a step to run it as an experiment on the board, turn a knob and the levels and numbers answer at
+  once; untouched, a short tour plays. Keys, deep links to a state (`#step=cost&rule=3`), reduced motion, a phone
+  layout and no network requests. `showtime check` walks every step, knob value and hovered part for cut or
+  overlapping text and broken readouts ([html-export § Live figure](skills/showtime/references/html-export.md#live-figure),
+  [the demo, live on the site](https://faviovazquez.github.io/showtime/examples/_diagram.html)).
+
+**From your agent's work**
+
+- **`showtime recap`.** A Claude Code session becomes a 30-60 s narrated film of what the agent did: the time, turns
+  and tool calls, a timeline of the files it read and edited and the commands and tests it ran, the tests red to
+  green and the diff from git. It reads the session log on your machine through an allow-list of facts
+  (repository-relative paths, program names from a fixed list, test counts, git stats), never the transcript's own
+  text; a filter drops anything that still looks like a key, a path, a URL or an e-mail address, and nothing renders
+  until you have read `script.md` ([recap](skills/showtime/references/workflows/recap.md)).
+- **`showtime repro`.** A failing Playwright test (its `trace.zip`, or the test command) becomes a narrated
+  bug-report video: each step on the trace's screenshots with a cursor and the target boxed, then the failure slowed
+  down with expected and received, plus `repro.md` to paste into the issue. Typed values are never shown or spoken
+  (their fields are covered); paths are shortened to the file name, URLs lose their query strings, and secrets are
+  masked ([repro](skills/showtime/references/workflows/repro.md)).
+
+**Render, sound and the site**
+
+- **Every render worker captures from a page set up like the first one.** Under load, a worker whose page opened
+  while one of its modules got no reply could render bare frames. Each page's setup is now compared with the first
+  page's, and a page that differs is opened again; if the first page was the broken one, the render stops with an
+  error instead of shipping its frames (issue #52).
+- **Music per video, and quiet cuts.** Recap and repro pick their bed from the music catalog (or a composed style
+  offline) per session or test, so two films do not sound the same; a rerun keeps its bed, `--music` pins one, and a
+  CC BY track's credit is written for you. A catalog track is downloaded once from its creator's site and cached;
+  nothing is sent, and `--music <style>` or `SHOWTIME_OFFLINE=1` keeps the whole film local. Recap, repro,
+  `release-video` and `pr-video` no longer put a sound on every cut (`--cut-sounds` adds a soft swoosh back), and the
+  transition sounds are softer everywhere.
+- **How showtime is built.** A new page on the site, [how showtime is built](https://faviovazquez.github.io/showtime/harness/),
+  is the crew's operating manual: who does what, and how a task becomes a merged pull request or a film (issue #53).
+  The site and the repository share one link-preview image (issue #54).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/readme/divider-dark.svg">
@@ -1459,15 +1539,15 @@ language, a CPU limit) and the render progress monitor.
 
 <p align="center"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/readme/diagrams/docs-map-dark.svg">
-  <img alt="The documentation map: fourteen workflows (launch video, explainer, tutorial, social short, data story, footage edit, trailer, slideshow, changelog video, music video, voice-over only, localize, repo explainer, paper explainer), then five acts and a finale of guides, from onboarding to qa and review." src="assets/readme/diagrams/docs-map-light.svg" width="100%">
+  <img alt="The documentation map: seventeen workflows (launch video, explainer, tutorial, social short, data story, footage edit, trailer, slideshow, changelog video, music video, voice-over only, localize, repo explainer, paper explainer, repro, diagram, recap), then five acts and a finale of guides, from onboarding to qa and review." src="assets/readme/diagrams/docs-map-light.svg" width="100%">
 </picture></p>
 
-For people: [ten task guides](docs/guides/README.md) (what to say to your agent, what it runs, what you get, how
+For people: [fourteen task guides](docs/guides/README.md) (what to say to your agent, what it runs, what you get, how
 long it takes), [What's new](docs/whats-new.md) (each release in one sentence a feature) and the [FAQ](docs/faq.md)
 (GPUs, cost, agents, privacy, licences, disk, time, platforms, languages).
 
 The [documentation map](docs/README.md) is the way in: every guide, grouped by what you are making, from
-workflows (launch, explainer, tutorial, social, data, footage, trailer) to story and craft, sound and
+workflows (launch, explainer, tutorial, social, data, footage, trailer, diagram, recap, repro) to story and craft, sound and
 voice, rendering, and QA. The glossary is in [CONTEXT.md](CONTEXT.md), and what showtime deliberately
 does not do, and why, is in [.out-of-scope/](.out-of-scope/README.md).
 

@@ -384,9 +384,17 @@ class MotionTests(unittest.TestCase):
                     self.assertAlmostEqual(max(c["t1"] for c in scenes), new, places=3, msg=name)
                     starts = sorted(c["t0"] for c in scenes)
                 else:
-                    cues = (proj / "cues.js").read_text(encoding="utf-8")
+                    # a canvas film keeps its cue table in cues.js; a living diagram keeps it in scene.js: whichever
+                    # top-level script holds `var CUE = {...}`, its duration is the new length and its beats are the
+                    # times music sections may start on
+                    tables = [p for p in sorted(proj.glob("*.js")) if re.search(r"\bvar CUE\s*=\s*\{", p.read_text(encoding="utf-8"))]
+                    self.assertEqual(len(tables), 1, (name, [p.name for p in proj.glob("*.js")]))
+                    cues = tables[0].read_text(encoding="utf-8")
                     self.assertRegex(cues, r"\n\s*duration: %s," % re.escape(("%g" % new)), name)
-                    starts = []
+                    body = cues[cues.index("var CUE"):]
+                    body = body[:body.index("\n};")]
+                    beats = [float(v) for k, v in re.findall(r"^\s*(\w+):\s*([0-9.]+),", body, re.M) if k not in ("duration", "bpm", "cps")]
+                    starts = [0.0] + beats   # music sections start on CUE beats, whichever file holds the table
                 mix = proj / "audio" / "mix.json"
                 if mix.is_file():
                     spec = json.loads(mix.read_text(encoding="utf-8"))
@@ -395,7 +403,7 @@ class MotionTests(unittest.TestCase):
                         secs = (tr.get("compose") or {}).get("sections")
                         if secs:
                             times = [float(x.split(":")[0]) for x in secs.split(",")]
-                            for t in times:             # every music section starts on a scene start
+                            for t in times:             # every music section starts on a scene start (or a CUE beat)
                                 self.assertTrue(any(abs(t - s0) < 0.002 for s0 in starts), (name, new, secs, starts))
 
 

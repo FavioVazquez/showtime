@@ -123,8 +123,11 @@ async function main() {
   const a = parseCli(SPEC);
   const proj = resolveProject(a._[0] || '.', { page: a.page });
   const rec = await running(proj.dir);
-  // the player link, with the server's session key (a server started before keys existed has none)
-  const playerUrl = (r) => withKey(`${r.url}/_st/preview?page=/${encodeURI(proj.page)}`, r.key);
+  // the player link, with the server's session key (a server started before keys existed has none). A live page
+  // (<html data-st-live>: a living diagram's figure.html) runs its own clock: it opens as itself, not in the player.
+  let live = false;
+  try { live = /<html\b[^>]*\sdata-st-live\b/i.test(fs.readFileSync(path.join(proj.dir, ...proj.page.split('/')), 'utf8')); } catch { /* no page yet */ }
+  const playerUrl = (r) => withKey(live ? `${r.url}/${encodeURI(proj.page)}` : `${r.url}/_st/preview?page=/${encodeURI(proj.page)}`, r.key);
 
   if (a.status) {
     if (a.json) console.log(JSON.stringify(rec ? { running: true, ...rec, player: playerUrl(rec) } : { running: false }));

@@ -17,10 +17,11 @@ import { writeExport, estimateSingle, notices, showtimeVersion, category, jsonBy
 import { fitFootage } from './lib/export/fit.mjs';
 import { timeIssues, socraticDoc } from './lib/questions.mjs';
 import { resolveShare, shareMeta, genericTitle, genericChapters } from './lib/export/share.mjs';
+import { packFigure, sceneInfo, TEMPLATE_TITLE } from './lib/export/figure.mjs';
 
 const SPEC = {
   name: 'export',
-  usage: 'showtime export html <project|job> [-o out.html] [--audio auto|embed|score|none] [--folder] [--controls full|minimal|none] [--target file|artifact] [--lang CODE] [--no-questions] [--auto-continue S]',
+  usage: 'showtime export html <project|job> [-o out.html] [--interactive] [--audio auto|embed|score|none] [--folder] [--controls full|minimal|none] [--target file|artifact] [--lang CODE] [--no-questions] [--auto-continue S]',
   summary: 'Export a project as an interactive HTML video that plays in any browser, offline, from one file.',
   description: [
     'The page is packed with everything it uses (runtime, scripts, styles, fonts, images, emoji, data,',
@@ -55,6 +56,10 @@ const SPEC = {
     '<name>.share.jpg beside it). Most previews need an absolute image URL: give the share URL.',
     'The export warns when the title is a default ("Project") or the chapters are scene ids ("Shot 1").',
     'A project file the page needs that cannot be read stops the export.',
+    '',
+    'A living diagram exports its live figure with --interactive: figure.html (or the diagram template\'s) packed',
+    'into one offline file with no player; the board is live from the first frame: the viewer hovers parts, picks',
+    'steps and turns knobs (references/workflows/diagram.md, Interactive). Default name: <title>-figure.html.',
   ].join('\n'),
   options: {
     output: { short: 'o', help: 'output .html file (with --folder: output folder)', metavar: 'FILE' },
@@ -66,6 +71,7 @@ const SPEC = {
     bitrate: { help: 'embedded audio bitrate (default 96k)', metavar: 'RATE' },
     codec: { help: 'embedded audio codec: aac (default, plays everywhere) or opus (smaller)', metavar: 'NAME' },
     folder: { type: 'boolean', help: 'write a folder (index.html + assets/) instead of one file' },
+    interactive: { type: 'boolean', help: 'a living diagram: its live figure (figure.html) instead of the film, one offline file without a player' },
     controls: { help: 'player chrome: full (default), minimal, or none (for embedding)', metavar: 'KIND' },
     target: { help: 'file (default) or artifact: for a host that shows the page in a sandboxed frame (an HTML artifact): one file under 16 MB, no "copy link" or other file-address features (the player also detects such hosts by itself)', metavar: 'KIND' },
     'autoplay-muted': { type: 'boolean', help: 'start playing muted as soon as it loads (browsers allow that without a click)' },
@@ -106,6 +112,7 @@ const SPEC = {
     'showtime export html my-video --folder --share-url https://me.github.io/launch/   # link previews with the poster',
     'showtime export html my-video --controls none --autoplay-muted --loop   # for embedding in a page',
     'showtime export html my-video --target artifact -o launch.html   # to publish as an HTML artifact',
+    'showtime export html my-diagram --interactive          # the live figure: hover, steps, knobs; one file',
     'showtime export html my-film --subtitle "Fix the cuts" --kicker "Studio how-to · 01"',
     'showtime export html my-explainer --auto-continue 6    # questions go on 6 s after an answer',
     '# open at a moment: my-film.html#t=1:05  or  my-film.html#chapter=3',
@@ -184,6 +191,7 @@ async function main() {
   const target = String(a.target || 'file').toLowerCase();
   if (!['file', 'artifact'].includes(target)) throw new UserError(`--target must be file or artifact (got ${a.target})`);
   if (target === 'artifact' && folder) throw new UserError('--target artifact writes one file; leave out --folder');
+  if (a.interactive && folder) throw new UserError('--interactive writes one file; leave out --folder', 'showtime export html <project> --interactive -o figure.html');
   let maxMb = a['max-mb'] === undefined ? 16 : Number(a['max-mb']);
   if (!(maxMb >= 0)) throw new UserError(`--max-mb must be a number >= 0 (got ${a['max-mb']})`);
   if (target === 'artifact' && (maxMb === 0 || maxMb > 16)) { addWarn('--target artifact: the file must stay under 16 MB (the artifact limit); --max-mb set to 16'); maxMb = 16; }
@@ -227,7 +235,7 @@ async function main() {
       out = fs.existsSync(want) && fs.readdirSync(want).length ? freshPath(want) : want;
     } else if (isDir) {
       // -o an existing folder (or one ending in /): the file goes inside it
-      want = path.join(want, `${proj.slug}.html`);
+      want = path.join(want, `${proj.slug}${a.interactive ? '-figure' : ''}.html`);
       out = freshPath(want);
     } else {
       if (!path.extname(want)) want += '.html';
@@ -237,8 +245,9 @@ async function main() {
   } else {
     const dir = a.job ? resolveJobDir(a.job) : (fromJob && !a['out-dir'] ? fromJob.job : jobDir(proj.slug, a['out-dir']));
     if (!dir || !fs.existsSync(dir)) throw new UserError(`no job named "${a.job}"`, 'list jobs with `showtime job list`');
-    out = freshPath(path.join(dir, folder ? `${proj.slug}-html` : `${proj.slug}.html`));
+    out = freshPath(path.join(dir, folder ? `${proj.slug}-html` : `${proj.slug}${a.interactive ? '-figure' : ''}.html`));
   }
+  if (a.interactive) return exportFigure({ a, proj, out, title, target, maxMb, warnings, addWarn, T0 });
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'showtime-export-'));
 
   const server = await startServer({ root: proj.dir, port: 0 });
@@ -532,3 +541,29 @@ function sizeError(total, maxMb, files, poster, audioPack, { mode, html, scoreOn
 }
 
 runMain(main);
+
+/** --interactive: the live figure, one offline file (scripts/lib/export/figure.mjs). */
+function exportFigure({ a, proj, out, title, target, maxMb, warnings, addWarn, T0 }) {
+  // a project still named after the template (or nothing) takes its scene's title: the page's <title> and og:title
+  const info = sceneInfo(proj.dir);
+  if (!a.title && info.title && (!title || title === TEMPLATE_TITLE || genericTitle(title) || title === proj.slug)) title = info.title;
+  const r = packFigure({ projectDir: proj.dir, title, description: info.description, allFonts: !!a['all-fonts'], minify: String(a.minify || 'auto').toLowerCase() !== 'off', noCsp: !!a['no-csp'] });
+  if (r.remote.length) throw new UserError(`the live figure loads ${r.remote.slice(0, 3).join(', ')} from the network; the export is offline`, 'use a local copy (fonts: /_st/themes/fonts/*.css, packages: /_lib/...)');
+  if (r.missing.length) throw new UserError(`the live figure needs files that are not there: ${r.missing.slice(0, 6).join(', ')}`, 'fix the paths in figure.html (relative to the project; /_st/ and /_lib/ are built in)');
+  if (maxMb > 0 && r.bytes > maxMb * MB) {
+    const big = r.files.slice().sort((x, y) => y.bytes - x.bytes).slice(0, 5).map((f) => `${f.url} ${fmtBytes(f.bytes)}`).join(', ');
+    throw new UserError(`the live figure is ${fmtBytes(r.bytes)}, over --max-mb ${maxMb}; largest: ${big}`, 'drop large images from the scene, or raise --max-mb (an artifact is limited to 16 MB)');
+  }
+  fs.mkdirSync(path.dirname(out), { recursive: true });
+  fs.writeFileSync(out, r.html);
+  const report = { output: out, interactive: true, page: r.page, bytes: r.bytes, mb: +(r.bytes / MB).toFixed(2), max_mb: maxMb, title, target,
+    files: r.files.length, fonts_dropped: r.fontsDropped, largest: r.files.slice().sort((x, y) => y.bytes - x.bytes).slice(0, 6), warnings, seconds: +((Date.now() - T0) / 1000).toFixed(1) };
+  if (a.json) process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+  else {
+    console.log(`${c.green('exported')} ${out}`);
+    console.log(`  the live figure: ${fmtBytes(r.bytes)} of ${maxMb || 'unlimited'} MB, one file, no player; it makes no network request`);
+    console.log(`  the board is live from the first frame: hover a part, pick a step, turn a knob; links like #step=<id> open a state`);
+    showCard({ title: `${path.basename(out)} is ready`, file: out, facts: ['live figure', fmtBytes(r.bytes)], next: openHint(out) });
+  }
+  return 0;
+}

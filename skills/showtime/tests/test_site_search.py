@@ -221,9 +221,9 @@ class RealBuild(unittest.TestCase):
             start = gallery[gallery.index('id="shelf-start-here"'):gallery.index('id="shelf-explainers"')]
             self.assertEqual(re.findall(r"<h3><a [^>]*>([^<]+)</a></h3>", start), ["Launch video", "Narrated explainer", "Your footage, edited"])
             self.assertIn("Make a 20-second launch video", start, "the kind's name sits over the example's own request")
-            self.assertEqual(gallery.count('<span class="badge">New in 0.4</span>'), 10)
+            self.assertEqual(gallery.count('<span class="badge">New in 0.4</span>'), 13)
             self.assertIn('<span class="spec">25 \u00b7 2:38</span>', gallery)
-            self.assertIn("Thirty examples and two demos", gallery)
+            self.assertIn("Thirty examples and five demos", gallery)
             landing = (out / "index.html").read_text(encoding="utf-8")
             self.assertIn('<a class="btn primary" href="docs/guides/first-video.html">Get started</a>', landing)
             self.assertIn("<h3>New in 0.4</h3>", landing)

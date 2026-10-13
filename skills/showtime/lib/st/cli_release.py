@@ -47,6 +47,8 @@ def register(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--url", help="URL for the end card (the release page)")
     p.add_argument("--aspect", default="16:9", choices=["16:9", "9:16", "1:1", "4:5"])
     p.add_argument("--max-items", type=int, default=7, help="lines shown in all (default 7; the rest are counted)")
+    p.add_argument("--cut-sounds", action="store_true",
+                   help="a soft swoosh on each scene cut (off by default: a film has no sound on its cuts)")
     p.add_argument("--force", action="store_true", help="write into a non-empty folder")
     p.add_argument("--json", action="store_true", help="print the result as JSON")
     p.set_defaults(func=cmd_release_video)
@@ -89,6 +91,8 @@ def register(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--preview", action="store_true", help="fast draft render (<=720p)")
     p.add_argument("--keep-work", action="store_true",
                    help="keep the render's pr-<N>.work folder (audio stems, the intermediate video) after the export")
+    p.add_argument("--cut-sounds", action="store_true",
+                   help="a soft swoosh on each scene cut (off by default: a film has no sound on its cuts)")
     p.add_argument("--force", action="store_true", help="write into a non-empty project folder")
     p.add_argument("--json", action="store_true", help="print the result as JSON")
     p.set_defaults(func=cmd_pr_video)
@@ -125,7 +129,8 @@ def cmd_release_video(args: argparse.Namespace) -> int:
     p = rv.plan(notes, name=name, version=version, kind=args.kind, max_items=max(1, args.max_items))
     try:
         res = rv.write_project(Path(args.out), notes, p, install=args.install or "", url=args.url or notes["compare"] or "",
-                               date=args.date or notes["date"], aspect=args.aspect, force=args.force)
+                               date=args.date or notes["date"], aspect=args.aspect, force=args.force,
+                               cut_sounds=args.cut_sounds)
     except FileExistsError:
         raise ShowtimeError("%s is not empty" % args.out, hint="pick a new folder, or pass --force to write into it")
     if args.json:
@@ -337,7 +342,8 @@ def cmd_pr_video(args: argparse.Namespace) -> int:
                                                               if branch and branch != "HEAD" else "pr")
     out, beside = _pr_out(args.out, stem)
     try:
-        res = pv.write_project(out / "project", p, meta, masked=masked, notes=notes, force=args.force)
+        res = pv.write_project(out / "project", p, meta, masked=masked, notes=notes, force=args.force,
+                            cut_sounds=args.cut_sounds)
     except FileExistsError:
         raise ShowtimeError("%s is not empty" % (out / "project"),
                             hint="pick another --out, or pass --force to write into it")

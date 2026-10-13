@@ -123,6 +123,56 @@ def _parse_size(text: str) -> Any:
     return int(m.group(1)), int(m.group(2))
 
 
+def _read_text(p: Path) -> str:
+    try:
+        return p.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
+# the diagram template's themes (runtime/diagram.css, Diagram.themes): showtime.json background per theme
+DIAGRAM_THEMES = {"light": "#F4F3EF", "dark": "#0A0F19", "white": "#FFFFFF"}
+_DATA_THEME_RE = re.compile(r'(<html\b[^>]*\bdata-theme=")([\w-]+)(")')
+
+
+def _set_diagram_theme(dst: Path, cfg: Dict[str, Any], theme: str, background: bool = True) -> None:
+    """Put a living diagram in one theme: the pages' <html data-theme> (the film's index.html and the live figure's
+    figure.html), showtime.json "theme" and (unless the user gave one) the background."""
+    for page in (dst / "index.html", dst / "figure.html"):
+        if page.is_file():
+            text = page.read_text(encoding="utf-8")
+            new = _DATA_THEME_RE.sub(lambda m: m.group(1) + theme + m.group(3), text, count=1)
+            if new != text:
+                page.write_text(new, encoding="utf-8")
+    cfg["theme"] = theme
+    if background:
+        cfg["background"] = DIAGRAM_THEMES[theme]
+
+
+_CUE_DURATION_RE = re.compile(r"\b(?:var|let|const)\s+CUE\s*=\s*\{[^}]*?^\s*duration:\s*([0-9.]+)", re.S | re.M)
+
+
+def _diagram_examples(src: Path) -> List[str]:
+    d = src / "examples"
+    return sorted(p.stem for p in d.glob("*.js")) if d.is_dir() else []
+
+
+def _apply_diagram_example(src: Path, dst: Path, cfg: Dict[str, Any], name: str) -> None:
+    """Make one of the diagram template's examples the project's scene, at the example's own length (CUE.duration),
+    with the poster near its end: a later --duration or retime then scales from the right base."""
+    text = (src / "examples" / (name + ".js")).read_text(encoding="utf-8")
+    (dst / "scene.js").write_text(text, encoding="utf-8")
+    # the project takes the example's own title (its page title, *accent* marks dropped) instead of the template's
+    t = re.search(r"\bpage:\s*\{.*?\btitle:\s*'([^']+)'", text, re.S)
+    if t and cfg.get("title") in (None, "", "Living Diagram"):
+        cfg["title"] = t.group(1).replace("*", "").strip()
+    m = _CUE_DURATION_RE.search(text)
+    if m:
+        dur = float(m.group(1))
+        cfg["duration"] = int(dur) if dur.is_integer() else dur
+        cfg["poster"] = round(max(0.0, dur - 0.8), 2)
+
+
 def register_new(sub: argparse._SubParsersAction) -> None:
     p = sub.add_parser("new", help=COMMANDS["new"], description=(
         "Copy SKILL/templates/<template> into <dir> and fill in showtime.json.\n"
@@ -154,6 +204,8 @@ def register_new(sub: argparse._SubParsersAction) -> None:
                 "  showtime new short my-reel --duration 15\n"
                 "  showtime new dom teaser --size 1280x720 --duration 8\n"
                 "  showtime new film explainer --title \"How it works\"\n"
+                "  showtime new diagram how-it-works --theme dark -d 20   # a living diagram, night schematic\n"
+                "  showtime new diagram agent-loop --example enter         # start from an example scene at its own length\n"
                 "  showtime new dom promo --look tidewater          # this look signature (or --look template)\n"
                 "  showtime new data ~/charts/signups --job signups-data   # a project outside the job folder\n"
                 "  showtime new dom explainer --from-storyboard storyboard.md   # one scene per shot of a storyboard table\n"
@@ -195,6 +247,14 @@ def register_new(sub: argparse._SubParsersAction) -> None:
                    help="look signature for a page template (dom, launch, short, data): auto (the default: picked "
                         "away from this machine's recent looks), template (the template's own look) or an id from "
                         "`showtime signature`; a brand kit or a job's style reference wins over auto")
+    p.add_argument("--theme", choices=sorted(DIAGRAM_THEMES),
+                   help="diagram template: light (paper, the default), dark (night schematic) or white (white, colour only "
+                        "where it means something; the live figure's look); sets showtime.json "
+                        "\"theme\" and the page's data-theme, and \"background\" unless --background is given")
+    p.add_argument("--example", metavar="NAME",
+                   help="diagram template: start from one of its examples (enter, market, econ-lab) instead of the heat pump: "
+                        "it becomes scene.js and the video takes the example's length (CUE.duration), so --duration "
+                        "and a later retime scale from it")
     p.add_argument("--look-seed", metavar="SEED",
                    help="seed for the automatic pick (default: the folder name); the same seed and history give the same look")
     p.add_argument("--json", action="store_true", help="print the created project as JSON")
@@ -302,6 +362,18 @@ def cmd_new(args: argparse.Namespace) -> int:
                                  "showtime is running: `showtime doctor` says which)" % (", ".join(names) or "(none installed)"))
     if not args.dir:
         raise ShowtimeError("missing destination folder", hint="showtime new %s my-video" % args.template)
+    tpl_cfg = read_json(Path(names[args.template]["path"]) / "showtime.json", {}) or {}
+    is_diagram = "theme" in tpl_cfg and bool(_DATA_THEME_RE.search(_read_text(Path(names[args.template]["path"]) / "index.html")))
+    if getattr(args, "theme", None) and not is_diagram:
+        raise ShowtimeError("--theme is for the diagram template", why="'%s' keeps its own look" % args.template,
+                            hint="showtime new diagram %s --theme %s (page templates: --look)" % (args.dir, args.theme))
+    if getattr(args, "example", None):
+        avail = _diagram_examples(Path(names[args.template]["path"]))
+        if not avail:
+            raise ShowtimeError("--example is for the diagram template", why="'%s' has no examples folder" % args.template,
+                                hint="showtime new diagram %s --example enter" % args.dir)
+        if args.example not in avail:
+            raise ShowtimeError("unknown example %r" % args.example, hint="examples of %s: %s" % (args.template, ", ".join(avail)))
     if args.duration is not None and not (0 < args.duration <= 3600):
         raise ShowtimeError("--duration must be between 0 and 3600 seconds (got %g)" % args.duration)
     job_dir: Optional[Path] = None
@@ -350,6 +422,10 @@ def cmd_new(args: argparse.Namespace) -> int:
     for dim in ("width", "height"):
         if int(cfg[dim]) % 2:
             raise ShowtimeError("%s must be even for H.264 (got %s)" % (dim, cfg[dim]))
+    if getattr(args, "example", None) and board is None:
+        _apply_diagram_example(src, dst, cfg, args.example)
+    if getattr(args, "theme", None):
+        _set_diagram_theme(dst, cfg, args.theme, background=getattr(args, "background", None) is None)
     tone_note = _tone_for_new(args, cfg, job_dir, dst)
     write_json(cfg_path, cfg)
     sb_files: List[str] = []
@@ -458,7 +534,13 @@ def _load_storyboard(args: argparse.Namespace, src: Path) -> Dict[str, Any]:
     """The storyboard plan for `new --from-storyboard`, checked before anything is written."""
     from . import storyboard as sbmod
     page = src / "index.html"
-    if not page.is_file() or re.search(r"Film\.start\s*\(", page.read_text(encoding="utf-8", errors="replace")):
+    page_text = page.read_text(encoding="utf-8", errors="replace") if page.is_file() else ""
+    if "/_st/diagram.js" in page_text:
+        raise ShowtimeError("--from-storyboard writes DOM scenes; 'diagram' draws one scene spec",
+                            why="a living diagram is one figure that builds over time, not a scene per shot",
+                            hint="showtime new diagram %s, then write its scene.js from the storyboard's beats "
+                                 "(references/workflows/diagram.md)" % (args.dir or "my-video"))
+    if not page.is_file() or re.search(r"Film\.start\s*\(", page_text):
         raise ShowtimeError("--from-storyboard writes DOM scenes; '%s' is a canvas template" % args.template,
                             why="a canvas film keeps its timing in a cue table that the voice cannot retime",
                             hint="showtime new dom %s --from-storyboard %s   (short for 9:16; draw a shot on a "

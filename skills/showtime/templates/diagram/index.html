@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<title>Living diagram</title>
+<script src="/_st/stage.js"></script>
+<!-- fonts: light = Geist, Geist Mono, Instrument Serif; dark = IBM Plex Sans, IBM Plex Mono, Space Grotesk; white = Inter, JetBrains Mono -->
+<link rel="stylesheet" href="/_st/themes/fonts/geist.css">
+<link rel="stylesheet" href="/_st/themes/fonts/geist-mono.css">
+<link rel="stylesheet" href="/_st/themes/fonts/instrument-serif.css">
+<link rel="stylesheet" href="/_st/themes/fonts/ibm-plex-sans.css">
+<link rel="stylesheet" href="/_st/themes/fonts/ibm-plex-mono.css">
+<link rel="stylesheet" href="/_st/themes/fonts/space-grotesk.css">
+<link rel="stylesheet" href="/_st/themes/fonts/inter.css">
+<link rel="stylesheet" href="/_st/themes/fonts/jetbrains-mono.css">
+<link rel="stylesheet" href="/_st/diagram.css">
+<script src="/_st/diagram.js"></script>
+<script src="/_st/figure-film.js"></script>
+</head>
+<body>
+<div class="ld-stage">
+  <div id="ld"></div>
+  <div class="ld-frame"></div><i class="ld-tick a"></i><i class="ld-tick b"></i><i class="ld-tick c"></i><i class="ld-tick d"></i>
+  <div class="ld-meta ld-kicker"><b>Fig. 1</b> &nbsp;·&nbsp; Vapour-compression cycle</div>
+  <div class="ld-meta ld-figno">Heat pump, air to air</div>
+  <h1 class="ld-title">How a heat pump <em>moves</em> heat</h1>
+  <div class="ld-dek">It doesn't make heat. It carries it in from the cold air outside.</div>
+  <div class="ld-steps"></div>
+  <div class="ld-meta ld-foot l">Illustrative sample · typical values</div>
+  <div class="ld-meta ld-foot r"><span class="k">1 kWh in ·</span> about 3 kWh of heat out</div>
+</div>
+<script src="scene.js"></script>
+<!-- a live-first scene (SCENE.interactive.film = 'tour') films its tour; the live page is figure.html -->
+<script>(SCENE.interactive && SCENE.interactive.film === 'tour' ? Figure.film : Diagram.mount)(SCENE);</script>
+</body>
+</html>

@@ -18,6 +18,7 @@ import { resolveShowreel, showreelConfig, flashVerdict, flashNote } from './lib/
 import { blurConfig, blurFindings, blurSummary } from './lib/blurcheck.mjs';
 import { mixSpecProblem } from './lib/audio.mjs';
 import { enclosingJob, readJSON } from './lib/studio/paths.mjs';
+import { figureFindings } from './lib/figurecheck.mjs';
 
 const PROBES = ['black', 'frozen', 'nondeterministic', 'error'];
 
@@ -1497,7 +1498,7 @@ async function main() {
     for (const m of consoleErrs.slice(0, 5)) add('warning', 'console_error', `console error: ${m.text}${m.url ? ` (${m.url.replace(server.url, '')}:${m.line})` : ''}`);
     // showtime components explain misuse on the console ("[showtime] caption-karaoke: ..."): surface it
     const compWarns = [...new Set(log.console.filter((m) => (m.type === 'warning' || m.type === 'warn') && /^\[showtime\] /.test(m.text)).map((m) => m.text))];
-    for (const t of compWarns.slice(0, 8)) add('warning', 'component', t.replace(/^\[showtime\] /, ''), { fix: 'see the component\'s options in references/components.md' });
+    for (const t of compWarns.slice(0, 8)) add('warning', 'component', t.replace(/^\[showtime\] /, ''), { fix: /^\[showtime\] diagram:/.test(t) ? 'see references/workflows/diagram.md (showtime guide diagram)' : 'see the component\'s options in references/components.md' });
     for (const u of log.blocked.slice(0, 5)) add('error', 'network', `the page requests ${u}; renders are offline, so this will be missing`, { fix: 'download it into the project (fonts: /_lib/@fontsource/..., libraries: /_lib/<package>/...)' });
     const missing = log.http.filter((h) => h.status === 404);
     for (const m of missing.slice(0, 8)) add('error', 'missing_file', `missing file: ${m.url.replace(server.url, '')}`, { fix: 'fix the path (paths are relative to the project folder; /_lib/... and /_st/... are built in)' });
@@ -1615,6 +1616,13 @@ async function main() {
       const sheet = await lab.sheet(sheetItems, { cols, thumb: H > W ? 270 : 400, title: `${proj.title}  ${W}x${H} ${fps}fps ${D.toFixed(2)}s` });
       report.sheet = path.join(outDir, 'sheet.jpg');
       fs.writeFileSync(report.sheet, sheet);
+    }
+    // a living diagram's live figure (figure.html): every step x knob value x hovered part, at rest; the phone
+    if (fs.existsSync(path.join(proj.dir, 'figure.html')) && proj.page === 'index.html') {
+      step('walking the live figure (figure.html): every step, knob value and hovered part');
+      const ff = await figureFindings({ browser: b.browser, url: server.url, projectDir: proj.dir }).catch((e) => [{ severity: 'error', code: 'figure_error', message: `live figure: ${String(e.message || e).split('\n')[0]}` }]);
+      for (const f of ff) add(f.severity, f.code, f.message, { ...(f.fix ? { fix: f.fix } : {}), ...(f.state ? { state: f.state } : {}) });
+      if (ff.walk) report.figure = ff.walk;
     }
     await lookHistory();
     return await finish();

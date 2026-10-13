@@ -15,9 +15,9 @@
   "groups": [
     {"id": "explainers", "name": "Explainers",
      "line": "Narrated explainers from a topic, a Wikipedia article, a PDF or a prize announcement; some stop and ask the viewer.",
-     "examples": ["25", "26", "02", "13", "22", "14", "03"],
+     "examples": ["25", "26", "02", "13", "22", "14", "03", "diagram"],
      "guides": [["explainer", "docs/workflows/explainer.html"], ["localize", "docs/workflows/localize.html"],
-                ["paper-explainer", "docs/workflows/paper-explainer.html"]]},
+                ["paper-explainer", "docs/workflows/paper-explainer.html"], ["diagram", "docs/workflows/diagram.html"]]},
     {"id": "footage", "name": "Your footage",
      "line": "Real recordings, edited: cards over a talking head, a long panel cut into clips, an interview tightened, a podcast as an audiogram.",
      "examples": ["23", "24", "06", "16"],
@@ -28,9 +28,10 @@
      "guides": [["launch-video", "docs/workflows/launch-video.html"], ["tutorial", "docs/workflows/tutorial.html"],
                 ["components", "docs/components.html"]]},
     {"id": "code", "name": "Code and data",
-     "line": "Charts that move, and videos made from a release or a pull request.",
-     "examples": ["29", "07", "12", "15"],
-     "guides": [["data-story", "docs/workflows/data-story.html"], ["changelog-video", "docs/workflows/changelog-video.html"]]},
+     "line": "Charts that move, and videos made from a release, a pull request, an agent's session or a failing test.",
+     "examples": ["29", "recap", "repro", "07", "12", "15"],
+     "guides": [["data-story", "docs/workflows/data-story.html"], ["changelog-video", "docs/workflows/changelog-video.html"],
+                ["recap", "docs/workflows/recap.html"], ["repro", "docs/workflows/repro.html"]]},
     {"id": "social", "name": "Social and trailers",
      "line": "Vertical shorts, montages cut on the beat, trailers and a travel slideshow.",
      "examples": ["05", "08", "09", "18", "19"],
@@ -46,8 +47,8 @@
     "id": "new",
     "name": "New in 0.4",
     "_name": "The badge on the cards, the last tab and the landing's tile: all of 0.4.x.",
-    "examples": ["23", "24", "25", "26", "28", "29", "30", "32", "looks", "blur"],
-    "landing": ["23", "24", "25", "28", "looks"]
+    "examples": ["23", "24", "25", "26", "28", "29", "30", "32", "looks", "blur", "diagram", "recap", "repro"],
+    "landing": ["diagram", "recap", "repro", "23", "25"]
   },
   "_see_it_done": "Example ids under a docs page's lede (\"See it done: ...\"), by page. Seeded from the docs map's Choose your path cards; voice from the proposal.",
   "see_it_done": {
@@ -62,6 +63,9 @@
     "docs/workflows/changelog-video.html": ["15", "29"],
     "docs/workflows/localize.html": ["03", "13", "14"],
     "docs/components.html": ["20"],
-    "docs/voice.html": ["02", "13", "26"]
+    "docs/voice.html": ["02", "13", "26"],
+    "docs/workflows/diagram.html": ["diagram"],
+    "docs/workflows/recap.html": ["recap"],
+    "docs/workflows/repro.html": ["repro"]
   }
 }

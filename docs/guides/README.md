@@ -13,6 +13,9 @@ look at. The references in `skills/showtime/references/` are written for your ag
 | [Make a launch video from your repo](launch-video-from-repo.md) | a launch or promo in your product's own colours, type, words and screens |
 | [Make a video in another language](localised-video.md) | the same video re-voiced, re-timed and captioned in Spanish, French or another language |
 | [Make a video of a pull request](pr-video.md) | a short video for a PR's description in one command, and the GitHub Action |
+| [Make a short film of what your agent did](session-recap.md) | a 30-60 s recap of a Claude Code session for a PR, a standup or a post, from allow-listed facts only |
+| [Turn a failing test into a bug-report video](bug-report-video.md) | a failing Playwright test as a narrated video and a summary to paste into the issue |
+| [Make a living diagram, and a live figure](living-diagram.md) | how something works, as a figure that builds itself, and a live figure people hover, step through and tune |
 | [Make an explainer that stops and asks](explainer-that-asks.md) | questions the web version stops on, links to a moment or a stretch, link previews |
 | [Go all out: a showreel](go-all-out.md) | a hype reel with flash words, a shutter blur on snaps, and WebGL looks |
 | [Leave notes on a video and get them fixed](notes-and-fixes.md) | point at a frame or a stretch, get each note fixed and answered, the critic's findings |

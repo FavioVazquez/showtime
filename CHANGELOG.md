@@ -5,6 +5,120 @@ All notable changes to showtime. Each entry says what changed and why, so this f
 `skills/showtime/lib/st/__init__.py` and `python3 scripts/check_release.py` keeps the plugin manifests, the registry files and
 `setup/package.json` in sync with it.
 
+## 0.4.3 (2026-10-13)
+
+- **Recap and repro pick their music per video, and generated videos are quieter on the cuts.** Both used to get
+  the same bed and the same swoosh, click and error sounds every time. Now the bed is a catalog track picked from the
+  session or test, off the music of the last films (downloaded once from its creator's site and cached; nothing is
+  sent), or, offline with no cache, a composed style; the click and error sounds come from the subtle synth families.
+  A rerun of the same job keeps its bed, and `--music <style|catalog-id|none>` pins it. A catalog track's credit,
+  share text and Content ID note are printed and returned in `--json`, and repro puts the credit into `repro.md`; if
+  the download fails, a composed bed takes its place unless the track was pinned. Recap, repro, `release-video` and
+  `pr-video` no longer put a sound on every cut (`--cut-sounds` adds a soft swoosh, 18 dB under the bed); repro
+  keeps its click on a click and its failure tone. The bed under narration ducks 10 dB (was 12). The transition
+  sounds are softer everywhere: whoosh, swoosh-in and swoosh-out rise over 100-200 ms or more and are low-passed near
+  3 kHz (swoosh-in 0.6 s, swoosh-out 0.7 s by default), and synth hits are cached under a synth version, so a
+  machine that rendered before gets the new sounds. Test: `test_bed.py`.
+- **Every render worker captures from a page set up like the first one.** Under load, a worker whose page opened
+  while one of its modules got no reply could render bare frames: in one nightly render, two of three workers drew
+  none of the looks. A page's setup (each component ready or not, each look on WebGL or its fallback, its failed
+  requests) is now compared with the first page's once it is ready; a page that differs is opened again, and when
+  the first page was the broken one the render stops with an error instead of shipping its frames. The soundtrack
+  page fails the same way when it misses the score, so a dropped module no longer ships a silent video. Failed
+  requests are listed in the render log. Test: `test_looks.py` (`test_07b_a_page_that_opened_short_is_opened_again`).
+- **New: `showtime recap` turns a Claude Code session into a 30-60 s narrated film of what the agent did.** It reads
+  one transcript (`--latest`, a `.jsonl` path or a session id; a sub-agent's own transcript works too, and a session's
+  recap covers that transcript only, not its sub-agents) and shows a title made from the facts ("42 min · 6 files
+  edited · red to green"), the numbers (active time, turns, tool calls, files), a living timeline of the files read
+  and edited and the commands and tests run, where the edits landed, the tests red to green, the diff and the outcome.
+  For pull request descriptions, standups and "what my agent did overnight" posts. Transcripts hold everything
+  (memory, keys printed by mistake, private paths, other projects), so the film is built from an allow-list of facts:
+  repository-relative paths of files inside the repository, program names from a fixed list with the program's own
+  subcommand (anything else counts as "other"; never a script or module path), test counts, commits whose printed hash
+  is in the repository's history and their git diff stats, and timestamps. Free text (the request, a sub-agent's
+  description) is only offered in `script.md` as a commented suggestion, never kept in `facts.json` or the project;
+  editing `script.md` is the only way to change what is on screen, and any line the user writes there goes through the
+  same strict rule. A hard filter then drops any line that still looks like a key, an absolute path, a URL, a host or
+  an e-mail address, or that holds an invisible format character (every line is judged NFKC-folded). Filters can miss
+  things, so a call that writes `script.md` (every line that will be shown or spoken) stops there, `--yes` included,
+  and the film is rendered only by a later call, from `script.md` as the user left it: narrated with `showtime voice`
+  and captioned, in a light paper look (`--no-voice`, `--aspect 9:16`, `--preview`). Its files go to
+  `showtime-out/recap-<session>` unless `--out` is given; that default is refused where git would track it. Guide:
+  `references/workflows/recap.md`.
+- **Living diagrams: `showtime new diagram` and the `/_st/diagram.js` runtime.** A system explained over time as an
+  isometric figure: parts arrive in the order that explains them, pipes and links join them by port name, flows,
+  packets, state changes and pulses move through them, labels land when their part matters, and the camera and a
+  focus veil choose what to look at. One engine, two themes: light (paper, the default) and dark (night schematic),
+  picked with `--theme` (the page's `data-theme`, `"theme"` and `"background"` in showtime.json). A parts library
+  covers machines (plate, wall cutaway, unit, compressor, tank, valve, cassette) and abstract systems (`node` with
+  person, school, bank, firm, server, terminal, hub, core, gate, files, lamp and tool icons; `stack`, `store`,
+  `queue`). Depth comes from a sort on the parts' boxes plus a port rule (a pipe on a back face is behind its
+  part), labels from a layout pass that scores candidate places at every camera pose and reports a collision where
+  the label lands, and any text that never shows fully inside the text safe zone, as `diagram:` warnings in
+  `showtime check`. Text is check-friendly by construction: persistent nodes, fades of at most 0.2 s, floor text
+  raised to the readable minimum, and text that fades out before the camera carries it off the frame. Beat times
+  live in a `CUE` table, so `--duration` and `showtime retime` move them; narrated films land beats on `VO` words.
+  The template starts as a heat pump; `--example market` (a matching market) and `--example enter` (a coding
+  agent's loop) start from the other scenes at their own length. The poster is a still at the end, never baked into
+  frame 0 (`"render": {"poster_bake": "off"}`). Guide: `references/workflows/diagram.md` (`showtime guide
+  diagram`). Test: `test_diagram.py`.
+- **New: a living diagram is also a live figure people poke: `showtime export html <project> --interactive`.** The
+  same scene, as one offline file (`<slug>-figure.html`, `--target artifact` for an HTML artifact): no play button
+  and no timeline. The board is built and moving from the first frame; hovering or tabbing to a part lights it and
+  its own pipes and links (the film's focus veil) and a card says what it is and its value; each step is an
+  experiment that runs on the board; knobs (a rule's strength, a promise's horizon) run the step again and the
+  levels, stacks and tags answer at once, with the numbers under the figure. Untouched, an idle tour of the same
+  live actions plays and stops at any touch. Keys, deep links to a state (`#step=cost&rule=3&part=infl`), reduced
+  motion (still; input works), a pause when hidden or off screen, a phone layout (words leave the drawing for the
+  panel), the scene's title in the page and its link preview. A scene declares what is live in `SCENE.interactive`
+  (steps, knobs, readouts, parts, a tour); the engine underneath is `Diagram.live` (`set`, `fire`, `focus`, `tone`,
+  `show`, `hit`), keys written at the moment the viewer acts, so every frame is still a pure function of the clock,
+  and films draw as before (apart from the two fixes below). A live-first scene films its own tour
+  (`interactive.film = 'tour'`). New theme `--theme white` (white ground, neutral greys, colour only where it means
+  something). `showtime check` walks `figure.html` at rest: every step x each knob value (every option; a range in
+  full up to 25 values, else 9 across it) x each hovered part, and the scene's keys, and reports cut or overlapping
+  text, broken readouts, links that open another state, and what the scene's `agree` finds (`figure_*`). The export
+  runs none of the project's code (it reads the scene's title as text) and writes the packed fonts' licences into
+  the file. Examples: `--example econ-lab` (households, firms and a central bank; every number from the
+  set-the-rate toy's results) and `--example enter` (the coding agent's loop: you answer the permission check). The
+  file carries every word and number of the scene, so publishing it shares all of that. Two engine fixes that show
+  in films too: a stack now shrinks when its count goes down, and flow dashes over a link of their own colour now
+  show. Guide: `references/workflows/diagram.md` § Interactive, `references/html-export.md` § Live figure. Test:
+  `test_interactive.py`.
+- **Diagram footers fade only the floor under them.** The fade under the footer lines (`page.footL`/`footR`) is now
+  a feathered SVG mask on the floor layer alone, so a tag, a part or floor text that sits next to a footer keeps its
+  full colour, and each hole follows its footer's `reveal`: a footer revealed later does not cut the floor before it
+  shows. An empty footer paints nothing. Test: `test_diagram.py` (in both themes).
+- **The site and the repository share one link-preview image.**
+- **Site: "How showtime is built" at `harness/`.** The crew's operating manual, public edition: who does what, on
+  which model and machine, and how a task becomes a merged PR or a film, in its own design inside the site's header
+  and footer (every page's footer links it). Its loops, posters and the 0.4.3 film are small files in
+  `examples/_harness/`; the page's body is `site/content/harness.html`, whose first line sets the address of the
+  article it links to.
+- **New: `showtime repro` turns a failing Playwright test into a short narrated video for a bug report.** From a
+  `trace.zip`, or the test command after `--` (run with tracing on failure), it shows each step on the trace's own
+  screenshots with a cursor and the target boxed, then the failing step slowed down with expected and received, the
+  error and the console errors, and writes `repro.md` to paste into the issue. It writes `script.md` and stops;
+  `--yes` renders it. Typed values are never shown or spoken (their fields are covered); paths are shortened to
+  the file name, URLs lose their query strings, and secrets are masked. Guide: `references/workflows/repro.md`. Test: `test_repro.py`.
+- **Docs and site for 0.4.3: the new features, with three demos and a live figure on the site.** The README has a
+  "New in 0.4.3" section (living diagrams and live figures, recap, repro, the render fix, music per video and quiet
+  cuts, the harness page), the new commands in its quick list and `diagram`, `recap` and `repro` in the command
+  table; What's new has a 0.4.3 section; three task guides for people (`docs/guides/session-recap.md`,
+  `bug-report-video.md`, `living-diagram.md`; the README now says fourteen); the glossary has "live figure" and
+  "living diagram"; the docs map and its pictures count seventeen workflows. Three demos join the gallery
+  (35 videos): `examples/_diagram` (the Enter loop film from `--example enter`, its live figure and the econ-lab
+  live figure), `examples/_recap` (the test session in `tests/fixtures/recap`, with its `script.md` and
+  `facts.json`) and `examples/_repro` (the fixture trace in `tests/fixtures/repro`, with `repro.md`), each with a
+  README loop and still, on the Explainers and Code and data shelves and in "New in 0.4". `site/build.py`: a card's
+  `Live figures:` links are its HTML, linked as "Live figure" and left out of the HTML videos list; the example page
+  embeds the first one in a room as wide as the page, so it keeps its desktop layout (the figure stacks under
+  820 px), and 1120 px tall on a phone, where the board, the step and the steps fit without scrolling inside it;
+  inline code in prose wraps (a long fixture path widened phone pages to 456-480 px); the footer credits "With
+  These Hands" for the recap demo. The harness page says "new in 0.4.3" for living diagrams. Tests:
+  `test_site_build.py` (`test_live_figures_are_the_cards_html_not_its_videos`; 13 cards badged "New in 0.4"),
+  `test_site_search.py` (13 badges, five demos).
+
 ## 0.4.2 (2026-10-10)
 
 - **On Windows, `audio mix` runs writing into one folder at once no longer fail with "permission denied".**

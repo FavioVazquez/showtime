@@ -195,6 +195,13 @@ p{margin:0}
 @media (max-width:720px){.htmllist{grid-template-columns:1fr}}
 .htmlvid{border-radius:12px;overflow:hidden;background:var(--screen);aspect-ratio:16/9;position:relative}
 .htmlvid iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+/* a long path in inline code wraps on a phone instead of widening the page */
+.prose :not(pre)>code{overflow-wrap:anywhere}
+.figure-room{margin:64px auto 0}
+.figure-room .htmlvid.figure{margin-top:24px}
+/* a live figure keeps its desktop layout from 820 px wide; under that it stacks, so the frame is tall enough for the board and its steps */
+.htmlvid.figure{aspect-ratio:auto;height:min(820px,calc(100vh - 120px));min-height:640px;background:#fff;border:1px solid var(--line)}
+@media (max-width:860px){.htmlvid.figure{height:1120px;min-height:0}}
 
 /* docs: a reading room */
 .docs{display:grid;grid-template-columns:232px minmax(0,var(--read)) 196px;gap:64px;max-width:1360px;margin:0 auto;padding:40px 24px 120px;justify-content:center}

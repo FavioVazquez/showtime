@@ -583,7 +583,7 @@ def shell(site: Site, page: str, title: str, body: str, active: str = "", desc: 
 <footer class="site"><div class="wrap">
 <span><span class="word">showtime</span>&nbsp; {version}, MIT licensed. A local video studio for your coding agent.</span>
 <nav aria-label="Footer"><a href="{gallery}">Examples</a><a href="{crew}">Crew</a><a href="{docs}">Docs</a><a href="{harness}">How it\u2019s built</a>{exrepo}</nav>
-<span>No trackers, no cookies. Fonts are served from this site. Film music by Scott Buckley, CC BY 4.0: \u201cSupernova\u201d (the showreel), {launch_music}\u201cArtemis\u201d (the crew film).</span>
+<span>No trackers, no cookies. Fonts are served from this site. Film music by Scott Buckley, CC BY 4.0: \u201cSupernova\u201d (the showreel), \u201cArtemis\u201d (the crew film), \u201cWith These Hands\u201d ({hands}).</span>
 </div></footer>
 <script src="{js}"></script>
 </body>
@@ -595,7 +595,7 @@ def shell(site: Site, page: str, title: str, body: str, active: str = "", desc: 
            version=esc(VERSION), docs=r("docs/index.html"), gallery=r("gallery.html"), crew=r("crew.html"),
            harness=r(HARNESS_PAGE), og_w=og_size[0], og_h=og_size[1], head=("\n" + head) if head else "",
            js=r("static/app.js"), font=r("static/fonts/inter.woff2"),
-           launch_music="\u201cWith These Hands\u201d (the launch film), " if CONFIG.get("gallery_film") else "",
+           hands="the launch film and the recap demo" if CONFIG.get("gallery_film") else "the recap demo",
            exrepo=('<a href="https://github.com/%s">%s</a>' % (esc(EXAMPLES_REPO), esc(EXAMPLES_REPO.split("/")[-1]))) if EXAMPLES_REPO else "")
 
 
@@ -647,7 +647,9 @@ def parse_examples() -> Tuple[List[Tuple[str, str]], List[dict]]:
         prompt = html.unescape(re.search(r"<i>“(.*?)”</i>", block, re.S).group(1))
         what = html.unescape(re.search(r"WHAT IT SHOWS</sub><br>(.*?)</p>", block, re.S).group(1))
         line = re.search(r"<p>▶ (.*?)<br>", block, re.S).group(1)
-        watch_part, _, html_part = line.partition("HTML video:")
+        # after "HTML video:" (or "Live figures:", a diagram's --interactive exports) come the HTML files
+        split = re.search(r"HTML video:|Live figures?:", line)
+        watch_part, html_part = (line[:split.start()], line[split.end():]) if split else (line, "")
         watch = re.findall(r'href="([^"]+)"', watch_part)
         hv = re.findall(r'href="([^"]+)"', html_part)
         tags = [cur]
@@ -735,7 +737,7 @@ def card(site: Site, page: str, e: dict, show_what: bool = True, name: str = "",
     for h in e["html"]:
         hl, _ = site.media(ex_path(h), folder)
         if hl:
-            links.append('<a href="%s">HTML video</a>' % rel(page, hl))
+            links.append('<a href="%s">%s</a>' % (rel(page, hl), "Live figure" if h.endswith("-figure.html") else "HTML video"))
             break
     badge = '<span class="badge">%s</span>' % esc(NEW_NAME) if e["num"] in NEW_IDS else ""
     return ('<article class="film" data-tags="%s" data-ex="%s"><div class="frame"%s><img class="still" src="%s" alt="%s" loading="lazy" decoding="async">%s%s</div>'
@@ -828,7 +830,7 @@ def build_gallery(site: Site, exs) -> None:
     for e in exs:
         for h in e["html"]:
             hl, _ = site.media(ex_path(h), e["folder"])
-            if hl:
+            if hl and not h.endswith("-figure.html"):   # a live figure is no video: its card and page link it
                 htmls.append('<li><a href="%s">%s</a><span>%s</span></li>' % (rel(page, hl), esc(e["title"]), esc(h.split("/")[-1])))
                 if e["num"] == "02" and not live:
                     live = ('<div class="htmlvid"><iframe src="%s" title="HTML video: %s" loading="lazy" allow="fullscreen"></iframe></div>'
@@ -905,10 +907,19 @@ def build_example_pages(site: Site, exs) -> None:
                                % (esc(fb), still, esc(e["alt"]), ICON_PLAY, esc(name)))
             else:
                 players.append('<p class="note"><code>%s</code> is a release asset and is not included in this build.</p>' % esc(name))
-        embeds = []
+        embeds, wide = [], []   # wide: a live figure, as wide as the page so it keeps its desktop layout (820 px and up)
         for h in e["html"]:
             hl, hfb = site.media(ex_path(h), folder)
             name = h.split("/")[-1]
+            if hl and name.endswith("-figure.html"):
+                # a live figure (export html --interactive): no player, a board people hover, step through and tune
+                wide.append('<section class="figure-room"><div class="prose" style="max-width:var(--read);margin:0 auto"><h2 id="live-figure" style="margin-top:0">The live figure</h2><p><code>%s</code> is one offline file, '
+                              'live right here: hover or tab to a part, pick a step, turn a knob. Arrow keys and 1-9 move between '
+                              'the steps, <kbd>R</kbd> runs one again and <kbd>L</kbd> copies a link to what you see. '
+                              '<a href="%s">Open it on its own</a>.</p></div>'
+                              '<div class="htmlvid figure"><iframe src="%s" title="Live figure: %s" loading="lazy"></iframe></div></section>'
+                              % (esc(name), rel(page, hl), rel(page, hl), esc(e["title"])))
+                break
             if hl:
                 folder_export = name == "index.html" and (src_path(ex_path(h)).parent / "assets" / "vfs.js").is_file()
                 what = ("<code>%s/</code> is the folder export (<code>index.html</code> and <code>assets/</code>)" % esc(h.split("/")[-2])
@@ -925,10 +936,11 @@ def build_example_pages(site: Site, exs) -> None:
         more = ""
         if site.repo:
             more = '<p class="edit"><a href="%s">The project files on GitHub</a></p>' % esc(site.gh("examples/" + folder, True))
-        body = head + '<div class="wrap"><article class="prose" style="max-width:var(--read);margin:64px auto 120px">%s%s%s%s</article></div>' % (
-            "".join(embeds), body_html, more, pager_html(page, (seq[n - 1], seq[n + 1])))
+        body = head + ('<div class="wrap">%s</div>' % "".join(wide) if wide else "") + (
+            '<div class="wrap"><article class="prose" style="max-width:var(--read);margin:64px auto 120px">%s%s%s%s</article></div>' % (
+                "".join(embeds), body_html, more, pager_html(page, (seq[n - 1], seq[n + 1]))))
         write(site, page, shell(site, page, example_name(e), body, "gallery", what_sentence(e)))
-        site.h2_expect[page] = ("examples/%s/README.md" % folder, md_h2_count(text) + len(embeds))
+        site.h2_expect[page] = ("examples/%s/README.md" % folder, md_h2_count(text) + len(embeds) + len(wide))
         site.search.append(search_entry(site, example_name(e), page, text, heads,
                                         lead=e["prompt"] + "\n" + e["what"]))
 
@@ -1555,6 +1567,14 @@ pause and ask, and range links like <code>#t=10-20</code>. <a href="gallery.html
 A hearing pass flags music over the voice, long silences, level jumps at cuts and sound cut off at the end.</p></div>
 <div><h3>Notes on the finished video</h3><p><code>showtime review open</code> plays the render on a local page. Click a spot on the
 frame and type a note; your agent reads it, fixes and replies. <a href="docs/review.html#6-notes-on-the-finished-video">How it works</a>.</p></div>
+<div><h3>Systems that explain themselves</h3><p><code>showtime new diagram</code> draws how something works as a figure that
+builds over time: parts arrive in order, flows and labels move through them. <a href="docs/workflows/diagram.html">The guide</a>.</p></div>
+<div><h3>Figures people poke</h3><p>The same diagram exports as one offline page with no player: hover a part, pick a step, turn
+a knob and the numbers answer. <a href="examples/_diagram.html#live-figure">Try one live</a>.</p></div>
+<div><h3>A film of your agent's session</h3><p><code>showtime recap</code> turns a Claude Code session into a short film of what
+the agent did, from allow-listed facts only. <a href="examples/_recap.html">See one</a>.</p></div>
+<div><h3>A failing test, as a video</h3><p><code>showtime repro</code> turns a failing Playwright test into a narrated
+bug-report video and a summary for the issue. <a href="examples/_repro.html">See one</a>.</p></div>
 {new}</div>
 <p class="more"><a class="link-arrow" href="docs/index.html">Read the docs <span>→</span></a></p>
 </div></section>

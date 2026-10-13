@@ -121,9 +121,11 @@ function findEmoji(dir, code) {
   return null;
 }
 
-/** Insert <script src="/_st/stage.js"> as the first script of an HTML page that lacks it. */
+/** Insert <script src="/_st/stage.js"> as the first script of an HTML page that lacks it. A live page
+ *  (<html data-st-live>: a living diagram's figure.html) runs its own clock and gets none. */
 export function injectStage(html) {
   if (/\/_st\/stage\.js/.test(html)) return html;
+  if (/<html\b[^>]*\sdata-st-live\b/i.test(html)) return html;
   const tag = '<script src="/_st/stage.js"></script>';
   if (/<head[^>]*>/i.test(html)) return html.replace(/<head[^>]*>/i, (m) => m + tag);
   if (/<html[^>]*>/i.test(html)) return html.replace(/<html[^>]*>/i, (m) => m + '<head>' + tag + '</head>');

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Acme sign in</title>
+<style>
+  body { font: 18px/1.4 system-ui, sans-serif; background: #f4f5f7; color: #1d2330; margin: 0; }
+  main { max-width: 420px; margin: 80px auto; background: #fff; padding: 32px 36px; border-radius: 12px;
+         box-shadow: 0 4px 24px rgb(0 0 0 / 0.08); }
+  h1 { font-size: 28px; margin: 0 0 20px; }
+  label { display: block; margin: 14px 0 4px; font-weight: 600; }
+  input { width: 100%; box-sizing: border-box; padding: 10px 12px; font: inherit; border: 1px solid #c5cad3;
+          border-radius: 8px; }
+  button { margin-top: 22px; width: 100%; padding: 12px; font: inherit; font-weight: 600; color: #fff;
+           background: #2f5bea; border: 0; border-radius: 8px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Sign in to Acme</h1>
+  <form id="f">
+    <label for="email">Email</label>
+    <input id="email" name="email" type="email" autocomplete="username">
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" autocomplete="current-password">
+    <label for="token">API token</label>
+    <input id="token" name="api_token" type="text">
+    <button type="submit">Sign in</button>
+  </form>
+</main>
+<script>
+  document.getElementById("f").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var name = document.getElementById("email").value.split("@")[0];
+    name = name.charAt(0).toUpperCase() + name.slice(1);
+    console.error("Failed to load avatar for " + name + ": 404");
+    document.querySelector("main").innerHTML = "<h1>Welcome back, " + name + "</h1><p>You have 3 new messages.</p>";
+  });
+</script>
+</body>
+</html>

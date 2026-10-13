@@ -104,7 +104,7 @@ SHARD_WEIGHTS = {
     "test_audio.py": 185, "test_footage.py": 133, "test_qa.py": 131, "test_voice.py": 102,
     "test_foundation.py": 35, "test_job.py": 34, "test_mcp.py": 26, "test_studio.py": 26,
     "test_manim.py": 4, "test_skill_structure.py": 3, "test_doc.py": 3, "test_delight.py": 1,
-    "test_film.py": 1, "test_caption_cards.py": 1, "test_runtime.py": 1, "test_chart_labels.py": 1,
+    "test_film.py": 1, "test_diagram.py": 1, "test_caption_cards.py": 1, "test_runtime.py": 1, "test_chart_labels.py": 1,
     "test_run_all.py": 5, "test_preview_server.py": 3, "test_packages.py": 8, "test_hosts.py": 4,
 }
 SHARD_DEFAULT_WEIGHT = 60

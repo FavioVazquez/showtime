@@ -488,9 +488,9 @@ async function openStageOnce(browser, o) {
     // page that swaps pictures) is not a failure: counted, and kept out of the ring so it never pushes real
     // failures out of it
     if (/ERR_ABORTED/.test(error)) { log.cancelled++; return; }
-    if (!log.blocked.includes(r.url())) ring(log.failed, { url: r.url(), error });
+    if (!log.blocked.includes(r.url())) ring(log.failed, { url: r.url(), error, type: r.resourceType() });
   });
-  page.on('response', (r) => { if (r.status() >= 400) ring(log.http, { url: r.url(), status: r.status() }); });
+  page.on('response', (r) => { if (r.status() >= 400) ring(log.http, { url: r.url(), status: r.status(), type: r.request().resourceType() }); });
   page.on('request', (r) => ring(log.requests, r.url(), 500));
   track.step = 'setting up the tab';
   await page.route('**/*', (route) => {
@@ -697,6 +697,63 @@ export function imageSize(b) {
     i += 2 + b.readUInt16BE(i + 2);
   }
   return null;
+}
+
+/**
+ * The page's own requests that failed while it opened in a way the next open may not repeat: in the network (a
+ * reset or refused connection, an empty reply) or with a server error (HTTP 500 and up from a local server:
+ * render's own answers 500 when it cannot read a file, as on a machine out of file handles). Not counted: the
+ * ones cancelled while they ran (ERR_ABORTED), the blocked outside ones, media (a video's range requests come and
+ * go), and a 4xx (a missing file is missing on every open). -> [{url, error, type}]
+ */
+export function loadFailures(sess) {
+  const net = sess.log.failed.filter((f) => !/ERR_ABORTED|ERR_BLOCKED_BY_CLIENT/.test(f.error) && f.type !== 'media');
+  const http = sess.log.http.filter((h) => h.status >= 500 && h.type !== 'media' && isLocalUrl(h.url))
+    .map((h) => ({ url: h.url, error: `HTTP ${h.status}`, type: h.type || 'other' }));
+  return [...net, ...http];
+}
+
+/**
+ * What the page set up once it was ready: each [data-st] component (mounted and ready, mounted and not ready
+ * because its setup failed, or not mounted: a module of it did not load), each look (WebGL or its fallback; a
+ * context lost while it set up is left out: the look gets a new one when it draws, gl.js draw), and its requests
+ * that failed while it opened (loadFailures, by path). A render's
+ * workers each open the page in their own browser and must all get the setup of the first page: one whose
+ * components module failed to load draws none of them, and every frame of its lane is the bare page (the four
+ * looks of tests/test_looks.py missing in workers 2 and 3 of a 3-worker render, macOS Intel CI). Read once the
+ * page is ready (every component's setup has ended by then). A 4xx is left out: the server answers the same on
+ * every open, and a late one (a favicon) would only make two equal pages differ here; a module that answers 404
+ * shows as its components not mounted. -> {failed, comps, looks}, lists of strings, sorted.
+ */
+export async function pageSetup(sess) {
+  const inPage = await withPacedTimeout(sess.page.evaluate(() => ({
+    comps: Array.from(document.querySelectorAll('[data-st]'), (el) => `${(el.getAttribute('data-st') || '').trim()}: ` +
+      (el.__stComponent ? (el.hasAttribute('data-st-ready') ? 'ready' : 'mounted, not ready (its setup failed)') : 'not mounted')),
+    looks: (window.__stLooks || []).map((l) => `${l.look} ${l.sel}: ${l.gl ? 'webgl' : 'fallback'}`),
+  })), 60000, 'reading the page\'s setup', sess.pace);
+  // the path only: the port differs between servers, and a query (a cache-buster) can differ between opens
+  const local = (u) => String(u).replace(/^https?:\/\/(127\.0\.0\.1|localhost|\[::1\]):\d+/, '').replace(/[?#].*$/, '');
+  const uniq = (a) => [...new Set(a)].sort();
+  // the same entry n times: once, with its count (20 looks of one kind, one of them on its fallback, still shows)
+  const counted = (a) => { const n = new Map(); for (const v of a) n.set(v, (n.get(v) || 0) + 1); return [...n].map(([v, k]) => (k > 1 ? `${v} (x${k})` : v)).sort(); };
+  return {
+    failed: uniq(loadFailures(sess).map((f) => `${local(f.url)} (${f.error})`)),
+    comps: counted(inPage.comps), looks: counted(inPage.looks),
+  };
+}
+
+/** How setup b differs from setup a (pageSetup): per kind, its first `max` differences; '' when they are the same. */
+export function setupDiff(a, b, max = 6) {
+  const out = [];
+  const names = { failed: 'failed to load', comps: 'components', looks: 'looks' };
+  for (const k of Object.keys(names)) {
+    const A = new Set(a[k] || []), B = new Set(b[k] || []);
+    const only = (x, y) => [...x].filter((v) => !y.has(v));
+    const plus = only(B, A), minus = only(A, B);
+    const all = [...plus.map((v) => `+ ${v}`), ...minus.map((v) => `- ${v}`)];
+    if (all.length) out.push(`${names[k]}: ${all.slice(0, max).join('; ')}${all.length > max ? ` (+${all.length - max} more)` : ''}`);
+  }
+  return out.join(' | ');
 }
 
 export function withTimeout(p, ms, label) {

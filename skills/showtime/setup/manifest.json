@@ -197,9 +197,9 @@
         "notes": "shared-library GPL build (86 MB zip instead of 115 MB): ffmpeg/ffprobe + their DLLs; includes libass, zimg (zscale), vid.stab, rubberband, soxr, libx264 (all required and recommended features probed 2026-09-28)",
         "files": [
           {
-            "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-27-13-04/ffmpeg-n9.0.2-12-gc867e13549-win64-gpl-shared-9.0.zip",
-            "sha256": "e10564f2de0080d05875b4e6354d6e721cf269b2523b55da6883db996737e73e",
-            "size": 86315945,
+            "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-13-13-05/ffmpeg-n9.0.2-27-g7e93014c5b-win64-gpl-shared-9.0.zip",
+            "sha256": "73222d3e5e0952033b1140dc771fe00b82a4414c7a6544d5ff2febe7e450850c",
+            "size": 86582298,
             "archive": "zip",
             "pick": [
               "ffmpeg",
@@ -235,9 +235,9 @@
         "source": "https://github.com/BtbN/FFmpeg-Builds",
         "files": [
           {
-            "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-27-13-04/ffmpeg-n9.0.2-12-gc867e13549-win64-gpl-9.0.zip",
-            "sha256": "c9b6fe2a66923907eea3cf60f069a4136b956154a287bf2acfe98e4e875d4ef0",
-            "size": 194034059,
+            "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-13-13-05/ffmpeg-n9.0.2-27-g7e93014c5b-win64-gpl-9.0.zip",
+            "sha256": "d88fb266d1333bb72e86713c949205e2d927015ab819eb7b3860691f9ad749c6",
+            "size": 193969550,
             "archive": "zip",
             "pick": [
               "ffmpeg",
@@ -255,9 +255,9 @@
         "source": "https://github.com/BtbN/FFmpeg-Builds",
         "files": [
           {
-            "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-27-13-04/ffmpeg-n9.0.2-12-gc867e13549-winarm64-gpl-9.0.zip",
-            "sha256": "f68ce0d3a11674725fd2e23f6b5fa1eb876cf49a318f4e74c5d785360d264495",
-            "size": 135509035,
+            "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-13-13-05/ffmpeg-n9.0.2-27-g7e93014c5b-winarm64-gpl-9.0.zip",
+            "sha256": "10df0b85ed230a48e6bcd145b80bba85d93993b20c5312263064202334b4f3df",
+            "size": 135915365,
             "archive": "zip",
             "pick": [
               "ffmpeg",
@@ -276,9 +276,9 @@
         "notes": "static glibc build; includes libass, zimg, vid.stab, rubberband, soxr",
         "files": [
           {
-            "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-27-13-04/ffmpeg-n9.0.2-12-gc867e13549-linux64-gpl-9.0.tar.xz",
-            "sha256": "16ca27dbb0d113d74fc6072ef3436fcb66efff2c501416317e6b6961b242f992",
-            "size": 150986180,
+            "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-13-13-05/ffmpeg-n9.0.2-27-g7e93014c5b-linux64-gpl-9.0.tar.xz",
+            "sha256": "50e0ede136e3545758a8dfb2e6cd12ec865643cd138af9ce6cd36a9015f395c2",
+            "size": 151158348,
             "archive": "tar.xz",
             "pick": [
               "ffmpeg",
@@ -322,12 +322,38 @@
         "source": "https://github.com/BtbN/FFmpeg-Builds",
         "files": [
           {
-            "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-27-13-04/ffmpeg-n9.0.2-12-gc867e13549-linuxarm64-gpl-9.0.tar.xz",
-            "sha256": "89531dca7b72b7a5c66c6d10fbbaef73e62757aaf9f65bff4f75147ab8ae6c7f",
-            "size": 127393396,
+            "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-13-13-05/ffmpeg-n9.0.2-27-g7e93014c5b-linuxarm64-gpl-9.0.tar.xz",
+            "sha256": "7a488234001fe1eb8d958b1edb282e529c5f4f52c8cf62aa8a40b291c2bfe4ea",
+            "size": 127541012,
             "archive": "tar.xz",
             "pick": [
               "ffmpeg",
+              "ffprobe"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "martin-riedl-9.0.2-linux-arm64",
+        "version": "9.0.2",
+        "license": "GPL-3.0-or-later",
+        "source": "https://ffmpeg.martin-riedl.de/",
+        "files": [
+          {
+            "url": "https://ffmpeg.martin-riedl.de/download/linux/arm64/1789931697_9.0.2/ffmpeg.zip",
+            "sha256": "93a76ae90db5474eecdf951a729857c64f3de23567228d6a7d5e6e8e3cd1021b",
+            "size": 28753826,
+            "archive": "zip",
+            "pick": [
+              "ffmpeg"
+            ]
+          },
+          {
+            "url": "https://ffmpeg.martin-riedl.de/download/linux/arm64/1789931697_9.0.2/ffprobe.zip",
+            "sha256": "bcbe80fb741c180083327afaf5434812e006b33cacde2016b9aeaf6936128330",
+            "size": 28655683,
+            "archive": "zip",
+            "pick": [
               "ffprobe"
             ]
           }
@@ -1244,7 +1270,8 @@
       "btbn-n9.0.2-winarm64-gpl": 188800000,
       "martin-riedl-9.0.2-linux-amd64": 182500000,
       "btbn-n9.0.2-linux64-gpl": 330000000,
-      "btbn-n9.0.2-linuxarm64-gpl": 300000000
+      "btbn-n9.0.2-linuxarm64-gpl": 300000000,
+      "martin-riedl-9.0.2-linux-arm64": 119800000
     },
     "browser": {
       "mac-arm64": 204700000,

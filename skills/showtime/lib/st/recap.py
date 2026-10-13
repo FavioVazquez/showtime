@@ -1215,7 +1215,7 @@ def collect(ses: Dict[str, Any], top: str, roots: Sequence[str], *, since: Optio
             if rel is None:
                 p = inp.get("file_path") or inp.get("notebook_path") or inp.get("path")
                 if isinstance(p, str) and p:
-                    outside.add(hashlib.sha1(p.encode("utf-8", "replace")).hexdigest())
+                    outside.add(hashlib.sha256(p.encode("utf-8", "replace")).hexdigest())   # counted, never shown
             elif kind in ("read", "edit"):
                 f = files.setdefault(rel, {"path": rel, "read": 0, "edited": 0, "first": t, "first_edit": None})
                 f[kind if kind == "read" else "edited"] += 1

@@ -89,7 +89,8 @@ export function sceneInfo(projectDir) {
   if (!out.title || !out.description) { // the film page's own title block (a scene that keeps its words in index.html)
     try {
       const html = fs.readFileSync(path.join(projectDir, 'index.html'), 'utf8');
-      const text = (re) => { const m = re.exec(html); return m ? m[1].replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim() : ''; };
+      const strip = (x) => { let prev; do { prev = x; x = x.replace(/<[^>]*>/g, ''); } while (x !== prev); return x.replace(/[<>]/g, ''); };   // until stable: no tag can survive
+      const text = (re) => { const m = re.exec(html); return m ? strip(m[1]).replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim() : ''; };
       out.title = out.title || text(/<h1\b[^>]*class="[^"]*\bld-title\b[^"]*"[^>]*>([\s\S]*?)<\/h1>/i);
       out.description = out.description || text(/<div\b[^>]*class="[^"]*\bld-dek\b[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
     } catch { /* no index.html */ }

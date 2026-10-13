@@ -164,10 +164,14 @@ class TestPlatform(unittest.TestCase):
         self.assertEqual(setup.item_size(item, "win-arm64"), 7)
         self.assertEqual(man["ffmpeg"]["win-arm64"][0]["id"], plat.pick_for_platform(man["ffmpeg"], "win-arm64")[0]["id"])
         self.assertIsNone(setup.item_files(item, "linux-arm64"))
-        # ffmpeg: Windows on Arm tries its native build first, then the x64 builds (run under emulation)
+        # ffmpeg: Windows on Arm tries the x64 build first (the native arm64 build has no VP9 encoder), then the
+        # native one, then the rest of the x64 builds
         ids = [c["id"] for c in setup.ffmpeg_candidates(man, "win-arm64")]
-        self.assertEqual(ids[:len(man["ffmpeg"]["win-arm64"])], [c["id"] for c in man["ffmpeg"]["win-arm64"]])
-        self.assertEqual(ids[len(man["ffmpeg"]["win-arm64"]):], [c["id"] for c in man["ffmpeg"]["win-x64"]])
+        arm = [c["id"] for c in man["ffmpeg"]["win-arm64"]]
+        self.assertEqual(ids[:len(arm)], arm)
+        self.assertEqual(arm[0], man["ffmpeg"]["win-x64"][0]["id"])
+        self.assertEqual(arm[-1], "btbn-n9.0.2-winarm64-gpl")
+        self.assertEqual(ids[len(arm):], [c["id"] for c in man["ffmpeg"]["win-x64"] if c["id"] not in arm])
         for key in ("win-x64", "linux-arm64", "mac-arm64"):
             self.assertEqual(setup.ffmpeg_candidates(man, key), man["ffmpeg"][key])
         # every default-tier item installs on every listed platform (no platform-only models in core)

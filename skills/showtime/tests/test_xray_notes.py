@@ -285,4 +285,4 @@ class Command(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main(verbosity=2 if "-v" in sys.argv else 1, argv=[a for a in sys.argv if a != "-v"])
+    unittest.main(verbosity=2 if "-v" in sys.argv else 1, argv=[a for a in sys.argv if a not in ("-v", "--fast")])

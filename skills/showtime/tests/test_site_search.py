@@ -236,7 +236,8 @@ class RealBuild(unittest.TestCase):
             # a page on a Choose your path card and in an act is named by its act
             self.assertIn("Act III \u00b7 Building the picture</a> / Components</div>",
                           (out / "docs" / "components.html").read_text(encoding="utf-8"))
-            self.assertIn("In 0.4.2: ", landing)
+            newest = re.search(r"^## (\d+\.\d+\.\d+)", (REPO / "docs" / "whats-new.md").read_text(encoding="utf-8"), re.M).group(1)
+            self.assertIn("In %s: " % newest, landing, "the landing tile names the newest release in What's new")
             self.assertIn("House vocabulary", voice)
             h1 = re.search(r"^# (.+)$", (REPO / "CONTEXT.md").read_text(encoding="utf-8"), re.M).group(1)
             self.assertIn(h1, (out / "docs" / "house-vocabulary.html").read_text(encoding="utf-8"))

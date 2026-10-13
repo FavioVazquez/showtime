@@ -359,6 +359,13 @@ def build(job: Path, transcript: Optional[str] = None, host: Optional[str] = Non
                  "note": "includes any time spent waiting for the user"},
         "usage": us,
     }
+    try:
+        from .. import xray
+        xs = xray.receipt_section(job)
+    except Exception:  # noqa: BLE001 - the receipt never fails over it
+        xs = None
+    if xs:
+        rec["xray"] = xs
     return rec
 
 
@@ -604,6 +611,11 @@ def card_facts(rec: Dict[str, Any]) -> List[str]:
     out.append("QA: %s" % ("%s (%s fail, %s warn) on %s%s" % (dv["qa"], dv.get("qa_fail"), dv.get("qa_warn"), dv["final"],
                                                               heard)
                           if dv.get("qa") else "not run on %s" % (dv.get("final") or "the final")))
+    xr = rec.get("xray")
+    if xr and xr.get("line"):
+        out.append("X-ray: %s%s" % (xr["line"], "" if xr.get("status") == "PASS" else " (%s)" % xr.get("status", "").lower()))
+        if xr.get("credit"):
+            out.append("Clip credit: %s" % xr["credit"])
     mode = (rec.get("review_mode") or {}).get("mode")
     note = rv.get("note") or ""
     if not rv.get("packed"):

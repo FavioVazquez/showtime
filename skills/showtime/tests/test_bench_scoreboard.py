@@ -181,7 +181,7 @@ EXAMPLES = {
 class Cases(unittest.TestCase):
     def test_every_case_loads_like_the_eval(self):
         cases = sorted(p.name for p in EVALS.iterdir() if (p / "prompt.md").is_file())
-        self.assertEqual(len(cases), 18, cases)
+        self.assertEqual(len(cases), 20, cases)
         for name in NEW_CASES:
             self.assertIn(name, cases)
         for name in cases:

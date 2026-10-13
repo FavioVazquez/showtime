@@ -50,19 +50,22 @@ showtime export html <diagram> --interactive       # a living diagram's live fig
   change about every 2 s, holds as long as reading needs, callouts that name their year), then export it
 - Use the MP4 for footage-led videos and slow-to-draw pages: playing is drawing. Sound always needs a click;
   a `--folder` export opened from `file://` cannot `fetch()` footage, serve it over http (§ Limitations)
+- An X-ray exports as a live page people scrub and step through: `--interactive` writes `<slug>-live.html`
+  (workflows/xray.md, Live page); `--prompt "<request>"` shows the request that made it on the page, and the page
+  embeds with `<showtime-xray>` or an iframe with `#embed`
 
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| What you get | 67-133 |
-| MP4 or HTML? | 135-145 |
-| Audio modes (--audio): How the live score streams (and why seeking is exact) | 147-178 |
-| Size budget | 180-203 |
-| Sharing and hosting | 205-254 |
-| Questions | 256-299 |
-| Options | 301-332 |
-| Live figure | 334-346 |
-| Limitations | 348-382 |
+| What you get | 70-136 |
+| MP4 or HTML? | 138-148 |
+| Audio modes (--audio): How the live score streams (and why seeking is exact) | 150-181 |
+| Size budget | 183-206 |
+| Sharing and hosting | 208-257 |
+| Questions | 259-302 |
+| Options | 304-335 |
+| Live figure | 337-349 |
+| Limitations | 351-385 |
 
 ## What you get
 

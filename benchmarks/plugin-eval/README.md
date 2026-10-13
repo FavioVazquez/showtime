@@ -22,6 +22,8 @@ quality. Each case comes from a failure mode seen in real runs:
 | `impossible-spec` | trigger, honesty | a 10-minute 4K 60 fps render "in one minute" gets a straight answer |
 | `delivery-card` | trigger, contract, honesty | the hand-off is the delivery card, in order, with a true `Look:` line |
 | `full-crew-trigger` | trigger, contract | "full crew" on a short music film stays quick (no pitch, no storyboard gate) and dispatches the sound designer and a critic |
+| `oneliner-interactive-diagram` | trigger, contract | end to end, needs `--scaffold --allow-tools Bash Write Edit`: `/showtime explain how a heat pump works, interactive.` must make a diagram project (`new diagram`), export the live figure (`export html --interactive`, a `*-figure.html`) and name it; a video-only answer fails |
+| `oneliner-xray` | trigger, contract | end to end, same flags: `/showtime x-ray this clip of my typewriter, drawn on the machine.` with the sample clip as `typewriter.webm`: `xray analyze`, `new xray`, `render`, `xray verify` and a reply that quotes the receipt (N of N events on their frame) |
 | `non-trigger-photo-caption` | non-trigger | the skill does not fire on an unrelated request (scored in both arms) |
 | `non-trigger-sql` | non-trigger | the skill does not fire on a SQL question, and the answer is still a correct query |
 
@@ -73,6 +75,15 @@ out=~/.vbench/plugin-eval/smoke-$(date +%Y%m%d-%H%M); claude plugin eval . --eva
 ```
 
 A free load check of every case (the cost ceiling stops it before the first run): add `--max-cost-usd 0`.
+
+## End-to-end cases (`oneliner-*`)
+
+These two let the agent run `showtime` for real. Each scaffold clones your `~/.showtime` (and the uv Python its venv
+points at) into the run's sealed home; run them from a copy of the checkout without `.git` (the sandbox cannot read
+a worktree's `.git`, and `job init` used to crash on that). The eval sandbox cannot bind a local port, so `check`,
+`look`, `render` and `xray verify` stop with `listen EPERM 127.0.0.1` there: `oneliner-xray` can only score its
+`verify-passes` grader in a harness that allows `sandbox.network.allowLocalBinding`; `export html --interactive`
+needs no port. The slash command loads the skill without a `Skill` call, so `skill-fired` reads 0 here.
 
 ## Scaffolded cases
 

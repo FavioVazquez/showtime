@@ -405,6 +405,8 @@ def probe(path: PathLike) -> Dict[str, Any]:
             "display_width": h if rot in (90, 270) else w,
             "display_height": w if rot in (90, 270) else h,
             "fps": round(fps, 6) if fps else None,
+            "r_fps": _frac(v.get("r_frame_rate")),
+            "avg_fps": _frac(v.get("avg_frame_rate")),
             "nb_frames": _int(v.get("nb_frames")),
             "video_duration": _float(v.get("duration")),
             "vcodec": v.get("codec_name"),

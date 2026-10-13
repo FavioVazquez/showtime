@@ -141,6 +141,72 @@
     var h = (location.hash || '').slice(1); applyFilter(document.querySelector('.tab[data-filter="' + h + '"]') ? h : 'all');
   }
 
+  // ---------- X-ray gallery: two filters over the same cards, by kind (machines, instruments) and by theme
+  var xtabs = document.querySelectorAll('.xtab');
+  if (xtabs.length) {
+    var xsel = { kind: 'all', theme: 'all' };
+    var xapply = function () {
+      xtabs.forEach(function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-x') === xsel[b.getAttribute('data-xgroup')]); });
+      var n = 0;
+      document.querySelectorAll('.xcard').forEach(function (c) {
+        var on = (xsel.kind === 'all' || c.getAttribute('data-kind') === xsel.kind) && (xsel.theme === 'all' || c.getAttribute('data-xtheme') === xsel.theme);
+        c.hidden = !on; if (on) n++;
+      });
+      var s = document.querySelector('.xcount');
+      if (s) s.textContent = n ? n + (n === 1 ? ' film' : ' films') : 'No film is both yet: pick another filter.';
+    };
+    xtabs.forEach(function (b) { b.addEventListener('click', function () { xsel[b.getAttribute('data-xgroup')] = b.getAttribute('data-x'); xapply(); }); });
+    xapply();
+  }
+
+  // ---------- X-ray live pages in place: "Play it live" / "Try it live". A card opens its live page on a stage as wide
+  // as the gallery (the card spans every column, its poster frame hidden); the hero swaps its screen. One at a time:
+  // the same button, or opening another, puts the poster back.
+  var xopen = null;
+  function xclose() {
+    if (!xopen) return;
+    var o = xopen; xopen = null;
+    if (o.stage) { o.stage.remove(); o.frame.hidden = false; o.card.classList.remove('xcard-live'); }
+    else { while (o.box.firstChild) o.box.removeChild(o.box.firstChild); o.box.appendChild(o.kept); o.box.classList.remove('xlive-on'); }
+    o.btn.setAttribute('aria-pressed', 'false'); o.btn.textContent = o.label;
+    var t = o.box && o.box.querySelector('video.teaser'); if (t && !reduce) t.play().catch(function () {});
+  }
+  function xlive(src, ratio, title) {
+    var el;
+    if (window.customElements && customElements.get('showtime-xray')) {
+      el = document.createElement('showtime-xray'); el.setAttribute('src', src); el.setAttribute('ratio', ratio);
+      el.setAttribute('title', title); el.setAttribute('autoload', '');
+    } else {   // embed.js did not load: the page itself, in a frame
+      el = document.createElement('iframe'); el.className = 'xlive-frame'; el.src = src + '#embed'; el.title = title;
+      el.style.setProperty('--xr', ratio); el.allow = 'autoplay; clipboard-write';
+      el.style.minHeight = ratio === '9/16' ? '1067px' : '640px';   // the film plus the controls under it
+    }
+    return el;
+  }
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('button.xlive'); if (!b) return;
+    var was = xopen && xopen.btn === b; xclose(); if (was) return;
+    var src = safeSrc(b.getAttribute('data-live')); if (!src) return;
+    var ratio = b.getAttribute('data-ratio') || '16/9', title = b.getAttribute('data-title') || 'X-ray';
+    stopOthers(null);
+    document.querySelectorAll('.xgrid video, .xscreen video').forEach(function (v) { v.pause(); });
+    if (b.classList.contains('xlive-hero')) {
+      var box = b.closest('.house').querySelector('.xscreen'); if (!box) return;
+      var kept = document.createDocumentFragment(); while (box.firstChild) kept.appendChild(box.firstChild);
+      box.classList.add('xlive-on'); box.appendChild(xlive(src, ratio, title));
+      xopen = { box: box, kept: kept, btn: b, label: b.textContent };
+    } else {
+      var card = b.closest('.xcard'), frame = card && card.querySelector('.xframe'); if (!frame) return;
+      var stage = document.createElement('div');
+      stage.className = 'xstage' + (ratio === '9/16' ? ' tall' : '');
+      stage.appendChild(xlive(src, ratio, title));
+      card.classList.add('xcard-live'); frame.hidden = true; frame.parentNode.insertBefore(stage, frame);
+      xopen = { card: card, frame: frame, stage: stage, btn: b, label: b.textContent };
+      requestAnimationFrame(function () { card.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' }); });
+    }
+    b.setAttribute('aria-pressed', 'true'); b.textContent = 'Back to the poster';
+  });
+
   // ---------- docs: contents that follow the reading position
   var toc = document.querySelectorAll('.toc a');
   if (toc.length && 'IntersectionObserver' in window) {

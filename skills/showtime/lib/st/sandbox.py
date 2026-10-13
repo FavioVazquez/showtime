@@ -19,6 +19,7 @@ import os
 import re
 import socket
 import ssl
+import threading
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -151,6 +152,18 @@ def probe_network(url: Optional[str] = None, timeout: float = PROBE_TIMEOUT) -> 
     reachable: only DNS failures, refused/blocked connections and timeouts mean "no network".
     Honours HTTPS_PROXY like the downloads do. SHOWTIME_NET_PROBE sets the URL (tests)."""
     url = url or os.environ.get("SHOWTIME_NET_PROBE") or PROBE_URL
+    box: List[Tuple[bool, str]] = []
+    # The socket timeout does not cover the DNS lookup, which can block for minutes offline or behind a
+    # sandbox: the probe runs in a daemon thread and is given up on after `timeout` seconds (plus a second).
+    th = threading.Thread(target=lambda: box.append(_probe_network(url, timeout)), daemon=True)
+    th.start()
+    th.join(timeout + 1.0)
+    if box:
+        return box[0]
+    return False, "no answer from %s within %.0f s" % (_host(url), timeout)
+
+
+def _probe_network(url: str, timeout: float) -> Tuple[bool, str]:
     req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "showtime-doctor"})
     ctx = ssl.create_default_context()
     try:

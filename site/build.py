@@ -536,7 +536,8 @@ def shell(site: Site, page: str, title: str, body: str, active: str = "", desc: 
     fav = site.copy_asset(REPO / "assets/brand/icon/favicon.svg")
     og = site.copy_asset(og_image or REPO / "assets/brand/social/github-social-preview.png")
     touch = site.copy_asset(REPO / "assets/brand/icon/apple-touch-icon.png")
-    nav = [("gallery.html", "Examples", "gallery"), ("crew.html", "Crew", "crew"), ("docs/index.html", "Docs", "docs")]
+    nav = [("gallery.html", "Examples", "gallery"), (XRAY_PAGE, "X-ray", "xray"), ("crew.html", "Crew", "crew"),
+           ("docs/index.html", "Docs", "docs")]
     links = "".join('<a href="%s"%s>%s</a>' % (r(h), ' aria-current="page"' if k == active else "", t) for h, t, k in nav)
     if site.repo:
         links += '<a href="https://github.com/%s">GitHub</a>' % esc(site.repo)
@@ -582,7 +583,7 @@ def shell(site: Site, page: str, title: str, body: str, active: str = "", desc: 
 </main>
 <footer class="site"><div class="wrap">
 <span><span class="word">showtime</span>&nbsp; {version}, MIT licensed. A local video studio for your coding agent.</span>
-<nav aria-label="Footer"><a href="{gallery}">Examples</a><a href="{crew}">Crew</a><a href="{docs}">Docs</a><a href="{harness}">How it\u2019s built</a>{exrepo}</nav>
+<nav aria-label="Footer"><a href="{gallery}">Examples</a><a href="{xray}">X-ray</a><a href="{crew}">Crew</a><a href="{docs}">Docs</a><a href="{harness}">How it\u2019s built</a>{exrepo}</nav>
 <span>No trackers, no cookies. Fonts are served from this site. Film music by Scott Buckley, CC BY 4.0: \u201cSupernova\u201d (the showreel), \u201cArtemis\u201d (the crew film), \u201cWith These Hands\u201d ({hands}).</span>
 </div></footer>
 <script src="{js}"></script>
@@ -592,7 +593,7 @@ def shell(site: Site, page: str, title: str, body: str, active: str = "", desc: 
            og_url=('\n<meta property="og:url" content="%s">\n<link rel="canonical" href="%s">' % (esc(page_abs), esc(page_abs)))
            if page_abs else "", fav=r(fav), touch=r(touch), css=r("static/style.css"), boot=THEME_BOOT,
            root="../" * page.count("/"), home=r("index.html"), menu=ICON_MENU, links=links, sun=ICON_SUN, body=body,
-           version=esc(VERSION), docs=r("docs/index.html"), gallery=r("gallery.html"), crew=r("crew.html"),
+           version=esc(VERSION), docs=r("docs/index.html"), gallery=r("gallery.html"), crew=r("crew.html"), xray=r(XRAY_PAGE),
            harness=r(HARNESS_PAGE), og_w=og_size[0], og_h=og_size[1], head=("\n" + head) if head else "",
            js=r("static/app.js"), font=r("static/fonts/inter.woff2"),
            hands="the launch film and the recap demo" if CONFIG.get("gallery_film") else "the recap demo",
@@ -1383,6 +1384,325 @@ Make it quick, no crew.</code></pre></div></div></section>
     write(site, page, shell(site, page, "The crew", body, "crew", "Ten optional specialist sub-agents, one director."))
 
 
+# ----------------------------------------------------------------------------------------------- x-ray
+
+XRAY_PAGE = "xray/index.html"
+XRAY = json.loads((SITE / "content" / "xray.json").read_text(encoding="utf-8"))
+XRAY_SRC = "examples/_xray"   # where an entry's video and poster are looked up (the examples tree, or a --media-from folder)
+XRAY_LIBRARY = REPO / "skills" / "showtime" / "library" / "xray"
+ICON_CHECK = ('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" '
+              'stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>')
+
+
+def xray_media(site: Site, name: str) -> Optional[str]:
+    """An X-ray entry's video or poster, copied to media/xray/NAME; None when this build cannot find it."""
+    if not name:
+        return None
+    dst = "media/xray/" + name
+    if dst in site.copied:
+        return dst
+    src = site.find_media("%s/%s" % (XRAY_SRC, name))
+    if not src:
+        return None
+    p = site.out / dst
+    p.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, p)
+    site.copied[dst] = "%s/%s" % (XRAY_SRC, name)
+    return dst
+
+
+def xray_entries() -> List[dict]:
+    """The gallery's entries, checked: unique ids, a known kind, a hero that exists. A finished entry (one with a
+    receipt) needs its credit, license and commands: nothing appears as finished without them."""
+    entries = XRAY.get("entries", [])
+    kinds = {k["id"] for k in XRAY.get("kinds", [])}
+    problems, seen = [], set()
+    for e in entries:
+        if e["id"] in seen:
+            problems.append("%s is listed twice" % e["id"])
+        seen.add(e["id"])
+        if e.get("kind") not in kinds:
+            problems.append("%s: kind %r is not one of %s" % (e["id"], e.get("kind"), ", ".join(sorted(kinds))))
+        if e.get("theme") not in ("dark", "light"):
+            problems.append("%s: theme must be dark or light" % e["id"])
+        if e.get("receipt"):
+            missing = [k for k in ("credit", "license", "commands") if not e.get(k)]
+            if missing:
+                problems.append("%s has a receipt but no %s" % (e["id"], " or ".join(missing)))
+    if XRAY.get("hero") not in seen:
+        problems.append("hero %r is not an entry" % XRAY.get("hero"))
+    if problems:
+        sys.exit("site/build.py: site/content/xray.json:\n  " + "\n  ".join(problems))
+    return entries
+
+
+def xray_receipt(line: str) -> str:
+    """A receipt line, its parts kept whole on a narrow screen ("19 of 19 events on their frame" \u00b7 "audio 0.0 ms ...")."""
+    return '<span>%s</span>' % " \u00b7 ".join('<span class="w">%s</span>' % esc(x) for x in line.split(" \u00b7 "))
+
+
+def xray_cmds(lines: List[str]) -> str:
+    """Commands for a copy block, one per line; a long one wraps at its spaces with a hanging indent (CSS .xl)."""
+    return '<div class="copy install xcmds"><pre><code>%s</code></pre></div>' % "".join(
+        '<span class="xl">%s</span>' % " ".join('<span class="w">%s</span>' % esc(w) for w in c.split(" ")) for c in lines)
+
+
+def xray_blank(e: dict) -> str:
+    """The neutral card where an entry has no poster in this build: its object, drawn as a plate."""
+    return ('<div class="xblank" aria-hidden="true"><span class="xblank-mark">X-ray</span><span class="xblank-obj">%s</span></div>'
+            % esc(e.get("object", "")))
+
+
+def http_url(u: object) -> str:
+    """A link target for an href: http(s) only, else empty (no javascript: or data: from a community entry)."""
+    u = str(u or "").strip()
+    return u if re.match(r"^https?://", u, re.I) else ""
+
+
+def xray_credit(e: dict, posted: bool = True) -> str:
+    """The clip's credit and license, then who posted the entry (ours: showtime; a community one: its GitHub handle)."""
+    lic = esc(e.get("license", ""))
+    if http_url(e.get("license_url")):
+        lic = '<a href="%s">%s</a>' % (esc(http_url(e["license_url"])), lic)
+    who = e.get("author", "showtime")
+    if who.startswith("@"):
+        who = '<a href="https://github.com/%s">%s</a>' % (esc(who[1:]), esc(who))
+    else:
+        who = esc(who)
+    src = ' \u00b7 <a href="%s">Source</a>' % esc(http_url(e["credit_url"])) if http_url(e.get("credit_url")) else ""
+    film = (" \u00b7 " + esc(e["film_license"])) if e.get("film_license") else ""
+    return '%s, %s%s%s%s' % (esc(e.get("credit", "")), lic, src, film, (" \u00b7 posted by " + who) if posted else "")
+
+
+def xray_card(site: Site, page: str, e: dict) -> str:
+    layouts = XRAY.get("layouts", {})
+    kinds = {k["id"]: k["name"] for k in XRAY.get("kinds", [])}
+    done = bool(e.get("receipt"))
+    video = xray_media(site, e.get("video", "")) if done else None
+    poster = xray_media(site, e.get("poster", ""))
+    tall = e.get("aspect") == "9:16"
+    label = "%s, %s" % (e["title"], layouts.get(e.get("layout", ""), e.get("layout", "")))
+    pic = ('<img class="still" src="%s" alt="%s" loading="lazy" decoding="async">' % (rel(page, poster), esc(label))
+           if poster else xray_blank(e))
+    action, clip, links = "", "", []
+    if video:
+        clip = ' data-clip="%s"' % rel(page, video)
+        action = ('<button class="open" type="button" data-full="%s" aria-label="Play %s with sound"></button>'
+                  '<span class="hint" aria-hidden="true">%s Play with sound</span>' % (rel(page, video), esc(e["title"]), ICON_PLAY))
+    elif done:
+        asset = ASSET_BY_PATH.get("%s/%s" % (XRAY_SRC, e.get("video", "")))
+        fb = site.release_url(asset) if asset else None
+        if fb:
+            links.append('<a href="%s">Watch the MP4</a>' % esc(fb))
+    badge = "" if done else '<span class="badge xpending">In the works</span>'
+    spec = " · ".join(x for x in (kinds.get(e["kind"], ""), layouts.get(e.get("layout", ""), ""), e.get("theme", ""), e.get("aspect", "")) if x)
+    mech = e.get("mechanism", "")
+    if mech and (XRAY_LIBRARY / mech).is_dir():
+        url = site.gh("skills/showtime/library/xray/" + mech, is_dir=True)
+        links.append(('<a href="%s">The mechanism: <code>%s</code></a>' % (esc(url), esc(mech))) if url
+                     else '<span>The mechanism: <code>%s</code> in the library</span>' % esc(mech))
+    elif mech:
+        links.append('<span class="muted">The <code>%s</code> mechanism joins the library with its film</span>' % esc(mech))
+    live = xray_media(site, e.get("live", "")) if done else None
+    ratio = "9/16" if tall else "16/9"
+    if done:
+        rows = ['<p class="xreceipt">%s%s</p>' % (ICON_CHECK, xray_receipt(e["receipt"])),
+                '<p class="xcredit">%s</p>' % xray_credit(e)]
+        if live:
+            rows.insert(0, '<div class="xacts"><button class="btn primary xlive" type="button" data-live="%s" data-ratio="%s" '
+                           'data-title="%s" aria-pressed="false">Play it live</button></div>' % (rel(page, live), ratio, esc(e["title"])))
+        if e.get("prompt"):
+            rows.append('<div class="xline"><h4>Make your own with one line</h4><p class="ask">\u201c%s\u201d</p></div>' % esc(e["prompt"]))
+        rows.append('<details class="xmake"><summary>Make your own</summary>%s</details>' % xray_cmds(e["commands"]))
+        base = site_url(site.repo)
+        if live and base:
+            src = base + live
+            ptag = (' poster="%s"' % esc(base + poster)) if poster else ""
+            tag = ('<script src="%sxray/embed.js"></script>\n<showtime-xray src="%s" ratio="%s" title="%s"%s></showtime-xray>'
+                   % (base, src, ratio, esc(e["title"]), ptag))
+            # the film's own height at that width (420 x 16/9 = 747 and 960 x 9/16 = 540) plus about 320 px of controls
+            size = 'width="420" height="1067"' if tall else 'width="960" height="860"'
+            frame = '<iframe src="%s#embed" title="%s" %s allow="autoplay; clipboard-write" loading="lazy" style="border:0;max-width:100%%"></iframe>' % (src, esc(e["title"]), size)
+            blocks = lambda t: '<div class="copy"><pre><code>%s</code></pre></div>' % esc(t)  # noqa: E731
+            rows.append('<details class="xmake xembed"><summary>Embed</summary><p class="xembed-note">On a page of yours, with the script:</p>%s'
+                        '<p class="xembed-note">Or as a plain frame:</p>%s</details>' % (blocks(tag), blocks(frame)))
+    else:
+        rows = ['<p class="xcredit">The film is made; it appears here with its receipt and its clip credit.</p>']
+    return ('<article class="film xcard%s" data-kind="%s" data-xtheme="%s" id="x-%s"><div class="frame xframe%s"%s>%s%s%s</div>'
+            '<div class="meta"><h3>%s</h3><span class="spec">%s</span></div><p class="shows">%s</p>%s<div class="links">%s</div></article>'
+            % ("" if done else " pending", esc(e["kind"]), esc(e["theme"]), esc(e["id"]), " tall" if tall else "", clip, pic, badge, action,
+               esc(e["title"]), esc(spec), esc(e.get("what", "")), "".join(rows), "".join(links)))
+
+
+def touch_card(site: Site, page: str, e: dict) -> str:
+    """A living diagram people touch (site/content/xray.json "touch"): no clip, one live figure (`showtime export html
+    <project> --interactive`), played in place like an X-ray's live page, with the line that made it and an embed."""
+    live = xray_media(site, e.get("figure", ""))
+    poster = xray_media(site, e.get("poster", ""))
+    pic = ('<img class="still" src="%s" alt="%s" loading="lazy" decoding="async">' % (rel(page, poster), esc(e["title"]))
+           if poster else '<div class="xblank" aria-hidden="true"><span class="xblank-mark">Live figure</span><span class="xblank-obj">%s</span></div>' % esc(e["title"]))
+    rows = []
+    if live:
+        rows.append('<div class="xacts"><button class="btn primary xlive" type="button" data-live="%s" data-ratio="16/9" data-title="%s" '
+                    'aria-pressed="false">%s</button></div>' % (rel(page, live), esc(e["title"]), esc(e.get("verb", "Touch it live"))))
+    if e.get("prompt"):
+        rows.append('<div class="xline"><h4>Make your own with one line</h4><p class="ask">\u201c%s\u201d</p></div>' % esc(e["prompt"]))
+    if e.get("commands"):
+        rows.append('<details class="xmake"><summary>Make your own</summary>%s</details>' % xray_cmds(e["commands"]))
+    base = site_url(site.repo)
+    if live and base:
+        tag = ('<script src="%sxray/embed.js"></script>\n<showtime-xray src="%s" ratio="16/9" title="%s"%s></showtime-xray>'
+               % (base, base + live, esc(e["title"]), (' poster="%s"' % esc(base + poster)) if poster else ""))
+        rows.append('<details class="xmake xembed"><summary>Embed</summary><p class="xembed-note">On a page of yours, with the script:</p>'
+                    '<div class="copy"><pre><code>%s</code></pre></div></details>' % esc(tag))
+    return ('<article class="film xcard xtouch" id="t-%s"><div class="frame xframe">%s</div><div class="meta"><h3>%s</h3>'
+            '<span class="spec">%s</span></div><p class="shows">%s</p>%s</article>'
+            % (esc(e["id"]), pic, esc(e["title"]), esc(e.get("spec", "living diagram · live figure")), esc(e.get("what", "")), "".join(rows)))
+
+
+def build_xray(site: Site) -> None:
+    """xray/: the X-ray page. A hero (the flagship film looping, muted, its receipt under it), how it works in three
+    steps with the real commands, the gallery from site/content/xray.json with a filter by kind and by theme, and
+    Lane 2: how anyone adds an X-ray or a mechanism, what is checked before it appears."""
+    page = XRAY_PAGE
+    entries = xray_entries()
+    hero = next(e for e in entries if e["id"] == XRAY["hero"])
+    # the hero loops a silent cut when the entry names one ("loop"), else the film itself, muted
+    hvideo = xray_media(site, hero.get("loop", "")) or xray_media(site, hero.get("video", ""))
+    hposter = xray_media(site, hero.get("poster", ""))
+    if hvideo:
+        screen = ('<video class="teaser" muted loop playsinline preload="auto"%s aria-label="%s, muted"><source src="%s" type="video/mp4"></video>'
+                  % (' poster="%s"' % rel(page, hposter) if hposter else "", esc(hero["title"]), rel(page, hvideo)))
+    elif hposter:
+        screen = '<img src="%s" alt="%s">' % (rel(page, hposter), esc(hero["title"]))
+    else:
+        screen = xray_blank(hero)
+    hlive = xray_media(site, hero.get("live", "")) if hero.get("receipt") else None
+    hero_live = ('<button class="btn primary xlive xlive-hero" type="button" data-live="%s" data-ratio="%s" data-title="%s" aria-pressed="false">Try it live</button>'
+                 % (rel(page, hlive), "9/16" if hero.get("aspect") == "9:16" else "16/9", esc(hero["title"]))) if hlive else ""
+    embed_src = REPO / "skills" / "showtime" / "runtime" / "xray-live" / "embed.js"
+    embed_tag = ""
+    if embed_src.is_file():
+        ed = site.out / "xray" / "embed.js"
+        ed.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(embed_src, ed)
+        embed_tag = '<script src="%s" defer></script>' % rel(page, "xray/embed.js")
+    guide = "docs/guides/xray.html"
+    guide_href = rel(page, guide) if guide in site.pages.values() else rel(page, "docs/workflows/xray.html")
+    repo = site.repo
+    form = ("https://github.com/%s/issues/new?template=xray-gallery.yml" % esc(repo)) if repo else ""
+    contrib = rel(page, "docs/contributing.html") + "#add-an-x-ray-mechanism"
+    library = site.gh("skills/showtime/library/xray", is_dir=True)
+    kinds = XRAY.get("kinds", [])
+    n_done = sum(1 for e in entries if e.get("receipt"))
+
+    def tabs(group: str, label: str, items: List[Tuple[str, str]]) -> str:
+        return ('<div class="filters xfilter" role="group" aria-label="%s">%s</div>' % (esc(label), "".join(
+            '<button class="tab xtab" type="button" data-xgroup="%s" data-x="%s" aria-pressed="%s">%s<span class="c">%d</span></button>'
+            % (group, k, "true" if k == "all" else "false", esc(n),
+               len(entries) if k == "all" else sum(1 for e in entries if e.get(group) == k))
+            for k, n in items)))
+    filters = (tabs("kind", "Filter by kind", [("all", "All")] + [(k["id"], k["name"]) for k in kinds])
+               + tabs("theme", "Filter by theme", [("all", "Any theme"), ("dark", "Dark"), ("light", "Light")]))
+    cards = "".join(xray_card(site, page, e) for e in entries)
+    touches = XRAY.get("touch", [])
+    touch = ("""<section class="section" id="touch"><div class="wrap">
+<div class="section-head"><h2 class="title" id="touch-a-living-diagram">No clip? Touch a living diagram</h2>
+<p class="lede">The same drawings, with no video: a living diagram you type on, press and drag. Each one is a single
+offline file made by <code>showtime export html --interactive</code>, live right here.</p></div>
+<div class="films three xgrid">%s</div></div></section>
+""" % "".join(touch_card(site, page, e) for e in touches)) if touches else ""
+    body = """<section class="house xhero"><div class="wrap">
+<div class="hero-head"><div><p class="xkicker">X-ray</p><h1 class="title">See inside a real thing, in time with its own sound.</h1>
+<p class="lede">Film something doing its thing. showtime finds every event in the clip's sound, draws the inside moving on those
+exact frames, on the object as the camera moves or beside it, and proves it with a receipt.</p></div>
+<div class="actions">{hero_live}<a class="btn {make_cls}" href="#how">Make your own</a><a class="link-arrow" href="#gallery">The gallery <span>→</span></a></div></div>
+<div class="screen lights xscreen">{screen}</div>
+<p class="xreceipt xreceipt-hero">{check}{receipt}</p>
+<p class="credit">{title}. {credit}. The receipt is <code>showtime xray verify</code> reading the finished film: the sync marker
+on every frame against the events, and its audio against the original clip.</p>
+</div></section>
+
+<section class="section" id="how"><div class="wrap">
+<div class="section-head"><h2 class="title" id="how-it-works">How it works</h2>
+<p class="lede">Three commands, or one sentence to your agent: “X-ray this clip of my typewriter, drawn on the machine.”
+It runs these for you, looks at the frames and tells you what it measured and what it drew.</p></div>
+<ol class="xsteps">
+<li><span class="xn">1</span><h3>Film it, then measure it</h3><p>A real thing doing its thing, with its sound: a typewriter typing, a
+music box playing. A phone is fine. Every event in the sound gets its time and its frame; <code>--track</code> follows the object as
+the camera moves.</p>{cmd1}</li>
+<li><span class="xn">2</span><h3>Draw the inside</h3><p>Pick a mechanism from the library and a look: see-through on the object,
+beside the clip, or a living diagram; dark like a radiograph or light like a blueprint. Each strike peaks on its event's frame.</p>
+{cmd2}</li>
+<li><span class="xn">3</span><h3>Verify it</h3><p>The finished film is read back frame by frame and its sound is matched to the
+clip's. The line it prints goes on the end card and under the film wherever you post it.</p>
+{cmd3}</li>
+</ol>
+<div class="facts xfacts"><div><h3>See-through</h3><p>The inside drawn on the object itself, inside its outline, as the camera moves. Objects only, never people.</p></div>
+<div><h3>Beside it, or as a diagram</h3><p>When the object will not hold still, the inside sits beside the clip, or as an isometric living diagram.</p></div>
+<div><h3>Music from the sound</h3><p>Pitches, key and tempo from an instrument's sound: a score for a piano, a tab for a guitar, a drum sheet for a kit.</p></div>
+<div><h3>Honest about what is drawn</h3><p>On screen: what was measured (event times, counts, what the clip shows) and what was drawn (a generic mechanism of that kind).</p></div></div>
+</div></section>
+
+<section class="section" id="gallery"><div class="wrap">
+<div class="section-head"><h2 class="title" id="the-gallery">The gallery</h2>
+<p class="lede">Ours and yours. Every finished film carries its receipt, and every one can be copied: the commands are under it and
+its mechanism is in the library.</p></div>
+<div class="xfilters">{filters}</div>
+<p class="count xcount" aria-live="polite">{n} films</p>
+<div class="films three xgrid">{cards}</div>
+<p class="note xnote">{n_done} finished, {n_pending} in the works. A film that is not here yet shows its poster or a plain card until its
+receipt and its credit are in.</p>
+</div></section>
+
+{touch}<section class="section" id="lane-2"><div class="wrap">
+<div class="section-head"><h2 class="title" id="add-yours">Lane 2: add yours</h2>
+<p class="lede">The library grows with every verified X-ray. Post a film to the gallery, or add a mechanism so everyone can draw
+that object; we post ours the same way, and every entry is there to copy.</p></div>
+<div class="split xlane" style="margin-top:0">
+<div><h3>Post your X-ray</h3>
+<p>Make it with the three commands above, on a clip you filmed yourself or one under a Creative Commons license. Then open the
+gallery form with the film's link, the object, the mechanism you used (or the new one you wrote), the verify line pasted as
+it printed, and the clip's credit and license.</p>
+<p>{form_link}</p></div>
+<div><h3>Add a mechanism</h3>
+<p>A new object starts as a copy of the closest entry in the {library_link}. Open a pull request that adds one folder:</p>
+<pre class="xtree"><code>skills/showtime/library/xray/&lt;object&gt;/
+  mechanism.js   # its parts, four anchors, draw(k)
+  diagram.js     # optional: the living-diagram scene
+  README.md      # parts, what an event moves, measured vs drawn,
+                 # "Verified on" + the receipt + the clip credit</code></pre>
+<p><a class="link-arrow" href="{contrib}">The pull request checklist <span>→</span></a></p></div></div>
+<div class="facts xchecks"><div><h3>The receipt</h3><p>We run <code>showtime xray verify</code> on the film: every event on its frame and the audio
+within 20 ms of the clip. A film without its line does not appear.</p></div>
+<div><h3>The credit</h3><p>Your own footage, or a clip with a license that allows it (CC0, CC BY, CC BY-SA) and its credit line. No license
+found, no entry.</p></div>
+<div><h3>Objects only</h3><p>An inside is drawn over machines and instruments, never over people. A person in the frame gets the
+beside-the-clip layout.</p></div>
+<div><h3>Copyable</h3><p>Each entry lists the commands that made it and links its mechanism, so anyone can make their own from
+it with <code>showtime new xray &lt;dir&gt; --mechanism &lt;object&gt;</code>.</p></div></div>
+<p class="more"><a class="link-arrow" href="{guide}">The X-ray guide: film it, pick a mechanism, music and drums, verify, share <span>→</span></a></p>
+</div></section>
+{embed_tag}
+""".format(screen=screen, check=ICON_CHECK, hero_live=hero_live, make_cls="ghost" if hero_live else "primary", embed_tag=embed_tag, receipt=xray_receipt(hero["receipt"]), title=esc(hero["title"]), credit=xray_credit(hero, posted=False),
+           cmd1=xray_cmds(["showtime xray analyze clip.mp4 --job xray-typewriter"]),
+           cmd2=xray_cmds(["showtime new xray xray-typewriter/project --mechanism typewriter --theme dark",
+                           "showtime render xray-typewriter/project --job xray-typewriter"]),
+           cmd3=xray_cmds(["showtime xray verify xray-typewriter"]),
+           filters=filters, cards=cards, n=len(entries), n_done=count_words(n_done), n_pending=count_words(len(entries) - n_done).lower(),
+           form_link=('<a class="btn primary" href="%s">Post an X-ray to the gallery</a>' % form) if form
+           else "The gallery form: <code>.github/ISSUE_TEMPLATE/xray-gallery.yml</code> in the repository.",
+           library_link=('<a href="%s">mechanism library</a>' % esc(library)) if library else "mechanism library (<code>skills/showtime/library/xray/</code>)",
+           contrib=contrib, guide=guide_href, touch=touch)
+    missing = [e["id"] for e in entries if e.get("receipt") and not xray_media(site, e.get("video", ""))]
+    write(site, page, shell(site, page, "X-ray", body, "xray",
+                            "Film a real thing doing its thing: showtime draws its inside moving on the exact frames its own sound "
+                            "says, and proves it with a receipt. A gallery of verified X-rays, and how to add yours."))
+    site.search.append(built_page_entry(site, "X-ray", page))
+    print("x-ray: %d entries (%d finished); films not found in this build, shown as posters or plain cards: %s"
+          % (len(entries), n_done, ", ".join(missing) or "none"))
+
+
 # ----------------------------------------------------------------------------------------------- landing
 
 def released(text: Optional[str] = None, version: str = "") -> List[Tuple[str, str, str]]:
@@ -1509,6 +1829,11 @@ def build_landing(site: Site, exs) -> None:
     teaser = [e for e in exs if e["num"] in ("02", "12", "17", "19")]
     _new_ver, new_text = latest_release()
     new = new_tile(site, page, exs, new_text)
+    # X-ray: the flagship's poster (copied by build_xray), its receipt and a way to the page
+    xhero = next(e for e in xray_entries() if e["id"] == XRAY["hero"])
+    xposter = xray_media(site, xhero.get("poster", ""))
+    xpic = ('<img src="%s" alt="%s" loading="lazy" decoding="async">' % (rel(page, xposter), esc(xhero["title"]))
+            if xposter else xray_blank(xhero))
     body = """<section class="house"><div class="wrap">
 <div class="hero-head"><div><h1 class="title">Describe a video. Your agent directs. Your machine renders.</h1>
 <p class="lede">showtime is a local video studio for your coding agent: motion graphics, voice-over, music, captions and footage editing
@@ -1547,6 +1872,15 @@ Make a 20-second launch video for this repo, with a voice-over and upbeat music.
 <p class="more"><a class="link-arrow" href="gallery.html">All {nexs} examples <span>→</span></a></p>
 </div></section>
 
+<section class="section" id="xray"><div class="wrap">
+<div class="xland"><a class="xland-film" href="{xpage}" aria-label="The X-ray page">{xpic}</a>
+<div><p class="xkicker">X-ray</p><h2 class="title">See inside a real thing, in time with its own sound</h2>
+<p class="lede">Film a typewriter typing or a music box playing. showtime draws its inside moving on the exact frames the clip's sound
+says, on the object as the camera moves or beside it, and proves it with a receipt.</p>
+<p class="xreceipt">{xcheck}{xreceipt}</p>
+<p class="more" style="margin-top:24px"><a class="link-arrow" href="{xpage}">The X-ray gallery, and how to add yours <span>→</span></a></p></div></div>
+</div></section>
+
 <section class="section" id="crew"><div class="wrap">
 <div class="section-head"><h2 class="title">A crew, when you want one</h2>
 <p class="lede">Your agent can cast ten specialist sub-agents. Every finished video gets a critic by default; say "lean" to skip it (a video you will publish still gets one).
@@ -1582,7 +1916,8 @@ bug-report video and a summary for the issue. <a href="examples/_repro.html">See
            pipeline=art(site, page, "diagrams/pipeline", "How showtime works: one sentence, your agent directs, a first look, a local render, showtime qa, an MP4 and an HTML video."),
            teaser="".join(card(site, page, e, show_what=False) for e in teaser), nexs=len(exs),
            runs=art(site, page, "diagrams/runs-where", "What runs where: the director in your coding agent, the studio on your machine; the web only when you ask."),
-           cast=art(site, page, "crew/cast", "The crew: ten illustrated cards, all optional."))
+           cast=art(site, page, "crew/cast", "The crew: ten illustrated cards, all optional."),
+           xpage=rel(page, XRAY_PAGE), xpic=xpic, xcheck=ICON_CHECK, xreceipt=xray_receipt(xhero["receipt"]))
     write(site, page, shell(site, page, "showtime · a local video studio for your coding agent", body, "home"))
 
 
@@ -1718,7 +2053,8 @@ def llms_txt(site: Site) -> str:
              link("docs/faq.html", "Questions people ask"),
              link("docs/index-claude.html", "The agent's own map (the reference index)"),
              link("docs/skill.html", "SKILL.md"),
-             link("gallery.html", "Examples")]
+             link("gallery.html", "Examples"),
+             link(XRAY_PAGE, "X-ray: a real clip with its inside drawn in sync, and the gallery")]
     skip = {"The crew's briefs", "Backstage"}
     listed = {"docs/index.html", "docs/index-claude.html", "docs/skill.html", "docs/agents.html", "docs/whats-new.html",
               "docs/faq.html", "docs/guides/first-video.html", "docs/troubleshooting.html", "docs/glossary.html"}
@@ -1782,6 +2118,7 @@ def main() -> None:
     build_example_pages(site, exs)
     build_crew(site)
     build_harness(site)
+    build_xray(site)
     build_landing(site, exs)
     videos = tag_html_videos(site, exs)
     nurls = write_sitemap(site, videos)

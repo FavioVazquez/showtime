@@ -34,6 +34,7 @@ OpenCode and any agent that supports <a href="https://agentskills.io">Agent Skil
 
 <p align="center">
   <a href="#quick-start"><b>Quick start</b></a> ·
+  <a href="#x-ray"><b>X-ray</b></a> ·
   <a href="#works-with"><b>Works with</b></a> ·
   <a href="#now-showing"><b>Gallery</b></a> ·
   <a href="#how-it-works"><b>How it works</b></a> ·
@@ -106,6 +107,15 @@ languages or what leaves your machine: the [FAQ](docs/faq.md). Something went wr
 > quality (the default) has a critic review every finished video; lean skips the critic unless the video is going
 > to be published. Say **"no crew"** to keep the whole job in one session.
 
+**What's new in 0.4.4** (the list is [below](#new-in-044), and [What's new](docs/whats-new.md) has a short
+paragraph for each):
+
+- **X-ray.** Film a real thing doing its thing and showtime draws its inside on the frames its own sound says; a score,
+  a guitar tab or a drum sheet from the sound; a receipt that reads the finished film back.
+- **A live page you play.** Pads that play the real clip with its sound, your keyboard typing on the typewriter, drag to
+  scrub, `#hit4` links, the request that made it, and an embed.
+- **Living diagrams you touch.** Type on a typewriter, follow a key press to the screen, drag the heat pump's weather.
+
 **What's new in 0.4.3** (the list is [below](#new-in-043), and [What's new](docs/whats-new.md) has a short
 paragraph for each):
 
@@ -125,6 +135,38 @@ On the [behaviour scoreboard](#behaviour-scoreboard), 14 one-sentence requests w
 same model did the right thing 35 times with showtime and 25 times without. The cases check that it starts on
 video requests and stays out of others, that it is honest about missing inputs and unsupported claims, and that it
 keeps to the plan and the delivery card. Anyone can rerun it.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/readme/divider-dark.svg">
+  <img alt="" src="assets/readme/divider-light.svg" width="100%">
+</picture>
+
+## X-ray
+
+Film a real thing doing its thing, a typewriter typing or a music box playing, and showtime draws its inside moving
+on the exact frames the clip's own sound says: on the object as the camera moves, or beside it, as a dark radiograph
+or a light blueprint. Instruments get their music written out from the sound too (a score, a guitar tab, a drum
+sheet), and every film ends with a receipt that proves it.
+
+<p align="center"><a href="https://faviovazquez.github.io/showtime/xray/"><img alt="A typewriter filmed on a desk, its typebars, ribbon and escapement drawn in glowing lines on the machine itself as it types, with the receipt: 19 of 19 events on their frame, audio 0.0 ms from the original." src="assets/readme/xray/xray-hero.jpg" width="100%"></a></p>
+<p align="center"><sub>An Underwood 315 typing, seen through. Clip: Erik Pålsson / Sounds of Changes, <a href="https://creativecommons.org/licenses/by/3.0/">CC BY 3.0</a>.</sub></p>
+
+Say "X-ray this clip of my typewriter" to your agent, or run the three steps yourself:
+
+```text
+showtime xray analyze clip.mp4 --job xray-typewriter        # every event in the sound, with its frame
+showtime new xray xray-typewriter/project --mechanism typewriter --theme dark
+showtime xray verify xray-typewriter                        # after the render: reads the film back
+```
+
+```text
+19 of 19 events on their frame · audio 0.0 ms from the original
+```
+
+The mechanisms come from a library that grows with every verified X-ray, and anyone can add one. The
+**[X-ray gallery](https://faviovazquez.github.io/showtime/xray/)** plays every verified film with its receipt and the
+commands that made it, and shows how to post yours; the [X-ray guide](docs/guides/xray.md) walks through filming,
+mechanisms, music and drums, and what the receipt checks.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/readme/divider-dark.svg">
@@ -335,8 +377,8 @@ setup:
 is the same server from npm ([@faviovazquez/showtime-mcp](https://www.npmjs.com/package/@faviovazquez/showtime-mcp),
 also listed in the [MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.FavioVazquez/showtime)
 as `io.github.FavioVazquez/showtime` and on [Smithery](https://smithery.ai/servers/favio-vazquezp/showtime)), and
-[`showtime-0.4.3.mcpb`](https://github.com/FavioVazquez/showtime/releases/download/v0.4.3/showtime-0.4.3.mcpb) from
-the v0.4.3 release opens in Claude Desktop with a double click. Setup still runs once on your machine: the
+[`showtime-0.4.4.mcpb`](https://github.com/FavioVazquez/showtime/releases/download/v0.4.4/showtime-0.4.4.mcpb) from
+the v0.4.4 release opens in Claude Desktop with a double click. Setup still runs once on your machine: the
 models and tools never travel inside a package. Long tools answer with a task id after about 20 seconds when a
 client stops calls early; the `status` tool reports progress and the result. Besides the tools that mirror the commands,
 `guide` reads a reference by the piece and `receipt` writes a job's receipt (tokens and cost are "not reported by this
@@ -910,6 +952,37 @@ scene files written for it. `showtime manim check` also renders a draft and runs
 detectors on it, so a near-black scene or a barely visible change is reported before the full render.
 
 </details>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/readme/divider-dark.svg">
+  <img alt="" src="assets/readme/divider-light.svg" width="100%">
+</picture>
+
+## New in 0.4.4
+
+[What's new](docs/whats-new.md) has a short paragraph for each.
+
+**X-ray**
+
+- **`showtime xray`.** `analyze` finds every event (a keystroke, a pluck, a hit) in a clip's sound with its frame;
+  `showtime new xray --mechanism <object>` draws the inside moving on those frames, on the object (`through`), beside
+  it (`split`) or as an isometric diagram (`diagram`), as a dark radiograph or a light blueprint, 16:9 or 9:16; the
+  library has a typewriter, a music box, a switch, a piano, a guitar and a drum kit. `notes` writes a score, a guitar
+  tab or a drum sheet from the sound; `verify` reads the finished film back and `qa` fails a missing or extra event or
+  audio more than 20 ms off. The receipt and the clip's credit go on the end card
+  ([guide](docs/guides/xray.md), [xray](skills/showtime/references/workflows/xray.md)).
+- **The live page.** `showtime export html <xray project> --interactive` writes one offline page: pads play the next
+  event of their kind with the clip's sound, your keyboard types on the typewriter, drag scrubs, `#hit4` and `#t2.5`
+  link to a moment, `--prompt` puts the request that made it on the page next to the commands, and
+  `<showtime-xray src="you-live.html">` or an iframe embeds it.
+- **The gallery.** The [X-ray page](https://faviovazquez.github.io/showtime/xray/) plays ten films with their
+  receipts and plays each one live in place.
+
+**Living diagrams**
+
+- **You touch them.** A scene can take typing (`interactive.type`), a click on a part (`parts[].press`) and a drag that
+  turns a knob (`parts[].drag`). `--example typewriter` and `--example computer` are new, and the heat pump's outdoor
+  unit drags to set the weather ([guide](docs/guides/living-diagram.md)).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/readme/divider-dark.svg">
@@ -1539,15 +1612,15 @@ language, a CPU limit) and the render progress monitor.
 
 <p align="center"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/readme/diagrams/docs-map-dark.svg">
-  <img alt="The documentation map: seventeen workflows (launch video, explainer, tutorial, social short, data story, footage edit, trailer, slideshow, changelog video, music video, voice-over only, localize, repo explainer, paper explainer, repro, diagram, recap), then five acts and a finale of guides, from onboarding to qa and review." src="assets/readme/diagrams/docs-map-light.svg" width="100%">
+  <img alt="The documentation map: eighteen workflows (launch video, explainer, tutorial, social short, data story, footage edit, trailer, slideshow, changelog video, music video, voice-over only, localize, repo explainer, paper explainer, repro, diagram, recap, x-ray), then five acts and a finale of guides, from onboarding to qa and review." src="assets/readme/diagrams/docs-map-light.svg" width="100%">
 </picture></p>
 
-For people: [fourteen task guides](docs/guides/README.md) (what to say to your agent, what it runs, what you get, how
+For people: [fifteen task guides](docs/guides/README.md) (what to say to your agent, what it runs, what you get, how
 long it takes), [What's new](docs/whats-new.md) (each release in one sentence a feature) and the [FAQ](docs/faq.md)
 (GPUs, cost, agents, privacy, licences, disk, time, platforms, languages).
 
 The [documentation map](docs/README.md) is the way in: every guide, grouped by what you are making, from
-workflows (launch, explainer, tutorial, social, data, footage, trailer, diagram, recap, repro) to story and craft, sound and
+workflows (launch, explainer, tutorial, social, data, footage, trailer, diagram, recap, repro, X-ray) to story and craft, sound and
 voice, rendering, and QA. The glossary is in [CONTEXT.md](CONTEXT.md), and what showtime deliberately
 does not do, and why, is in [.out-of-scope/](.out-of-scope/README.md).
 

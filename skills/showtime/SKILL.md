@@ -1,6 +1,6 @@
 ---
 name: showtime
-description: "Use when the user wants a video made, edited or finished: a launch or promo, product demo, explainer, trailer or teaser, tutorial or walkthrough, a screen recording turned into a demo, social short, reel, TikTok or YouTube Short, slideshow, animated chart or data story, motion graphics or animation, animated logo intro, outro or sting, lower thirds, audiogram, music video, Claude Design animation to MP4; captions or subtitles for a video; voice-over or narration; music or sound effects; thumbnail or poster frame; footage edits such as cutting the ums, removing silences, tightening a talking head, podcast or interview clips; reframing to vertical; re-voicing or subtitling a video in another language; turning a repo, website, pull request or changelog into a video; or when they type /showtime. Load it before replying, even to push back (a claim the user's own data does not support, an impossible spec or deadline). Not for editing still images, writing a caption for a photo post, or code unrelated to a video."
+description: "Use when the user wants a video made, edited or finished: a launch or promo, product demo, explainer, trailer or teaser, tutorial or walkthrough, a screen recording turned into a demo, social short, reel, TikTok or YouTube Short, slideshow, animated chart or data story, motion graphics or animation, logo sting, lower thirds, audiogram, music video, Claude Design animation to MP4; an X-ray of their clip of a machine or instrument (its inside, in sync); captions or subtitles for a video; voice-over or narration; music or sound effects; thumbnail or poster frame; footage edits: cutting ums and silences, tightening a talking head, podcast or interview clips; reframing to vertical; a video in another language; turning a repo, website, pull request or changelog into a video; or when they type /showtime. Load it before replying, even to push back (a claim the user's own data does not support, an impossible spec or deadline). Not for still images, photo captions or code unrelated to a video."
 compatibility: Any Agent Skills client with a shell, on macOS, Linux or Windows. Needs Python 3.8+ (or uv) and Node.js 20+; a one-time `showtime setup` downloads the local tools and models into ~/.showtime (or $SHOWTIME_HOME) and needs the network for that step.
 ---
 
@@ -24,7 +24,7 @@ use its latest file.
   voice-over; full review, say 'lean' for a draft pass.") and start without waiting. Ask
   (1-2 questions, each with a recommended answer) only when the request is ambiguous: nothing to work
   from, or two readings that make different videos. Wait for a yes only before a destructive step
-  (dropping recorded content, touching their files) or an expensive one (a large install, a render
+  (dropping recorded content, touching their files) or an expensive one (large install, render
   over ~10 min).
 - **Asking: studio (opt-in)** when the user says studio, brainstorm, show me options or concepts first,
   storyboard it first, or wants control. Offer it once for high-stakes work
@@ -61,7 +61,7 @@ Log each stage boundary in the ledger (`SHOWTIME.md`, `job.json`):
    *Done when:* check reports 0 errors and every WARN is read (footage: `edit check` passes, every
    view PNG read).
 4. **Build.** Project: compose the hook complete at t=0 (`"poster": 0`), then
-   `showtime render <project> --job <job>` (`final.mp4`, `poster.jpg`; a later poster is baked in only when it matches the opening).
+   `showtime render <project> --job <job>` (`final.mp4`, `poster.jpg`; a later poster bakes in only if it matches the opening).
    Footage: `showtime edit render <job> -o <job>/final.mp4`; poster via
    `showtime deliver poster <job> --at <t> --bake` (it becomes the latest final). Say the time if
    over 30 s.
@@ -99,6 +99,7 @@ Log each stage boundary in the ledger (`SHOWTIME.md`, `job.json`):
 | a PR (`showtime pr-video <N>`), release or changelog | `changelog-video` |
 | an agent session as a film (`showtime recap <transcript>`) | `recap` |
 | a failing browser test as a bug-report video (`showtime repro`) | `repro` |
+| an X-ray of their clip (`showtime xray`) | `xray` |
 | a trailer, teaser | `trailer` |
 | a showreel, hype reel, "go all out" | `tones` |
 | photos, screenshots with music | `slideshow` |
@@ -129,7 +130,7 @@ Log each stage boundary in the ledger (`SHOWTIME.md`, `job.json`):
 | Tempting thought | Do this instead |
 |---|---|
 | "The render exited 0, so it's fine" | Run `showtime qa <job>`; the log proves frames were written, not that the file is right |
-| "I'll wait for a yes before the final" (quick mode) | Show the first look and keep going; confirm only destructive or costly steps |
+| "I'll wait for a yes before the final" (quick mode) | Show the first look, keep going; confirm only destructive or costly steps |
 | "The template is close enough" | `--duration <len>` (or `showtime retime`); no placeholder left (74 %, northwind.example) |
 | "check passed with warnings" | Read every WARN; `short_text`, still holds and `slow_scene` are real defects: fix them |
 | "I'll call ffmpeg directly" | `footage trim`, `snap <video>`, `deliver exports --max-mb` (or `--targets gif,webp`) |
@@ -142,7 +143,7 @@ Log each stage boundary in the ledger (`SHOWTIME.md`, `job.json`):
 | "Re-render everything for one fix" | `--from/--to --job`: splices the range; voice and transcripts are cached |
 | "I'll ask which colours and features to show" | Look them up (repo, site, brand kit); say what you found |
 | "The site blocked the capture; I'll work around it" | Exit code 3 is a bot wall: ask for screenshots, another URL or a local build |
-| "Skip `job init`/`job note`, it's bookkeeping" | qa and resuming read the ledger |
+| "Skip `job init`/`job note`" | qa and resuming read the ledger |
 | "qa passed; skip the critic" | Quality mode runs it; lean only on request |
 | "They asked for that headline" | Check it against their data (52 s vs 40 s is 1.3x, not 5x); flag it, offer the true figure (`story` §6) |
 | "I'll take the spec and the deadline" | Say first what cannot be done, then what can, timed from `render` |

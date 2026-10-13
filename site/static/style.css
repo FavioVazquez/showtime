@@ -75,6 +75,8 @@ p{margin:0}
 .btn:active{transform:translateY(1px)}
 .btn.primary{background:#A3111D;color:#FFF8EF}
 .btn.primary:hover{background:#B8182A}
+.btn.ghost{box-shadow:inset 0 0 0 1.5px rgba(243,234,221,.35);color:#F3EADD}
+.btn.ghost:hover{background:rgba(243,234,221,.08)}
 .link-arrow{font-weight:600;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
 .link-arrow span{transition:transform .2s var(--ease)}
 .link-arrow:hover span{transform:translateX(3px)}
@@ -321,3 +323,90 @@ footer.site .word{font-family:var(--serif);font-weight:900;color:var(--ink);font
 .screen .watch em{font-style:normal;font-weight:500;color:#B9AB9C;font-size:.88rem}
 .screen.playing .watch{display:none}
 @media (max-width:560px){.screen .watch{left:12px;bottom:12px;padding-right:14px;font-size:.9rem}.screen .watch em{display:none}.screen .watch svg{width:34px;height:34px;padding:10px 9px 10px 11px}}
+
+/* X-ray (xray/ and the landing's X-ray band): a film with its receipt, three steps, a gallery with two filters, Lane 2 */
+.xkicker{font:600 .78rem var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--mark);margin-bottom:14px}
+.house .xkicker{color:#E9B949}
+.xreceipt{display:flex;gap:8px;align-items:flex-start;margin-top:14px;font:500 .84rem/1.45 var(--mono);color:var(--ink);font-variant-numeric:tabular-nums}
+.xreceipt svg{flex:none;width:16px;height:16px;margin-top:1px;color:var(--mark)}
+.house .xreceipt-hero{margin-top:18px;font-size:.95rem;color:#F3EADD}
+.house .xreceipt-hero svg{color:#E9B949;width:18px;height:18px}
+.house .credit code{background:rgba(243,234,221,.08);color:#D6CABB}
+.xscreen .xblank{position:absolute;inset:0}
+.xblank{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;width:100%;height:100%;padding:16px;text-align:center;
+  background:linear-gradient(rgba(233,185,73,.07) 1px,transparent 1px) 0 0/28px 28px,linear-gradient(90deg,rgba(233,185,73,.07) 1px,transparent 1px) 0 0/28px 28px,
+  radial-gradient(70% 70% at 50% 45%,#16202B,#080605)}
+.xblank-mark{font:600 .74rem var(--mono);letter-spacing:.16em;text-transform:uppercase;color:#E9B949}
+.xblank-obj{font:600 1.15rem/1.25 var(--serif);font-variation-settings:"opsz" 144;color:#D6CABB;max-width:22ch}
+.frame .xblank{position:absolute;inset:0}
+.xsteps{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:32px}
+.xsteps li{border-top:1px solid var(--line-2);padding-top:20px;min-width:0}
+.xsteps .xn{display:block;font:600 2.2rem/1 var(--serif);font-variation-settings:"opsz" 144;color:var(--mark);margin-bottom:12px}
+.xsteps h3{font-size:1.125rem;margin-bottom:8px}
+.xsteps p{color:var(--ink-2);font-size:.96rem}
+.xsteps .copy{margin-top:16px}
+.xsteps pre{font-size:.78rem}
+@media (max-width:960px){.xsteps{grid-template-columns:1fr;gap:28px}}
+.xfacts{margin-top:56px}
+.xfilters{display:flex;gap:8px 40px;flex-wrap:wrap}
+.xfilters .filters{margin-top:0;flex:0 1 auto}
+@media (max-width:720px){.xfilters .filters{flex:1 1 100%}}
+.xgrid{margin-top:4px}
+.xframe.tall .still,.xframe.tall .loop{object-fit:contain}
+.xcard.pending .still{filter:saturate(.6) brightness(.72)}
+.film .badge.xpending{background:rgba(14,11,9,.74);color:#F3EADD;box-shadow:inset 0 0 0 1px rgba(243,234,221,.22)}
+.xcard .xcredit{margin-top:8px;color:var(--muted);font-size:.86rem;line-height:1.5}
+.xcard .xcredit a{color:inherit}
+.xmake{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}
+.xmake summary{cursor:pointer;font-weight:600;font-size:.9rem;color:var(--ink);list-style-position:inside}
+.xmake summary::marker{color:var(--mark)}
+.xmake .copy{margin-top:10px}
+.xmake pre{font-size:.74rem;padding:.8rem .9rem}
+.xcard .links code{font-size:.82em}
+.xnote{margin-top:40px}
+.xlane>div{min-width:0}
+.xlane .btn{margin-top:4px}
+.xchecks{margin-top:56px}
+.xland{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:56px;align-items:center}
+.xland .title{font-size:clamp(1.9rem,3.4vw,2.75rem)}
+.xland .lede{margin-top:16px}
+.xland-film{position:relative;display:block;aspect-ratio:16/9;border-radius:12px;overflow:hidden;background:var(--screen);box-shadow:0 24px 60px -32px rgba(0,0,0,.6)}
+.xland-film img{display:block;width:100%;height:100%;object-fit:cover}
+.xland-film .xblank{position:absolute;inset:0}
+@media (max-width:860px){.xland{grid-template-columns:1fr;gap:28px}}
+.xcard .meta{flex-direction:column;align-items:flex-start;gap:4px}
+.xcard .spec{white-space:normal}
+.xcmds pre{white-space:pre-wrap;overflow-wrap:normal;word-break:normal}
+.xcmds .xl{display:block;padding-left:1.4em;text-indent:-1.4em}
+.xcmds .xl+.xl{margin-top:4px}
+.xcmds .w,.xreceipt .w{white-space:nowrap}
+.xtree{margin:14px 0;font-size:.78rem;white-space:pre;overflow-x:auto}
+
+/* X-ray live pages in place: the card's frame (or the hero screen) holds a <showtime-xray> element (runtime/xray-live/embed.js) */
+.xacts{margin-top:14px}
+.xacts .btn{height:38px;padding:0 16px;font-size:.88rem;cursor:pointer;border:0}
+.xline{margin-top:12px}
+.xline h4{font:600 .72rem var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--mark)}
+.xline .ask{margin-top:4px;font-size:.9rem}
+.xembed .copy+.xembed-note{margin-top:12px}
+.xembed-note{margin-top:10px;color:var(--muted);font-size:.84rem}
+.xembed .copy{margin-top:6px}
+.xembed pre{font-size:.72rem;padding:.8rem .9rem;white-space:pre-wrap;word-break:break-all}
+.frame.xlive-on,.screen.xlive-on{aspect-ratio:auto;overflow:visible;background:transparent;box-shadow:none}
+/* a card playing live spans the whole gallery; its stage is the live page, its words sit beside it on wide screens */
+.xgrid .xcard-live{grid-column:1/-1;scroll-margin-top:84px;display:grid;grid-template-columns:minmax(0,2.2fr) minmax(0,1fr);gap:4px 28px;align-items:start}
+.xgrid .xcard-live>.xstage{grid-row:1/span 20}
+.xgrid .xcard-live>.xstage.tall{max-width:560px;justify-self:center;width:100%}
+.xgrid .xcard-live>.xframe[hidden]{display:none}
+.xstage showtime-xray,.xstage iframe.xlive-frame{display:block;width:100%}
+.xstage iframe.xlive-frame{aspect-ratio:var(--xr,16/9);border:0;border-radius:12px;background:var(--screen)}
+@media (max-width:900px){.xgrid .xcard-live{display:block}.xgrid .xcard-live>.xstage{margin-bottom:14px}}
+.xlive-on>showtime-xray{display:block;position:static;width:100%}
+.xlive-on>iframe.xlive-frame{position:static;display:block;width:100%;height:auto;aspect-ratio:var(--xr,16/9);border:0;border-radius:12px;background:var(--screen)}
+showtime-xray{display:block;position:relative;width:100%;border-radius:12px;overflow:hidden;background:var(--screen)}
+showtime-xray .stx{position:relative;width:100%}
+showtime-xray .stx-poster{display:block;width:100%;height:auto;border-radius:12px;object-fit:cover}
+showtime-xray .stx-play{position:absolute;left:14px;bottom:14px;appearance:none;border:0;border-radius:999px;background:rgba(14,11,9,.74);color:#F3EADD;font:600 .82rem var(--sans);padding:8px 14px;cursor:pointer}
+showtime-xray .stx-play:hover{background:rgba(14,11,9,.92)}
+showtime-xray .stx-poster,showtime-xray .stx-frame{position:static;inset:auto}
+showtime-xray .stx-frame{display:block;width:100%;border:0;border-radius:12px;background:var(--screen)}

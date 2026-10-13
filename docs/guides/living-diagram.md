@@ -24,6 +24,9 @@ through and tune.
 5. For the live figure, the scene declares what is live (steps, knobs, readouts, the parts to hover) and
    `showtime export html <project> --interactive` writes `<slug>-figure.html`. `showtime check` walks every step,
    each knob value and each hovered part of it first.
+6. To let people touch it, the scene can also take typing (`interactive.type`), a click on a part (`parts[].press`) or a
+   drag on a part that turns a knob (`parts[].drag`). `--example typewriter` (type on it) and `--example computer`
+   (what happens when you press a key) start from finished ones; the heat pump drags its outdoor unit to set the weather.
 
 ## What you get
 

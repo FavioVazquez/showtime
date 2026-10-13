@@ -29,20 +29,24 @@ or dark (night schematic) theme. For numbers that change use `data-story.md`; fo
 - A figure people poke: `showtime export html <project> --interactive [--target artifact]` writes
   `<slug>-figure.html`, one offline file: the board is live from the first frame (hover a part, pick a step, turn a
   knob). The scene says what is interactive in `interactive` (steps, knobs, readouts, a tour); `--example
-  econ-lab` and `--example enter` show both kinds (§ Interactive)
+  econ-lab` and `--example enter` show both kinds; `--example typewriter` (type on it) and `--example computer`
+  (what happens when you press a key) start from finished figures people type on and press (§ Interactive)
+- "Interactive", "live" or "let me touch it" in the request: the live figure is the deliverable, and it needs no
+  local server. If `check` or `render` cannot start (no local port, a sandbox), still run `export html --interactive`,
+  hand over the `*-figure.html`, and say what could not run (§ Interactive)
 
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| Inputs | 47-51 |
-| Defaults | 53-59 |
-| Steps | 61-88 |
-| Scene spec | 90-132 |
-| Labels and layout | 134-151 |
-| Themes | 153-158 |
-| Interactive | 160-204 |
-| Pitfalls | 206-223 |
-| Read next | 225-228 |
+| Inputs | 51-55 |
+| Defaults | 57-63 |
+| Steps | 65-92 |
+| Scene spec | 94-139 |
+| Labels and layout | 141-158 |
+| Themes | 160-165 |
+| Interactive | 167-211 |
+| Pitfalls | 213-230 |
+| Read next | 232-235 |
 
 ## Inputs
 
@@ -127,7 +131,10 @@ z up; times are seconds; `world: {scale, origin}` maps them to the 1920x1080 pag
   text). Typed: `type: [t0, t1]` reveals it left to right with a caret, `typeFrom: n` characters already there,
   `caretUntil`; `press: t` (with `pressTone`) presses it like a key.
 - **focus**: `[{part, with: [...], at, until}]` veils the rest; **camera**: keys `{at, dur, zoom, focus: part |
-  [x, y, z] | [sx, sy], to}` run in order; **explode**: `{at, dur, back, offsets: {id: [dx, dy, dz]}}`.
+  [x, y, z] | [sx, sy], to}` run in order; **explode**: `{at, dur, back, offsets: {id: [dx, dy, dz]}}`;
+  **offset**: `fn(id, t) -> [dx, dy, dz] | null`, a part's own offset as a pure function of t, added to explode's
+  (the parts, their labels, tags and hit areas move with it: the typewriter example's carriage, from its typed log);
+  **onFrame**: `fn(t, {cam, P, seg, E, focus})` after each frame, for pieces the library has no shape for.
 - **steps** (`.ld-steps` beat lines), **reveal** (`{sel, at}` page elements), **page** (kicker, title with
   `*accent*`, dek, footers).
 

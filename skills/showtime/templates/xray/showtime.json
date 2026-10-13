@@ -1,0 +1,41 @@
+{
+  "title": "X-ray",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "duration": 12.8,
+  "background": "#070b16",
+  "poster": 4.24,
+  "render": {
+    "poster_bake": "off"
+  },
+  "audio": "audio/mix.json",
+  "xray": {
+    "layout": "through",
+    "skip": [
+      0
+    ],
+    "text": "Sounds of changes.",
+    "place": {
+      "key_q": [
+        163,
+        256
+      ],
+      "key_p": [
+        419,
+        256
+      ],
+      "key_m": [
+        355,
+        317
+      ],
+      "print_point": [
+        311,
+        72
+      ]
+    },
+    "credit": "Clip: Erik Pålsson / Sounds of Changes, CC BY 3.0.",
+    "marker": true,
+    "offset_frames": 0
+  }
+}

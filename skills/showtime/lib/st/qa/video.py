@@ -132,6 +132,11 @@ RULES = {
     "reference_copy": "the render copies its style reference (near-copy guard: sampled frames + cut rhythm)",
     "reference_close": "some frames look like frames of the style reference",
     "reference_credit": "the \"Style reference:\" credit is missing from credits.txt or share.txt",
+    "xray_sync": "an x-ray film's sync marker is missing or extra on an event frame, or its audio is over 20 ms from the clip (showtime xray verify)",
+    "xray_sync_off": "an x-ray film's marker lands 1-2 frames off an event's frame",
+    "xray_unverified": "the job has xray/xray.json but the film carries no sync marker, so its events are unverified",
+    "xray_credit": "an x-ray film's clip has no credit line (showtime.json xray.credit) and is not marked xray.own",
+    "xray_choppy": "a scrolling band of an x-ray film stalls or jumps (showtime xray verify --band)",
 }
 RULES.update(floor.RULES)   # the quality floor (st.qa.floor): looks-cheap patterns, WARN only
 RULES.update(hearing.RULES)  # the hearing pass (st.qa.hearing): what an ear catches, WARN only
@@ -403,7 +408,7 @@ def run(video: PathLike, *, project: Optional[PathLike] = None, expect_file: Opt
 
     _check_upscale(F, vpath)
     _check_cards(F, vpath)
-    rep["floor"] = _check_floor(F, vpath, dur, W, H, pic, _may_hold_footage(proj, cfg))
+    rep["floor"] = _check_floor(F, vpath, dur, W, H, pic, _may_hold_footage(proj, cfg), _xray_strip(proj, vpath, cfg))
     _check_rhythm(F, vpath, dur, fps, proj, cfg, expect, rep, say)
     if loud.get("_x") is not None:
         _check_hearing(F, vpath, loud, dur, proj, rep, say)
@@ -419,6 +424,7 @@ def run(video: PathLike, *, project: Optional[PathLike] = None, expect_file: Opt
     _check_must_show(F, proj, expect)
     rep["phone"] = _check_phone(F, vpath, proj, W, H, caps, cap_items)
     _check_reference(F, vpath, say)
+    _check_xray(F, vpath, rep, say)
     seams = _check_seams(F, vpath, fps)
     if seams:
         rep["seams"] = seams
@@ -1162,11 +1168,20 @@ def _check_cards(F: Findings, vpath: Path) -> None:
 LIST_MAX_CARDS = 12
 
 
+def _xray_strip(proj: Optional[Path], vpath: Path, cfg: Dict[str, Any]) -> bool:
+    """The film comes from the xray template (showtime.json "template": "xray"), or the job has xray/xray.json and the
+    project an "xray" block: its sound strip is not a player's control bar."""
+    if str(cfg.get("template") or "").lower() == "xray":
+        return True
+    job = job_of(vpath)
+    return bool(job is not None and (job / "xray" / "xray.json").is_file() and isinstance(cfg.get("xray"), dict))
+
+
 def _check_floor(F: Findings, vpath: Path, dur: float, W: int, H: int, crop: Optional[Sequence[int]],
-                 footage: bool) -> Dict[str, Any]:
+                 footage: bool, xray_strip: bool = False) -> Dict[str, Any]:
     """The quality floor (st.qa.floor): player chrome, soft footage, stepped caption boxes, empty borders."""
     try:
-        return floor.check(F, vpath, dur, W, H, crop=crop, footage=footage)
+        return floor.check(F, vpath, dur, W, H, crop=crop, footage=footage, xray_strip=xray_strip)
     except Exception as e:  # noqa: BLE001 - a warning-only look never breaks qa
         from ..common import debug
         debug("quality floor skipped: %s" % e)
@@ -1335,6 +1350,35 @@ def _check_reference(F: Findings, vpath: Path, say: Any) -> None:
         debug("reference guard failed: %s" % e)
 
 
+def _check_xray(F: Findings, vpath: Path, rep: Dict[str, Any], say: Any) -> None:
+    """A job with xray/xray.json: the film's sync marker and audio against it (st.xray.verify)."""
+    job = job_of(vpath)
+    if job is None or not (job / "xray" / "xray.json").is_file():
+        return
+    from .. import xray as _x
+    cfg = _x.project_config(job)
+    credit = str(cfg.get("credit") or "").strip()
+    if credit:
+        F.ok("clip credit: %s" % _snip(credit, 60))
+    elif cfg.get("own") is True:
+        F.ok("clip credit: the clip is the user's own, none needed")
+    else:
+        F.add("xray_credit", "WARN", "x-ray clip has no credit line (showtime.json xray.credit, or xray.own: true for your own clip)",
+              fix='set "xray": {"credit": "<title> by <author>, <licence>, <link>"} in the project\'s showtime.json (or "own": true)')
+    say("qa: x-ray sync")
+    try:
+        from .. import xray
+        res = xray.verify(job, vpath)
+    except Exception as e:  # noqa: BLE001 - an unreadable x-ray file is a finding, not a crash
+        F.add("xray_unverified", "WARN", "the x-ray sync could not be checked: %s" % e)
+        return
+    rep["xray"] = {k: res.get(k) for k in ("events", "on_frame", "missing", "extra", "audio_lag_ms", "marker", "line")}
+    for f in res["findings"]:
+        F.add(f["rule"], f["severity"], f["message"], fix="showtime xray verify %s" % job.name)
+    if not res["findings"]:
+        F.ok(res["line"])
+
+
 def _video_keyframes(vpath: Path) -> Optional[List[bool]]:
     """Per video frame (decode order = display order: renders use no B-frames): is it a keyframe?"""
     from .. import ff
@@ -1498,7 +1542,9 @@ def _check_credits(F: Findings, vpath: Path, proj: Optional[Path], expect: Dict[
         if have:
             F.ok("credits file present (%s)" % have.name)
         else:
-            F.ok("no attribution required (no CC-BY items in the mix report or asset sidecars)")
+            job = job_of(vpath)
+            if job is None or not (job / "xray" / "xray.json").is_file():     # an x-ray film's clip is judged in _check_xray
+                F.ok("no attribution required (no CC-BY items in the mix report or asset sidecars)")
         return
     if not have:
         F.add("missing_credits", "FAIL", "%d item(s) need attribution but no credits.txt ships with the video: %s" % (

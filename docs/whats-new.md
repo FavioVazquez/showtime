@@ -3,6 +3,33 @@
 What each release changes for you, newest first, one sentence a feature. The
 [changelog](../CHANGELOG.md) has every change and the reason for it.
 
+## 0.4.4
+
+### X-ray: film a real thing and see its inside
+
+![A typewriter filmed on a desk, its typebars, ribbon and escapement drawn in glowing lines on the machine itself as it types, with the receipt: 19 of 19 events on their frame, audio 0.0 ms from the original.](../assets/readme/xray/xray-hero.jpg)
+
+Film something doing its thing (a typewriter, a music box, a guitar, a drum kit) and showtime finds every event in the
+clip's own sound and draws the inside moving on exactly those frames: on the object as the camera moves, beside it or as
+an isometric diagram, in a dark radiograph or a light blueprint. `showtime xray analyze` measures, `showtime new xray
+--mechanism <object>` starts from a library of six mechanisms (typewriter, music box, switch, piano, guitar, drums),
+`showtime xray notes` writes a score, a guitar tab or a drum sheet from the sound, and `showtime xray verify` reads
+the finished film back for a receipt: "19 of 19 events on their frame · audio 0.0 ms from the original"
+([guide](guides/xray.md), [xray](../skills/showtime/references/workflows/xray.md), [the gallery](https://faviovazquez.github.io/showtime/xray/)).
+
+### A live page you play
+
+`showtime export html <xray project> --interactive` writes one offline page of the same film: pads under the picture
+play the next hit from the real clip with its sound, your keyboard types on the typewriter, dragging scrubs, and
+`#hit4` links to a moment. The page shows the request that made it (`--prompt`) and the commands, and embeds with
+`<showtime-xray>` or an iframe. On the site, every film in the gallery plays live in place.
+
+### Living diagrams you touch
+
+A figure's scene can now take typing, a click on a part and a drag on a part. `showtime new diagram --example
+typewriter` is a typewriter you type on, `--example computer` follows a key press from the keyboard to the screen, and
+the heat pump's outdoor unit drags to change the weather ([guide](guides/living-diagram.md)).
+
 ## 0.4.3
 
 ### Living diagrams: a system that explains itself

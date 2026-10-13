@@ -100,9 +100,9 @@ def check_body(tc: unittest.TestCase, body, where: str) -> dict:
 @unittest.skipIf(yaml is None, SKIP_YAML)
 @unittest.skipUnless(GH_DIR.is_dir(), SKIP_REPO)
 class IssueForms(unittest.TestCase):
-    def test_four_forms_parse_and_follow_the_schema(self):
+    def test_five_forms_parse_and_follow_the_schema(self):
         names = sorted(p.name for p in FORMS.glob("*.yml") if p.name != "config.yml")
-        self.assertEqual(names, ["bug.yml", "docs.yml", "example-request.yml", "feature.yml"])
+        self.assertEqual(names, ["bug.yml", "docs.yml", "example-request.yml", "feature.yml", "xray-gallery.yml"])
         for name in names:
             d = load(FORMS / name)
             for key in ("name", "description", "body"):

@@ -54,7 +54,7 @@ Written for people rather than for your agent:
 
 <p align="center"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/diagrams/docs-map-dark.svg">
-  <img alt="The documentation map: seventeen workflows, then five acts and a finale of guides, from onboarding to qa and review." src="../assets/readme/diagrams/docs-map-light.svg" width="100%">
+  <img alt="The documentation map: eighteen workflows, then five acts and a finale of guides, from onboarding to qa and review." src="../assets/readme/diagrams/docs-map-light.svg" width="100%">
 </picture></p>
 
 ## Choose your path
@@ -91,6 +91,9 @@ What are you making? Each card opens the workflow guide your agent follows; the 
 <td width="33%" valign="top"><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/_diagram"><img src="../assets/readme/gallery/_diagram.webp" width="100%" alt="A preview of the living diagram demo"></a><br><sub>How a system works, as a figure that builds itself or one people poke</sub><br><b><a href="../skills/showtime/references/workflows/diagram.md">diagram</a></b><br><sub>see it done: <a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/_diagram">the demo</a> · a live figure: <code>export html --interactive</code></sub></td>
 <td width="33%" valign="top"><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/_recap"><img src="../assets/readme/gallery/_recap.webp" width="100%" alt="A preview of the recap demo"></a><br><sub>What your coding agent did in a session</sub><br><b><a href="../skills/showtime/references/workflows/recap.md">recap</a></b><br><sub>see it done: <a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/_recap">the demo</a></sub></td>
 <td width="33%" valign="top"><a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/_repro"><img src="../assets/readme/gallery/_repro.webp" width="100%" alt="A preview of the repro demo"></a><br><sub>A failing browser test, for a bug report</sub><br><b><a href="../skills/showtime/references/workflows/repro.md">repro</a></b><br><sub>see it done: <a href="https://github.com/FavioVazquez/showtime-examples/tree/main/examples/_repro">the demo</a></sub></td>
+</tr>
+<tr>
+<td width="33%" valign="top"><sub>The inside of a real thing you filmed, in sync with its sound</sub><br><b><a href="../skills/showtime/references/workflows/xray.md">xray</a></b><br><sub>see it done: <a href="https://faviovazquez.github.io/showtime/xray/">the X-ray gallery</a> · for people: <a href="guides/xray.md">the guide</a></sub></td>
 </tr>
 </table>
 

@@ -59,6 +59,35 @@ or on the folder it already runs. `setup --link` points it at the linked checkou
 - Mention it in SKILL.md or a reference only as it really exists: `scripts/check_release.py` fails when the
   docs name a command or sub-command the CLI does not have.
 
+## Add an X-ray mechanism
+
+The X-ray mechanism library (`skills/showtime/library/xray/`) holds one folder per kind of object, and
+`showtime new xray <dir> --mechanism <object>` copies one into a project. It grows with every verified X-ray. To
+show a film you made without adding a mechanism, use the "X-ray for the gallery" issue form instead; the
+[X-ray page](https://faviovazquez.github.io/showtime/xray/) shows both lanes.
+
+A pull request adds one folder, `skills/showtime/library/xray/<object>/`, started as a copy of the closest entry:
+
+- `mechanism.js`: `XRAY.mechanism({...})` with the parts, the design box, four named anchors a clip places on its
+  object, the outline, and `draw(k)` (the kit is described in the library's `README.md`).
+- `diagram.js` (optional): the same object as an isometric living diagram, for `--layout diagram`.
+- `README.md`: the parts; what one event moves; what is measured and what is drawn; the anchors; and a
+  `Verified on:` line with the clip, its credit and license, and the receipt line `showtime xray verify` printed.
+
+Checklist for the pull request:
+
+- [ ] Made on a real clip and verified: the `Verified on:` line quotes the receipt as it printed ("N of N events on
+      their frame · audio X ms from the original"), and qa had no FAIL.
+- [ ] The clip is yours, or CC0, CC BY or CC BY-SA, with its credit line in the README. No license found, no entry.
+- [ ] Objects only: the see-through layout is never drawn over a person.
+- [ ] A strike peaks on its event's frame; anything that advances (a wheel, a carriage) steps on that frame.
+- [ ] Which key, note or part is named only from evidence (the paper, a display, `notes.json`); otherwise the
+      drawing says "a keystroke", "a pluck".
+- [ ] Six to ten labelled parts of the real kind of mechanism, simplified, not a symbol; labels readable at
+      1080x1920 (28 px and up).
+- [ ] `showtime new xray /tmp/x --mechanism <object>` then `showtime check /tmp/x` pass with the sample clip.
+- [ ] No third-party drawings or code: the mechanism is your own work (see "Original work, clean licenses").
+
 ## Tests
 
 ```bash

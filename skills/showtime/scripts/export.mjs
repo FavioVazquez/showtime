@@ -18,10 +18,11 @@ import { fitFootage } from './lib/export/fit.mjs';
 import { timeIssues, socraticDoc } from './lib/questions.mjs';
 import { resolveShare, shareMeta, genericTitle, genericChapters } from './lib/export/share.mjs';
 import { packFigure, sceneInfo, TEMPLATE_TITLE } from './lib/export/figure.mjs';
+import { isXrayProject, exportXrayLive } from './lib/export/xray.mjs';
 
 const SPEC = {
   name: 'export',
-  usage: 'showtime export html <project|job> [-o out.html] [--interactive] [--audio auto|embed|score|none] [--folder] [--controls full|minimal|none] [--target file|artifact] [--lang CODE] [--no-questions] [--auto-continue S]',
+  usage: 'showtime export html <project|job> [-o out.html] [--interactive] [--prompt TEXT] [--audio auto|embed|score|none] [--folder] [--controls full|minimal|none] [--target file|artifact] [--lang CODE] [--no-questions] [--auto-continue S]',
   summary: 'Export a project as an interactive HTML video that plays in any browser, offline, from one file.',
   description: [
     'The page is packed with everything it uses (runtime, scripts, styles, fonts, images, emoji, data,',
@@ -60,6 +61,9 @@ const SPEC = {
     'A living diagram exports its live figure with --interactive: figure.html (or the diagram template\'s) packed',
     'into one offline file with no player; the board is live from the first frame: the viewer hovers parts, picks',
     'steps and turns knobs (references/workflows/diagram.md, Interactive). Default name: <title>-figure.html.',
+    'An X-ray project exports its live page with --interactive: the clip with its own sound, the inside drawn by the',
+    'same page at the scrubbed frame, every event a tick to jump to (arrow keys), 0.25x around an event, light/dark',
+    'and see-through/split; no sync marker (references/workflows/xray.md, Live page). Default name: <title>-live.html.',
   ].join('\n'),
   options: {
     output: { short: 'o', help: 'output .html file (with --folder: output folder)', metavar: 'FILE' },
@@ -71,7 +75,8 @@ const SPEC = {
     bitrate: { help: 'embedded audio bitrate (default 96k)', metavar: 'RATE' },
     codec: { help: 'embedded audio codec: aac (default, plays everywhere) or opus (smaller)', metavar: 'NAME' },
     folder: { type: 'boolean', help: 'write a folder (index.html + assets/) instead of one file' },
-    interactive: { type: 'boolean', help: 'a living diagram: its live figure (figure.html) instead of the film, one offline file without a player' },
+    interactive: { type: 'boolean', help: 'a living diagram: its live figure (figure.html) instead of the film; an X-ray: its live page (scrub the clip, jump event to event); one offline file without the film player' },
+    prompt: { help: 'an X-ray live page: the request that made the film, shown on the page as "the line that made it" (default: showtime.json xray.made.prompt; none if neither)', metavar: 'TEXT' },
     controls: { help: 'player chrome: full (default), minimal, or none (for embedding)', metavar: 'KIND' },
     target: { help: 'file (default) or artifact: for a host that shows the page in a sandboxed frame (an HTML artifact): one file under 16 MB, no "copy link" or other file-address features (the player also detects such hosts by itself)', metavar: 'KIND' },
     'autoplay-muted': { type: 'boolean', help: 'start playing muted as soon as it loads (browsers allow that without a click)' },
@@ -113,6 +118,7 @@ const SPEC = {
     'showtime export html my-video --controls none --autoplay-muted --loop   # for embedding in a page',
     'showtime export html my-video --target artifact -o launch.html   # to publish as an HTML artifact',
     'showtime export html my-diagram --interactive          # the live figure: hover, steps, knobs; one file',
+    'showtime export html my-xray --interactive --prompt "X-ray this clip of my typewriter"   # a live page that shows the line that made it',
     'showtime export html my-film --subtitle "Fix the cuts" --kicker "Studio how-to · 01"',
     'showtime export html my-explainer --auto-continue 6    # questions go on 6 s after an answer',
     '# open at a moment: my-film.html#t=1:05  or  my-film.html#chapter=3',
@@ -192,6 +198,9 @@ async function main() {
   if (!['file', 'artifact'].includes(target)) throw new UserError(`--target must be file or artifact (got ${a.target})`);
   if (target === 'artifact' && folder) throw new UserError('--target artifact writes one file; leave out --folder');
   if (a.interactive && folder) throw new UserError('--interactive writes one file; leave out --folder', 'showtime export html <project> --interactive -o figure.html');
+  // an X-ray project's live page (scripts/lib/export/xray.mjs) is <slug>-live.html; a living diagram's figure <slug>-figure.html
+  const xrayLive = !!a.interactive && isXrayProject(proj.dir, cfg);
+  const liveSuffix = a.interactive ? (xrayLive ? '-live' : '-figure') : '';
   let maxMb = a['max-mb'] === undefined ? 16 : Number(a['max-mb']);
   if (!(maxMb >= 0)) throw new UserError(`--max-mb must be a number >= 0 (got ${a['max-mb']})`);
   if (target === 'artifact' && (maxMb === 0 || maxMb > 16)) { addWarn('--target artifact: the file must stay under 16 MB (the artifact limit); --max-mb set to 16'); maxMb = 16; }
@@ -235,7 +244,7 @@ async function main() {
       out = fs.existsSync(want) && fs.readdirSync(want).length ? freshPath(want) : want;
     } else if (isDir) {
       // -o an existing folder (or one ending in /): the file goes inside it
-      want = path.join(want, `${proj.slug}${a.interactive ? '-figure' : ''}.html`);
+      want = path.join(want, `${proj.slug}${liveSuffix}.html`);
       out = freshPath(want);
     } else {
       if (!path.extname(want)) want += '.html';
@@ -245,8 +254,9 @@ async function main() {
   } else {
     const dir = a.job ? resolveJobDir(a.job) : (fromJob && !a['out-dir'] ? fromJob.job : jobDir(proj.slug, a['out-dir']));
     if (!dir || !fs.existsSync(dir)) throw new UserError(`no job named "${a.job}"`, 'list jobs with `showtime job list`');
-    out = freshPath(path.join(dir, folder ? `${proj.slug}-html` : `${proj.slug}${a.interactive ? '-figure' : ''}.html`));
+    out = freshPath(path.join(dir, folder ? `${proj.slug}-html` : `${proj.slug}${liveSuffix}.html`));
   }
+  if (xrayLive) return exportXrayLive({ a, proj, out, title, target, maxMb, warnings, addWarn, T0 });
   if (a.interactive) return exportFigure({ a, proj, out, title, target, maxMb, warnings, addWarn, T0 });
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'showtime-export-'));
 
@@ -379,6 +389,8 @@ async function main() {
     // only what the stage reads from showtime.json travels (no audio paths or other local details)
     const pubCfg = {};
     for (const k of ['width', 'height', 'fps', 'duration', 'background', 'title', 'poster', 'seed', 'chapters', 'subtitle', 'kicker']) if (cfg[k] !== undefined) pubCfg[k] = cfg[k];
+    // an X-ray page reads its own block (skip, kinds, text, place, credit, receipt): without it the film plays every event
+    if (cfg.xray && typeof cfg.xray === 'object') pubCfg.xray = cfg.xray;
     // the page reads its questions (ST.questions) to draw its pause and think beats, as in the MP4,
     // whether or not the player stops for them
     if (Array.isArray(cfg.questions)) pubCfg.questions = cfg.questions;
@@ -477,6 +489,7 @@ function missingFiles(failures, addWarn) {
   for (const f of failures || []) {
     const p = f.path;
     if (p === '/showtime.json') continue;                 // the stage asks for it; a project may have none
+    if (p === '/notes.json') continue;                    // an X-ray page asks for it; only music clips have one
     if (f.status === 0) stop.push(`${p} (the server did not answer: ${f.err || 'no response'})`);
     else if (p.startsWith('/_st/emoji/')) addWarn(`emoji ${p.slice(11)} is not installed (it shows as a broken image): run \`showtime assets emoji <char>\``);
     else if (/^\/_(st|lib|assets)\//.test(p)) addWarn(`the page asks for ${p}, which does not exist (${f.status})`);

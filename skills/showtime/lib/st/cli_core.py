@@ -157,6 +157,50 @@ def _diagram_examples(src: Path) -> List[str]:
     return sorted(p.stem for p in d.glob("*.js")) if d.is_dir() else []
 
 
+XRAY_LAYOUTS = ("through", "split", "diagram")
+
+
+def xray_mechanisms() -> List[str]:
+    """The mechanism library: skills/showtime/library/xray/<object>/mechanism.js (one drawing per kind of object)."""
+    d = paths()["skill"] / "library" / "xray"
+    return sorted(p.parent.name for p in d.glob("*/mechanism.js")) if d.is_dir() else []
+
+
+def _apply_xray(dst: Path, cfg: Dict[str, Any], mechanism: Optional[str], layout: Optional[str]) -> List[str]:
+    """The xray template's options: copy a library mechanism (and its living-diagram scene) into the project and pick
+    the layout (through: drawn on the tracked object; split: beside it; diagram: an isometric living diagram beside
+    it). Returns notes to print."""
+    notes: List[str] = []
+    xr = cfg.setdefault("xray", {})
+    if mechanism:
+        lib = paths()["skill"] / "library" / "xray" / mechanism
+        for name in ("mechanism.js", "diagram.js"):
+            if (lib / name).is_file():
+                shutil.copyfile(str(lib / name), str(dst / name))
+        if mechanism != "typewriter":
+            for k in ("text", "place", "skip", "kinds"):     # the sample clip's own evidence, not this object's
+                xr.pop(k, None)
+            notes.append("mechanism %s: media/clip.webm and xray.json are still the typewriter sample: put your clip in "
+                         "media/ and `showtime xray analyze` its xray.json next to index.html" % mechanism)
+    if layout:
+        xr["layout"] = layout
+    if xr.get("layout") == "diagram":
+        scene = paths()["skill"] / "library" / "xray" / (mechanism or "typewriter") / "diagram.js"
+        if scene.is_file():
+            shutil.copyfile(str(scene), str(dst / "diagram.js"))
+            if (dst / "diagram.html").is_file():
+                shutil.copyfile(str(dst / "diagram.html"), str(dst / "index.html"))
+        else:
+            xr["layout"] = "split"
+            notes.append("mechanism %s has no living-diagram scene (diagram.js) yet: the layout is split instead "
+                         "(write a diagram.js to use --layout diagram)" % (mechanism or "typewriter"))
+    if (dst / "diagram.html").is_file():
+        (dst / "diagram.html").unlink()
+    if xr.get("layout") != "diagram" and (dst / "diagram.js").is_file():
+        (dst / "diagram.js").unlink()
+    return notes
+
+
 def _apply_diagram_example(src: Path, dst: Path, cfg: Dict[str, Any], name: str) -> None:
     """Make one of the diagram template's examples the project's scene, at the example's own length (CUE.duration),
     with the poster near its end: a later --duration or retime then scales from the right base."""
@@ -248,13 +292,19 @@ def register_new(sub: argparse._SubParsersAction) -> None:
                         "away from this machine's recent looks), template (the template's own look) or an id from "
                         "`showtime signature`; a brand kit or a job's style reference wins over auto")
     p.add_argument("--theme", choices=sorted(DIAGRAM_THEMES),
-                   help="diagram template: light (paper, the default), dark (night schematic) or white (white, colour only "
+                   help="xray template: dark (the radiograph, default) or light (a blueprint on paper); diagram template: light (paper, the default), dark (night schematic) or white (white, colour only "
                         "where it means something; the live figure's look); sets showtime.json "
                         "\"theme\" and the page's data-theme, and \"background\" unless --background is given")
     p.add_argument("--example", metavar="NAME",
-                   help="diagram template: start from one of its examples (enter, market, econ-lab) instead of the heat pump: "
+                   help="diagram template: start from one of its examples (enter, market, econ-lab, computer, typewriter) instead of the heat pump: "
                         "it becomes scene.js and the video takes the example's length (CUE.duration), so --duration "
                         "and a later retime scale from it")
+    p.add_argument("--mechanism", metavar="OBJECT",
+                   help="xray template: the inside to draw, from the mechanism library (skills/showtime/library/xray: "
+                        "typewriter, musicbox, ...); default typewriter, the sample clip's")
+    p.add_argument("--layout", choices=["through", "split", "diagram"],
+                   help="xray template: through (the inside drawn on the tracked object, the default when xray.json has a "
+                        "track), split (beside the clip) or diagram (an isometric living diagram beside the clip)")
     p.add_argument("--look-seed", metavar="SEED",
                    help="seed for the automatic pick (default: the folder name); the same seed and history give the same look")
     p.add_argument("--json", action="store_true", help="print the created project as JSON")
@@ -364,7 +414,10 @@ def cmd_new(args: argparse.Namespace) -> int:
         raise ShowtimeError("missing destination folder", hint="showtime new %s my-video" % args.template)
     tpl_cfg = read_json(Path(names[args.template]["path"]) / "showtime.json", {}) or {}
     is_diagram = "theme" in tpl_cfg and bool(_DATA_THEME_RE.search(_read_text(Path(names[args.template]["path"]) / "index.html")))
-    if getattr(args, "theme", None) and not is_diagram:
+    if getattr(args, "theme", None) and args.template == "xray":
+        if args.theme not in ("light", "dark"):
+            raise ShowtimeError("the xray template has a dark (radiograph) and a light (blueprint) theme", hint="--theme dark or --theme light")
+    elif getattr(args, "theme", None) and not is_diagram:
         raise ShowtimeError("--theme is for the diagram template", why="'%s' keeps its own look" % args.template,
                             hint="showtime new diagram %s --theme %s (page templates: --look)" % (args.dir, args.theme))
     if getattr(args, "example", None):
@@ -374,6 +427,11 @@ def cmd_new(args: argparse.Namespace) -> int:
                                 hint="showtime new diagram %s --example enter" % args.dir)
         if args.example not in avail:
             raise ShowtimeError("unknown example %r" % args.example, hint="examples of %s: %s" % (args.template, ", ".join(avail)))
+    if (getattr(args, "mechanism", None) or getattr(args, "layout", None)) and args.template != "xray":
+        raise ShowtimeError("--mechanism and --layout are for the xray template", hint="showtime new xray %s --mechanism typewriter" % (args.dir or "my-xray"))
+    if getattr(args, "mechanism", None) and args.mechanism not in xray_mechanisms():
+        raise ShowtimeError("unknown mechanism %r" % args.mechanism, why="the library has: %s" % (", ".join(xray_mechanisms()) or "(none)"),
+                            hint="draw your own: copy library/xray/typewriter/mechanism.js and change draw(); see `showtime guide xray`")
     if args.duration is not None and not (0 < args.duration <= 3600):
         raise ShowtimeError("--duration must be between 0 and 3600 seconds (got %g)" % args.duration)
     job_dir: Optional[Path] = None
@@ -424,8 +482,20 @@ def cmd_new(args: argparse.Namespace) -> int:
             raise ShowtimeError("%s must be even for H.264 (got %s)" % (dim, cfg[dim]))
     if getattr(args, "example", None) and board is None:
         _apply_diagram_example(src, dst, cfg, args.example)
-    if getattr(args, "theme", None):
+    xray_notes: List[str] = []
+    if args.template == "xray" and board is None:
+        xray_notes = _apply_xray(dst, cfg, getattr(args, "mechanism", None), getattr(args, "layout", None))
+    if getattr(args, "theme", None) and args.template == "xray":
+        cfg.setdefault("xray", {})["theme"] = args.theme
+        if getattr(args, "background", None) is None:
+            cfg["background"] = "#f4f0e7" if args.theme == "light" else "#070b16"
+    elif getattr(args, "theme", None):
         _set_diagram_theme(dst, cfg, args.theme, background=getattr(args, "background", None) is None)
+    if args.template == "xray" and board is None:
+        # what the live page's "line that made it" is built from: three plain words, no paths, job names or regions
+        xr = cfg.setdefault("xray", {})
+        xr["made"] = {"mechanism": getattr(args, "mechanism", None) or "typewriter",
+                      "layout": xr.get("layout") or "through", "theme": xr.get("theme") or "dark"}
     tone_note = _tone_for_new(args, cfg, job_dir, dst)
     write_json(cfg_path, cfg)
     sb_files: List[str] = []
@@ -444,6 +514,7 @@ def cmd_new(args: argparse.Namespace) -> int:
             cfg["duration"] = args.duration
             write_json(cfg_path, cfg)
     notes = _aspect_notes(dst, cfg)
+    notes += xray_notes
     for n in notes:
         warn(n)
     job_rec = _attach_to_job(dst, job_dir)

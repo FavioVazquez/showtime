@@ -11,6 +11,9 @@ when their part matters and the camera chooses what to look at.
   `enter`) starts from one at its own length.
 - `examples/econ-lab.js`: a three-equation economy (households, firms, a central bank) as a live-first figure:
   steps are experiments, the rule strength and a promise's horizon are knobs; its film is its tour.
+- `examples/computer.js`: what happens when you press a key, as a live figure you type on: the key goes down,
+  the matrix finds it, its USB HID code waits for the poll (a knob), the CPU takes an interrupt, the editor puts the
+  character in RAM, the GPU draws it and the screen shows it at its next refresh; its film is its tour.
 - `index.html`: the film's page (title block, corner notes, footers) and the fonts of the themes. The theme is
   `<html data-theme>`: `showtime new diagram <dir> --theme dark` (or `white`) sets it, with `"theme"` and
   `"background"` in `showtime.json`.

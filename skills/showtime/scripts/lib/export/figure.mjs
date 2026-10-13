@@ -89,7 +89,15 @@ export function sceneInfo(projectDir) {
   if (!out.title || !out.description) { // the film page's own title block (a scene that keeps its words in index.html)
     try {
       const html = fs.readFileSync(path.join(projectDir, 'index.html'), 'utf8');
-      const strip = (x) => { let prev; do { prev = x; x = x.replace(/<[^>]*>/g, ''); } while (x !== prev); return x.replace(/[<>]/g, ''); };   // until stable: no tag can survive
+      const strip = (x) => { // one linear scan: a tag runs from "<" to the next ">"; a stray "<" or ">" is dropped
+        let out = '', i = 0;
+        while (i < x.length) {
+          const c = x[i];
+          if (c === '<') { const j = x.indexOf('>', i + 1); if (j < 0) { out += x.slice(i + 1).replace(/[<>]/g, ''); break; } i = j + 1; }
+          else { if (c !== '>') out += c; i++; }
+        }
+        return out;
+      };
       const text = (re) => { const m = re.exec(html); return m ? strip(m[1]).replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim() : ''; };
       out.title = out.title || text(/<h1\b[^>]*class="[^"]*\bld-title\b[^"]*"[^>]*>([\s\S]*?)<\/h1>/i);
       out.description = out.description || text(/<div\b[^>]*class="[^"]*\bld-dek\b[^"]*"[^>]*>([\s\S]*?)<\/div>/i);

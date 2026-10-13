@@ -61,7 +61,7 @@ STDLIB_CLI = ("paths", "new", "retime", "data", "install", "guide", "config")   
 GROUPS = [
     ("make", "Make a video from an HTML/canvas project",
      ["new", "retime", "data", "adopt", "preview", "render", "export", "check", "look", "snap", "score", "motion", "code",
-      "server", "manim", "release-video", "pr-video", "recap", "repro"],
+      "server", "manim", "release-video", "pr-video", "recap", "repro", "xray"],
      ["showtime new dom my-launch --aspect 16:9",
       "showtime retime my-launch -d 20            # or --from-voice voice/timeline.json",
       "showtime preview my-launch",

@@ -51,6 +51,13 @@ def _parse_iso(s: Optional[str]) -> Optional[float]:
 
 def _git_sha(start: Path) -> Optional[str]:
     """HEAD commit of the checkout containing `start`, read from .git without running git."""
+    try:
+        return _git_sha_unchecked(start)
+    except (OSError, subprocess.SubprocessError, ValueError):   # unreadable .git (a sandbox), odd ref files
+        return None
+
+
+def _git_sha_unchecked(start: Path) -> Optional[str]:
     for d in [start] + list(start.parents):
         g = d / ".git"
         if g.is_file():  # worktree: "gitdir: <path>"

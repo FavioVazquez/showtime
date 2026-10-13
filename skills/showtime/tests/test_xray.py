@@ -1,0 +1,820 @@
+#!/usr/bin/env python3
+"""`showtime xray analyze` and `verify` (lib/st/xray.py, cli_xray.py): the onset detector on synthetic clicks (exact
+event times and frames, min-gap merging and the dropped list, a click's precursor), analyze end to end on a tiny
+film, verify against lavfi films with a 6x6 sync marker flashing on chosen frames (matched, missing, extra, one frame
+off, no marker), the audio lag of a delayed copy, the scroll smoothness report (stalls and jumps), the receipt and qa
+hooks, and the tracker on a synthetic moving texture (seeded, with a tolerance).
+
+Everything is generated here (no fixtures, no browser, no downloads) and deterministic.
+
+usage: python tests/test_xray.py [--fast] [-v]
+"""
+from __future__ import annotations
+
+import _isolate  # noqa: F401  (run from a scratch folder: never write into the repository)
+
+import json
+import math
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+import numpy as np
+
+TESTS_DIR = Path(__file__).resolve().parent
+SKILL = TESTS_DIR.parent
+LAUNCHER = SKILL / "lib" / "st" / "launcher.py"
+sys.path.insert(0, str(SKILL / "lib"))
+
+from st import ff, xray  # noqa: E402
+from st.common import ShowtimeError, write_json  # noqa: E402
+from st.launcher import build_env, showtime_home  # noqa: E402
+
+ENV = build_env(showtime_home())
+SR = 48000
+FPS = 30
+W, H = 320, 180
+CLICKS = [0.60, 1.23, 1.80, 2.55, 3.10, 3.97]          # seconds
+LEVELS = [0.50, 0.30, 0.45, 0.20, 0.50, 0.35]
+
+
+def click_wave(times, levels=None, dur=5.0, seed=7, noise=0.002, extra=()):
+    """Mono float32 at 48 kHz: a low noise floor and a decaying noise burst (about 12 ms) at each time."""
+    rng = np.random.RandomState(seed)
+    x = rng.randn(int(dur * SR)) * noise
+    levels = levels or [0.4] * len(times)
+    for t, lv in list(zip(times, levels)) + list(extra):
+        n = int(0.05 * SR)
+        a = int(round(t * SR))
+        env = np.exp(-np.arange(n) / (0.004 * SR))
+        env[: int(0.0003 * SR)] *= np.linspace(0.2, 1.0, int(0.0003 * SR))
+        x[a: a + n] += rng.randn(n)[: len(x[a: a + n])] * env[: len(x[a: a + n])] * lv
+    return x.astype(np.float32)
+
+
+def write_wav(path: Path, x) -> Path:
+    import soundfile as sf
+    sf.write(str(path), x, SR, subtype="PCM_16")
+    return path
+
+
+def st(*args, check=True):
+    cp = subprocess.run([sys.executable, str(LAUNCHER)] + [str(a) for a in args], env=ENV, stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE, encoding="utf-8", errors="replace", timeout=600)
+    if check and cp.returncode != 0:
+        raise AssertionError("showtime %s failed (rc=%d):\n%s\n%s" % (" ".join(map(str, args)), cp.returncode,
+                                                                      cp.stdout[-2000:], cp.stderr[-2000:]))
+    return cp
+
+
+def make_film(path: Path, audio: Path, flashes, seconds=5.0, delay_ms=0.0, marker=True) -> Path:
+    """320x180 black film at 30 fps with a 6x6 white square at (W-10, H-10) on the given frames, and `audio`."""
+    vf = "format=yuv420p"
+    if marker and flashes:
+        enable = "+".join("eq(n,%d)" % f for f in flashes)
+        vf = "drawbox=x=%d:y=%d:w=6:h=6:color=white:t=fill:enable='%s',format=yuv420p" % (W - 10, H - 10, enable)
+    af = "adelay=%d|%d" % (round(delay_ms), round(delay_ms)) if delay_ms else "anull"
+    ff.run_ffmpeg(["-f", "lavfi", "-i", "color=c=black:s=%dx%d:r=%d:d=%g" % (W, H, FPS, seconds), "-i", str(audio),
+                   "-vf", vf, "-af", af, "-c:v", "libx264", "-preset", "ultrafast", "-crf", "10",
+                   "-c:a", "pcm_s16le", "-shortest", str(path)])
+    return path
+
+
+def within(a, b, tol):
+    return abs(a - b) <= tol
+
+
+class Detector(unittest.TestCase):
+    def test_frame_rule(self):
+        self.assertEqual(xray.frame_of(2.183, 30), 65)
+        self.assertEqual(xray.frame_of(1.0, 30), 30)
+        self.assertEqual(xray.frame_of(0.1 * 3, 30), 9)          # 0.30000000000000004 * 30 must not tip over
+        self.assertEqual(xray.frame_of(2.0, 29.97), 59)
+
+    def test_clicks_found_at_their_times(self):
+        x = click_wave(CLICKS, LEVELS)
+        ev, dropped = xray.detect(x)
+        self.assertEqual(len(ev), len(CLICKS), (ev, dropped))
+        for e, t in zip(ev, CLICKS):
+            self.assertTrue(within(e["t"], t, 0.003), (e, t))
+            self.assertEqual(xray.frame_of(e["t"], FPS), xray.frame_of(t, FPS) if abs(e["t"] - t) < 0.0005 else
+                             xray.frame_of(e["t"], FPS))
+            self.assertEqual(e["band"], "high")
+        self.assertEqual([e["i"] for e in ev], list(range(len(CLICKS))))
+        strengths = [e["strength"] for e in ev]
+        self.assertAlmostEqual(max(strengths), 1.0, places=3)
+        self.assertTrue(strengths[3] < 0.6 < strengths[0], strengths)       # 0.2 vs 0.5 amplitude
+
+    def test_deterministic(self):
+        x = click_wave(CLICKS, LEVELS)
+        self.assertEqual(xray.detect(x), xray.detect(x.copy()))
+
+    def test_loudness_does_not_move_the_events(self):
+        x = click_wave(CLICKS, LEVELS)
+        a, _ = xray.detect(x)
+        b, _ = xray.detect(x * 0.25)
+        c, _ = xray.detect(np.clip(x * 1.8, -1, 1))
+        self.assertEqual([e["t"] for e in a], [e["t"] for e in b])
+        self.assertEqual([e["t"] for e in a], [e["t"] for e in c])
+
+    def test_from_to_window(self):
+        x = click_wave(CLICKS, LEVELS)
+        ev, _ = xray.detect(x[int(1.0 * SR): int(3.2 * SR)], t_from=1.0, t_to=3.2)
+        self.assertEqual([round(e["t"], 1) for e in ev], [1.2, 1.8, 2.6, 3.1])
+
+    def test_min_gap_merge_keeps_the_first_and_says_so(self):
+        x = click_wave([1.0, 1.08, 2.0], [0.5, 0.45, 0.5])
+        ev, dropped = xray.detect(x, min_gap=0.12)
+        self.assertEqual(len(ev), 2, ev)
+        self.assertTrue(within(ev[0]["t"], 1.0, 0.003))
+        d = [x for x in dropped if "min_gap" in x["why"]]
+        self.assertEqual(len(d), 1, dropped)
+        self.assertTrue(within(d[0]["t"], 1.08, 0.004), d)
+        self.assertIn("event 0", d[0]["why"])
+        ev2, _ = xray.detect(x, min_gap=0.05)
+        self.assertEqual(len(ev2), 3, ev2)
+
+    def test_precursor_before_a_louder_click_is_not_an_event(self):
+        x = click_wave([1.0, 2.0], [0.5, 0.5], extra=[(1.95, 0.04)])     # a faint tick 50 ms before the click at 2.0
+        ev, dropped = xray.detect(x)
+        self.assertEqual(len(ev), 2, (ev, dropped))
+        self.assertTrue(within(ev[1]["t"], 2.0, 0.003), ev)
+
+    def test_quiet_noise_is_not_an_event(self):
+        rng = np.random.RandomState(3)
+        x = (rng.randn(3 * SR) * 0.003).astype(np.float32)
+        ev, _ = xray.detect(x)
+        self.assertLessEqual(len(ev), 2, ev)
+        self.assertEqual(xray.detect(np.zeros(SR, dtype=np.float32))[0], [])
+
+    def test_low_band(self):
+        t = np.arange(int(0.2 * SR)) / SR
+        thump = (np.sin(2 * np.pi * 90 * t) * np.exp(-t / 0.03) * 0.6).astype(np.float32)
+        x = np.zeros(2 * SR, dtype=np.float32)
+        x += np.random.RandomState(1).randn(len(x)).astype(np.float32) * 0.001
+        x[SR: SR + len(thump)] += thump
+        # the detector high-passes at 500 Hz to follow the attack; a thump's attack still reads as one event and its band is low
+        ev, _ = xray.detect(x, sensitivity=0.8)
+        if ev:
+            self.assertEqual(ev[0]["band"], "low")
+
+
+NOTE_TIMES = [round(0.5 + 0.12 * k, 3) for k in range(25)]
+
+
+def chord_bed(times=NOTE_TIMES, dur=4.0, seed=2):
+    """A steady three-note chord with a new plucked note entering at each time (every 120 ms): sustained, dense sound."""
+    rng = np.random.RandomState(seed)
+    t = np.arange(int(dur * SR)) / SR
+    x = sum(0.12 * np.sin(2 * np.pi * f * t) for f in (220.0, 277.2, 329.6)) + rng.randn(len(t)) * 0.003
+    pitches = [880.0, 1046.5, 1318.5, 1568.0, 1174.7, 987.8]
+    for k, tn in enumerate(times):
+        a = int(round(tn * SR))
+        u = np.arange(min(int(0.3 * SR), len(x) - a)) / SR
+        x[a: a + len(u)] += 0.25 * np.sin(2 * np.pi * pitches[k % 6] * u) * np.minimum(u / 0.002, 1.0) * np.exp(-u / 0.12)
+    return x.astype(np.float32)
+
+
+def errors_ms(events, times):
+    ts = np.array([e["t"] for e in events]) if events else np.array([9e3])
+    return [float(np.min(np.abs(ts - t))) * 1000.0 for t in times]
+
+
+class Flux(unittest.TestCase):
+    """The flux engine on a sustained chord with a note entering every 120 ms (the envelope engine cannot see them):
+    all 25 found, median error about 1 ms, worst under 10 ms (measured: 1 ms median, 9 ms worst, 3 extra events)."""
+
+    def test_flux_finds_the_notes_and_envelope_does_not(self):
+        x = chord_bed()
+        ev, dropped = xray.detect_flux(x)
+        err = errors_ms(ev, NOTE_TIMES)
+        self.assertLess(max(err), 10.0, err)
+        self.assertLessEqual(float(np.median(err)), 2.0, err)
+        self.assertLessEqual(len(ev) - len(NOTE_TIMES), 4, [e["t"] for e in ev])
+        self.assertEqual([e["i"] for e in ev], list(range(len(ev))))
+        self.assertTrue(all(0.0 < e["strength"] <= 1.0 for e in ev))
+        self.assertTrue(all(b["t"] - a["t"] >= 0.06 - 1e-6 for a, b in zip(ev, ev[1:])))
+        env_ev, _ = xray.detect(x)
+        self.assertLess(sum(1 for e in errors_ms(env_ev, NOTE_TIMES) if e < 10.0), 5, len(env_ev))
+        self.assertTrue(xray.is_sustained(x))
+
+    def test_flux_is_deterministic_and_respects_from_to(self):
+        x = chord_bed()
+        self.assertEqual(xray.detect_flux(x), xray.detect_flux(x.copy()))
+        a, b = 1.0, 2.5
+        ev, _ = xray.detect_flux(x[int(a * SR): int(b * SR)], t_from=a, t_to=b)
+        self.assertTrue(ev and min(e["t"] for e in ev) >= a - 0.001 and max(e["t"] for e in ev) <= b)
+
+    def test_auto_picks_flux_for_music_and_envelope_for_clicks(self):
+        ran, mg, why, ev, _ = xray.pick_engine(chord_bed(), "auto")
+        self.assertEqual((ran, mg), ("flux", 0.06))
+        self.assertIn("spectral flux", why)
+        self.assertGreaterEqual(len(ev), 25)
+        ran, mg, why, ev, _ = xray.pick_engine(click_wave(CLICKS, LEVELS), "auto")
+        self.assertEqual((ran, mg), ("envelope", 0.12))
+        self.assertEqual(len(ev), len(CLICKS))
+        self.assertEqual(xray.pick_engine(click_wave(CLICKS, LEVELS), "flux")[0], "flux")
+        self.assertEqual(xray.pick_engine(chord_bed(), "envelope")[0], "envelope")
+        with self.assertRaises(ShowtimeError):
+            xray.pick_engine(chord_bed(), "magic")
+
+    def test_analyze_records_the_engine_and_why(self):
+        tmp = Path(tempfile.mkdtemp(prefix="st-xray-test-"))
+        try:
+            wav = write_wav(tmp / "bed.wav", chord_bed())
+            clip = make_film(tmp / "bed.mkv", wav, [], seconds=4.0)
+            doc = xray.analyze(clip, tmp / "o")
+            self.assertEqual(doc["detector"]["engine"], "flux")
+            self.assertEqual(doc["detector"]["min_gap"], 0.06)
+            self.assertIn("auto", doc["detector"]["note"])
+            self.assertGreaterEqual(len(doc["events"]), 25)
+            self.assertEqual(xray.analyze(clip, tmp / "o2", engine="envelope")["detector"]["engine"], "envelope")
+            cp = st("xray", "analyze", clip, "--job", tmp / "j", "--engine", "flux", "--json")
+            self.assertEqual(json.loads(cp.stdout[cp.stdout.index("{"):])["detector"]["note"], "asked for flux")
+        finally:
+            shutil.rmtree(tmp, True)
+
+
+class Vfr(unittest.TestCase):
+    def test_vfr_rule(self):
+        self.assertTrue(xray._is_vfr({"r_fps": 30.0, "avg_fps": 24.0}))
+        self.assertFalse(xray._is_vfr({"r_fps": 30.0, "avg_fps": 29.97}))
+        self.assertFalse(xray._is_vfr({"r_fps": None, "avg_fps": 30.0}))
+
+    def test_source_info_and_message(self):
+        from unittest import mock
+        pr = {"has_video": True, "fps": 24.0, "r_fps": 30.0, "avg_fps": 24.0, "width": 8, "height": 8, "has_audio": True, "duration": 1.0}
+        with tempfile.TemporaryDirectory() as td:
+            clip = Path(td) / "c.mp4"
+            clip.write_bytes(b"x")
+            with mock.patch.object(xray.ff, "probe", return_value=pr):
+                info = xray._source_info(clip)
+        self.assertTrue(info["vfr"])
+        self.assertIn("showtime footage trim", xray.VFR_WARNING)
+        self.assertIn("--webm", xray.VFR_WARNING)
+
+
+class TrackRow(unittest.TestCase):
+    def test_a_failed_extraction_does_not_shift_the_pairing(self):
+        from PIL import Image
+        from unittest import mock
+        from st.qa import media
+        doc = {"source": {"fps": 30, "width": 64, "height": 36, "duration": 2.0}}
+        n = 20
+        Hs = [[1, 0, float(k), 0, 1, 0, 0, 0, 1] for k in range(n)]
+        tr = {"region": [[2, 2], [30, 2], [30, 20], [2, 20]], "H": Hs}
+
+        def fake(video, times, out_dir, names=None, width=None, **kw):
+            out = []
+            for nm in names:
+                if nm == "f4.jpg":
+                    continue                              # this one fails
+                p = Path(out_dir) / nm
+                Image.new("RGB", (width, int(width * 36 / 64)), (40, 40, 40)).save(str(p))
+                out.append(p)
+            return out
+        img = Image.new("RGB", (600, 100))
+        with mock.patch.object(media, "extract_frames", side_effect=fake):
+            out = xray._with_track_row(img, Path("clip.mp4"), doc, tr)
+        self.assertGreater(out.height, img.height)
+
+
+class Analyze(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = Path(tempfile.mkdtemp(prefix="st-xray-test-"))
+        cls.wav = write_wav(cls.tmp / "clicks.wav", click_wave(CLICKS, LEVELS))
+        cls.clip = make_film(cls.tmp / "clip.mkv", cls.wav, [])
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.tmp, True)
+
+    def test_xray_json_and_check_sheet(self):
+        out = self.tmp / "a1"
+        doc = xray.analyze(self.clip, out)
+        self.assertEqual(doc["schema"], "showtime.xray/1")
+        src = doc["source"]
+        self.assertEqual((src["file"], src["fps"], src["width"], src["height"]), ("clip.mkv", 30, W, H))
+        self.assertEqual(len(src["sha256"]), 64)
+        self.assertAlmostEqual(src["duration"], 5.0, delta=0.1)
+        det = dict(doc["detector"])
+        self.assertIn("envelope engine", det.pop("note"))
+        self.assertEqual(det, {"engine": "envelope", "min_gap": 0.12, "sensitivity": 0.5, "from": 0.0, "to": None})
+        self.assertEqual([e["frame"] for e in doc["events"]], [xray.frame_of(e["t"], 30) for e in doc["events"]])
+        self.assertEqual(len(doc["events"]), len(CLICKS))
+        self.assertEqual(set(doc["events"][0]), {"i", "t", "frame", "strength", "band"})
+        self.assertIsNone(doc["track"])
+        self.assertEqual(json.loads((out / "xray.json").read_text(encoding="utf-8")), doc)
+        from PIL import Image
+        with Image.open(str(out / "check.jpg")) as im:
+            self.assertGreater(im.width, 1000)
+
+    def test_cli_creates_a_job_and_prints_the_files(self):
+        base = self.tmp / "cli"
+        base.mkdir()
+        job = base / "xjob"
+        cp = st("xray", "analyze", self.clip, "--job", job, "--min-gap", "0.2", "--json")
+        doc = json.loads(cp.stdout[cp.stdout.index("{"):])
+        self.assertEqual(doc["detector"]["min_gap"], 0.2)
+        self.assertTrue((job / "xray" / "xray.json").is_file())
+        self.assertTrue((job / "xray" / "check.jpg").is_file())
+        bad = st("xray", "analyze", self.clip, "--job", job, "--track", check=False)
+        self.assertEqual(bad.returncode, 1)
+        self.assertIn("--region", bad.stderr)
+        self.assertEqual(st("xray", "analyze", self.clip, "--sensitivity", "3", check=False).returncode, 1)
+
+
+class Refusals(unittest.TestCase):
+    """A clip that cannot be analyzed is refused before anything is created for it."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = Path(tempfile.mkdtemp(prefix="st-xray-test-"))
+        cls.silent = cls.tmp / "silent.mkv"
+        ff.run_ffmpeg(["-f", "lavfi", "-i", "color=c=black:s=64x64:r=30:d=1", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(cls.silent)])
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.tmp, True)
+
+    def test_no_stray_job_or_output_for_a_bad_clip(self):
+        for n, (cmd, clip) in enumerate((("analyze", self.tmp / "missing.mkv"), ("notes", self.tmp / "missing.mkv"),
+                                         ("analyze", self.silent), ("notes", self.silent))):
+            job = self.tmp / ("job%d" % n)
+            cp = st("xray", cmd, clip, "--job", job, check=False)
+            self.assertEqual(cp.returncode, 1, cp.stderr)
+            self.assertFalse(job.exists(), "%s %s left %s" % (cmd, clip.name, job))
+        out = self.tmp / "direct"
+        with self.assertRaises(ShowtimeError):
+            xray.analyze(self.silent, out)
+        self.assertFalse(out.exists())
+
+
+class Verify(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = Path(tempfile.mkdtemp(prefix="st-xray-test-"))
+        cls.wav = write_wav(cls.tmp / "clicks.wav", click_wave(CLICKS, LEVELS))
+        cls.clip = make_film(cls.tmp / "clip.mkv", cls.wav, [])
+        cls.frames = [xray.frame_of(t, FPS) for t in CLICKS]
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.tmp, True)
+
+    def job(self, name, frames=None):
+        """A job folder whose xray.json holds events on `frames` (default: the clicks' frames)."""
+        j = self.tmp / name
+        (j / "xray").mkdir(parents=True)
+        fr = self.frames if frames is None else frames
+        write_json(j / "job.json", {"schema": 1, "slug": name})
+        write_json(j / "xray" / "xray.json", {
+            "schema": "showtime.xray/1", "source": {"file": "clip.mkv", "sha256": "0" * 64, "fps": 30, "duration": 5.0,
+                                                     "width": W, "height": H},
+            "detector": {"engine": "envelope", "min_gap": 0.12, "sensitivity": 0.5, "from": 0.0, "to": None},
+            "events": [{"i": i, "t": round(f / 30.0, 3), "frame": f, "strength": 1.0, "band": "high"} for i, f in enumerate(fr)],
+            "dropped": [], "track": None})
+        (j / "xray" / "source.path").write_text(str(self.clip), encoding="utf-8")
+        return j
+
+    def test_all_events_on_their_frame(self):
+        j = self.job("ok")
+        film = make_film(j / "final.mkv", self.wav, self.frames)
+        r = xray.verify(j, film)
+        self.assertTrue(r["marker"])
+        self.assertEqual((r["events"], r["on_frame"], r["missing"], r["extra"]), (6, 6, [], []))
+        self.assertEqual(r["status"], "PASS", r)
+        self.assertLess(abs(r["audio_lag_ms"]), 2.0, r)
+        self.assertEqual(r["line"].split(" · ")[0], "6 of 6 events on their frame")
+        self.assertIn("ms from the original", r["line"])
+        self.assertEqual(json.loads((j / "xray" / "verify.json").read_text(encoding="utf-8"))["on_frame"], 6)
+
+    def test_missing_and_extra_fail(self):
+        j = self.job("bad")
+        flashes = [f for f in self.frames if f != self.frames[2]] + [140]
+        film = make_film(j / "final.mkv", self.wav, flashes)
+        r = xray.verify(j, film)
+        self.assertEqual(r["missing"], [self.frames[2]])
+        self.assertEqual(r["extra"], [140])
+        self.assertEqual(r["on_frame"], 5)
+        self.assertEqual(r["status"], "FAIL")
+        self.assertEqual(r["line"].split(" · ")[0], "5 of 6 events on their frame")
+        self.assertEqual(r["findings"][0]["rule"], "xray_sync")
+
+    def test_one_frame_off_is_matched_with_its_offset_but_not_exact(self):
+        j = self.job("off")
+        flashes = list(self.frames)
+        flashes[1] += 1
+        film = make_film(j / "final.mkv", self.wav, flashes)
+        r = xray.verify(j, film)
+        self.assertEqual((r["on_frame"], r["missing"], r["extra"], r["max_offset"]), (5, [], [], 1))
+        self.assertEqual(r["off_by"], [{"expected": self.frames[1], "on": self.frames[1] + 1, "offset": 1}])
+        self.assertEqual(r["status"], "WARN")
+
+    def test_offset_frames_shift_the_expectation(self):
+        j = self.job("offs")
+        film = make_film(j / "final.mkv", self.wav, [f + 15 for f in self.frames], seconds=6.0, delay_ms=500)
+        r = xray.verify(j, film, offset_frames=15)
+        self.assertEqual((r["events"], r["on_frame"], r["status"]), (6, 6, "PASS"), r)
+        self.assertLess(abs(r["audio_lag_ms"]), 2.0, r)       # the film's sound is 15 frames late on purpose: not counted
+
+    def test_offset_and_band_come_from_the_project_config(self):
+        j = self.job("cfg")
+        (j / "project").mkdir()
+        write_json(j / "project" / "showtime.json", {"xray": {"marker": True, "offset_frames": 15, "band": [100, 140]}})
+        film = make_film(j / "final.mkv", self.wav, [f + 15 for f in self.frames], seconds=6.0, delay_ms=500)
+        r = xray.verify(j, film)                                   # no flags: qa calls it like this
+        self.assertEqual((r["on_frame"], r["status"], r["offset_frames"]), (6, "PASS", 15), r)
+        self.assertEqual(r["smoothness"]["frames"], r["film_frames"])           # the band rows 100..140, read from the config
+        r2 = xray.verify(j, film, offset_frames=0)                 # a flag wins over the file
+        self.assertEqual(r2["status"], "FAIL")
+        self.assertEqual(xray.project_config(self.tmp / "nowhere"), {})
+
+    def test_skipped_events_carry_no_marker(self):
+        j = self.job("skip")
+        (j / "project").mkdir()
+        write_json(j / "project" / "showtime.json", {"xray": {"marker": True, "skip": [0]}})
+        film = make_film(j / "final.mkv", self.wav, self.frames[1:])
+        r = xray.verify(j, film)
+        self.assertEqual((r["events"], r["on_frame"], r["skipped"], r["status"]), (5, 5, 1, "PASS"), r)
+        self.assertTrue(r["line"].startswith("5 of 5 events on their frame"), r["line"])
+        film2 = make_film(j / "final2.mkv", self.wav, self.frames)      # a marker on the skipped event is extra
+        r2 = xray.verify(j, film2)
+        self.assertEqual((r2["extra"], r2["status"]), ([self.frames[0]], "FAIL"), r2)
+        r3 = xray.verify(j, film2, skip=[])                              # a flag wins over the file
+        self.assertEqual((r3["events"], r3["skipped"], r3["status"]), (6, 0, "PASS"), r3)
+
+    def test_clip_fps_differs_from_the_film_fps(self):
+        j = self.job("fps", [])
+        doc = json.loads((j / "xray" / "xray.json").read_text(encoding="utf-8"))
+        doc["source"]["fps"] = 29.97
+        times = [0.60, 1.23, 2.55, 3.97]
+        doc["events"] = [{"i": i, "t": t, "frame": int(t * 29.97), "strength": 1.0, "band": "high"} for i, t in enumerate(times)]
+        write_json(j / "xray" / "xray.json", doc)
+        film = make_film(j / "final.mkv", self.wav, [xray.frame_of(t, 30) for t in times])     # the 30 fps film's frames
+        r = xray.verify(j, film)
+        self.assertEqual((r["events"], r["on_frame"], r["missing"], r["extra"], r["status"]), (4, 4, [], [], "PASS"), r)
+        self.assertNotEqual([int(t * 29.97) for t in times], [xray.frame_of(t, 30) for t in times])   # the fixture tells them apart
+        self.assertTrue(any("floor(t * film fps)" in n for n in r["notes"]), r["notes"])
+
+    def test_no_marker_is_unverified_warn(self):
+        j = self.job("nomark")
+        film = make_film(j / "final.mkv", self.wav, [], marker=False)
+        r = xray.verify(j, film)
+        self.assertFalse(r["marker"])
+        self.assertEqual(r["status"], "WARN")
+        self.assertEqual(r["findings"][0]["rule"], "xray_unverified")
+        self.assertIn("not verified", r["line"])
+
+    def test_a_corner_that_is_always_bright_is_not_a_marker(self):
+        j = self.job("bright")
+        film = j / "final.mkv"
+        ff.run_ffmpeg(["-f", "lavfi", "-i", "color=c=black:s=%dx%d:r=%d:d=5" % (W, H, FPS), "-i", str(self.wav),
+                       "-vf", "drawbox=x=%d:y=%d:w=6:h=6:color=white:t=fill,format=yuv420p" % (W - 10, H - 10),
+                       "-c:v", "libx264", "-preset", "ultrafast", "-crf", "10", "-c:a", "pcm_s16le", "-shortest", str(film)])
+        r = xray.verify(j, film)
+        self.assertFalse(r["marker"])
+        self.assertEqual(r["findings"][0]["rule"], "xray_unverified")
+
+    def test_the_source_is_looked_for_by_name_inside_the_job_only(self):
+        j = self.job("find")
+        (j / "xray" / "source.path").unlink()
+        doc = {"source": {"file": "clip.mkv"}}
+        self.assertIsNone(xray.find_source(j, doc))
+        (j / "work").mkdir()
+        shutil.copy(str(self.clip), str(j / "work" / "clip.mkv"))
+        self.assertEqual(xray.find_source(j, doc), j / "work" / "clip.mkv")
+        outside = self.tmp / "decoy.mkv"
+        shutil.copy(str(self.clip), str(outside))
+        for name in (str(outside), "../decoy.mkv", "..", "", "*"):          # absolute, up, nothing, a glob: never found outside
+            self.assertIsNone(xray.find_source(j, {"source": {"file": name}}), name)
+
+    def test_unmatched_audio_with_a_marker_warns(self):
+        j = self.job("noaudio")
+        other = write_wav(self.tmp / "other.wav", click_wave([0.9, 2.1, 3.3, 4.4], seed=99, noise=0.05))
+        film = make_film(j / "final.mkv", other, self.frames)
+        r = xray.verify(j, film)
+        self.assertEqual(r["status"], "WARN", r)
+        self.assertIn("xray_audio", [f["rule"] for f in r["findings"]])
+
+    def test_bad_skip_entries_are_named(self):
+        j = self.job("badskip")
+        film = make_film(j / "final.mkv", self.wav, self.frames)
+        r = xray.verify(j, film, skip=[99, "x"])
+        self.assertTrue(any("99" in n and "'x'" in n for n in r["notes"]), r["notes"])
+        self.assertEqual(r["skipped"], 0)
+
+    def test_collided_frames_are_reported(self):
+        fr = list(self.frames)
+        fr[1] = fr[0]
+        j = self.job("collide", frames=fr)
+        film = make_film(j / "final.mkv", self.wav, fr)
+        r = xray.verify(j, film)
+        self.assertEqual(r["events"], 6)
+        self.assertTrue(any("share a film frame" in n for n in r["notes"]), r["notes"])
+
+    def test_delayed_audio_gives_its_lag(self):
+        j = self.job("lag")
+        film = make_film(j / "final.mkv", self.wav, self.frames, delay_ms=40)
+        r = xray.verify(j, film)
+        self.assertTrue(within(r["audio_lag_ms"], 40.0, 1.5), r)
+        self.assertEqual(r["status"], "FAIL")
+        self.assertTrue(any("ms from the original" in f["message"] for f in r["findings"]), r["findings"])
+        film2 = make_film(j / "final2.mkv", self.wav, self.frames, delay_ms=12)
+        self.assertTrue(within(xray.verify(j, film2)["audio_lag_ms"], 12.0, 1.5))
+
+    def test_events_beyond_the_film_are_not_counted(self):
+        j = self.job("short", self.frames + [900])
+        film = make_film(j / "final.mkv", self.wav, self.frames)
+        r = xray.verify(j, film)
+        self.assertEqual((r["events"], r["outside_film"], r["status"]), (6, 1, "PASS"))
+
+    def test_cli_exit_codes_and_receipt(self):
+        j = self.job("cli", None)
+        film = make_film(j / "final.mkv", self.wav, self.frames)
+        cp = st("xray", "verify", j, "--video", film)
+        self.assertIn("6 of 6 events on their frame", cp.stdout)
+        rec = json.loads((j / "receipt.json").read_text(encoding="utf-8"))
+        self.assertEqual(rec["xray"]["on_frame"], 6)
+        self.assertEqual(rec["xray"]["marker"], True)
+        self.assertIn("audio_lag_ms", rec["xray"])
+        self.assertIn("X-ray: 6 of 6 events", __import__("st.job.receipt", fromlist=["x"]).card(rec))
+        film2 = make_film(j / "bad.mkv", self.wav, self.frames[:-1])
+        bad = st("xray", "verify", j, "--video", film2, check=False)
+        self.assertEqual(bad.returncode, 1, bad.stdout + bad.stderr)
+        self.assertIn("5 of 6", bad.stdout)
+
+    def test_qa_runs_verify_when_the_job_has_xray_json(self):
+        from st.qa import video as V
+        j = self.job("qa")
+        film = make_film(j / "final.mp4", self.wav, self.frames[:-1])
+        rep = V.run(film, sheet=False, quiet=True, record=False)
+        rules = {f["rule"]: f for f in rep["findings"]}
+        self.assertIn("xray_sync", rules, [f["rule"] for f in rep["findings"]])
+        self.assertEqual(rules["xray_sync"]["severity"], "FAIL")
+        film2 = make_film(j / "final2.mp4", self.wav, [], marker=False)
+        rules2 = {f["rule"]: f for f in V.run(film2, sheet=False, quiet=True, record=False)["findings"]}
+        self.assertEqual(rules2["xray_unverified"]["severity"], "WARN")
+        self.assertNotIn("xray_sync", rules2)
+        for r in ("xray_sync", "xray_sync_off", "xray_unverified", "xray_choppy"):
+            self.assertIn(r, V.RULES)
+
+    def test_qa_wants_a_credit_for_the_clip(self):
+        from st.qa import video as V
+        j = self.job("credit")
+        (j / "project").mkdir()
+        cfg = j / "project" / "showtime.json"
+        film = make_film(j / "final.mp4", self.wav, self.frames)
+        write_json(cfg, {"xray": {"marker": True}})
+        rep = V.run(film, sheet=False, quiet=True, record=False)
+        miss = [f for f in rep["findings"] if f["rule"] == "xray_credit"]
+        self.assertEqual([f["severity"] for f in miss], ["WARN"], rep["findings"])
+        self.assertIn("xray.own: true", miss[0]["message"])
+        self.assertFalse([p for p in rep["passed"] if "no attribution required" in p], rep["passed"])
+        write_json(cfg, {"xray": {"credit": "Typewriter by Someone, CC BY 3.0, https://example.invalid/t " + "x" * 80}})
+        rep = V.run(film, sheet=False, quiet=True, record=False)
+        self.assertFalse([f for f in rep["findings"] if f["rule"] == "xray_credit"])
+        self.assertTrue([p for p in rep["passed"] if p.startswith("clip credit: Typewriter by Someone")], rep["passed"])
+        write_json(cfg, {"xray": {"own": True}})
+        rep = V.run(film, sheet=False, quiet=True, record=False)
+        self.assertFalse([f for f in rep["findings"] if f["rule"] == "xray_credit"])
+        write_json(cfg, {"xray": {"credit": "Typewriter by Someone, CC BY 3.0"}})
+        r = xray.verify(j, film)
+        self.assertEqual(xray.receipt_section(j)["credit"], "Typewriter by Someone, CC BY 3.0")
+        from st.job import receipt as RC
+        self.assertIn("Clip credit: Typewriter by Someone", RC.card(dict(RC.build(j), xray=xray.receipt_section(j))))
+        self.assertIn("xray_credit", V.RULES)
+
+    def test_player_chrome_ignores_the_xray_sound_strip(self):
+        from PIL import Image
+        from st.qa import floor, video as V
+        from test_floor import with_player
+
+        class Fnd:
+            def __init__(self):
+                self.items = []
+
+            def add(self, rule, severity, message, **extra):
+                self.items.append(dict(extra, rule=rule, severity=severity, message=message))
+
+        low = np.asarray(with_player(Image.new("L", (540, 960), 245)))            # a bar at 86 % of a portrait frame
+        self.assertGreaterEqual(floor.player_strip(low)[0], 0.7 * 960)
+        frames = [(1.5, low), (4.5, low), (7.5, low)]
+        F = Fnd()
+        floor.check(F, None, 9.0, 540, 960, frames=frames)
+        self.assertEqual([f["rule"] for f in F.items if f["rule"] == "player_chrome"], ["player_chrome"])
+        F = Fnd()
+        out = floor.check(F, None, 9.0, 540, 960, frames=frames, xray_strip=True)
+        self.assertFalse([f for f in F.items if f["rule"] == "player_chrome"], F.items)
+        self.assertEqual(out["notes"], ["player_chrome skipped: the x-ray sound strip"])
+        high = Image.new("L", (540, 960), 245)                                       # real chrome higher up still warns
+        high.paste(with_player(Image.new("L", (540, 480), 245)), (0, 0))
+        highs = np.asarray(high)
+        self.assertLess(floor.player_strip(highs)[0], 0.7 * 960)
+        F = Fnd()
+        floor.check(F, None, 9.0, 540, 960, frames=[(1.5, highs), (4.5, highs), (7.5, highs)], xray_strip=True)
+        self.assertEqual(len([f for f in F.items if f["rule"] == "player_chrome"]), 1, F.items)
+        wide = np.asarray(with_player(Image.new("L", (960, 540), 245)))              # landscape: the bottom 12 % only
+        F = Fnd()
+        floor.check(F, None, 9.0, 960, 540, frames=[(1.5, wide), (4.5, wide), (7.5, wide)], xray_strip=True)
+        self.assertEqual(len([f for f in F.items if f["rule"] == "player_chrome"]), 1, "bar at 86 % is above the 88 % line")
+        # the project decides: template xray, or xray.json + an "xray" block
+        j = self.job("strip")
+        film = j / "final.mp4"
+        self.assertTrue(V._xray_strip(None, film, {"template": "xray"}))
+        self.assertTrue(V._xray_strip(None, film, {"xray": {"marker": True}}))
+        self.assertFalse(V._xray_strip(None, film, {}))
+        plain = self.tmp / "plainstrip"
+        plain.mkdir()
+        write_json(plain / "job.json", {"schema": 1, "slug": "p"})
+        self.assertFalse(V._xray_strip(None, plain / "final.mp4", {"xray": {"marker": True}}))
+
+    def test_qa_without_xray_json_is_untouched(self):
+        from st.qa import video as V
+        j = self.tmp / "plain"
+        j.mkdir()
+        write_json(j / "job.json", {"schema": 1, "slug": "plain"})
+        film = make_film(j / "final.mp4", self.wav, [], marker=False)
+        rep = V.run(film, sheet=False, quiet=True, record=False)
+        self.assertFalse([f for f in rep["findings"] if f["rule"].startswith("xray")])
+        self.assertNotIn("xray", rep)
+
+
+def texture_strip(n, seed=5):
+    rng = np.random.RandomState(seed)
+    from scipy import ndimage
+    return ndimage.gaussian_filter1d(rng.rand(n), 1.5) * 255.0
+
+
+class Smoothness(unittest.TestCase):
+    def profiles(self, steps, w=200):
+        strip = texture_strip(w + int(sum(steps)) + 50)
+        pos, out = 0.0, [strip[:w]]
+        for s in steps:
+            pos += s
+            i = int(round(pos))
+            out.append(strip[i: i + w])
+        return np.array(out)
+
+    def test_even_scroll_is_clean(self):
+        r = xray.smoothness_of_profiles(self.profiles([4] * 60))
+        self.assertEqual((r["stalls"], r["jumps"]), (0, 0), r)
+        self.assertAlmostEqual(r["median_px"], 4.0, delta=0.3)
+
+    def test_stalls_and_jumps_are_counted(self):
+        steps = [4] * 60
+        steps[20] = steps[21] = 0                  # two stalled frames
+        for i in range(40, 60):
+            steps[i] = 10                          # a sudden speed-up: one jump
+        r = xray.smoothness_of_profiles(self.profiles(steps))
+        self.assertEqual(r["stalls"], 2, r)
+        self.assertEqual(r["jumps"], 1, r)
+        self.assertEqual(r["stall_frames"], [21, 22])
+        self.assertEqual(r["jump_frames"], [41])
+
+    def test_a_band_that_barely_moves_has_no_stalls(self):
+        r = xray.smoothness_of_profiles(self.profiles([0] * 30))
+        self.assertEqual((r["stalls"], r["jumps"]), (0, 0))
+
+    def test_band_of_a_film(self):
+        w, h, n = 160, 24, 40
+        strip = texture_strip(w + 6 * n + 20, seed=9)
+        pos = 0
+        raw = bytearray()
+        for k in range(n):
+            if k not in (10, 11):
+                pos += 6
+            raw += np.tile(strip[pos: pos + w], (h, 1)).clip(0, 255).astype(np.uint8).tobytes()
+        film = Path(tempfile.mkdtemp(prefix="st-xray-test-")) / "scroll.mkv"
+        subprocess.run([ff.ffmpeg_path(), "-hide_banner", "-loglevel", "error", "-y", "-f", "rawvideo", "-pix_fmt", "gray",
+                        "-s", "%dx%d" % (w, h), "-r", "30", "-i", "-", "-c:v", "ffv1", str(film)], input=bytes(raw), check=True)
+        try:
+            r = xray.smoothness(film, [0, 0, w, h])
+            self.assertEqual(r["frames"], n)
+            self.assertEqual(r["stalls"], 2, r)
+            self.assertGreaterEqual(r["median_px"], 5.5)
+            with self.assertRaises(ShowtimeError):
+                xray.smoothness(film, [0, 0, 400, 10])
+        finally:
+            shutil.rmtree(film.parent, True)
+
+
+def have_cv2():
+    try:
+        import cv2  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+@unittest.skipUnless(have_cv2(), "opencv is not installed")
+class Tracking(unittest.TestCase):
+    N, REF = 36, 14
+
+    @staticmethod
+    def base():
+        import cv2
+        rng = np.random.RandomState(11)
+        img = rng.rand(300, 400).astype(np.float32)
+        img = cv2.GaussianBlur(img, (0, 0), 2.2)
+        img = (img - img.min()) / (img.max() - img.min())
+        return (img * 255).astype(np.uint8)
+
+    @classmethod
+    def affines(cls):
+        """Ground truth: frame k = base warped by a drift of (1.6, 0.8) px per frame, a slow turn and a 0.1% zoom."""
+        out = []
+        for k in range(cls.N):
+            ang = math.radians(0.12 * k)
+            sc = 1.0 + 0.001 * k
+            c, s = sc * math.cos(ang), sc * math.sin(ang)
+            cx, cy = 200.0, 150.0
+            A = np.array([[c, -s, cx - c * cx + s * cy + 1.6 * k], [s, c, cy - s * cx - c * cy + 0.8 * k], [0, 0, 1.0]])
+            out.append(A)
+        return out
+
+    def frames(self):
+        import cv2
+        b = self.base()
+        return [cv2.warpAffine(b, A[:2], (400, 300), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REFLECT) for A in self.affines()]
+
+    def test_homographies_follow_the_texture(self):
+        As = self.affines()
+        region = np.array([[120, 80], [280, 85], [275, 215], [125, 210]], dtype=np.float64)
+        hole = np.array([[190, 130], [220, 130], [220, 160], [190, 160]], dtype=np.float64)
+        Hs = xray.track_frames(self.frames(), self.REF, region, [hole])
+        self.assertEqual(len(Hs), self.N)
+        self.assertTrue(np.allclose(Hs[self.REF], np.eye(3)))
+        pts = np.hstack([region, np.ones((4, 1))])
+        worst = 0.0
+        for k in range(self.N):
+            truth = (As[k] @ np.linalg.inv(As[self.REF]) @ pts.T).T
+            got = (Hs[k] @ pts.T).T
+            got = got[:, :2] / got[:, 2:3]
+            worst = max(worst, float(np.abs(got - truth[:, :2]).max()))
+        self.assertLess(worst, 1.5, "worst corner error %.2f px" % worst)
+
+    def test_deterministic(self):
+        region = np.array([[120, 80], [280, 85], [275, 215], [125, 210]], dtype=np.float64)
+        fr = self.frames()
+        a = xray.track_frames(fr, self.REF, region, [])
+        b = xray.track_frames(fr, self.REF, region, [])
+        self.assertTrue(all(np.array_equal(x, y) for x, y in zip(a, b)))
+
+    def test_track_clip_writes_the_schema_object(self):
+        tmp = Path(tempfile.mkdtemp(prefix="st-xray-test-"))
+        try:
+            raw = b"".join(f.tobytes() for f in self.frames())
+            clip = tmp / "obj.mkv"
+            subprocess.run([ff.ffmpeg_path(), "-hide_banner", "-loglevel", "error", "-y", "-f", "rawvideo", "-pix_fmt", "gray",
+                            "-s", "400x300", "-r", "30", "-i", "-", "-c:v", "ffv1", str(clip)], input=raw, check=True)
+            src = {"width": 400, "height": 300, "fps": 30}
+            region = [[120, 80], [280, 85], [275, 215], [125, 210]]
+            tr = xray.track_clip(clip, src, region, self.REF / 30.0 + 0.001, [[[190, 130], [220, 130], [220, 160]]])
+            self.assertEqual(tr["ref_frame"], self.REF)
+            self.assertEqual(tr["region"], [[float(a), float(b)] for a, b in region])
+            self.assertEqual(len(tr["H"]), self.N)
+            self.assertEqual(len(tr["H"][0]), 9)
+            self.assertEqual(len(tr["mask"]), 1)
+            H = np.array(tr["H"][self.REF]).reshape(3, 3)
+            self.assertTrue(np.allclose(H, np.eye(3), atol=1e-4))
+            A = self.affines()
+            truth = A[self.N - 1] @ np.linalg.inv(A[self.REF])
+            Hl = np.array(tr["H"][self.N - 1]).reshape(3, 3)
+            p = np.array([200.0, 150.0, 1.0])
+            self.assertLess(float(np.abs((Hl @ p)[:2] / (Hl @ p)[2] - (truth @ p)[:2]).max()), 1.5)
+        finally:
+            shutil.rmtree(tmp, True)
+
+    def test_a_clip_too_long_for_memory_is_refused_with_the_way_out(self):
+        tmp = Path(tempfile.mkdtemp(prefix="st-xray-test-"))
+        keep = xray.TRACK_MAX_BYTES
+        try:
+            raw = b"".join(f.tobytes() for f in self.frames())
+            clip = tmp / "obj.mkv"
+            subprocess.run([ff.ffmpeg_path(), "-hide_banner", "-loglevel", "error", "-y", "-f", "rawvideo", "-pix_fmt", "gray",
+                            "-s", "400x300", "-r", "30", "-i", "-", "-c:v", "ffv1", str(clip)], input=raw, check=True)
+            xray.TRACK_MAX_BYTES = 400 * 300 * 5                       # room for a handful of frames only
+            src = {"width": 400, "height": 300, "fps": 30, "duration": self.N / 30.0}
+            with self.assertRaises(ShowtimeError) as cm:
+                xray.track_clip(clip, src, [[120, 80], [280, 85], [275, 215], [125, 210]], 0.5, [])
+            self.assertIn("footage trim", cm.exception.hint)
+        finally:
+            xray.TRACK_MAX_BYTES = keep
+            shutil.rmtree(tmp, True)
+
+    def test_bad_region_is_a_clear_error(self):
+        with self.assertRaises(ShowtimeError):
+            xray.parse_points("10,10 20,20")
+        with self.assertRaises(ShowtimeError):
+            xray.parse_points("10,10 a,b 30,30")
+        self.assertEqual(xray.parse_points("1,2 3,4 5,6.5"), [[1.0, 2.0], [3.0, 4.0], [5.0, 6.5]])
+
+
+if __name__ == "__main__":
+    argv = [a for a in sys.argv if a != "--fast"]
+    unittest.main(argv=argv)

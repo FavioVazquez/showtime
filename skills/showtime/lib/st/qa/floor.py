@@ -46,6 +46,9 @@ PLAYER_BAR_MAX = 0.012    # the bar is at most this share of the height thick (a
 PLAYER_END_W = 0.08       # glyph windows reach this share of the width either side of each bar end
 PLAYER_NEAR = 0.06        # and this share of the height above or below the bar
 PLAYER_GLYPHS = (0.01, 0.30)  # edge density that reads as small glyphs (not empty, not a texture)
+XRAY_STRIP_PORTRAIT = 0.30   # an x-ray film's sound strip: the bottom share of a portrait frame ...
+XRAY_STRIP_LANDSCAPE = 0.14  # ... and of a landscape one
+XRAY_STRIP_NOTE = "player_chrome skipped: the x-ray sound strip"
 PLAYER_FRAMES = 2         # sampled frames with the strip in the same place (row within 3 px)
 PLAYER_DARK = 110         # median grey (0-255) just above the bar: a player's controls sit on a dark overlay
 
@@ -328,9 +331,12 @@ def _span(times: Sequence[float]) -> str:
 
 
 def check(F: Any, video: Any, dur: float, W: int, H: int, *, crop: Optional[Sequence[int]] = None,
-          footage: bool = True, frames: Optional[Sequence[Tuple[float, Any]]] = None) -> Dict[str, Any]:
+          footage: bool = True, frames: Optional[Sequence[Tuple[float, Any]]] = None,
+          xray_strip: bool = False) -> Dict[str, Any]:
     """Run the four detectors and add WARNs to F (st.qa.video.Findings). `frames` [(t, grey array)] skips
-    decoding (tests). Returns what was measured, for qa.json."""
+    decoding (tests). `xray_strip`: the film is an x-ray film, whose sound strip (a full-width row of event ticks) lies in
+    the bottom 30 % of a portrait frame (12 % of a landscape one): a bar found there is not player chrome.
+    Returns what was measured, for qa.json."""
     if frames is None:
         from concurrent.futures import ThreadPoolExecutor
         times = sample_times(dur)
@@ -347,6 +353,11 @@ def check(F: Any, video: Any, dur: float, W: int, H: int, *, crop: Optional[Sequ
         for t, g in frames:
             s = player_strip(g)
             if not s:
+                continue
+            if xray_strip and s[0] - g.shape[0] * PLAYER_NEAR >= g.shape[0] * (1.0 - (XRAY_STRIP_PORTRAIT if g.shape[0] > g.shape[1] else XRAY_STRIP_LANDSCAPE)):
+                out.setdefault("notes", [])
+                if XRAY_STRIP_NOTE not in out["notes"]:
+                    out["notes"].append(XRAY_STRIP_NOTE)
                 continue
             tol = 0.02 * g.shape[1]
             for key, ts in groups:

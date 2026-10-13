@@ -137,7 +137,7 @@ class TestCli(unittest.TestCase):
         self.assertAlmostEqual(got, answer * 30 / base, places=2)
         cp = showtime("new", "diagram", TMP / "ex-nope", "--example", "nope", check=False)
         self.assertNotEqual(cp.returncode, 0)
-        self.assertIn("examples of diagram: econ-lab, enter, market", cp.stderr + cp.stdout)
+        self.assertIn("examples of diagram: computer, econ-lab, enter, market", cp.stderr + cp.stdout)
 
     def test_theme_keeps_an_explicit_background(self):
         d = TMP / "dark-bg"

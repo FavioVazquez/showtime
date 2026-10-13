@@ -21,6 +21,12 @@
  *     agree(state, stepId, {board, step, readouts}) -> [contradictions] (the walk reports them),
  *     crop: {desk: [x0, y0, x1, y1], phone: [...]}, start: t (the live clock starts here: a film-first scene starts
  *     after its build), film: 'tour' (index.html draws the tour as the film: Figure.film) }
+ * Touch (the viewer acts on the board itself):
+ *   type: fn(fx, ch, state, stepId) | {hint, run}: every character the viewer types (Enter '\n', Backspace '\b'),
+ *     also from the "Type" field (a phone's own keyboard); with it, letters and digits are the scene's (the page's R,
+ *     L and 1-9 shortcuts are buttons only; arrows and Esc stay)
+ *   parts[].press: fn(fx, state, stepId): a click or tap on that part (or its button in the parts list) runs it
+ *   parts[].drag: {knob, axis: 'x' | 'y', span: px for the knob's whole range}: dragging that part turns the knob
  * A step's run(fx, again) writes keys through fx: level(id, v), count(id, n), say(tag, text, tone), hide(tag),
  * pulse(part, tone), tone(part, tone | null), show(part, on), send(token, moves, {stay}), park(token), focus(part),
  * every(ms, fn, name); each takes {delay, dur} where it
@@ -48,6 +54,8 @@
     var mq = function (q) { try { return root.matchMedia && root.matchMedia(q).matches; } catch (e) { return false; } };
     var RM = opts.reduced != null ? !!opts.reduced : mq('(prefers-reduced-motion: reduce)');
     var parts = partsOf(spec, I), PART = {}; parts.forEach(function (p) { PART[p.id] = p; });
+    var TYPE = typeof I.type === 'function' ? { run: I.type } : (I.type && typeof I.type.run === 'function' ? I.type : null);
+    var typeHint = TYPE ? (TYPE.hint || 'Type on it') : '';
     var state = Object.assign(knobDefaults(I), opts.state || {}), S = { step: 0, hover: '', pin: '' };
 
     /* ---- DOM ---- */
@@ -66,6 +74,13 @@
       (I.source ? '<p class="fg-src">' + esc(I.source) + '</p>' : '') + '</div>' +
       '<div class="fg-tour" hidden><span class="dot"></span><span>Showing you around: touch anything to take over</span><button type="button">Take over</button></div>';
     main.appendChild(strip);
+    if (TYPE) {
+      var typeEl = el('label', 'fg-type', '<span class="fg-type-k"></span><input type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="enter">');
+      typeEl.querySelector('.fg-type-k').textContent = typeHint;
+      typeEl.querySelector('input').setAttribute('aria-label', typeHint + ': what you type here is typed on the figure');
+      typeEl.querySelector('input').placeholder = 'type here or anywhere';
+      main.insertBefore(typeEl, strip);
+    }
     var rail = el('aside', 'fg-rail');
     rail.setAttribute('aria-label', 'Steps and parts');
     rail.innerHTML = '<div class="fg-brand">' + esc(I.kicker || 'Live figure') + '</div><h1>' + esc(I.title || (spec.page && spec.page.title || '').replace(/\*/g, '') || 'Living diagram') + '</h1>' +
@@ -74,7 +89,8 @@
       (parts.length ? '<section class="fg-sec"><h2 id="fg-h-parts">Parts</h2><div class="fg-parts" role="group" aria-labelledby="fg-h-parts"></div></section>' : '') +
       '<section class="fg-sec fg-narr-sec" hidden><details><summary>Narration for this step</summary><p class="fg-narr"></p></details></section>' +
       '<section class="fg-sec fg-row">' + (I.steps.length ? '<button type="button" class="fg-btn fg-again">Run this step again</button>' : '') + '<button type="button" class="fg-btn fg-copy">Copy a link to this state</button></section>' +
-      '<div class="fg-keys">' + (I.steps.length ? '<kbd>←</kbd> <kbd>→</kbd> steps · <kbd>1</kbd>-<kbd>9</kbd> jump · <kbd>R</kbd> run again · ' : '') + '<kbd>Tab</kbd> parts and controls · <kbd>Esc</kbd> clear · <kbd>L</kbd> copy link</div>' +
+      (TYPE ? '<div class="fg-keys">' + esc(typeHint) + ': type on your keyboard · ' + (I.steps.length ? '<kbd>←</kbd> <kbd>→</kbd> steps · ' : '') + '<kbd>Tab</kbd> parts and controls · <kbd>Esc</kbd> clear</div>'
+        : '<div class="fg-keys">' + (I.steps.length ? '<kbd>←</kbd> <kbd>→</kbd> steps · <kbd>1</kbd>-<kbd>9</kbd> jump · <kbd>R</kbd> run again · ' : '') + '<kbd>Tab</kbd> parts and controls · <kbd>Esc</kbd> clear · <kbd>L</kbd> copy link</div>') +
       '<div class="fg-live" aria-live="polite"></div>';
     var app = el('div', 'fg-app'); app.appendChild(main); app.appendChild(rail); host.appendChild(app);
     var $ = function (s) { return host.querySelector(s); };
@@ -191,7 +207,8 @@
       b.addEventListener('blur', function () { setHover(''); });
       b.addEventListener('mouseenter', function () { setHover(p.id); });
       b.addEventListener('mouseleave', function () { setHover(''); });
-      b.addEventListener('click', function () { touched(); pin(p.id); });
+      b.addEventListener('click', function () { touched(); if (p.press) pressPart(p.id); else pin(p.id); });
+      if (p.press) b.classList.add('fg-pressable');
       partsEl.appendChild(b);
     });
     var shownKnob = null;
@@ -273,19 +290,89 @@
     }
 
     /* ---- pointer and keys ---- */
+    // a part with drag turns its knob while dragged; a part with press acts on a click; any other part pins its card
+    var dragging = null, dragged = false, dragRaf = 0;
+    if (parts.some(function (p) { return p.drag; })) fig.style.touchAction = 'pan-y';
+    fig.addEventListener('pointerdown', function (e) {
+      var id = hit(e.clientX, e.clientY), p = id && PART[id], d = p && p.drag, K = d && I.knobs[d.knob];
+      dragged = false;
+      if (!K || K.options) return;
+      dragging = { id: id, d: d, K: K, x: e.clientX, y: e.clientY, v0: Number(state[d.knob]), pid: e.pointerId, moved: false };
+    });
     fig.addEventListener('pointermove', function (e) {
-      var id = hit(e.clientX, e.clientY); fig.style.cursor = id ? 'pointer' : 'default';
+      if (dragging && dragging.pid === e.pointerId) {
+        var g = dragging, dist = g.d.axis === 'y' ? g.y - e.clientY : e.clientX - g.x;
+        if (!g.moved && Math.abs(dist) > 4) { g.moved = true; touched(); try { fig.setPointerCapture(e.pointerId); } catch (err) { /* gone */ } fig.classList.add('fg-dragging'); setHover(g.id); }
+        if (g.moved) {
+          var step = g.K.step || 1, v = g.v0 + dist / (g.d.span || 320) * (g.K.max - g.K.min);
+          v = Math.max(g.K.min, Math.min(g.K.max, Math.round((v - g.K.min) / step) * step + g.K.min));
+          v = +v.toFixed(6);
+          if (v !== state[g.d.knob] && !dragRaf) { dragRaf = (root.requestAnimationFrame || setTimeout)(function () { dragRaf = 0; if (dragging) setKnob(dragging.d.knob, dragging.want); }); }
+          g.want = v;
+          return;
+        }
+      }
+      var id = hit(e.clientX, e.clientY), pp = id && PART[id];
+      fig.style.cursor = !id ? 'default' : pp && pp.drag ? 'grab' : 'pointer';
       if (e.pointerType === 'mouse') { touched(); setHover(id); }
     });
-    fig.addEventListener('pointerleave', function () { setHover(''); });
-    fig.addEventListener('click', function (e) { touched(); var id = hit(e.clientX, e.clientY); if (id) pin(id); else if (S.pin) pin(S.pin); });
+    function endDrag(e) {
+      if (!dragging || dragging.pid !== e.pointerId) return;
+      var g = dragging; dragging = null; fig.classList.remove('fg-dragging');
+      if (g.moved) { dragged = true; if (g.want != null && g.want !== state[g.d.knob]) setKnob(g.d.knob, g.want); }
+    }
+    fig.addEventListener('pointerup', endDrag);
+    fig.addEventListener('pointercancel', endDrag);
+    fig.addEventListener('pointerleave', function () { if (!dragging) setHover(''); });
+    fig.addEventListener('click', function (e) {
+      touched();
+      if (dragged) { dragged = false; return; }
+      var id = hit(e.clientX, e.clientY);
+      if (id && PART[id] && PART[id].press) pressPart(id);
+      else if (id) pin(id); else if (S.pin) pin(S.pin);
+    });
+    function pressPart(id) {
+      var p = PART[id], sid = (I.steps[S.step] || {}).id;
+      if (!p || !p.press) return;
+      act(function () { p.press(fx, state, sid); });
+      if (S.pin !== id) { S.pin = id; api.focus(id, { at: clock.now() }); }
+      ui(); sync();
+    }
+    // typing: a character on the board (the scene's type.run), from anywhere on the page or from the Type field
+    function typeCh(ch) {
+      if (!TYPE) return;
+      var sid = (I.steps[S.step] || {}).id;
+      touched();
+      act(function () { TYPE.run(fx, ch, state, sid); });
+      ui();
+    }
+    if (TYPE) {
+      var tin = $('.fg-type input');
+      tin.addEventListener('input', function (e) {
+        var v = tin.value; tin.value = '';
+        for (var i = 0; i < v.length; i++) typeCh(v.charAt(i));
+      });
+      tin.addEventListener('keydown', function (e) {
+        e.stopPropagation();
+        if (e.key === 'Enter') { e.preventDefault(); typeCh('\n'); }
+        else if (e.key === 'Backspace' && !tin.value) { e.preventDefault(); typeCh('\b'); }
+        else if (e.key === 'Escape') tin.blur();
+      });
+    }
     root.addEventListener('keydown', function (e) {
       var tag = (e.target && e.target.tagName) || '';
       touched();
       if (e.key === 'Escape') { S.pin = ''; setHover(''); api.focus(null, { at: clock.now() }); dirty = true; ui(); sync(); return; }
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === 'ArrowRight' || e.key === 'PageDown') { if (I.steps.length) { e.preventDefault(); enter(S.step + 1); } }
       else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { if (I.steps.length) { e.preventDefault(); enter(S.step - 1); } }
+      else if (I.keys && I.keys[e.key.toLowerCase()]) pressKey(e.key.toLowerCase());
+      else if (TYPE) {
+        if (e.repeat && e.key.length !== 1) return;
+        if (e.key === 'Enter') { if (tag === 'BUTTON' || tag === 'A') return; e.preventDefault(); typeCh('\n'); }
+        else if (e.key === 'Backspace') { e.preventDefault(); typeCh('\b'); }
+        else if (e.key.length === 1) { if (e.key === ' ' && (tag === 'BUTTON' || tag === 'A')) return; e.preventDefault(); typeCh(e.key); }
+      }
       else if (/^[1-9]$/.test(e.key) && +e.key <= I.steps.length) enter(+e.key - 1);
       else if (e.key === 'r' || e.key === 'R') enter(S.step);
       else if (e.key === 'l' || e.key === 'L') copyLink();
@@ -458,13 +545,17 @@
       });
       if (!I.steps.length) parts.forEach(function (p) { safely(p.id, function () { setHover(p.id); check(p.id + ' hovered'); }); });
       setHover('');
+      // touch: a typed line (letters, a digit, a space, Return, Backspace) and every pressable part, from the first step
+      if (TYPE) safely('typing', function () { if (I.steps.length) enter(0); 'Hi 2\n\bok.'.split('').forEach(function (ch) { act(function () { TYPE.run(fx, ch, state, (I.steps[S.step] || {}).id); }); }); ui(); check('typed "Hi 2", Return, Backspace, "ok."'); });
+      parts.forEach(function (p) { if (p.press) safely(p.id + ' pressed', function () { if (I.steps.length) enter(0); pressPart(p.id); check(p.id + ' pressed'); }); });
+      S.pin = '';
       var seen = {}; probs = probs.filter(function (p) { var key = p.code + '|' + p.text; if (seen[key]) return false; seen[key] = 1; return true; });
-      return { states: states, problems: probs, keys: keyNames.length, steps: I.steps.length, parts: parts.length, knobs: Object.keys(I.knobs || {}).length, theme: api.report.theme, warnings: api.report.warnings.slice() };
+      return { states: states, problems: probs, keys: keyNames.length, typing: !!TYPE, presses: parts.filter(function (p) { return p.press; }).length, steps: I.steps.length, parts: parts.length, knobs: Object.keys(I.knobs || {}).length, theme: api.report.theme, warnings: api.report.warnings.slice() };
     }
 
     /* ---- start: the board is already there and moving ---- */
     var fig0 = { api: api, enter: enter, setKnob: setKnob, setHover: setHover, pin: pin, walk: walk, state: state, S: S, cost: cost, readouts: readouts,
-      tour: function () { return tour.on; }, hash: hashOf, phone: function () { return phone; } };
+      tour: function () { return tour.on; }, hash: hashOf, phone: function () { return phone; }, type: typeCh, press: pressPart };
     api.ready.then(function () {
       fit();
       // the tour's first wait: opts.tourAfter, or window.SHOWTIME_TEST_TOUR_AFTER (tests), else 2.5 s
@@ -474,6 +565,20 @@
       ui(); wake();
     });
     fit(); ui(); wake();
+    // framed with #embed (an iframe, or <showtime-xray> from embed.js): tell the host how tall the page is
+    var EMBED = false;
+    try { EMBED = root.self !== root.top && /(^#|[&_])embed([&_]|$)/.test(root.location.hash || ''); } catch (e) { EMBED = false; }
+    if (EMBED && root.ResizeObserver) {
+      D.documentElement.setAttribute('data-fg-embed', '');
+      var lastH = 0, lastGrow = -1e9;
+      new ResizeObserver(function () {
+        var h = Math.ceil(app.getBoundingClientRect().height + 24), now = root.performance ? performance.now() : 0;
+        if (Math.abs(h - lastH) < 2 || (h < lastH && lastH - h < 24 && now - lastGrow < 1200)) return;   // a host's scrollbar flip
+        if (h > lastH) lastGrow = now;
+        lastH = h;
+        try { root.parent.postMessage({ type: 'showtime-xray:size', height: h }, '*'); } catch (e) { /* no host */ }
+      }).observe(app);
+    }
     Figure.current = fig0;
     return fig0;
   }

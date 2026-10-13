@@ -76,7 +76,7 @@ html, body { margin: 0; background: #FFFFFF; }
 .fg .seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; background: var(--fg-soft); border: 1px solid var(--fg-line); border-radius: 10px; padding: 3px; }
 .fg .seg button { border: 0; background: transparent; border-radius: 8px; padding: 8px 4px; cursor: pointer; min-height: 52px; }
 .fg .seg button b { display: block; font-family: 'JetBrains Mono', monospace; font-size: 19px; font-weight: 600; }
-.fg .seg button span { display: block; font-size: 11.5px; color: var(--fg-ink3); margin-top: 1px; }
+.fg .seg button span { display: block; font-size: 12px; color: var(--fg-ink3); margin-top: 1px; }
 .fg .seg button[aria-checked="true"] { background: var(--fg-bg); box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12), 0 0 0 1px var(--fg-line); }
 .fg .seg button[aria-checked="true"] b { color: var(--fg-blue-ink); }
 .fg input[type=range] { width: 100%; accent-color: var(--fg-blue); height: 32px; }
@@ -86,7 +86,7 @@ html, body { margin: 0; background: #FFFFFF; }
 .fg .ro { display: block; background: var(--fg-bg); border: 1px solid var(--fg-line); border-radius: 12px; padding: 10px 12px; }
 .fg .ro .k { display: block; font-size: 12.5px; color: var(--fg-ink2); }
 .fg .ro .v { display: block; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 24px; font-variant-numeric: tabular-nums; margin-top: 3px; color: var(--fg-ink); }
-.fg .ro .u { display: block; font-size: 11.5px; color: var(--fg-ink3); margin-top: 2px; }
+.fg .ro .u { display: block; font-size: 12px; color: var(--fg-ink3); margin-top: 2px; }
 .fg .ro.txt .v { font-family: 'Inter', sans-serif; font-size: 16px; line-height: 1.3; }
 .fg .ro.fg-tone-hot .v, .fg .ro.fg-tone-warm .v { color: var(--fg-warm); }
 .fg .ro.fg-tone-cold .v { color: var(--fg-blue-ink); }
@@ -118,3 +118,14 @@ html, body { margin: 0; background: #FFFFFF; }
 .fg-phone .fg .fg-stepb { flex: none; border: 1px solid var(--fg-line); min-height: 44px; }
 .fg-phone .fg .fg-stepb .k { white-space: nowrap; }
 .fg-phone .fg .fg-keys { display: none; }
+
+/* touch: the Type field (a phone's own keyboard; on a desktop, typing anywhere works), parts that act, a drag */
+.fg .fg-type { display: flex; align-items: center; gap: 10px; margin: 12px 2px 0; padding: 8px 12px; border: 1px solid var(--fg-line); border-radius: 10px; background: var(--fg-soft); cursor: text; }
+.fg .fg-type-k { font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--fg-ink2); white-space: nowrap; }
+.fg .fg-type input { flex: 1 1 auto; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--fg-ink); font: 500 15px/1.4 'JetBrains Mono', ui-monospace, monospace; }
+.fg .fg-type:focus-within { border-color: var(--fg-ink2); }
+.fg .fg-part.fg-pressable .n::after { content: ' ·  press'; font-weight: 500; color: var(--fg-ink3); font-size: 11px; }
+.fg .fg-dragging { cursor: grabbing !important; }
+.fg .fg-fig { -webkit-user-select: none; user-select: none; }
+/* framed with #embed: the page is as tall as its content (a height tied to the window would grow with every resize) */
+html[data-fg-embed] .fg .fg-app { min-height: 0; }

@@ -633,6 +633,9 @@
         var p = seg(t, x.at, x.dur, E.inOutCubic) * (x.back != null ? 1 - seg(t, x.back, x.dur, E.inOutCubic) : 1);
         for (var k = 0; k < 3; k++) o[k] += (v[k] || 0) * p;
       });
+      // spec.offset(id, t): the scene's own offset, a pure function of t (a live log of keystrokes, say)
+      var so = spec.offset && id ? spec.offset(id, t) : null;
+      if (so) for (var q = 0; q < 3; q++) o[q] += so[q] || 0;
       return o;
     }
 
@@ -1487,6 +1490,14 @@
         if (text == null) { log.push({ at: at, i: null, tone: null }); return; }
         text = String(text);
         var i = -1; for (var j = 0; j < g.tx.length; j++) if (g.tx[j].textContent === text) { i = j; break; }
+        var own = g.own != null ? g.own : (g.own = g.tx.length);
+        if (i < 0 && !LIVE.seek && g.tx.length - own >= 48) { // a live page typed on for long: reuse a value no entry still shows
+          var used = {}; log.forEach(function (x) { if (x.i != null) used[x.i] = 1; });
+          for (var r = own; r < g.tx.length; r++) if (!used[r]) {
+            g.tx[r].textContent = text; g.keys[r][1] = text; g.ws[r] = lay.done ? g.tx[r].getComputedTextLength() : text.length * g.fs * 0.6;
+            i = r; break;
+          }
+        }
         if (i < 0) { // a value the scene did not list: one more persistent text, measured once
           var tn0 = toneOf(L, tone || g.tg.tone || g.tg.temp);
           var e = mk('text', { 'font-family': L.font.mono, 'font-size': g.fs, 'font-weight': 600, fill: tn0.tagInk, 'text-anchor': 'middle', opacity: 0, visibility: 'hidden' }, g.g);
@@ -1494,7 +1505,8 @@
           i = g.tx.length - 1;
         }
         log.push({ at: at, i: i, tone: tone || null });
-        if (log.length > 400) log.splice(0, log.length - 400);
+        var cap = LIVE.seek ? 400 : 32;          // a film seeks back through its whole log; a live page only goes forward
+        if (log.length > cap) log.splice(0, log.length - cap);
       };
       liveApi = {
         set: function (target, value, o) {

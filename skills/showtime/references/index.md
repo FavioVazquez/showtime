@@ -26,6 +26,7 @@ for that step) with a table of its sections; read only what the current step nee
 | `references/workflows/trailer.md` | a teaser or trailer |
 | `references/workflows/slideshow.md` | photos or screenshots set to music |
 | `references/workflows/voiceover-only.md` | narration added to an existing video |
+| `references/workflows/xray.md` | an X-ray of the user's clip of a machine or instrument: the inside drawn in sync with its sound, measured and verified; a live page to play (`showtime xray`) |
 | `references/workflows/localize.md` | a video re-voiced or subtitled in another language |
 | `references/adopt.md` | their own video code (a page with seek/render/draw(t), CSS animations, a Python frame script) checked, scored and rendered as it is |
 | `references/adopt.md` § From Claude Design | a Claude Design animation (its HTML zip export) made into an MP4, then voice, music, captions and exports |

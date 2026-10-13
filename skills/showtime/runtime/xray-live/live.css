@@ -1,0 +1,141 @@
+/* showtime X-ray live page: the controls around the film (runtime/xray-live/live.js). The film itself keeps its
+   own styles; this only undoes the render-mode page size, scales the film to the window and draws the controls. */
+:root[data-xl] {
+  --xl-bg: #070b16; --xl-ink: #e9f3ff; --xl-muted: #a9bdd6; --xl-line: rgba(143, 211, 255, .32);
+  --xl-hot: #ff4a3d; --xl-skip: rgba(233, 243, 255, .38); --xl-btn: rgba(143, 211, 255, .1); --xl-btn-on: rgba(255, 74, 61, .2);
+  --xl-focus: #8fd3ff; color-scheme: dark;
+}
+:root[data-xl][data-xl-theme="light"] {
+  --xl-bg: #f4f0e7; --xl-ink: #121e34; --xl-muted: #4d5a72; --xl-line: rgba(24, 62, 120, .3);
+  --xl-hot: #c8202f; --xl-skip: rgba(18, 30, 52, .38); --xl-btn: rgba(24, 62, 120, .08); --xl-btn-on: rgba(200, 32, 47, .14);
+  --xl-focus: #183e78; color-scheme: light;
+}
+html[data-xl] { overflow: auto !important; background: var(--xl-bg) !important; }
+html[data-xl] body { width: auto !important; height: auto !important; min-height: 100vh; overflow: visible !important; margin: 0 !important;
+  background: var(--xl-bg) !important; color: var(--xl-ink); }
+.xl-app { box-sizing: border-box; width: 100%; max-width: 1632px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; align-items: center;
+  font: 500 14px/1.45 "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--xl-ink); }
+.xl-app * { box-sizing: border-box; }
+.xl-head, .xl-bar, .xl-meta { width: var(--xl-w, 100%); max-width: 100%; min-width: min(100%, 640px); }
+.xl-head { display: flex; flex-wrap: nowrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; margin: 0 0 10px; }
+.xl-title { flex: none; }
+.xl-title { margin: 0; font: 700 18px/1.25 "IBM Plex Mono", ui-monospace, monospace; letter-spacing: .02em; }
+/* one line that never wraps: the page must not move while it plays or as keys are struck */
+.xl-now { margin: 0; color: var(--xl-muted); font-variant-numeric: tabular-nums; min-height: 1.45em; flex: 1 1 auto; min-width: 0; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* the film, scaled from its own size; the marker square is for verify, not for viewers */
+.xl-view { position: relative; overflow: hidden; border-radius: 6px; outline: 1px solid var(--xl-line); background: #000; flex: none; touch-action: pan-y; cursor: grab;
+  -webkit-user-select: none; user-select: none; }
+.xl-view.is-scrub { cursor: grabbing; }
+.xl-view.on-label { cursor: pointer; }
+/* a hint over the picture, gone at the first touch */
+.xl-toast { position: absolute; left: 50%; bottom: 14px; transform: translate(-50%, 8px); margin: 0; max-width: calc(100% - 24px); padding: 7px 12px; border-radius: 6px;
+  background: rgba(7, 11, 22, .82); color: #e9f3ff; font-size: 13px; line-height: 1.35; text-align: center; opacity: 0; pointer-events: none;
+  transition: opacity .25s, transform .25s; }
+.xl-toast.is-on { opacity: 1; transform: translate(-50%, 0); }
+.xl-scale { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+.xl-scale > #stage { position: relative !important; left: 0 !important; top: 0 !important; overflow: hidden !important; }
+#xmark { display: none !important; }
+canvas[data-xl-mirror] { position: absolute; left: 0; top: 0; }
+.xl-hit { position: absolute; inset: 0; pointer-events: none; }
+.xl-veil { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: var(--xl-bg); color: var(--xl-muted); padding: 16px; text-align: center; }
+.xl-veil[hidden] { display: none; }
+/* the diagram layout's part labels: the hovered one acts, the rest step back */
+[data-ld-label].xl-on text:first-of-type { fill: var(--xd-hot, #ff6a3d) !important; }
+[data-ld-label].xl-on path, [data-ld-label].xl-on circle { stroke: var(--xd-hot, #ff6a3d) !important; stroke-width: 3px !important; }
+[data-ld-label].xl-off { filter: opacity(.4); }
+/* controls */
+.xl-bar { margin-top: 12px; }
+.xl-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.xl-grow { flex: 1 1 0; }
+.xl-btn { appearance: none; border: 1px solid var(--xl-line); background: var(--xl-btn); color: var(--xl-ink); border-radius: 6px; min-height: 40px; min-width: 40px;
+  padding: 0 12px; font: 600 14px/1 "IBM Plex Mono", ui-monospace, monospace; letter-spacing: .02em; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.xl-btn svg { width: 20px; height: 20px; }
+.xl-btn:hover { border-color: var(--xl-ink); }
+.xl-btn[aria-pressed="true"] { background: var(--xl-btn-on); border-color: var(--xl-hot); color: var(--xl-hot); }
+.xl-btn:focus-visible, .xl-track:focus-visible, .xl-part:focus-visible, .xl-tick:focus-visible { outline: 2px solid var(--xl-focus); outline-offset: 2px; }
+.xl-play { width: 48px; padding: 0; }
+.xl-time { color: var(--xl-muted); font-variant-numeric: tabular-nums; white-space: nowrap; min-width: 17ch; }
+.xl-btn[hidden] { display: none; }
+.xl-track { position: relative; height: 56px; margin-top: 12px; border-bottom: 1px solid var(--xl-line); cursor: pointer; touch-action: none; }
+.xl-ticks { position: absolute; inset: 0 3px; }
+.xl-tick { position: absolute; bottom: 0; width: 14px; height: var(--h, 60%); margin-left: -7px; padding: 0; border: 0; background: transparent; cursor: pointer; }
+.xl-tick::after { content: ""; position: absolute; left: 5px; right: 5px; bottom: 0; top: 0; border-radius: 2px 2px 0 0; background: var(--xl-hot); opacity: .45; }
+.xl-tick.is-past::after { opacity: 1; }
+.xl-tick.is-skip::after { background: var(--xl-skip); opacity: .6; }
+.xl-tick:hover::after { left: 3px; right: 3px; opacity: 1; }
+.xl-playhead { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: 2px; background: var(--xl-ink); pointer-events: none; }
+.xl-playhead::before { content: ""; position: absolute; top: -2px; left: -6px; border: 7px solid transparent; border-top-color: var(--xl-ink); border-bottom: 0; }
+.xl-legend { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 8px 0 0; color: var(--xl-muted); font-size: 13px; }
+.xl-key-hot::before, .xl-key-skip::before { content: ""; display: inline-block; width: 4px; height: 12px; margin-right: 7px; vertical-align: -1px; background: var(--xl-hot); border-radius: 1px; }
+.xl-key-skip::before { background: var(--xl-skip); }
+.xl-key-help { margin-left: auto; }
+.xl-parts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; }
+.xl-parts[hidden] { display: none; }
+.xl-k { color: var(--xl-muted); font-size: 13px; text-transform: uppercase; letter-spacing: .08em; margin-right: 4px; }
+.xl-part { appearance: none; border: 1px solid var(--xl-line); background: transparent; color: var(--xl-ink); border-radius: 999px; min-height: 32px; padding: 0 12px;
+  font: 500 13px/1 "IBM Plex Mono", ui-monospace, monospace; text-transform: uppercase; letter-spacing: .05em; cursor: pointer; }
+.xl-part[aria-pressed="true"], .xl-part:hover { border-color: var(--xl-hot); color: var(--xl-hot); }
+.xl-meta { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--xl-line); }
+.xl-meta p { margin: 0 0 6px; }
+.xl-receipt { color: var(--xl-ink); border: 1.5px solid var(--xl-hot); border-radius: 6px; padding: 8px 12px; display: inline-block; }
+.xl-drawn, .xl-credit { color: var(--xl-muted); font-size: 13px; }
+/* pads: play it from the real clip (a keyboard for a typewriter, a strip of notes or drums) */
+.xl-pads { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
+.xl-pads[hidden] { display: none; }
+.xl-pads-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin: 0 0 2px; }
+.xl-pads-head .xl-k { color: var(--xl-hot); }
+.xl-pads-help { color: var(--xl-muted); font-size: 13px; }
+.xl-keyrow { display: flex; justify-content: center; gap: 6px; }
+.xl-keyrow-2 { padding-left: 18px; }
+.xl-keyrow-3 { padding-left: 46px; }
+.xl-padrow { display: flex; flex-wrap: wrap; gap: 6px; }
+.xl-pad { appearance: none; position: relative; flex: 0 0 auto; min-width: 44px; height: 46px; padding: 0 8px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--xl-line); border-bottom-width: 3px; background: var(--xl-btn); color: var(--xl-ink);
+  font: 600 15px/1 "IBM Plex Mono", ui-monospace, monospace; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  transition: transform .06s, background-color .15s, border-color .15s; }
+.xl-keyrow .xl-pad { flex: 0 1 46px; min-width: 0; padding: 0 2px; }
+.xl-keyrow .xl-pad.is-wide { flex-basis: 180px; }
+.xl-keyrow .xl-pad.is-word { flex-basis: 76px; font-size: 13px; }
+.xl-pad:hover { border-color: var(--xl-ink); }
+.xl-pad.is-off { opacity: .28; cursor: default; border-bottom-width: 1px; }
+.xl-pad-n { font-size: 10px; font-weight: 500; color: var(--xl-muted); }
+.xl-pad kbd { position: absolute; top: 3px; right: 4px; font: 500 9px/1 "IBM Plex Mono", ui-monospace, monospace; color: var(--xl-muted); }
+.xl-pad.is-on, .xl-pad.is-hit { background: var(--xl-btn-on); border-color: var(--xl-hot); color: var(--xl-hot); transform: translateY(2px); border-bottom-width: 1px; }
+.xl-pad.is-on .xl-pad-n, .xl-pad.is-hit .xl-pad-n { color: var(--xl-hot); }
+.xl-pad:focus-visible { outline: 2px solid var(--xl-focus); outline-offset: 2px; }
+/* link, embed, the line that made it */
+.xl-share { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+.xl-share[hidden] { display: none; }
+.xl-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.xl-field-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.xl-field textarea { width: 100%; resize: vertical; border: 1px solid var(--xl-line); border-radius: 6px; padding: 8px 10px; background: var(--xl-btn); color: var(--xl-ink);
+  font: 500 13px/1.45 "IBM Plex Mono", ui-monospace, monospace; white-space: pre-wrap; word-break: break-all; }
+.xl-copy { min-height: 30px; padding: 0 10px; font-size: 12px; }
+.xl-note { color: var(--xl-muted); font-size: 13px; margin: 0; }
+.xl-made { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.xl-made > .xl-k { margin: 0; color: var(--xl-hot); }
+.xl-cmds summary { cursor: pointer; color: var(--xl-muted); font-size: 13px; }
+.xl-cmds[open] summary { margin-bottom: 6px; }
+/* framed by <showtime-xray> or an iframe with #embed: no page chrome around the film */
+html[data-xl-embed] body { min-height: 0; }
+html[data-xl-embed] .xl-app { padding: 12px 16px 14px; }
+@media (max-width: 700px) {
+  .xl-app { padding: 12px 16px 24px; }
+  .xl-head, .xl-bar, .xl-meta { min-width: 0; width: 100%; }
+  .xl-title { font-size: 16px; }
+  .xl-head { flex-direction: column; align-items: stretch; }
+  .xl-now { font-size: 13px; text-align: left; }
+  .xl-time { order: 10; width: 100%; font-size: 13px; }
+  .xl-grow { display: none; }
+  .xl-btn { min-height: 44px; padding: 0 10px; }
+  .xl-key-help { display: none; }
+  .xl-track { height: 64px; }
+  .xl-keyrow { gap: 4px; }
+  .xl-keyrow .xl-pad { height: 42px; font-size: 13px; }
+  .xl-keyrow-2 { padding-left: 10px; }
+  .xl-keyrow-3 { padding-left: 26px; }
+  .xl-pads-help { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .xl-app *, .xl-app *::before, .xl-app *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+}

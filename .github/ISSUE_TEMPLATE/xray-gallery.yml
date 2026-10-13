@@ -1,0 +1,105 @@
+name: X-ray for the gallery
+description: Post an X-ray you made to the gallery on the showtime site, with its receipt and its clip's credit.
+title: "[x-ray] "
+labels: ["type: example", "status: triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for sharing one. The gallery: https://faviovazquez.github.io/showtime/xray/
+        Before it appears we run `showtime xray verify` on the film, check the clip's license and credit, and check that
+        nothing is drawn over a person. A new mechanism (an object the library does not have yet) also goes in as a pull
+        request: see "Add an X-ray mechanism" in CONTRIBUTING.md.
+  - type: input
+    id: film
+    attributes:
+      label: The film
+      description: A public link to the finished MP4 (a release asset, a post, a file host). The file itself, not a page about it, if you can.
+      placeholder: https://...
+    validations:
+      required: true
+  - type: input
+    id: object
+    attributes:
+      label: The object
+      description: What it is, as exactly as you know it.
+      placeholder: "An Underwood portable typewriter; a Polyphon disc music box"
+    validations:
+      required: true
+  - type: dropdown
+    id: mechanism-kind
+    attributes:
+      label: The mechanism
+      options:
+        - One from the library, as it ships
+        - One from the library, changed
+        - A new one (I will open, or have opened, a pull request)
+    validations:
+      required: true
+  - type: input
+    id: mechanism
+    attributes:
+      label: Its name, or the pull request
+      placeholder: "typewriter; or #123"
+    validations:
+      required: true
+  - type: dropdown
+    id: layout
+    attributes:
+      label: Layout and look
+      multiple: true
+      options:
+        - See-through (on the object)
+        - Beside the clip
+        - Living diagram
+        - Score, tab or drum sheet
+        - Dark (radiograph)
+        - Light (blueprint)
+  - type: input
+    id: receipt
+    attributes:
+      label: The receipt line
+      description: Paste the line `showtime xray verify` printed for this film, exactly as it printed.
+      placeholder: "19 of 19 events on their frame · audio 0.0 ms from the original"
+    validations:
+      required: true
+  - type: textarea
+    id: commands
+    attributes:
+      label: The commands you ran (optional)
+      description: They go under your film in the gallery, so others can make their own.
+      render: text
+  - type: dropdown
+    id: source
+    attributes:
+      label: Where the clip comes from
+      options:
+        - I filmed it myself
+        - It is under a Creative Commons license (or CC0, or public domain)
+    validations:
+      required: true
+  - type: input
+    id: credit
+    attributes:
+      label: The clip's license and credit line
+      description: For your own footage, the name to credit. For any other clip, its license and credit line and a link to its source.
+      placeholder: "Clip: Erik Pålsson / Sounds of Changes, CC BY 3.0, https://..."
+    validations:
+      required: true
+  - type: input
+    id: handle
+    attributes:
+      label: Credit you as
+      description: Your GitHub handle, shown on the entry.
+      placeholder: "@your-handle"
+  - type: checkboxes
+    id: rules
+    attributes:
+      label: Before you post
+      options:
+        - label: There are no people under the drawing. The inside is drawn over an object only.
+          required: true
+        - label: The receipt line is the one `showtime xray verify` printed for this exact film.
+          required: true
+        - label: I have the right to share this clip under the license above.
+          required: true

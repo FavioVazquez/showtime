@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>X-ray: living diagram</title>
+<!-- The X-ray "diagram" layout: your clip beside an isometric living diagram of the object's inside, both on the
+     film's clock. `showtime new xray <dir> --layout diagram` makes this page the project's index.html and copies the
+     object's scene builder (library/xray/<object>/diagram.js) next to it. The theme is showtime.json
+     "xray": {"theme": "dark" | "light"} (dark by default). Edit the beats in cue.js and the scene in diagram.js;
+     this page lays out the clip, the counters, the sound strip, the end card and the sync marker. -->
+<script src="/_st/stage.js"></script>
+<link rel="stylesheet" href="/_st/themes/fonts/ibm-plex-sans.css">
+<link rel="stylesheet" href="/_st/themes/fonts/ibm-plex-mono.css">
+<link rel="stylesheet" href="/_st/themes/fonts/space-grotesk.css">
+<link rel="stylesheet" href="/_st/themes/fonts/geist.css">
+<link rel="stylesheet" href="/_st/themes/fonts/geist-mono.css">
+<link rel="stylesheet" href="/_st/themes/fonts/instrument-serif.css">
+<link rel="stylesheet" href="/_st/diagram.css">
+<script src="/_st/diagram.js"></script>
+<style>
+  /* the page's own tokens follow the diagram's theme (diagram.css sets --ld-* per data-theme) */
+  :root { --xd-hot: #FF6A3D; --xd-dim: rgba(159,180,207,.28); --xd-plate: rgba(10,15,25,.97); }
+  :root[data-theme="light"] { --xd-hot: #B03A16; --xd-dim: rgba(42,44,48,.22); --xd-plate: rgba(244,243,239,.97); }
+  html, body { margin: 0; }
+  .xd { position: absolute; left: 0; top: 0; overflow: hidden; background: var(--ld-backdrop); background-color: var(--ld-ground); color: var(--ld-ink); }
+  .xd .ld-stage { background: transparent; }
+  #dwin { position: absolute; left: 0; top: 0; overflow: hidden; }
+  #dscale { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+  .xd-frame { position: absolute; inset: 44px; border: 1.5px solid var(--ld-hair); border-radius: 4px; }
+  .xd .ld-kicker, .xd .ld-figno { top: 100px; }
+  .xd .ld-title { font-size: 60px; }
+  .xd .ld-title em, .xd .ld-kicker b { color: var(--xd-hot); }
+  /* the clip: a thin frame with corner ticks, its caption under it */
+  .clipbox { position: absolute; }
+  .clipbox video { position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: fill; display: block; }
+  .clipbox .edge { position: absolute; inset: -9px; border: 1.5px solid var(--ld-hair); border-radius: 3px; }
+  .clipbox .edge i { position: absolute; width: 16px; height: 16px; border-color: var(--xd-hot); border-style: solid; }
+  .clipbox .edge i.a { left: -2px; top: -2px; border-width: 2px 0 0 2px; } .clipbox .edge i.b { right: -2px; top: -2px; border-width: 2px 2px 0 0; }
+  .clipbox .edge i.c { left: -2px; bottom: -2px; border-width: 0 0 2px 2px; } .clipbox .edge i.d { right: -2px; bottom: -2px; border-width: 0 2px 2px 0; }
+  .cap { position: absolute; display: flex; justify-content: space-between; font-family: var(--ld-mono); font-weight: 500; font-size: 25px;
+         letter-spacing: .1em; text-transform: uppercase; color: var(--ld-ink-2); white-space: nowrap; }
+  .cap b { font-weight: 500; color: var(--xd-hot); }
+  /* the sound strip: the clip's events as ticks, a playhead (drawn on a canvas, from the frame) */
+  .strip { position: absolute; }
+  .strip .k { position: absolute; left: 0; top: 0; font-family: var(--ld-mono); font-weight: 500; font-size: 25px; letter-spacing: .1em;
+              text-transform: uppercase; color: var(--ld-ink-2); white-space: nowrap; }
+  .strip .k b { font-weight: 500; color: var(--xd-hot); }
+  .strip canvas { position: absolute; left: 0; }
+  /* counters: keystrokes heard, the paper typed so far */
+  .hud { position: absolute; display: flex; gap: 48px; align-items: flex-end; }
+  .hud .n b { display: block; font-family: 'Space Grotesk', var(--ld-sans); font-weight: 600; font-size: 76px; line-height: .9; font-variant-numeric: tabular-nums; }
+  :root[data-theme="light"] .hud .n b { font-family: 'Instrument Serif', serif; font-weight: 400; font-size: 88px; }
+  .hud span { display: block; margin-top: 10px; font-family: var(--ld-mono); font-weight: 500; font-size: 25px; letter-spacing: .1em; text-transform: uppercase; color: var(--ld-ink-2); }
+  .hud .paper { flex: 1; min-width: 0; }
+  .hud .paper b { display: block; font-family: var(--ld-mono); font-weight: 500; font-size: 40px; line-height: 1.1; white-space: pre; color: var(--ld-ink);
+                  border-bottom: 1.5px solid var(--ld-hair); padding-bottom: 10px; }
+  .hud .paper b i { color: var(--xd-hot); font-style: normal; }
+  /* the end card: the figure's panel turns into the result */
+  .end { position: absolute; background: var(--xd-plate); box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; opacity: 0; visibility: hidden; }
+  .end h2 { margin: 0; font-family: 'Space Grotesk', var(--ld-sans); font-weight: 600; font-size: 80px; line-height: 1.02; letter-spacing: -.025em; text-wrap: balance; }
+  :root[data-theme="light"] .end h2 { font-family: 'Instrument Serif', serif; font-weight: 400; font-size: 92px; letter-spacing: -.01em; }
+  .end h2 em { color: var(--xd-hot); font-style: normal; }
+  .end p { margin: 30px 0 0; font-family: var(--ld-sans); font-size: 31px; line-height: 1.35; color: var(--ld-ink); }
+  .end .receipt { margin-top: 34px; border: 1.5px solid var(--xd-hot); border-radius: 4px; padding: 16px 22px; font-family: var(--ld-mono); font-size: 27px; line-height: 1.4; color: var(--ld-ink); }
+  .end .muted { color: var(--ld-ink-2); font-size: 25px; line-height: 1.45; }
+  /* phone (9:16): every word inside the reels safe box (x 64-916, y 220-1440), 43 px and up */
+  .portrait .cap, .portrait .hud span { font-size: 43px; letter-spacing: .02em; }
+  .portrait .hud { gap: 44px; align-items: baseline; }
+  .portrait .hud .n { display: flex; align-items: baseline; gap: 16px; }
+  .portrait .hud .n b { font-size: 84px; }
+  .portrait .hud .n span { margin-top: 0; }
+  .portrait .hud .paper b { font-size: 44px; padding-bottom: 10px; }
+  .portrait .end h2 { font-size: 88px; }
+  .portrait .end p, .portrait .end .receipt, .portrait .end .muted { font-size: 43px; line-height: 1.3; }
+  /* the sync marker: 6x6 px at (width-10, height-10), black, white only on a kept event's frame; keep it uncovered */
+  #xmark { position: absolute; width: 6px; height: 6px; background: #000; z-index: 99; }
+</style>
+</head>
+<body>
+<div class="xd" id="stage">
+  <div class="xd-frame" id="xframe"></div>
+  <div id="dwin"><div id="dscale"><div class="ld-stage"><div id="ld"></div></div></div></div>
+  <div class="ld-meta ld-kicker" id="kicker"><b>X-ray</b> &nbsp;·&nbsp; the inside, on your clip's clock</div>
+  <div class="ld-meta ld-figno" id="figno">Drawn · a generic manual typewriter</div>
+  <h1 class="ld-title" id="title">Every keystroke, <em>from inside</em></h1>
+  <div class="clipbox" id="clipbox" data-ld-avoid>
+    <video id="clip" src="media/clip.webm" muted playsinline></video>
+    <div class="edge"><i class="a"></i><i class="b"></i><i class="c"></i><i class="d"></i></div>
+  </div>
+  <div class="cap" id="cap" data-ld-avoid><span>Your clip</span><span id="cap-r">its own sound</span></div>
+  <div class="strip" id="strip" data-ld-avoid><div class="k" id="strip-k">The clip’s sound · <b>red</b> = a keystroke</div><canvas id="strip-cv"></canvas></div>
+  <div class="hud" id="hud" data-ld-avoid>
+    <div class="n"><b id="nk">0</b><span id="noun">keystrokes</span></div>
+    <div class="paper" id="textcard"><b id="pp">&nbsp;</b><span id="textlabel">on the paper</span></div>
+  </div>
+  <div class="end" id="end">
+    <h2 id="end-h"></h2>
+    <p id="end-measured"></p>
+    <div class="receipt" id="receipt"></div>
+    <p class="muted" id="end-drawn"></p>
+  </div>
+  <div id="xmark"></div>
+</div>
+<script src="cue.js"></script>
+<script src="diagram.js"></script>
+<script>
+/* The page: load xray.json and showtime.json (inside ST.waitFor, so the first frame waits for them), lay the page out
+   for 16:9 or 9:16, build the scene with the object's builder (XRAY_DIAGRAM[<mechanism>](ctx)) and mount it. Mounting
+   after load works: Diagram.mount registers its own ST.waitFor (fonts and label layout) and its ST.onSeek handler,
+   and the stage waits for gates added while earlier ones resolve. Frames, never seconds: an event's film frame is
+   its xray.json `frame` + offset_frames; the strike peaks on it. */
+(function () {
+  'use strict';
+  var NOUN = { typewriter: ['keystroke', 'keystrokes', 'on the paper'] };
+  var S = null;
+  function el(id) { return document.getElementById(id); }
+  function px(v) { return (Math.round(v * 10) / 10) + 'px'; }
+  function box(e, x, y, w, h) { e.style.left = px(x); e.style.top = px(y); if (w != null) e.style.width = px(w); if (h != null) e.style.height = px(h); }
+  function getJSON(u) { return fetch(u, { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }); }
+  var cue = function (k, d) { return (window.CUE && typeof window.CUE[k] === 'number') ? window.CUE[k] : d; };
+
+  function setup(doc, conf) {
+    if (!doc || !doc.events) throw new Error('xray.json is missing or has no events: run `showtime xray analyze <clip> --job <job>` and copy <job>/xray/xray.json next to index.html');
+    var cfg = (conf && conf.xray) || {};
+    // W, H, fps from the showtime.json just fetched (ST.info() may not have merged it yet in a preview)
+    var W = (conf && conf.width) || ST.info().width, H = (conf && conf.height) || ST.info().height, fps = (conf && conf.fps) || ST.info().fps || 30;
+    var portrait = H > W * 1.2, theme = cfg.theme === 'light' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', theme);
+    var name = cfg.mechanism || 'typewriter', build = window.XRAY_DIAGRAM && window.XRAY_DIAGRAM[name];
+    if (!build) throw new Error('no living-diagram scene for "' + name + '": diagram.js must set XRAY_DIAGRAM.' + name + ' = function (ctx) { return SCENE; }');
+    var nouns = NOUN[name] || [cfg.one || 'event', cfg.noun || 'events', 'read from the clip'];
+    // events: film frames, kinds (skip / return / ... from showtime.json), characters read off the clip
+    var off = Math.round(Number(cfg.offset_frames) || 0), sfps = (doc.source && doc.source.fps) || fps, kinds = {}, text = cfg.text || '', ti = 0;
+    (cfg.skip || []).forEach(function (i) { kinds[i] = 'skip'; });
+    Object.keys(cfg.kinds || {}).forEach(function (i) { kinds[i] = cfg.kinds[i]; });
+    if (off) el('clip').setAttribute('data-offset', String(-off / fps));   // the clip starts at film frame `off`
+    var ev = doc.events.map(function (e, i) {
+      var fr = (Math.abs(sfps - fps) > 0.01 ? Math.floor(e.t * fps + 1e-9) : e.frame) + off;   // verify's arithmetic
+      var kind = kinds[i] || 'event', o = { i: i, frame: fr, strength: e.strength, kind: kind, ch: null };
+      if (kind === 'event' && ti < text.length) o.ch = text[ti++];
+      return o;
+    });
+    var n = ev.filter(function (e) { return e.kind === 'event'; }).length;
+    var stage = el('stage'); stage.style.width = W + 'px'; stage.style.height = H + 'px';
+    if (portrait) stage.classList.add('portrait');
+    var src = doc.source || {}, sw = src.width || 1920, sh = src.height || 1080;
+    var k = W / 1920;                                       // what the diagram runtime scales its stage by (innerWidth / 1920)
+    var lay = {};
+    if (!portrait) {
+      // 16:9: the clip on the left (40 % of the width), the living diagram on the right
+      var cw = Math.round(W * 0.4), ch = Math.round(cw * sh / sw), cx = 112, cy = 252;
+      box(el('clipbox'), cx, cy, cw, ch);
+      box(el('cap'), cx, cy + ch + 20, cw);
+      box(el('strip'), cx, cy + ch + 78, cw, 100); el('strip-cv').style.top = '40px';
+      box(el('hud'), cx, cy + ch + 186, cw);
+      lay.strip = { x: 0, y: 40, w: cw, h: 54 };
+      lay.ps = 1; lay.win = { x: 0, y: 0, w: W, h: H }; lay.dx0 = 0; lay.dy0 = 0;
+      lay.region = [990, 185, 1830, 950];
+      lay.safe = [cx + cw + 60, 150, 1856, 985];
+      lay.clip = [cx + cw + 40, 46, 1874 - (cx + cw + 40), 988];
+      box(el('end'), cx + cw + 40, 45, W - 45 - (cx + cw + 40), H - 90);
+      el('end').style.padding = '0 84px';
+    } else {
+      // 9:16: the clip on top (full width), the living diagram below it, counters and the strip under the diagram
+      ['kicker', 'figno', 'title', 'xframe'].forEach(function (id) { el(id).hidden = true; });
+      var pw = W, ph = Math.round(W * sh / sw), py = 0;
+      box(el('clipbox'), 0, py, pw, ph); el('clipbox').querySelector('.edge').hidden = true;
+      box(el('cap'), 64, Math.max(232, py + ph + 16), 852); el('cap-r').hidden = true;
+      var wy = Math.max(300, py + ph + 80), wh = 1316 - wy;
+      lay.ps = 0.8; lay.win = { x: 0, y: wy, w: W, h: wh };
+      lay.dx0 = (1920 - W / lay.ps) / 2; lay.dy0 = Math.max(0, (1080 - wh / lay.ps) / 2);
+      var D = function (sx, sy) { return [sx / lay.ps + lay.dx0, sy / lay.ps + lay.dy0]; };   // window px -> design px
+      var a = D(0, 0), b = D(W, wh), s0 = D(64, 8), s1 = D(916, wh - 8);
+      lay.region = [a[0] + 40, a[1] + 110, b[0] - 40, b[1] - 20];   // the band on top holds the part names
+      lay.safe = [s0[0], s0[1], s1[0], s1[1]];
+      lay.clip = [a[0], a[1], b[0] - a[0], b[1] - a[1]];
+      box(el('hud'), 64, 1334, 852); el('textlabel').style.display = 'none';
+      box(el('strip'), 64, 1470, W - 128, 84); el('strip-k').hidden = true; el('strip-cv').style.top = '0px';
+      lay.strip = { x: 0, y: 0, w: W - 128, h: 84 };
+      box(el('end'), 0, 0, W, H);                          // the whole frame; its words inside y 220-1440
+      el('end').style.padding = '220px 164px ' + (H - 1440) + 'px 64px';
+    }
+    box(el('dwin'), lay.win.x, lay.win.y, lay.win.w, lay.win.h);
+    // the diagram runtime scales its stage by k itself; this wrapper turns that into the scale this layout wants
+    el('dscale').style.transform = 'translate(' + px(-lay.dx0 * lay.ps) + ',' + px(-lay.dy0 * lay.ps) + ') scale(' + (lay.ps / k) + ')';
+    var cv = el('strip-cv'); cv.width = Math.round(lay.strip.w); cv.height = Math.round(lay.strip.h);
+    cv.style.width = px(lay.strip.w); cv.style.height = px(lay.strip.h);
+    // words
+    el('noun').textContent = portrait ? 'keys' : nouns[1];
+    if (text) el('textlabel').textContent = nouns[2]; else el('textcard').hidden = true;
+    el('cap-r').textContent = (src.duration ? (Math.round(src.duration * 10) / 10) + ' s · ' : '') + 'its own sound';
+    el('end-h').innerHTML = cfg.headline || ('<em>' + n + '</em> ' + nouns[1] + ', seen from inside the machine.');
+    el('end-measured').textContent = cfg.measured || ('Each ' + nouns[0] + ' lit up on the frame its sound was heard' + (text ? '; which key, read from the paper in the clip.' : '.'));
+    el('receipt').textContent = cfg.receipt || (n + ' ' + nouns[1] + ' measured from the clip’s sound');
+    el('end-drawn').textContent = [cfg.drawn || 'Inside view: a generic manual typewriter, drawn, not this exact machine.', cfg.credit || ''].join(' ').trim();
+    var mk = el('xmark'); mk.style.left = (W - 10) + 'px'; mk.style.top = (H - 10) + 'px';
+    S = { W: W, H: H, fps: fps, ev: ev, text: text, portrait: portrait, lay: lay, dur: (src.duration || cue('endcard', 9.4)), n: n };
+    // the scene
+    var ctx = { events: ev, fps: fps, cue: window.CUE || {}, portrait: portrait, region: lay.region, safe: lay.safe, clip: lay.clip,
+                avoid: portrait ? '.xd-none' : null, theme: Diagram.themes[theme] };
+    var scene = window.SCENE = build(ctx);
+    var look = portrait ? { size: { label: Math.ceil(44 / lay.ps), sub: 2, tag: Math.ceil(44 / lay.ps) } } : null;
+    var api = Diagram.mount(scene, { theme: theme, look: look });
+    // a failure inside the diagram's own layout pass would otherwise only leave the labels unplaced: make it loud
+    return api && api.ready.catch(function (e) { setTimeout(function () { throw e; }); throw e; });
+  }
+
+  function strip(f) {
+    var cv = el('strip-cv'), g = cv.getContext('2d'), w = cv.width, h = cv.height, cs = getComputedStyle(document.documentElement);
+    var hot = cs.getPropertyValue('--xd-hot').trim() || '#FF6A3D', ink = cs.getPropertyValue('--ld-ink').trim() || '#EEF2F8', dim = cs.getPropertyValue('--xd-dim').trim();
+    g.clearRect(0, 0, w, h);
+    g.fillStyle = dim; g.fillRect(0, h / 2 - 1, w, 2);
+    S.ev.forEach(function (e) {
+      var x = Math.round((e.frame / S.fps) / S.dur * (w - 4)) + 2, hh = Math.max(8, (0.3 + 0.7 * (e.strength || 0.5)) * (h - 6)), on = e.frame <= f;
+      g.globalAlpha = e.kind === 'skip' ? (on ? 0.55 : 0.25) : (on ? 1 : 0.32);
+      g.fillStyle = e.kind === 'skip' ? ink : hot; g.fillRect(x - 2, (h - hh) / 2, 4, hh);
+    });
+    g.globalAlpha = 1; g.fillStyle = ink;
+    g.fillRect(Math.round(Math.min(1, (f / S.fps) / S.dur) * (w - 4)) + 1, 0, 2, h);
+  }
+
+  function frame(t, fr) {
+    var f = typeof fr === 'number' ? fr : Math.round(t * S.fps);
+    strip(f);
+    var done = S.ev.filter(function (e) { return e.kind === 'event' && e.frame <= f; });
+    el('nk').textContent = done.length;
+    if (S.text) {
+      var typed = done.filter(function (e) { return e.ch != null; }), s = typed.map(function (e) { return e.ch; }).join('');
+      var last = typed.length && f - typed[typed.length - 1].frame < 12, pp = el('pp');
+      pp.textContent = '';
+      if (!s) pp.innerHTML = '&nbsp;';
+      else { pp.appendChild(document.createTextNode(last ? s.slice(0, -1) : s)); if (last) { var i = document.createElement('i'); i.textContent = s.slice(-1); pp.appendChild(i); } }
+    }
+    var e0 = cue('endcard', 9.4), eo = ST.progress(t, e0, e0 + 0.2), end = el('end');
+    end.style.opacity = eo; end.style.visibility = eo > 0 ? 'visible' : 'hidden';
+    el('figno').style.opacity = 1 - eo;
+    if (S.portrait) ['hud', 'cap'].forEach(function (id) { el(id).style.opacity = 1 - eo; el(id).style.visibility = eo < 1 ? 'visible' : 'hidden'; });
+    // the sync marker: white exactly on a kept event's film frame, black otherwise (showtime xray verify reads it)
+    var on = S.ev.some(function (e) { return e.frame === f && e.kind !== 'skip'; });
+    el('xmark').style.background = on ? '#fff' : '#000';
+  }
+
+  ST.waitFor(Promise.all([getJSON('xray.json'), getJSON('showtime.json')]).then(function (r) { return setup(r[0], r[1]); }), 'xray.json and the living diagram');
+  ST.onSeek(function (t, fr) { if (S) frame(t, fr); });
+})();
+</script>
+</body>
+</html>

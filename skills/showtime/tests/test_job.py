@@ -816,6 +816,29 @@ class JobTests(unittest.TestCase):
                          "final.mp4")
 
 
+    def test_git_sha_unreadable_git_is_none(self):
+        """job init in a sandbox that cannot read .git must not crash: no sha, not an error."""
+        from unittest import mock
+        from st.job import ledger
+        repo = self.tmp / "unreadable"
+        (repo / ".git").mkdir(parents=True)
+        (repo / ".git" / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+        with mock.patch.object(Path, "is_file", side_effect=PermissionError(1, "Operation not permitted")), \
+                mock.patch.object(Path, "is_dir", side_effect=PermissionError(1, "Operation not permitted")):
+            self.assertIsNone(ledger._git_sha(repo))
+
+    def test_network_probe_gives_up_when_dns_hangs(self):
+        """The probe stops after its timeout even when the lookup blocks (offline or sandboxed)."""
+        from unittest import mock
+        from st import sandbox
+        with mock.patch("socket.getaddrinfo", side_effect=lambda *a, **k: time.sleep(30)):
+            t0 = time.time()
+            ok, detail = sandbox.probe_network("https://example.invalid/", timeout=0.5)
+        self.assertFalse(ok)
+        self.assertLess(time.time() - t0, 5)
+        self.assertIn("no answer", detail)
+
+
 if __name__ == "__main__":
     argv = [a for a in sys.argv if a != "--fast"]
     t0 = time.time()

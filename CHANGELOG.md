@@ -5,6 +5,66 @@ All notable changes to showtime. Each entry says what changed and why, so this f
 `skills/showtime/lib/st/__init__.py` and `python3 scripts/check_release.py` keeps the plugin manifests, the registry files and
 `setup/package.json` in sync with it.
 
+## 0.4.4 (2026-10-13)
+
+- **New: X-ray, a film of a real thing with its inside drawn on the frames its own sound says.** Film something doing
+  its thing (a typewriter typing, a music box playing, a guitar, a drum kit) and showtime draws the mechanism moving
+  on the object as the camera moves (`--layout through`), beside the clip (`split`; on a phone the clip on top) or as
+  an isometric living diagram next to it (`diagram`), as a dark radiograph or a light blueprint (`--theme`), 16:9 or
+  9:16. `showtime xray analyze <clip> --job <job>` finds every event (a keystroke, a pluck, a hit) in the clip's sound
+  with its time and frame, writes `xray.json` and a `check.jpg` (the waveform with a tick per event), and with
+  `--track --region ... --ref-time` follows the object (`--mask` leaves out hands). `--engine envelope|flux|auto`
+  picks the detector; dense or sustained sound uses the spectral-flux one. `showtime new xray <dir> --mechanism
+  <object>` starts from the mechanism library: six drawings of an inside, each made on a real clip and verified, a
+  manual typewriter, a disc music box, a snap-action switch, a piano, a guitar and a drum kit (an object the library
+  lacks starts as a copy of the closest entry, and anyone can add one). `showtime xray notes <clip> --instrument
+  piano|guitar|musicbox|drums` reads the music with local models and writes `notes.json`, `notes.mid` and
+  `notes.musicxml`: pitches, key, chords and a smooth tempo map for a scrolling score, a string and fret per note for
+  a guitar tab, and every drum hit sorted by sound into kick, snare, hi-hat, toms and cymbals for a drum sheet
+  (General MIDI channel 10 and percussion MusicXML). `showtime xray verify <job>` reads the finished film back: a
+  small marker in a corner is white only on event frames and the film's sound is matched against the clip's, so the
+  receipt says "19 of 19 events on their frame · audio 0.0 ms from the original"; missing or extra events, or audio
+  more than 20 ms off, fail `showtime qa`, and `--band` also checks a scrolling score for stalls and jumps. `qa` also
+  asks for the clip's credit (`xray.credit` in showtime.json, or `xray.own`), and the receipt and the end card carry
+  it. A film made at another frame rate than its clip is converted by `floor(t * film fps) + offset`. The inside is
+  a generic mechanism of that kind of object, which the film says on screen, and which key or note a hit was needs
+  evidence (the paper, a display, the notes), otherwise the film says "a keystroke". Guide: [X-ray](docs/guides/xray.md)
+  and [xray.md](skills/showtime/references/workflows/xray.md). Tests: `test_xray.py`, `test_xray_notes.py`,
+  `test_xray_drums.py`, `test_xray_template.py`.
+- **New: the X-ray live page, a film you play.** `showtime export html <xray project> --interactive` writes
+  `<name>-live.html`, one offline file: the clip with its own sound and the inside drawn on every frame, slow motion,
+  light or dark, see-through or beside, labels on hover, the receipt and the credit. It then went further. Pads under
+  the picture play the next event of their kind from the real clip with its sound (a typewriter's keys laid out as a
+  keyboard, an instrument's notes in pitch order, a kit's drums named as people say them); the keys of your keyboard
+  press them, so you type on the typewriter; dragging the picture scrubs and a click plays the next event.
+  Links are plain anchors: `#hit4`, `#t2.5`, `_light`, `_split` (`#hit4_light`), and the Link button copies one. The page
+  shows the request that made the film in quotes with Copy, then the commands: pass `--prompt "<request>"` to the
+  export (or `xray.made.prompt` in showtime.json); the commands use placeholders and never your paths, `showtime new
+  xray` records only `xray.made` (mechanism, layout, theme), and the export report says what it embedded. The page embeds
+  with `<showtime-xray src="you-live.html" ratio="16/9">` (a poster and a Play button; the one script is `embed.js`) or
+  an iframe with `#embed`, and its policy allows framing. The letter shortcuts moved to Shift (Shift+S quarter speed,
+  Shift+T theme, Shift+L layout). The live export takes the mechanism for its commands from `xray.made`, else from the
+  project's own `mechanism.js`, and warns when it can only guess. Tests: `test_xray_live.py`, `test_xray_made.py`.
+- **New: living diagrams you touch.** A figure's scene can answer the viewer, not only the knobs: `interactive.type`
+  receives every character typed on the figure (from anywhere on the page, or from a Type field on a phone's soft
+  keyboard; Enter and Backspace arrive too), `parts[].press` runs when a part is clicked or tapped (or Enter on its
+  button) and `parts[].drag` turns a knob while the viewer drags the part (`axis`, and `span` in pixels for the whole
+  range). With `type` set, plain letters belong to the scene and the figure's own shortcuts take Shift (Shift+R run
+  again, Shift+L copy link, Shift+1-9 steps). Two new examples start from it: `showtime new diagram <dir> --example
+  typewriter` (type on it: the key goes down, the typebar swings to the print point, the letter lands on the paper,
+  the carriage steps, the bell rings near the margin, Enter returns the carriage) and `--example computer` (what
+  happens when you press a key: the keyboard, a USB poll, an interrupt, RAM, the GPU and the screen's refresh, in slow
+  motion with typical, labelled numbers; click a part to pulse it). The heat pump template's outdoor unit now drags to
+  set the weather. Each still films from its tour, and a figure framed with `#embed` reports its height to the host
+  like an X-ray page. `showtime check` walks a typed line and every pressable part. Tests: `test_figure_examples.py`,
+  `test_figure_computer.py`.
+- **The site's X-ray page.** A gallery of ten films (the typewriter four ways, the music box in a phone and a wide cut,
+  the switch, the piano, the guitar and the drums), each with its receipt, the clip's credit with a link to the
+  clip's file page (a share-alike clip says the film has the same license), and the commands that made it, with a
+  copy button. "Play it live" on a card plays the live page in place (one at a time, on a stage beside the card's
+  words), "Try it live" on the hero, an Embed snippet per card, and a shelf of three figures you touch (type on the
+  typewriter, type on the computer, drag the heat pump's weather). Filters by kind and theme.
+
 ## 0.4.3 (2026-10-13)
 
 - **Recap and repro pick their music per video, and generated videos are quieter on the cuts.** Both used to get

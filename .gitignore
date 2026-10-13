@@ -19,6 +19,7 @@ __pycache__/
 # FavioVazquez/showtime-examples.
 *.mp4
 !benchmarks/plugin-eval/**/*.mp4
+!benchmarks/plugin-eval/**/*.webm
 
 # OS / editor noise
 .DS_Store

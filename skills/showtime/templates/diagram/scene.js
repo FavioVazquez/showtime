@@ -24,7 +24,7 @@ window.SCENE = {
     { id: 'plate', part: 'plate', at: [-2, -2, -2.4], size: [100, 64, 2.4], grid: 6 },
     { id: 'floor-in', part: 'floor', at: [69, -2, 0], size: [29, 64, 0.35], build: CUE.build * 0.5, lift: 0,
       shapes: [{ kind: 'bloom', at: [84, 14, 0.36], r: 15, from: CUE.indoor, dur: 1.8 }] },
-    { kind: 'floortext', at: [13, 59.4, 0], text: 'OUTSIDE 2°C', at0: CUE.build + 0.5 },
+    { kind: 'floortext', at: [13, 59.4, 0], text: 'OUTSIDE', at0: CUE.build + 0.5 },
     { kind: 'floortext', at: [95.6, 61, 0.35], dir: 'y', text: 'INSIDE 21°C', at0: CUE.build + 0.7 },
 
     { id: 'outdoor', part: 'unit', at: [10, 34, 0], size: [24, 18, 24], build: CUE.build + 0.1,
@@ -53,14 +53,14 @@ window.SCENE = {
     { pipe: 'suction' }, { gap: 70 }, { pipe: 'discharge' }, { gap: 26 }, { pipe: 'discharge-in' }, { gap: 120 },
     { pipe: 'liquid' }, { gap: 24 }, { pipe: 'return' }, { gap: 160 }] }],
   labels: [
-    { for: 'outdoor', at: CUE.outdoor, title: 'Outdoor unit', sub: 'soaks up heat, even from 2 °C air' },
+    { for: 'outdoor', at: CUE.outdoor, title: 'Outdoor unit', sub: 'soaks up heat, even from freezing air' },
     { for: 'compressor', at: CUE.compressor + 0.3, title: 'Compressor', sub: 'squeezes the vapour: 4 to 15 bar' },
     { for: 'indoor', at: CUE.indoor + 0.4, title: 'Indoor coil', sub: 'warms the room' },
     { for: 'valve', at: CUE.valve, title: 'Expansion valve', sub: 'pressure drops, the fluid chills' },
   ],
   tags: [
-    { pipe: 'suction', f: 0.42, tone: 'cold', text: '−5 °C', at: CUE.cold },
-    { pipe: 'discharge', f: 0.8, tone: 'hot', text: '70 °C', at: CUE.hot },
+    { id: 't-suction', pipe: 'suction', f: 0.42, tone: 'cold', text: '−5 °C', at: CUE.cold },
+    { id: 't-discharge', pipe: 'discharge', f: 0.8, tone: 'hot', text: '70 °C', at: CUE.hot },
   ],
   focus: [{ part: 'compressor', with: ['suction', 'discharge'], at: CUE.compressor, until: CUE.indoor - 0.5 }],
   // camera keys run in order, each from where the last one left it; focus is a part, a world point or a screen point
@@ -78,7 +78,39 @@ window.SCENE = {
   // everything built and the refrigerant flowing; the viewer hovers the parts (references/workflows/diagram.md)
   interactive: {
     title: 'How a heat pump moves heat',
-    sub: 'It carries heat in from the cold air outside. Hover a part to see what it does and the pipes it joins.',
+    sub: 'It carries heat in from the cold air outside. Drag the outdoor unit to change the weather; hover a part to see what it does.',
     start: CUE.duration,
+    source: 'Illustrative: the refrigerant runs about 7 °C below the outside air, and the heat out per unit of power is taken as 45% of the ideal (Carnot) limit for a 35 °C indoor coil.',
+    parts: [
+      { id: 'outdoor', name: 'Outdoor unit', sub: 'drag it left or right: colder or milder outside', drag: { knob: 'outside', axis: 'x', span: 360 } },
+      { id: 'compressor', name: 'Compressor', sub: 'squeezes the vapour, which heats it' },
+      { id: 'indoor', name: 'Indoor coil', sub: 'gives the heat to the room' },
+      { id: 'valve', name: 'Expansion valve', sub: 'pressure drops, the fluid chills' },
+    ],
+    knobs: { outside: { label: 'Outside air', hint: 'drag the outdoor unit', min: -20, max: 15, step: 1, default: 2, format: function (v) { return v + ' °C'; } } },
+    steps: [{
+      id: 'weather', kicker: 'The weather', knob: 'outside',
+      text: function (s) { return 'At ' + s.outside + ' °C outside, each unit of electricity moves ' + HP.cop(s.outside).toFixed(1) + ' units of heat indoors (illustrative).'; },
+      run: function (fx) {
+        var o = fx.state.outside;
+        fx.say('t-suction', HP.fmt(o - 7), 'cold');
+        fx.say('t-discharge', HP.fmt(Math.round(55 + (15 - o) * 0.6)), 'hot');
+        fx.pulse('outdoor', 'cold'); fx.pulse('compressor', 'hot', { delay: 0.35 });
+      },
+    }],
+    readouts: function (s) {
+      return { rows: [
+        { part: 'outdoor', k: 'Outside air', v: String(s.outside), u: '°C' },
+        { part: 'outdoor', k: 'Refrigerant in', v: String(s.outside - 7), u: '°C', tone: 'cold' },
+        { part: 'compressor', k: 'Heat moved per unit of power', v: HP.cop(s.outside).toFixed(1), u: '×' },
+      ], note: 'Colder air: a bigger lift for the compressor, so less heat per unit of power.' };
+    },
+    tour: [[{ step: 'weather' }, 2200], [{ knob: ['outside', -10] }, 2600], [{ knob: ['outside', 10] }, 2600], [{ knob: ['outside', 2] }, 2600]],
   },
+};
+
+// the illustrative numbers above, from one place: 45% of the Carnot limit for a 35 °C coil and refrigerant 7 °C below the air
+var HP = {
+  cop: function (outside) { var hot = 35 + 273.15, cold = outside - 7 + 273.15; return 0.45 * hot / (hot - cold); },
+  fmt: function (c) { return (c < 0 ? '−' + (-c) : String(c)) + ' °C'; },
 };

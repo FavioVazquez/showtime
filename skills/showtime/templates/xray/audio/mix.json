@@ -1,0 +1,7 @@
+{
+  "duration": 12.8,
+  "tracks": [
+    {"id": "clip", "kind": "sfx", "file": "media/clip.webm", "start": 0, "level": "raw", "fade_out": 0.4}
+  ],
+  "master": {"lufs": -16, "true_peak": -1}
+}

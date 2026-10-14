@@ -15,7 +15,7 @@ All notable changes to showtime. Each entry says what changed and why, so this f
   gives the frame rate and length and lets `xray verify` check the film. The live page's commands then start with
   `xray import`. A film made this way used to need a hand-written `xray.json`. Limits: an events file up to 50 MB and
   100,000 events, film times up to 24 h; a file it cannot hold (NaN or infinity, a huge number, deep nesting, an
-  over-long CSV cell) is refused with the reason, before a job exists. `--strength` with a cell that is not a number
+  over-long CSV cell, a file with a NUL byte (one saved as UTF-16, say)) is refused with the reason, before a job exists. `--strength` with a cell that is not a number
   is refused (a blank cell is strength 0, counted in one warning); `--time-map ",5"` sets T0 alone, and a part given
   twice is refused. The note it writes names the events file, never a folder. A data column named `kind`, `ch`,
   `notes` or `pitches` can no longer break the live page.

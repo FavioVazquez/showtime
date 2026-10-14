@@ -1179,11 +1179,10 @@ class ReaderLimits(unittest.TestCase):
 
     def test_a_csv_cell_the_reader_cannot_take_is_a_refusal(self):
         self.refused(self.f("wide.csv", "t,note\n1," + "x" * 140000 + "\n"), "cannot read wide.csv as a CSV file")
-        try:
-            rows = xray.read_event_rows(self.f("nul.csv", "t,note\n1,a\x00b\n"))[0]        # Python 3.11+ reads a NUL
-            self.assertEqual(len(rows), 1)
-        except ShowtimeError as e:
-            self.assertIn("as a CSV file", str(e))
+        self.refused(self.f("nul.csv", "t,note\n1,a\x00b\n"), "NUL byte")                  # the same on every platform and Python
+        u16 = Path(self.f("u16.csv", "")); u16.write_bytes("t\n1\n".encode("utf-16"))
+        self.refused(u16, "NUL byte")
+        self.refused(u16, "UTF-16")
 
     def test_a_first_row_with_a_huge_number_is_not_a_header(self):
         self.refused(self.f("big1.csv", "1" * 400 + ",2\n0.5,3\n"), "too large to hold")

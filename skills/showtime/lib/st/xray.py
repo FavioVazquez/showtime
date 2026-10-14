@@ -516,6 +516,17 @@ def read_event_rows(path: Path) -> Tuple[List[Dict[str, Any]], List[str]]:
         if size > MAX_EVENTS_BYTES:
             raise ShowtimeError("%s is %.0f MB; an events file may be up to %d MB" % (path.name, size / 1048576.0, MAX_EVENTS_BYTES // 1048576),
                                 hint="keep the events you want in the film (peaks, not the whole signal)")
+        with open(path, "rb") as raw:                          # a NUL byte: csv reads it on some Pythons and drops the row on others
+            at = 0
+            while True:
+                chunk = raw.read(1048576)
+                if not chunk:
+                    break
+                k = chunk.find(b"\x00")
+                if k >= 0:
+                    raise ShowtimeError("%s has a NUL byte (at byte %d)" % (path.name, at + k),
+                                        hint="save it as plain UTF-8 text (a file saved as UTF-16 has one in every character)")
+                at += len(chunk)
         with open(path, encoding="utf-8-sig") as f:
             first = f.read(4096)
             as_json = path.suffix.lower() == ".json" or first.lstrip()[:1] in ("[", "{")

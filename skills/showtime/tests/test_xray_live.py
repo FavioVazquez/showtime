@@ -168,25 +168,28 @@ try {
   }
   // what a viewer does: a key, a click on a tick, the pointer on a part label, space
   await pg.evaluate(`xrayLive.jump(${st.kept[0]})`);
+  const wantKey = await pg.evaluate(`xrayLive.state().events.find((e) => e.i === ${st.kept[1]}).frame`);
   await pg.keyboard.press('ArrowRight');
-  await pg.waitForFunction(() => !window.xrayLive.state().playing && window.xrayLive.state().frame > 0, null, { polling: 100 });
-  await pg.waitForTimeout(300);
-  out.key = await pg.evaluate(`({ frame: xrayLive.state().frame, want: xrayLive.state().events.find((e) => e.i === ${st.kept[1]}).frame })`);
+  // wait for the key's jump itself (the start frame already satisfied "frame > 0", so a slow runner was read too early)
+  await pg.waitForFunction((w) => !window.xrayLive.state().playing && window.xrayLive.state().frame === w, wantKey, { polling: 100, timeout: 10000 }).catch(() => {});
+  out.key = await pg.evaluate(`({ frame: xrayLive.state().frame, want: ${wantKey}, playing: xrayLive.state().playing, focus: document.activeElement && (document.activeElement.className || document.activeElement.tagName) })`);
   const nth = Math.floor(st.kept.length / 2);
   await pg.locator('.xl-tick:not(.is-skip)').nth(nth).click();
-  await pg.waitForTimeout(400);
-  out.tick = await pg.evaluate(`({ frame: xrayLive.state().frame, want: xrayLive.state().events.find((e) => e.i === ${st.kept[nth]}).frame })`);
+  // wait for the jump itself (a slow runner seeks for longer than a fixed pause); if it never lands, say what the page shows
+  const wantTick = await pg.evaluate(`xrayLive.state().events.find((e) => e.i === ${st.kept[nth]}).frame`);
+  await pg.waitForFunction((w) => !window.xrayLive.state().playing && window.xrayLive.state().frame === w, wantTick, { polling: 100, timeout: 10000 }).catch(() => {});
+  out.tick = await pg.evaluate(`({ frame: xrayLive.state().frame, want: ${wantTick}, playing: xrayLive.state().playing, focus: document.activeElement && (document.activeElement.className || document.activeElement.tagName) })`);
   const lab = await pg.evaluate('xrayLive.seek(2.5).then((s) => s.labels[0] || null)');
   if (lab) {
     const box = await pg.evaluate(() => { const r = document.querySelector('.xl-scale').getBoundingClientRect(); return { x: r.left, y: r.top, k: r.width / document.getElementById('stage').offsetWidth }; });
     await pg.mouse.move(box.x + (lab.x + lab.w / 2) * box.k, box.y + (lab.y + lab.h / 2) * box.k);
-    await pg.waitForTimeout(300);
+    await pg.waitForFunction((w) => window.xrayLive.state().hot === w, lab.name.toLowerCase(), { polling: 100, timeout: 10000 }).catch(() => {});
     out.hover = { want: lab.name.toLowerCase(), hot: await pg.evaluate('xrayLive.state().hot') };
     await pg.mouse.move(1, 1);
   }
   await pg.locator('.xl-play').focus(); await pg.locator('.xl-play').blur();
   await pg.keyboard.press(' ');
-  await pg.waitForTimeout(500);
+  await pg.waitForFunction(() => window.xrayLive.state().playing, null, { polling: 100, timeout: 10000 }).catch(() => {});
   out.spacePlays = await pg.evaluate('xrayLive.state().playing');
   await pg.evaluate('xrayLive.pause()');
   out.marker = await pg.evaluate("getComputedStyle(document.getElementById('xmark')).display");
@@ -366,8 +369,8 @@ class TestBrowser(unittest.TestCase):
             self.assertEqual(j["frame"], j["evframe"], j)
             self.assertEqual(j["cur"], j["i"], "the kit's acting event is the one jumped to: %s" % j)
             self.assertEqual(j["s"], 1, "the strike peaks on its event's frame: %s" % j)
-        self.assertEqual(r["key"]["frame"], r["key"]["want"], "→ lands on the next event's frame")
-        self.assertEqual(r["tick"]["frame"], r["tick"]["want"], "a click on a tick lands on its event's frame")
+        self.assertEqual(r["key"]["frame"], r["key"]["want"], "→ lands on the next event's frame: %s" % r["key"])
+        self.assertEqual(r["tick"]["frame"], r["tick"]["want"], "a click on a tick lands on its event's frame: %s" % r["tick"])
         self.assertIn("hover", r, "the sample draws part labels")
         self.assertEqual(r["hover"]["hot"], r["hover"]["want"], "the pointer on a part label lights it")
         self.assertTrue(r["spacePlays"], "space plays")

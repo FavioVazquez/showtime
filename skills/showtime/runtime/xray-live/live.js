@@ -787,14 +787,20 @@
   master.addEventListener('ended', function () { if (S.playing) pause(); });
 
   // ------------------------------------------------------------------ meta: receipt and credit
+  function trimEnd(s) { s = String(s); var n = s.length; while (n > 0 && /[.\s]/.test(s.charAt(n - 1))) n--; return s.slice(0, n); }
   function fillMeta() {
     meta.textContent = '';
     var n = kept.length;
     var rc = mk('p', { 'class': 'xl-receipt' }, meta);
-    rc.textContent = L.receipt || (n + ' ' + noun(n) + ' measured from the clip’s sound (this page carries no verify receipt yet).');
+    var det = L.detector || {}, fromData = det.engine === 'data';   // events from a data stream (xray import), not the sound
+    rc.textContent = L.receipt || (n + ' ' + noun(n) + (fromData ? ' measured from the data' : ' measured from the clip’s sound') + ' (this page carries no verify receipt yet).');
     var drawn = L.drawn || (X && X.mech && X.mech.drawn) || 'The inside is drawn: a generic mechanism of this kind of object, not this exact one.';
-    mk('p', { 'class': 'xl-drawn' }, meta, 'Measured: each ' + noun(1) + '’s frame, from the clip’s own sound. ' + drawn);
+    var how = L.measured || ('Measured: each ' + noun(1) + '’s frame, ' + (fromData
+      ? 'from a data stream, not from the sound' + (det.note ? ' (' + trimEnd(det.note) + ')' : '') + '.'
+      : 'from the clip’s own sound.'));
+    mk('p', { 'class': 'xl-drawn' }, meta, how + ' ' + drawn);
     if (L.credit) mk('p', { 'class': 'xl-credit' }, meta, L.credit);
+    mk('p', { 'class': 'xl-credit' }, meta, 'Sharing a live page shares what is in it: the prompt and the commands it shows, the whole xray block of showtime.json (its made.prompt and made.commands travel with the page even when --prompt shows another prompt), the source recording’s file name and fingerprint (sha256) and, for a film made from data, the events file’s name and fingerprint with its column names, labels and values.');
     // the line that made it: what to ask an agent, and the commands it runs (no local paths: placeholders)
     var made = L.made || {};
     if (made.prompt || (made.commands && made.commands.length)) {

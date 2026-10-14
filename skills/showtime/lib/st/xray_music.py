@@ -718,7 +718,7 @@ def analyze(clip: Any, out_dir: Any, *, t_from: float = 0.0, t_to: Optional[floa
     if instrument not in INSTRUMENTS:
         raise ShowtimeError("--instrument is one of %s (got %r)" % ("|".join(INSTRUMENTS), instrument))
     if not clip.is_file():
-        raise ShowtimeError("clip not found: %s" % clip, hint="pass the video file you filmed")
+        raise ShowtimeError("clip not found: %s" % clip, hint="pass the video you filmed, or the recording (a WAV)")
     if t_to is not None and t_to <= t_from:
         raise ShowtimeError("--to (%g) must be after --from (%g)" % (t_to, t_from))
     if instrument == "drums":

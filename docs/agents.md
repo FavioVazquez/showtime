@@ -317,7 +317,7 @@ Any client that starts local (stdio) servers can use showtime's MCP server on it
 ([@faviovazquez/showtime-mcp](https://www.npmjs.com/package/@faviovazquez/showtime-mcp), also in the MCP Registry as
 `io.github.FavioVazquez/showtime`),
 `{"command": "npx", "args": ["-y", "@faviovazquez/showtime-mcp"]}` (see
-[`packages/npm/README.md`](../packages/npm/README.md)), and [`showtime-0.4.4.mcpb`](https://github.com/FavioVazquez/showtime/releases/download/v0.4.4/showtime-0.4.4.mcpb) from the v0.4.4 release, which
+[`packages/npm/README.md`](../packages/npm/README.md)), and [`showtime-0.4.5.mcpb`](https://github.com/FavioVazquez/showtime/releases/download/v0.4.5/showtime-0.4.5.mcpb) from the v0.4.5 release, which
 Claude Desktop opens with a double click. Setup still runs once on your machine, because the models and tools
 never travel inside a package. Long tools answer with a task id after about
 20 s when a client stops calls early; the `status` tool reports progress and the result.

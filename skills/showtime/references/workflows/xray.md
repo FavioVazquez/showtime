@@ -9,7 +9,8 @@ receipt that proves it.
 ## Essentials
 
 - `showtime xray analyze <clip> --job <job>` measures the clip: every event in its sound (time, frame,
-  strength, band) into `<job>/xray/xray.json`, and `<job>/xray/check.jpg` to look at (§ Steps)
+  strength, band) into `<job>/xray/xray.json`, and `<job>/xray/check.jpg` to look at (§ Steps). A recording
+  with no picture (a WAV) works too; events measured in a data stream come in with `showtime xray import` (§ Inputs)
 - `showtime new xray <job>/project --mechanism <object> [--layout through|split|diagram]`: the inside from the
   mechanism library (`library/xray/`: typewriter, musicbox, switch, piano, guitar, drums), drawn on the tracked object (through), beside the
   clip (split) or as an isometric living diagram (diagram); counters, sound strip, sync marker, end card; copy
@@ -29,17 +30,17 @@ receipt that proves it.
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| Inputs | 44-55 |
-| Steps | 57-84 |
-| Drawing the inside | 86-103 |
-| Verify | 105-114 |
-| Live page | 116-150 |
-| Honesty | 152-161 |
-| See-through | 163-177 |
-| Mechanism library | 179-188 |
-| Credits | 190-194 |
-| Pitfalls | 196-204 |
-| Read next | 206-210 |
+| Inputs | 45-63 |
+| Steps | 65-94 |
+| Drawing the inside | 96-113 |
+| Verify | 115-124 |
+| Live page | 126-163 |
+| Honesty | 165-176 |
+| See-through | 178-192 |
+| Mechanism library | 194-203 |
+| Credits | 205-209 |
+| Pitfalls | 211-219 |
+| Read next | 221-225 |
 
 ## Inputs
 
@@ -49,6 +50,13 @@ receipt that proves it.
   pitches (notes.json, MIDI, MusicXML; key, chords, tempo map, guitar strings and frets), so the page can say which
   note, string or tooth; `--instrument drums` sorts each hit into kick, snare, hi-hat, toms, cymbals or ride
   (notes.json `drums`, a sound-type classifier, not a transcription). Dense music: `analyze --engine flux` (auto picks it when the sound never goes quiet).
+- A recording with no picture (a WAV, a data stream turned into sound): `analyze` reads it like a clip, on a frame
+  grid of `--fps` (default 30; `source.audio_only` in xray.json). The page draws the picture side.
+- Events measured in data, not heard (peaks of a signal, a sensor log): `showtime xray import <events.csv|json>
+  --job <job> --time-map SLOW,T0 [--source <the sound the film plays>]`. Film time = (t_data - T0) x SLOW, frame =
+  floor(t * fps); xray.json says `detector.engine: "data"` and how (`detector.note`, or `--note`). A CSV needs a
+  time column (`t`, `time`, `t_data` or `--column`); `--strength <column>` sizes the events. Make the sound with the
+  same time map, so the events and the sound agree by construction; events outside the film go under `dropped`.
 - What the object is ("an Underwood portable typewriter", "a Polyphon disc music box"). If the user does not
   say, look at 3 frames and name it, then say what you assumed.
 - Helpful: the part of the clip that matters (`--from/--to`), and anything the clip itself shows that fixes
@@ -67,15 +75,17 @@ receipt that proves it.
    (a carriage return, a bell, a gear change). Each kind of event gets its own motion.
 4. `showtime new xray <job>/project --mechanism <object> --duration <clip length + about 3 s>`, then set
    `cue.js` `endcard` to the clip's length. Put the clip, with its sound, in `media/clip.webm`
-   (`showtime footage trim <clip> --webm -o <job>/project/media/clip.webm`; the audio mix plays its sound, the
-   page is muted) and `<job>/xray/xray.json` (and `notes.json`) next to `index.html`. Analyze the file you put in
+   (`showtime footage trim <clip> --webm -o <job>/project/media/clip.webm`, `--overwrite` to replace it; the audio
+   mix plays its sound, the page is muted) and `<job>/xray/xray.json` (and `notes.json`, when there is one: the
+   page reads it only if it is there) next to `index.html`. Analyze the file you put in
    `media/`, so its frames are the film's; a 29.97 fps clip in a 30 fps film is converted by time (floor(t * 30)).
    In `showtime.json` `"xray"`: `skip` (event indexes that are not the object's: a hand bump, a cough), `kinds`
    (`{"18": "return"}`), `text` (what the clip itself shows the events produced, one character each), `place`
    (the mechanism's four anchors on the reference frame, for see-through; no three in a line), `window` (the
    see-through outline, reference-frame pixels; default the tracked region), `panel: true` (16:9 see-through
    with the schematic beside the clip), `theme` (`dark` radiograph or `light` blueprint: `new xray --theme`),
-   `credit` (the clip's credit line; `own: true` for the user's own clip), `receipt`.
+   `credit` (the clip's credit line; `own: true` for the user's own clip), `receipt`, `measured` (one sentence: how
+   the events were measured; the end card and the live page say it).
 5. A library mechanism: place it and check (`showtime check`, `showtime look`, `showtime snap --at` an event's
    time: the struck part must sit on the real one). An object the library lacks: copy the closest
    `mechanism.js` and redraw `draw(k)` (§ Drawing the inside).
@@ -129,15 +139,18 @@ receipt that proves it.
   plays the next hit when paused, and pauses when playing.
 - The picture is the film's own page at that frame: xray.js and mechanism.js (or the diagram scene) draw it, driven by
   the scrub time instead of the renderer. Nothing is drawn twice, so a page that verifies also reads right live.
-- Under the picture: the receipt line (`"xray".receipt`, from `showtime xray verify`) and the credit line. No receipt
-  yet: the page says so. The timeline stops at the clip's end; the sync marker is not shown (it is for verify).
+- Under the picture: the receipt line (`"xray".receipt`, from `showtime xray verify`), how the events were measured
+  (`"xray".measured`, else from xray.json's detector: the clip's sound, or a data stream and its note) and the credit
+  line. No receipt yet: the page says so. The timeline stops at the clip's end; the sync marker is not shown (it is for verify).
 - Links open a moment, as plain anchors (a host that drops `key=value` keeps them): `<file>#hit4` (the 4th event, as
   the page counts it), `#t2.5` (seconds), and the tokens `_light` / `_dark`, `_through` / `_split`, joined with `_`:
   `#hit4_light`, `#t2.5_dark_split`. The page's Link button copies one.
 - Make your own with one line: under the picture, a one-line request (`/showtime x-ray ...`) with Copy, and the
-  commands with Copy. The commands are written with placeholders (`clip.mp4`, `xray-<mechanism>`), never the project's own paths.
+  commands with Copy. The commands are written with placeholders (`clip.mp4`, `xray-<mechanism>`); commands you list yourself go in as written, and the export only warns if one holds a local path.
   The prompt is only what you give: `--prompt "<the request>"` on the export, else `"xray": {"made": {"prompt": ...}}`
-  in showtime.json, else none (the job's request is never read). `showtime new xray` records `"xray": {"made":
+  in showtime.json, else none (the job's request is never read). When the film was not made by the four standard
+  steps (events imported, a mechanism written for it), list the real ones in `"xray": {"made": {"commands": [...]}}`,
+  with placeholders; the export warns when a command names a mechanism the library lacks or carries a local path. `showtime new xray` records `"xray": {"made":
   {"mechanism", "layout", "theme"}}` and nothing else. The export report (and `--json` `made`) states what was embedded.
 - Embed: `<script src=".../xray/embed.js"></script>` and
   `<showtime-xray src="...-live.html" ratio="16/9" title="..." poster="..."></showtime-xray>` show a poster
@@ -152,13 +165,15 @@ receipt that proves it.
 ## Honesty
 
 - Nothing leaves the machine. The job folder holds `xray/source.path` (the absolute path of the clip, so `verify`
-  finds it) and `xray.json` (the clip's file name and sha256): check them before sharing a job folder.
+  finds it) and `xray.json` (the clip's file name and sha256): check them before sharing a job folder. A live page
+  you share carries showtime.json's `xray` block (so `xray.made.prompt` too, even when `--prompt` shows another prompt), the prompt and the commands it shows, the source recording's file name and sha256 and, for a film from `xray import`, the
+  events file's name and sha256 with its column names, labels and values: tell the user before they share it.
 - Say on screen, in plain words: what was measured (the event times from the clip's sound, counts, anything
   read from the picture) and what was drawn (the inside: a generic mechanism of that kind of object, not this
   exact unit).
 - Never invent which key, which note, which gear, unless the clip shows it (the paper, a display) or the user
   told you. "A keystroke" is fine; "the key S" needs evidence.
-- Never put a command that does not exist on the end card.
+- Never put a command that does not exist on the end card or the live page.
 
 ## See-through
 

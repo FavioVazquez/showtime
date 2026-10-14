@@ -8,7 +8,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { startServer } from './server.mjs';
 import { parseCli, runMain, failNow, stage, resolveProject, info, c, fmtTime, fmtDuration, parseTimes, parseTime, UserError, cpuCount, workName, briefOutput, runPyCli, hasPyModule, sinceLastLooked, printSince } from './lib/cli.mjs';
-import { openBrowser, openPage, openLab, parseSize, paceSummary, watchBrowser, closeSoon, STUCK_HINT, onStuckShot } from './lib/stagehost.mjs';
+import { openBrowser, openPage, openLab, parseSize, paceSummary, watchBrowser, closeSoon, STUCK_HINT, onStuckShot, missing404 } from './lib/stagehost.mjs';
 import { textSnapshot, hideText, fontInfo, leafAlpha, captionCollisions, gpuProbeScript } from './lib/audit.mjs';
 import { phoneConfig, createPhone, readNeed, readingRate, ptOf, phoneLine } from './lib/phone.mjs';
 import { brandFindings } from './lib/brandcheck.mjs';
@@ -1500,7 +1500,7 @@ async function main() {
     const compWarns = [...new Set(log.console.filter((m) => (m.type === 'warning' || m.type === 'warn') && /^\[showtime\] /.test(m.text)).map((m) => m.text))];
     for (const t of compWarns.slice(0, 8)) add('warning', 'component', t.replace(/^\[showtime\] /, ''), { fix: /^\[showtime\] diagram:/.test(t) ? 'see references/workflows/diagram.md (showtime guide diagram)' : 'see the component\'s options in references/components.md' });
     for (const u of log.blocked.slice(0, 5)) add('error', 'network', `the page requests ${u}; renders are offline, so this will be missing`, { fix: 'download it into the project (fonts: /_lib/@fontsource/..., libraries: /_lib/<package>/...)' });
-    const missing = log.http.filter((h) => h.status === 404);
+    const missing = missing404(log, proj.config, server.url);   // an X-ray's optional notes.json is not one
     for (const m of missing.slice(0, 8)) add('error', 'missing_file', `missing file: ${m.url.replace(server.url, '')}`, { fix: 'fix the path (paths are relative to the project folder; /_lib/... and /_st/... are built in)' });
     // a load cancelled while it ran (ERR_ABORTED: an image whose src changed again during check's scrubbing, a
     // fetch the page aborted) is not a broken file: the stage host counts it apart, never a finding

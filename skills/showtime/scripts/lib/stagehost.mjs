@@ -224,23 +224,26 @@ export async function guardShot(p, browser, label, pace, cache, pollMs = SHOT_PO
       if (settled) return;
       const now = Date.now() - t0;
       samples.push([now, cpu]);
-      if (Date.now() - start >= SHOT_MAX_MS) return fail(`still not there after ${Math.round(SHOT_MAX_MS / 1000)} s, the longest a screenshot may take`);
-      if (cache.noWork) { timer = setTimeout(tick, pollMs); return; }
-      // the work done since the newest sample at least idleMs old, from the samples the browser answered (a busy
-      // machine may leave one unanswered: that is not idleness); one that answered none for twice that is stuck
-      const since = (ms) => [...samples].reverse().find(([at]) => at <= now - ms);
-      const base = since(idleMs);
-      if (base) {
-        const known = samples.filter(([at, c]) => at >= base[0] && c !== null);
-        if (known.length >= 2 && known[known.length - 1][0] - known[0][0] >= idleMs * 0.8 &&
-            known[known.length - 1][1] - known[0][1] < SHOT_IDLE_CPU_S) {
-          return fail(`its GPU process and renderers did no work for ${Math.round((now - known[0][0]) / 1000)} s: the frame is not coming`);
+      // the two stuck verdicts come before the cap: on a tick that finds both (a late tick on a busy machine, a cap
+      // set low, or a size read that used most of the shared budget), the error says why the frame is not coming
+      if (!cache.noWork) {
+        // the work done since the newest sample at least idleMs old, from the samples the browser answered (a busy
+        // machine may leave one unanswered: that is not idleness); one that answered none for twice that is stuck
+        const since = (ms) => [...samples].reverse().find(([at]) => at <= now - ms);
+        const base = since(idleMs);
+        if (base) {
+          const known = samples.filter(([at, c]) => at >= base[0] && c !== null);
+          if (known.length >= 2 && known[known.length - 1][0] - known[0][0] >= idleMs * 0.8 &&
+              known[known.length - 1][1] - known[0][1] < SHOT_IDLE_CPU_S) {
+            return fail(`its GPU process and renderers did no work for ${Math.round((now - known[0][0]) / 1000)} s: the frame is not coming`);
+          }
+        }
+        const base2 = since(2 * idleMs);
+        if (base2 && samples.every(([at, c]) => at < base2[0] || c === null)) {
+          return fail(`the browser did not say what it was doing for ${Math.round((now - base2[0]) / 1000)} s`);
         }
       }
-      const base2 = since(2 * idleMs);
-      if (base2 && samples.every(([at, c]) => at < base2[0] || c === null)) {
-        return fail(`the browser did not say what it was doing for ${Math.round((now - base2[0]) / 1000)} s`);
-      }
+      if (Date.now() - start >= SHOT_MAX_MS) return fail(`still not there after ${Math.round(SHOT_MAX_MS / 1000)} s, the longest a screenshot may take`);
       timer = setTimeout(tick, pollMs);
     };
     timer = setTimeout(tick, pollMs);
@@ -711,6 +714,16 @@ export function loadFailures(sess) {
   const http = sess.log.http.filter((h) => h.status >= 500 && h.type !== 'media' && isLocalUrl(h.url))
     .map((h) => ({ url: h.url, error: `HTTP ${h.status}`, type: h.type || 'other' }));
   return [...net, ...http];
+}
+
+// files a page asks for only in case they exist: an X-ray's notes.json (from `showtime xray notes`; xray.js fetches it
+// and carries on without it). A 404 for one of them is not a missing file.
+const OPTIONAL_DATA = { xray: ['/notes.json'] };
+
+/** The 404s of a page that are missing files (its optional data files left out). -> [{url, status, type}] */
+export function missing404(log, config, base) {
+  const optional = config && config.xray && typeof config.xray === 'object' ? OPTIONAL_DATA.xray : [];
+  return log.http.filter((h) => h.status === 404 && !optional.includes(String(h.url).replace(base, '').split(/[?#]/)[0]));
 }
 
 /**

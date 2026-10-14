@@ -1514,6 +1514,8 @@ def xray_card(site: Site, page: str, e: dict) -> str:
         if e.get("prompt"):
             rows.append('<div class="xline"><h4>Make your own with one line</h4><p class="ask">\u201c%s\u201d</p></div>' % esc(e["prompt"]))
         rows.append('<details class="xmake"><summary>Make your own</summary>%s</details>' % xray_cmds(e["commands"]))
+        if live:
+            rows.append('<p class="xembed-note">Sharing a live page shares what is in it: the prompt and the commands it shows, the whole xray block of showtime.json (its made.prompt and made.commands travel with the page even when --prompt shows another prompt), the source recording’s file name and fingerprint (sha256) and, for a film made from data, the events file’s name and fingerprint with its column names, labels and values.</p>')
         base = site_url(site.repo)
         if live and base:
             src = base + live

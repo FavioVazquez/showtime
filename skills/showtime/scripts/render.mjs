@@ -12,7 +12,7 @@ import {
 import { checkFreshness, sourcesHash } from './lib/lean.mjs';
 import { FILM_HOOK } from './lib/export/probe.mjs';
 import { chapterTable, checkTiling, checkPieces, joinPieces, reencodePieces, withForcedKeys, seamAudio, framePsnr, pieceName, piecesDir, ONE_MACHINE, SEAM_PSNR_DB, SEAM_PSNR_REL_DB, SEAM_PSNR_FLOOR_DB, seamThreshold, SEAM_LOUDNESS_DB, SEAM_LAG_SAMPLES } from './lib/chapters.mjs';
-import { openBrowser, openStage, openPage, abandonBrowser, PAGE_OPEN_MS, writeDiagnostics, pullScore, parseSize, glRenderer, withTimeout, withPacedTimeout, newPace, paceSummary, pageSetup, setupDiff, loadFailures } from './lib/stagehost.mjs';
+import { openBrowser, openStage, openPage, abandonBrowser, PAGE_OPEN_MS, writeDiagnostics, pullScore, parseSize, glRenderer, withTimeout, withPacedTimeout, newPace, paceSummary, pageSetup, setupDiff, loadFailures, missing404 } from './lib/stagehost.mjs';
 import { resolveFF, ffmpeg, probe, ebur128, writeWavFloat, fpsArg, hasEncoder, setLogFile, logLine, meanFrameDiff, JPEG_VF } from './lib/ff.mjs';
 import { CaptureQueue, OrderedFeed, autoWorkers, machineLimits } from './lib/pipeline.mjs';
 import { renderFlags } from './lib/chrome.mjs';
@@ -1025,7 +1025,7 @@ async function main(retry = null) {
       `${stats.retries} retr${stats.retries === 1 ? 'y' : 'ies'}`);
     if (pageLog.errors.length) addWarn(`${pageLog.errors.length} page error(s) during render, first: ${pageLog.errors[0].message}`);
     if (pageLog.blocked.length) addWarn(`blocked ${pageLog.blocked.length} network request(s) outside localhost (renders are offline), e.g. ${pageLog.blocked[0]}`);
-    const http404 = pageLog.http.filter((h) => h.status === 404);
+    const http404 = missing404(pageLog, cfg, server.url);
     if (http404.length) addWarn(`${http404.length} missing file(s) (404), e.g. ${http404[0].url.replace(server.url, '')}`);
     if (diag && (diag.timers.setTimeout + diag.timers.setInterval) > 0) {
       addWarn(`the page used setTimeout/setInterval ${diag.timers.setTimeout + diag.timers.setInterval} time(s) during playback; timers run in real time, so frames may not match the preview` +

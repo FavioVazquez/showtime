@@ -142,6 +142,14 @@ def near(a, b, tol=14):
     return max(abs(x - y) for x, y in zip(a, b)) <= tol
 
 
+def why_no_cuts(rep, cp=None):
+    """The reason check left out its cut walk: the findings that name it, the timings and the end of stderr."""
+    why = ["%s: %s" % (f.get("code"), f.get("message")) for f in rep.get("findings", [])
+           if f.get("code") in ("cut_probe_failed", "page_error")]
+    return "check returned no cuts (overlay pages and --no-cuts skip the walk without a finding); findings: %s; timings: %s; stderr: %s" % (
+        why or "none", rep.get("timings"), (cp.stderr[-2000:] if cp is not None else "n/a"))
+
+
 @unittest.skipIf(FAST, "needs a browser")
 class CutFrames(unittest.TestCase):
     @classmethod
@@ -168,9 +176,13 @@ class CutFrames(unittest.TestCase):
         self.last_report = json.loads((self.tmp / ("%s.work" % out.stem) / "render.json").read_text(encoding="utf-8"))
         return cols
 
-    def check(self, page, *extra):
+    def check(self, page, *extra, cuts=True):
         cp = showtime("check", self.proj, "--page", page, "--json", "--no-determinism", "--samples", "3", *extra, check=False)
-        return json.loads(cp.stdout)
+        self.assertTrue(cp.stdout.strip(), "check printed no report (rc=%d):\n%s" % (cp.returncode, cp.stderr[-3000:]))
+        rep = json.loads(cp.stdout)
+        if cuts:
+            self.assertTrue("cuts" in rep, why_no_cuts(rep, cp))
+        return rep
 
     def test_scene_times_are_a_hair_after_the_frame(self):
         for k in range(1, N):
@@ -220,7 +232,7 @@ class CutFrames(unittest.TestCase):
 
     def test_no_cuts_skips_the_walk(self):
         # --no-cuts (test_showreel's aspects, #14): no second page walks the cuts, so a late page goes unreported
-        rep = self.check("own.html", "--no-cuts")
+        rep = self.check("own.html", "--no-cuts", cuts=False)
         self.assertNotIn("cuts", rep)
         self.assertNotIn("cuts", rep["timings"])
         self.assertEqual([f for f in rep["findings"] if f["code"] == "late_first_frame"], [])
@@ -236,8 +248,9 @@ class CutFrames(unittest.TestCase):
         cp = showtime("check", reel, "--json", "--no-determinism", "--samples", "3", check=False, timeout=900)
         self.assertTrue(cp.stdout.strip(), "check printed no report (rc=%d):\n%s" % (cp.returncode, cp.stderr[-3000:]))
         rep = json.loads(cp.stdout)
+        self.assertTrue("cuts" in rep, why_no_cuts(rep, cp))
         self.assertEqual([f for f in rep["findings"] if f["code"] == "late_first_frame"], [])
-        self.assertGreaterEqual(len(rep.get("cuts") or []), 5, rep.get("cuts"))
+        self.assertGreaterEqual(len(rep["cuts"]), 5, rep["cuts"])
         self.assertFalse([c for c in rep["cuts"] if c["late"]], rep["cuts"])
 
 

@@ -54,6 +54,10 @@ try:
 except ImportError:
     library = None  # type: ignore[assignment]
 
+class _Server(http.server.ThreadingHTTPServer):
+    request_queue_size = 128     # Windows refuses connects past the default backlog (5)
+
+
 SAM_PATH = REPO / "scripts" / "stage_audio_mirror.py"
 
 # A port in this sandbox's "no network" regime refuses instantly (PermissionError) instead of hanging;
@@ -139,7 +143,7 @@ def fixture_server(files=None, codes=None):
     _Handler.codes = dict(codes or {})
     _Handler.hits = []
     try:
-        srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+        srv = _Server(("127.0.0.1", 0), _Handler)
     except PermissionError:
         raise unittest.SkipTest("local port binding is disabled in this sandbox")
     th = threading.Thread(target=srv.serve_forever, daemon=True)

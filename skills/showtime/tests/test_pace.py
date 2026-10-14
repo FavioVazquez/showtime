@@ -24,14 +24,15 @@ seeks, and every wait is its fixed value times a factor of 1-5 (never shorter th
     drawn again in a new browser; check, whose screenshots had no deadline, ends with an error naming its step;
     SHOWTIME_TIMEOUT ends a render at the caller's limit with an error naming each part's step
   * a clipped screenshot's read of the page's size, which waits for the frame the seek drew (issue #14): a main
-    thread held past the old flat 60 s (3 s at the test scale) while its renderer works is waited for; a stopped
-    renderer still fails the read with the stuck-frame guard's error
+    thread held past the old flat 60 s (15 s x the page's pace at the test scale) while its renderer works is waited
+    for; a stopped renderer still fails the read with the stuck-frame guard's error
   * a page load that never reaches DOMContentLoaded fails as the page (check's ready_failed, with a report) at the
     load deadline inside the page-open one, never as a stuck browser; on check's second pages it stays a soft
     finding (issue #14 review)
   * the stuck-frame guard on a browser that cannot report its work (CDP replies faked, node only): one whose
     SystemInfo.getProcessInfo answers with an error is asked once and then only the screenshot cap applies, a late
-    frame still comes through; one that does not answer at all is stuck after twice the idle time
+    frame still comes through; one that does not answer at all is stuck after twice the idle time, and named so
+    even on the tick that also reaches the cap
   * only Linux render browsers have --disable-frame-rate-limit (with it a renderer keeps working after the GPU
     process stops, so on macOS the guard never sees the stop; likely what stalled the macOS CI runners in 0.4.1)
 
@@ -98,6 +99,11 @@ STUCK_AT = (r"stuck at: (creating the browser context|opening a tab|setting up t
             r"waiting for the page to be ready)")
 
 
+def shot_idle_ms():
+    """stagehost's SHOT_IDLE_MS: the stuck-frame guard's idle window before the test scale (tests derive from it)."""
+    return node("const S = await import(%s); console.log(JSON.stringify(S.SHOT_IDLE_MS));" % json.dumps(STAGEHOST))
+
+
 def write(path, text):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
@@ -144,14 +150,10 @@ console.log(JSON.stringify({ factor: pace.factor, summary: S.paceSummary([{ pace
         self.assertTrue(r["summary"].get("off"))
 
 
-    def test_stuck_frame_guard_browser_cannot_report_its_work(self):
-        """The stuck-frame guard (stagehost guardShot) reads the browser's drawing work with CDP
-        SystemInfo.getProcessInfo. A browser that ANSWERS WITH AN ERROR (an older headless shell without that method)
-        cannot say what it is doing: the guard remembers it (cache.noWork), stops asking, and only the screenshot cap
-        (SHOT_MAX_MS) applies; it never reads the silence as a stuck browser. One that does not answer at all is
-        different: it is stuck once it has said nothing for twice the idle time. The CDP replies are faked, the waits
-        shrunk (idle 30 s -> 0.3 s, polls every 50 ms, cap 2 s)."""
-        r = node("""
+    # The guard's fake-browser runs (node only). Every wait is derived from stagehost's own SHOT_IDLE_MS under the test
+    # scale: idle = SHOT_IDLE_MS x scale (each read of the browser's work may take that long too), a browser that
+    # answers nothing is stuck once it has said nothing for 2 x idle, and the work is read every POLL_MS.
+    GUARD_JS = """
 const S = await import(%s);
 const never = () => new Promise(() => {});
 const fake = (send) => { const b = { sessions: 0, sends: 0 };
@@ -159,34 +161,82 @@ const fake = (send) => { const b = { sessions: 0, sends: 0 };
   return b; };
 const rejects = () => { throw new Error("Protocol error (SystemInfo.getProcessInfo): 'SystemInfo.getProcessInfo' wasn't found"); };
 const run = async (b, frame, cache) => { const t0 = Date.now();
-  const o = await S.guardShot(frame, b, 'screenshot', S.newPace(), cache, 50).then((v) => ({ ok: v }), (e) => ({ err: e.message, stuck: !!e.browserStuck }));
+  const o = await S.guardShot(frame, b, 'screenshot', S.newPace(), cache, %d).then((v) => ({ ok: v }), (e) => ({ err: e.message, stuck: !!e.browserStuck }));
   return { ...o, ms: Date.now() - t0 }; };
-const out = {};
+const out = { idle: S.baseWait(S.SHOT_IDLE_MS), cap: S.SHOT_MAX_MS };
+"""
+    POLL_MS = 50
+
+    def guard(self, scale, cap_ms, body):
+        return node((self.GUARD_JS % (json.dumps(STAGEHOST), self.POLL_MS)) + body + "\nconsole.log(JSON.stringify(out));\n",
+                    env=dict(ENV, SHOWTIME_TEST_WAIT_SCALE=str(scale), SHOWTIME_SHOT_TIMEOUT=str(cap_ms / 1000),
+                             SHOWTIME_PACE="1"))
+
+    def test_stuck_frame_guard_browser_cannot_report_its_work(self):
+        """The stuck-frame guard (stagehost guardShot) reads the browser's drawing work with CDP
+        SystemInfo.getProcessInfo. A browser that ANSWERS WITH AN ERROR (an older headless shell without that method)
+        cannot say what it is doing: the guard remembers it (cache.noWork), stops asking, and only the screenshot cap
+        (SHOT_MAX_MS) applies; it never reads the silence as a stuck browser. One that does not answer at all is
+        different: it is stuck once it has said nothing for twice the idle time. The CDP replies are faked, the waits
+        shrunk (idle 30 s -> 0.3 s, polls every 50 ms). The cap (4 s) is far past the silent browser's verdict (about
+        1.05 s: three unanswered reads of 0.3 s each): with a 2 s cap a loaded Windows runner's late timers reached
+        the cap first (nightly 14 Oct)."""
+        scale, cap_ms = 0.01, 4000
+        idle = shot_idle_ms() * scale
+        late_ms = int((2 * idle + cap_ms) / 2)   # well past twice the idle time, well before the cap
+        r = self.guard(scale, cap_ms, """
 // 1. the browser answers with an error and the frame never comes: only the cap ends it, not the idle rules
 let b = fake(rejects), cache = {};
-out.cap = await run(b, never(), cache);
-out.cap.sessions = b.sessions; out.cap.sends = b.sends; out.cap.noWork = cache.noWork === true;
-// 2. the same browser, a frame that comes late (well past twice the idle time, 0.6 s): it is not called stuck
+out.cap_run = await run(b, never(), cache);
+out.cap_run.sessions = b.sessions; out.cap_run.sends = b.sends; out.cap_run.noWork = cache.noWork === true;
+// 2. the same browser, a frame that comes late (past twice the idle time): it is not called stuck
 b = fake(rejects); cache = {};
-out.late = await run(b, new Promise((r) => setTimeout(() => r('frame'), 1400)), cache);
+out.late = await run(b, new Promise((r) => setTimeout(() => r('frame'), %d)), cache);
 out.late.noWork = cache.noWork === true;
 // 3. a browser that does not answer: stuck after twice the idle time, long before the cap
 b = fake(never); cache = {};
 out.silent = await run(b, never(), cache);
 out.silent.noWork = cache.noWork === true;
-console.log(JSON.stringify(out));
-""" % json.dumps(STAGEHOST), env=dict(ENV, SHOWTIME_TEST_WAIT_SCALE="0.01", SHOWTIME_SHOT_TIMEOUT="2", SHOWTIME_PACE="1"))
-        cap, late, silent = r["cap"], r["late"], r["silent"]
-        self.assertRegex(cap["err"], r"^timed out after 2s: screenshot \(still not there after 2 s, the longest a screenshot may take\)$")
+""" % late_ms)
+        self.assertEqual((r["idle"], r["cap"]), (idle, cap_ms), r)   # the waits this test derives are the module's
+        cap, late, silent = r["cap_run"], r["late"], r["silent"]
+        # the cap's value exactly; the time it took (rounded, so a late tick may say a second more) is checked by ms
+        self.assertRegex(cap["err"], r"^timed out after \d+s: screenshot \(still not there after %d s, the longest a "
+                         r"screenshot may take\)$" % (cap_ms // 1000))
         self.assertTrue(cap["stuck"])
-        self.assertGreaterEqual(cap["ms"], 1900)   # not before the cap
+        self.assertGreaterEqual(cap["ms"], cap_ms - 100)   # not before the cap
         self.assertEqual((cap["sessions"], cap["sends"], cap["noWork"]), (1, 1, True), cap)   # asked once, then never again
         self.assertEqual(late["ok"], "frame", late)
+        self.assertGreaterEqual(late["ms"], late_ms - 100, late)
         self.assertTrue(late["noWork"])
         self.assertRegex(silent["err"], r"\(the browser did not say what it was doing for \d+ s\)$")
         self.assertTrue(silent["stuck"])
-        self.assertLess(silent["ms"], 1900)
+        self.assertGreaterEqual(silent["ms"], 2 * idle - 100, silent)   # not before twice the idle time
+        self.assertLess(silent["ms"], cap_ms - 100, silent)
         self.assertFalse(silent["noWork"])
+
+    def test_stuck_frame_guard_names_the_stuck_browser_at_the_cap(self):
+        """On a tick that finds both a browser silent for twice the idle time and the cap reached, the error names the
+        silent browser, not the cap (the cap check came first: a busy machine's late tick, a cap set low, or a size
+        read that used most of a shot's shared budget then got the less helpful reason). The browser does not
+        answer; each unanswered read takes the idle time, so the reads end about (poll + idle) apart and the silence
+        is known at the third. The cap falls between the second and the third (at 2.6 x (poll + idle)): it is
+        reached on the tick that finds the silence, with 0.6 x (poll + idle) to spare for late timers before the
+        second. Idle 6 s here (scale 0.2): 3.6 s to spare, over three times the late timers that ended the old cap
+        test on a loaded Windows runner (at least about 1 s)."""
+        scale = 0.2
+        idle = shot_idle_ms() * scale
+        step = self.POLL_MS + idle
+        cap_ms = int(2.6 * step)
+        r = self.guard(scale, cap_ms, """
+const b = fake(never), cache = {};
+out.both = await run(b, never(), cache);
+""")
+        self.assertEqual((r["idle"], r["cap"]), (idle, cap_ms), r)
+        both = r["both"]
+        self.assertRegex(both["err"], r"\(the browser did not say what it was doing for \d+ s\)$", both)
+        self.assertTrue(both["stuck"])
+        self.assertGreaterEqual(both["ms"], cap_ms - 100, both)   # the cap was reached on that tick too
 
     def test_no_frame_rate_limit_flag(self):
         """render's browsers draw on Chrome's own frame clock on macOS and Windows: with --disable-frame-rate-limit a
@@ -416,8 +466,19 @@ class TestSizeReadWaitsForTheFrame(unittest.TestCase):
     itself returns in milliseconds, so the page's pace stays 1). It had a flat 60 s and ended check on a 4-core CI
     runner without a GPU ("timed out after 60s: reading the page's size", issue #14). It is now guarded like the
     screenshot it belongs to (guardShot): waited for while the browser's drawing processes work, failed once they do
-    nothing. Here a renderer kept busy past the old deadline (SHOWTIME_TEST_WAIT_SCALE=0.05: 3 s for the old 60 s)
-    stands in for the GPU process at work, and a stopped renderer for a page that is truly stuck."""
+    nothing. Here a renderer kept busy past the old deadline stands in for the GPU process at work, and a stopped
+    renderer for a page that is truly stuck.
+
+    The busy page runs at SHOWTIME_TEST_WAIT_SCALE=0.25 (15 s for the old 60 s, x the page's pace). The scale also
+    shrinks what the guard allows the browser to answer it (SystemInfo.getProcessInfo): one read may take the idle
+    time (SHOT_IDLE_MS x scale) and a browser silent for twice that is stuck. At 0.05 that was 1.5 s and 3 s, and on
+    a loaded Windows runner two late answers ended a busy read as "the browser did not say what it was doing"
+    (nightly 14 Oct); on a real machine they are 15 s and 60 s. At 0.25 they are 7.5 s and 15 s: reads every 5 s
+    start at 5 s, so the browser cannot be found silent before about 27 s, after the page lets go. The stopped page
+    keeps 0.05 (it fails in seconds: the idle window is 1.5 s)."""
+
+    OLD_READ_MS = 60000   # the read's flat deadline before guardShot (x the page's pace)
+    BUSY_MARGIN_MS = 5000   # the page is held this long past the old deadline
 
     @classmethod
     def setUpClass(cls):
@@ -434,20 +495,23 @@ class TestSizeReadWaitsForTheFrame(unittest.TestCase):
     def tearDownClass(cls):
         shutil.rmtree(str(cls.tmp), ignore_errors=True)
 
-    def run_shot(self, stop):
+    def run_shot(self, stop, scale):
         # the main thread is held right after the seek returns (a task queued by a call that returns at once, not
-        # onSeek, which would hold the seek itself and raise the page's pace), then a clipped screenshot is taken
+        # onSeek, which would hold the seek itself and raise the page's pace), then a clipped screenshot is taken;
+        # it is held past the old deadline at the pace the page measured (the pace does not change after the seek)
         code = """
 const S = await import(%s);
 const { startServer } = await import(%s);
 const server = await startServer({ root: %s, port: 0 });
 const b = await S.openBrowser({});
 const stop = %s;
-let out, stopped = [];
+let out, extra = {}, stopped = [];
 try {
   const sess = await S.openStage(b.browser, { url: server.url, page: 'index.html', config: { width: 320, height: 180, fps: 10, duration: 1 } });
   await sess.seek(0.5);
-  await sess.page.evaluate(() => { setTimeout(() => busy(20000), 0); return true; });
+  const old = S.baseWait(%d) * sess.pace.factor, hold = old + %d;
+  extra = { old, hold, idle: S.baseWait(S.SHOT_IDLE_MS), pace: sess.pace.factor };
+  await sess.page.evaluate((ms) => { setTimeout(() => busy(ms), 0); return true; }, hold);
   if (stop) {
     const cdp = await b.browser.newBrowserCDPSession();
     const info = await cdp.send('SystemInfo.getProcessInfo');
@@ -457,8 +521,9 @@ try {
   const t0 = Date.now();
   try {
     const img = await sess.shot({ format: 'jpeg', scale: 0.5 });
-    out = { ok: true, ms: Date.now() - t0, size: S.imageSize(img), pace: sess.pace.factor };
+    out = { ok: true, ms: Date.now() - t0, size: S.imageSize(img) };
   } catch (e) { out = { ok: false, ms: Date.now() - t0, error: String(e.message || e) }; }
+  out = { ...out, ...extra };
   for (const pid of stopped) { try { process.kill(pid, 'SIGCONT'); } catch {} }
   await sess.close();
 } catch (e) { out = { ok: false, error: 'setup: ' + String(e.message || e) }; }
@@ -467,24 +532,30 @@ await S.closeSoon(b.browser.close());
 await server.close().catch(() => {});
 console.log(JSON.stringify(out));
 process.exit(0);
-""" % (json.dumps(STAGEHOST), json.dumps(SERVER), json.dumps(str(self.proj)), "true" if stop else "false")
-        return node(code, env=dict(ENV, SHOWTIME_TEST_WAIT_SCALE="0.05"), timeout=180)
+""" % (json.dumps(STAGEHOST), json.dumps(SERVER), json.dumps(str(self.proj)), "true" if stop else "false",
+       self.OLD_READ_MS, self.BUSY_MARGIN_MS)
+        # the hold is at most 5 x the old deadline (the pace's ceiling) plus the margin; the rest is the browser
+        timeout = int(5 * self.OLD_READ_MS * scale / 1000 + self.BUSY_MARGIN_MS / 1000) + 150
+        return node(code, env=dict(ENV, SHOWTIME_TEST_WAIT_SCALE=str(scale)), timeout=timeout)
 
     def test_busy_page_is_waited_for(self):
-        """The read waits out a main thread held 20 s, past the old deadline (3 s x the page's pace, 15 s at most;
-        60 s x pace on a real machine), because the renderer keeps working. On the CI runner the pace stayed 1 (the
-        seek was fast); a slow runner's page may measure more, and the old deadline grows with it."""
-        r = self.run_shot(stop=False)
+        """The read waits out a main thread held past the old deadline (15 s x the page's pace here, 60 s x pace on
+        a real machine) by 5 s, because the renderer keeps working. On the CI runners the pace stays 1 (the seek is
+        fast: a 20 s hold); a slow runner's page may measure more, and the old deadline and the hold grow with it."""
+        scale = 0.25
+        r = self.run_shot(stop=False, scale=scale)
+        self.assertEqual((r.get("old"), r.get("idle")), (self.OLD_READ_MS * scale * r.get("pace", 1),
+                                                         shot_idle_ms() * scale), r)
         self.assertTrue(r["ok"], r)
         self.assertEqual(r["size"], [160, 90], r)
-        self.assertGreater(r["ms"], 3000 * r["pace"], r)
-        self.assertGreaterEqual(r["ms"], 15000, r)
+        self.assertGreater(r["ms"], r["old"], r)   # past the old deadline at the page's pace
+        self.assertGreaterEqual(r["ms"], r["hold"] - 2000, r)   # the read ended with the hold, not before
 
     @unittest.skipIf(sys.platform == "win32", "SIGSTOP is POSIX")
     def test_stopped_page_still_fails(self):
         """A renderer that does no work at all (stopped) still fails the read, as a stuck screenshot does (#24), in
         seconds here (the idle window is 1.5 s at this scale, read every 5 s), naming the step."""
-        r = self.run_shot(stop=True)
+        r = self.run_shot(stop=True, scale=0.05)
         self.assertFalse(r["ok"], r)
         self.assertRegex(r["error"], r"timed out after \d+s: reading the page's size " + STUCK_FRAME)
         self.assertLess(r["ms"], 60000, r)

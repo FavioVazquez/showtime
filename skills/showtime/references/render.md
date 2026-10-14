@@ -6,6 +6,8 @@ slow, fails, or looks different from the preview; or when you need the exact fla
 
 ## Essentials
 
+- "The template is close enough" is not done: set the length (`--duration <len>` at `new`, `retime -d` later) and
+  replace every placeholder (a template's `74 %`, `northwind.example`); `check` flags what it can see
 - Order: `showtime preview`, `showtime check`, `showtime look`, `showtime render <p> --preview`, then the
   final `showtime render <p>`; every command takes `--help` and `--json` (§ The loop)
 - Run `showtime check <project>` before every final render: fix every error, read every warning. After
@@ -45,15 +47,15 @@ slow, fails, or looks different from the preview; or when you need the exact fla
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| The loop | 58-136 |
-| showtime render <project> | 138-279 |
-| showtime check <project> | 281-341 |
-| showtime snap <project / video> | 343-364 |
-| showtime preview <project> | 366-383 |
-| showtime retime <project> -d <seconds> | 385-440 |
-| Speed | 442-545 |
-| Troubleshooting | 547-561 |
-| Platforms | 563-578 |
+| The loop | 60-138 |
+| showtime render <project> | 140-281 |
+| showtime check <project> | 283-343 |
+| showtime snap <project / video> | 345-366 |
+| showtime preview <project> | 368-385 |
+| showtime retime <project> -d <seconds> | 387-442 |
+| Speed | 444-547 |
+| Troubleshooting | 549-563 |
+| Platforms | 565-580 |
 
 ## The loop
 

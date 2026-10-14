@@ -80,12 +80,19 @@
       if (!this._box || this._frame) return this._frame || null;
       var src = this.getAttribute('src');
       if (!src) return null;
+      // a relative, http(s) or file address only (a post opened from disk loads its film): anything else
+      // (javascript:, data:, vbscript:) leaves the poster
+      var url; try { url = new URL(src, location.href); } catch (e) { return null; }
+      if (url.protocol !== 'http:' && url.protocol !== 'https:' && url.protocol !== 'file:') return null;
       var hit = parseInt(this.getAttribute('hit'), 10);
       var f = D.createElement('iframe');
       f.className = 'stx-frame';
       f.title = this.getAttribute('title') || 'X-ray, live';
       f.setAttribute('allow', 'autoplay; fullscreen; clipboard-write');
-      f.src = src.split('#')[0] + '#embed' + (hit > 0 ? '_hit' + hit : '');
+      // the live page is one offline file that needs only its own scripts: no storage, forms, popups or top navigation
+      f.setAttribute('sandbox', 'allow-scripts');
+      url.hash = '';
+      f.src = url.href + '#embed' + (hit > 0 ? '_hit' + hit : '');
       // until the page reports its height: the film plus room for its controls
       var w = this._box.clientWidth || 640;
       f.style.height = Math.round(w / this._ratio + (w < 700 ? 360 : 300)) + 'px';

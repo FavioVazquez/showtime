@@ -185,5 +185,6 @@ These guides are also a searchable site: **[faviovazquez.github.io/showtime/docs
 | [CHANGELOG.md](../CHANGELOG.md) | what changed and why, so it also answers "where did X go?" ([What's new](whats-new.md) is the short version) |
 | [showtime-examples](https://github.com/FavioVazquez/showtime-examples/blob/main/examples/README.md) | every example with its request, commands and review rounds, in its own repository |
 | [assets/brand/](../assets/brand/BRAND.md) | the Curtain Call brand: logo, colours, type, the sting and the sound logo |
+| [benchmarks/routing-eval/](../benchmarks/routing-eval/README.md) | for contributors: the routing eval, one case per workflow guide (does SKILL.md send a request to the right guide?) |
 
 <p align="center"><sub><code>showtime --help</code> lists every command with examples; <code>showtime &lt;command&gt; --help</code> has the details.</sub></p>

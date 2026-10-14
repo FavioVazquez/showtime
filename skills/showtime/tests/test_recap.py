@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import _isolate  # noqa: F401  (run from a scratch folder: never write into the repository)
 
+import collections
 import json
 import re
 import os
@@ -167,6 +168,50 @@ class TestParser(Base):
         (self.tmp / "empty.jsonl").write_text("\n\nnot json\n", encoding="utf-8")
         with self.assertRaises(ShowtimeError):
             rc.parse_session(self.tmp / "empty.jsonl")
+
+
+class TestRealPath(unittest.TestCase):
+    def test_windows_short_name_expands(self):
+        """On Windows _real resolves a drive path (8.3 RUNNER~1 -> longname); elsewhere a drive path is left alone."""
+        class FakePath:
+            normpath = staticmethod(os.path.normpath)
+
+            @staticmethod
+            def realpath(p):
+                return p.replace("RUNNER~1", "longname")
+
+        class FakeOs:
+            name = "nt"
+            path = FakePath
+        with mock.patch.object(rc, "os", FakeOs):
+            self.assertEqual(rc._real("C:\\Docs\\RUNNER~1\\repo"), "c:/Docs/longname/repo")
+        FakeOs.name = "posix"
+        with mock.patch.object(rc, "os", FakeOs):
+            self.assertEqual(rc._real("C:\\Docs\\RUNNER~1\\repo"), "c:/Docs/RUNNER~1/repo")
+
+    def test_a_short_name_repository_matches_long_name_files(self):
+        """git reports the folder as it was given (RUNNER~1); the files the session touched carry the long name."""
+        class FakePath:
+            normpath = staticmethod(os.path.normpath)
+            isdir = staticmethod(lambda p: False)
+
+            @staticmethod
+            def realpath(p):
+                return p.replace("RUNNER~1", "longname")
+
+        class FakeOs:
+            name = "nt"
+            path = FakePath
+        ses = {"cwds": collections.Counter({"C:\\Docs\\RUNNER~1\\repo": 3})}
+        with mock.patch.object(rc, "os", FakeOs), mock.patch.object(rc, "git_toplevel", return_value="c:/Docs/RUNNER~1/repo"), \
+                mock.patch.object(rc, "_common_dir", return_value=""):
+            top, roots = rc.repo_roots(ses)
+            self.assertEqual(top, "c:/Docs/longname/repo")
+            self.assertTrue(rc.inside("C:\\Docs\\longname\\repo\\src", roots))
+            self.assertTrue(rc.inside("C:\\Docs\\RUNNER~1\\repo\\src", roots))
+            self.assertEqual(rc.rel_path("C:\\Docs\\longname\\repo\\src\\a.py", roots), "src/a.py")
+            self.assertEqual(rc.rel_path("C:\\Docs\\RUNNER~1\\repo\\src\\a.py", roots), "src/a.py")
+            self.assertIsNone(rc.rel_path("C:\\Docs\\longname\\repo-evil\\a.py", roots))
 
 
 class TestAllowList(Base):

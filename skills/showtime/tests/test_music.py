@@ -58,6 +58,10 @@ from st.common import ShowtimeError  # noqa: E402
 from st.audio import credits as cr  # noqa: E402
 from st.audio import music, packs  # noqa: E402
 
+class _Server(http.server.ThreadingHTTPServer):
+    request_queue_size = 128     # Windows refuses connects past the default backlog (5)
+
+
 NETWORK = os.environ.get("SHOWTIME_TEST_NETWORK") == "1"
 FAST = "--fast" in sys.argv
 
@@ -78,7 +82,7 @@ class _Handler(http.server.SimpleHTTPRequestHandler):
 def serve(folder: Path):
     need_listen()
     handler = lambda *a, **k: _Handler(*a, directory=str(folder), **k)  # noqa: E731
-    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    srv = _Server(("127.0.0.1", 0), handler)
     th = threading.Thread(target=srv.serve_forever, daemon=True)
     th.start()
     try:

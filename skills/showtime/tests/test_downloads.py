@@ -35,6 +35,10 @@ from st import common, lazy  # noqa: E402
 from st import platform as plat  # noqa: E402
 from st.launcher import build_env, showtime_home  # noqa: E402
 
+class _Server(http.server.ThreadingHTTPServer):
+    request_queue_size = 128     # Windows refuses connects past the default backlog (5)
+
+
 SETUP_PY = SKILL / "setup" / "setup.py"
 MAN = json.loads((SKILL / "setup" / "manifest.json").read_text(encoding="utf-8"))
 PLATFORMS = ["mac-arm64", "mac-x64", "win-x64", "linux-x64", "linux-arm64"]
@@ -96,7 +100,7 @@ def fixture_server(files, codes=None):
     _Handler.hits = []
     _Handler.codes = dict(codes or {})
     need_listen()
-    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+    srv = _Server(("127.0.0.1", 0), _Handler)
     t = threading.Thread(target=srv.serve_forever, daemon=True)
     t.start()
     try:

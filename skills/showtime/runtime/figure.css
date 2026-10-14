@@ -122,7 +122,7 @@ html, body { margin: 0; background: #FFFFFF; }
 /* touch: the Type field (a phone's own keyboard; on a desktop, typing anywhere works), parts that act, a drag */
 .fg .fg-type { display: flex; align-items: center; gap: 10px; margin: 12px 2px 0; padding: 8px 12px; border: 1px solid var(--fg-line); border-radius: 10px; background: var(--fg-soft); cursor: text; }
 .fg .fg-type-k { font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--fg-ink2); white-space: nowrap; }
-.fg .fg-type input { flex: 1 1 auto; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--fg-ink); font: 500 15px/1.4 'JetBrains Mono', ui-monospace, monospace; }
+.fg .fg-type input { flex: 1 1 auto; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--fg-ink); font: 500 16px/1.4 'JetBrains Mono', ui-monospace, monospace; }
 .fg .fg-type:focus-within { border-color: var(--fg-ink2); }
 .fg .fg-part.fg-pressable .n::after { content: ' ·  press'; font-weight: 500; color: var(--fg-ink3); font-size: 11px; }
 .fg .fg-dragging { cursor: grabbing !important; }

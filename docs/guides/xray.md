@@ -17,9 +17,9 @@ prints after reading the finished film back: "19 of 19 events on their frame · 
 1. **Film it.** Keep the sound: the events are found in it. A phone and a little shake are fine; close and well lit
    beats wide and dark. A clip you did not film needs a license that allows it (CC0, CC BY, CC BY-SA) and its credit.
 2. **Measure it.** `showtime xray analyze <clip> --job <job>` writes every event (a keystroke, a pluck, a hit) with its
-   time and frame into `xray.json`, and `check.jpg`: the waveform with a tick per event. Your agent plays the clip at
-   a few ticks and counts events against what it sees. For see-through, `--track --region "x,y ..." --ref-time <t>`
-   follows the object; `--mask` leaves out hands or parts that move by themselves.
+   time and frame into `xray.json`, and `check.jpg`: the waveform with a tick per event; your agent checks a few ticks
+   against the clip. A WAV with no picture works too; `xray import <events.csv> --time-map SLOW,T0` brings events
+   measured in data. See-through: `--track --region "x,y ..." --ref-time <t>` (`--mask` leaves out hands).
 3. **Pick a mechanism.** `showtime new xray <job>/project --mechanism <object>` copies one from the
    [mechanism library](../../skills/showtime/library/xray/README.md) (a manual typewriter, a disc music box and more),
    which grows with every verified X-ray; an object it lacks starts as a copy of the closest entry. Your agent first
@@ -52,9 +52,9 @@ prints after reading the finished film back: "19 of 19 events on their frame · 
 one offline file: the clip with its own sound and the inside drawn on every frame. The pads under the picture play
 the next hit of their kind (on a typewriter, type the letter); drag the picture to scrub, click it for the next hit.
 Space plays, the arrows step event to event, Shift+S is quarter speed, Shift+T light or dark, Shift+L the layout.
-`#hit4` opens the 4th event, `#t2.5` a time; `_light`, `_split` and the rest join with `_`. The page shows your prompt
-and the commands (placeholders, never your paths). To put it on a page:
-`<showtime-xray src="you-live.html" ratio="16/9">` with the X-ray page's `embed.js` (a poster that loads on click), or `<iframe src="you-live.html#embed">`.
+`#hit4` opens the 4th event, `#t2.5` a time; `_light`, `_split` and the rest join with `_`. The page shows your prompt and
+the commands (placeholders; `"xray".made.commands` lists your own steps, and the export only warns if one holds a local
+path). To embed it: `<showtime-xray src="you-live.html" ratio="16/9">` with the page's `embed.js`, or `<iframe src="you-live.html#embed">`.
 
 ## How long it takes
 
@@ -78,13 +78,13 @@ Most of it is the render of a film about three seconds longer than the clip.
 - **The drum sheet comes from a sound-type classifier.** Each hit is sorted by what it sounds like; it does not see
   which drum was struck, and two drums that sound alike can swap.
 - **Dense music** that never goes quiet uses `analyze --engine flux` (picked by `auto`); very fast passages can merge.
-- **Nothing leaves your machine**, but the job folder remembers: `xray/source.path` holds your clip's absolute path
-  and `xray.json` its file name and sha256. Check them before you share a job folder.
+- **Nothing leaves your machine**, but the job folder remembers: `xray/source.path` holds your clip's absolute path and
+  `xray.json` its file name and sha256. A shared live page carries showtime.json's `xray` block (`made.prompt` too, even
+  with `--prompt`), the source's name and sha256 and, from `xray import`, the events file's name, sha256 and data.
 - **Objects only.** An inside is never drawn over a person: a clip where someone fills the frame gets the split layout.
 
 ## The example
 
 The [X-ray gallery](https://faviovazquez.github.io/showtime/xray/) plays every verified film with its receipt and the
 commands that made it. The `xray` template starts as a 9.4 s sample: an Underwood 315 typing "Sounds of changes."
-(Erik Pålsson / Sounds of Changes, CC BY 3.0). Your agent's guide:
-[xray.md](../../skills/showtime/references/workflows/xray.md).
+(Erik Pålsson / Sounds of Changes, CC BY 3.0). Your agent's guide: [xray.md](../../skills/showtime/references/workflows/xray.md).

@@ -44,9 +44,11 @@ const getAttr = (attrs, name) => { const m = new RegExp(`\\b${name}\\s*=\\s*"([^
 
 /**
  * The line that made it: { prompt, commands }. The prompt is explicit only (--prompt, else showtime.json
- * xray.made.prompt, else none); the commands are written with placeholders, never the project's own paths.
+ * xray.made.prompt, else none); the commands are showtime.json xray.made.commands when the project lists the steps
+ * that made it (own: true), else written with placeholders, never the project's own paths: `xray import` for events
+ * from a data stream (xray.json detector.engine "data"), `xray analyze` of a clip or a recording otherwise.
  */
-export function madeWith(xr, live, prompt, fromProject) {
+export function madeWith(xr, live, prompt, fromProject, doc = {}) {
   const made = xr.made && typeof xr.made === 'object' ? xr.made : {};
   const word = (v, d) => (typeof v === 'string' && /^[\w-]{1,40}$/.test(v) ? v : d);
   // xray.made.mechanism, else xray.mechanism, else the name the project's own mechanism.js declares; the
@@ -57,12 +59,48 @@ export function madeWith(xr, live, prompt, fromProject) {
   const theme = word(made.theme, live.theme);
   const text = typeof prompt === 'string' && prompt.trim() ? prompt.trim() : (typeof made.prompt === 'string' ? made.prompt.trim() : '');
   const job = `xray-${mech}`;
-  return { prompt: text, guessed: !named, commands: [
-    `showtime xray analyze clip.mp4 --job ${job}${live.tracked ? ' --track' : ''}`,
+  const own = Array.isArray(made.commands) ? made.commands.filter((v) => typeof v === 'string' && v.trim()).map((v) => v.trim()) : [];
+  if (own.length) return { prompt: text, guessed: false, own: true, mechanism: mech, commands: own };
+  const det = (doc && doc.detector) || {}, src = (doc && doc.source) || {};
+  const tm = det.time_map && Number.isFinite(det.time_map.slow) && Number.isFinite(det.time_map.t0) ? det.time_map : null;
+  const sound = src.audio_only ? 'sound.wav' : 'clip.mp4';
+  const first = det.engine === 'data'
+    ? `showtime xray import events.csv --job ${job}${tm ? ` --time-map ${tm.slow},${tm.t0}` : ''}${src.file ? ` --source ${sound}` : ''}`
+    : `showtime xray analyze ${sound} --job ${job}${live.tracked ? ' --track' : ''}`;
+  return { prompt: text, guessed: !named, own: false, mechanism: mech, commands: [
+    first,
     `showtime new xray ${job}/project --mechanism ${mech} --layout ${layout} --theme ${theme}`,
     `showtime render ${job}/project --job ${job}`,
     `showtime xray verify ${job}`,
   ] };
+}
+
+/** The --mechanism names the page's commands use that library/xray does not have (a drawing written for this film). */
+export function unknownMechanisms(made) {
+  const names = made.own ? [...made.commands.join('\n').matchAll(/--mechanism[\s=]+([^\s'"]+)/g)].map((m) => m[1]) : (made.guessed ? [] : [made.mechanism]);
+  const lib = path.join(skillDir(), 'library', 'xray');
+  return [...new Set(names)].filter((n) => !/^[\w-]{1,40}$/.test(n) || !fs.existsSync(path.join(lib, n, 'mechanism.js')));
+}
+
+/** True when a command carries a local path: /abs, ~/x, C:\x at the start of a word or after = ' ". One pass per word. */
+function hasLocalPath(v) {
+  for (const w of v.split(/\s+/)) {
+    let lastWord = -1;
+    for (let i = w.length - 1; i >= 0; i--) if (/\w/.test(w[i])) { lastWord = i; break; }
+    for (let i = 0; i < w.length; i++) {
+      if (i > 0 && !'=\'"'.includes(w[i - 1])) continue;
+      const c = w[i], n = w[i + 1];
+      if (c === '/' && n !== '/' && lastWord > i) return true;
+      if (c === '~' && (n === '/' || n === '\\')) return true;
+      if (/[A-Za-z]/.test(c) && n === ':' && (w[i + 2] === '\\' || w[i + 2] === '/')) return true;
+    }
+  }
+  return false;
+}
+
+/** The lines of xray.made.commands that carry a local path (the page is shared; commands use placeholders). */
+export function localPathLines(made) {
+  return made.own ? made.commands.filter(hasLocalPath) : [];
 }
 
 /**
@@ -168,11 +206,14 @@ export function packXrayLive(o) {
     theme: xr.theme === 'light' ? 'light' : 'dark', clipDur: Number(src.duration) || 0,
     receipt: typeof xr.receipt === 'string' ? xr.receipt : '', credit: typeof xr.credit === 'string' ? xr.credit : '',
     drawn: typeof xr.drawn === 'string' ? xr.drawn : '', poster: Number(cfg.poster) || 0,
+    // what was measured, in a sentence: "xray".measured, else the page says it from the detector (sound or data)
+    measured: typeof xr.measured === 'string' ? xr.measured.trim() : '',
+    detector: { engine: String((doc.detector && doc.detector.engine) || ''), note: typeof (doc.detector && doc.detector.note) === 'string' ? doc.detector.note : '' },
     generator: `showtime ${showtimeVersion()}`,
   };
   let declared = '';
   try { declared = (/XRAY\.mechanism\(\s*\{[^]*?\bname\s*:\s*['"]([\w-]{1,40})['"]/.exec(fs.readFileSync(path.join(projectDir, 'mechanism.js'), 'utf8')) || [])[1] || ''; } catch { /* no mechanism.js */ }
-  live.made = madeWith(xr, live, o.prompt, declared);
+  live.made = madeWith(xr, live, o.prompt, declared, doc);
 
   // ---- fonts: faces for scripts no text uses are dropped (the page, its scripts, the data's words, the controls)
   const used = new Set();
@@ -265,13 +306,19 @@ export async function exportXrayLive({ a, proj, out, title, target, maxMb, warni
     throw new UserError(`the live page is ${fmtBytes(bytes)}, over --max-mb ${maxMb}; largest: ${big}`,
       'trim the clip to the part that matters (showtime footage trim), or raise --max-mb (an artifact is limited to 16 MB)');
   }
+  const unknown = unknownMechanisms(p.live.made);
+  if (unknown.length) addWarn(p.live.made.own
+    ? `xray.made.commands name --mechanism ${unknown.join(', ')}, which the mechanism library (library/xray) does not have: the page would show a command that does not run; write the steps that made it`
+    : `the page's commands say \`new xray --mechanism ${unknown.join(', ')}\`, which the mechanism library (library/xray) does not have; list the steps that made it in showtime.json xray.made.commands`);
+  const local = localPathLines(p.live.made);
+  if (local.length) addWarn(`xray.made.commands carry a local path (${local.slice(0, 2).join(' | ')}): the live page is shared; write placeholders (clip.mp4, <job>)`);
   if (p.live.made.guessed) addWarn('the project names no mechanism (showtime.json xray.made.mechanism, or XRAY.mechanism({name}) in mechanism.js): the page\'s commands say typewriter; set xray.made = {mechanism, layout, theme}');
   if (refit.length) addWarn(`the clip was re-encoded for this export only (${refit.map((r) => `${r.kbps} kb/s`).join(', ')}) to stay under ${maxMb} MB; the project's files are unchanged`);
   fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, html);
   const report = { output: out, interactive: true, kind: 'xray-live', layout: p.live.layout, tracked: p.live.tracked, page: p.page, bytes,
     mb: +(bytes / MB).toFixed(2), max_mb: maxMb, title: p.live.title, target, files: p.files.length, fonts_dropped: p.fontsDropped,
-    media: [...p.media].map(([u, m]) => ({ path: u, bytes: m.bytes.length })), footage_refit: refit, made: { prompt: p.live.made.prompt, commands: p.live.made.commands, guessed: p.live.made.guessed },
+    media: [...p.media].map(([u, m]) => ({ path: u, bytes: m.bytes.length })), footage_refit: refit, made: { prompt: p.live.made.prompt, commands: p.live.made.commands, guessed: p.live.made.guessed, own: p.live.made.own, unknown_mechanisms: unknown },
     largest: p.files.slice().sort((x, y) => y.bytes - x.bytes).slice(0, 6), warnings, seconds: +((Date.now() - T0) / 1000).toFixed(1) };
   if (a.json) process.stdout.write(JSON.stringify(report, null, 2) + '\n');
   else {

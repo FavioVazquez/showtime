@@ -1,8 +1,10 @@
 """X-ray: measure what happened in a filmed clip (sound onsets, camera motion), then check a finished film against it.
 
 `analyze` writes <job>/xray/xray.json (schema showtime.xray/1, the contract in references/workflows/xray.md) and
-<job>/xray/check.jpg; `verify` reads a rendered film back: the sync marker in its corner, the audio against the
-source, and (optionally) the smoothness of a scrolling band.
+<job>/xray/check.jpg; the source may be a recording with no picture (a WAV: the page draws the picture side).
+`import_events` writes the same file from a data stream (event times in a CSV or JSON, mapped to film time).
+`verify` reads a rendered film back: the sync marker in its corner, the audio against the source, and (optionally)
+the smoothness of a scrolling band.
 
 Onset detector: a high-passed copy of the sound, its RMS on a 1 ms grid, bursts above an adaptive floor, the onset
 of a burst is its first millisecond within 6 dB of the burst's peak. numpy and scipy only (not st.audio.beats: that
@@ -15,6 +17,7 @@ import hashlib
 import json
 import math
 import os
+import re
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple
 
@@ -25,6 +28,7 @@ from .common import ShowtimeError, log, read_json, warn, write_json
 
 SCHEMA = "showtime.xray/1"
 SR = 48000
+DEFAULT_FPS = 30             # the frame grid of a recording with no picture (the film's fps when it is not 30: --fps)
 MARKER_SIZE = 6
 MARKER_INSET = 10            # the marker's top-left is (width - 10, height - 10)
 TRACK_MAX_BYTES = 1 << 30      # the gray frames --track keeps in memory; long clips are tracked at a smaller size, then refused
@@ -305,13 +309,46 @@ def pick_engine(x: np.ndarray, engine: str, sr: int = SR, *, min_gap: Optional[f
 
 # ------------------------------------------------------------------ analyze
 
-def _source_info(clip: Path) -> Dict[str, Any]:
+def _fps_value(fps: float) -> Any:
+    return int(fps) if float(fps) == int(fps) else round(float(fps), 6)
+
+
+def _check_fps(fps: Optional[float]) -> None:
+    if fps is not None and not 1.0 <= float(fps) <= 240.0:
+        raise ShowtimeError("--fps must be 1..240 (got %g)" % fps)
+
+
+def check_source(clip: Any, fps: Optional[float] = None, track: bool = False) -> None:
+    """The refusals of _source_info and analyze, without reading the whole file: --fps on a video at another rate,
+    --track on a recording with no picture."""
+    _check_fps(fps)
+    clip = Path(clip)
+    pr = ff.probe(clip)
+    if pr.get("has_video"):
+        vfps = float(pr.get("fps") or 30.0)
+        if fps is not None and abs(float(fps) - vfps) > 0.01:
+            raise ShowtimeError("%s is a video at %g fps; --fps is only for a recording with no picture" % (clip.name, vfps),
+                                hint="leave out --fps: the events land on the clip's own frames")
+    elif track:
+        raise ShowtimeError("%s has no picture to track" % clip.name, hint="leave out --track: the page draws the picture side")
+
+
+def _source_info(clip: Path, fps: Optional[float] = None) -> Dict[str, Any]:
+    """The `source` block of xray.json. A recording with no picture (a WAV, a sonified data stream) is a source too:
+    its events land on a frame grid of `fps` (default 30), it has no width or height, and `audio_only` says so."""
+    _check_fps(fps)
     pr = ff.probe(clip)
     if not pr.get("has_video"):
-        raise ShowtimeError("%s has no video stream" % clip.name, hint="x-ray analyzes a filmed clip (video with its sound)")
-    fps = pr.get("fps") or 30.0
+        info = {"file": clip.name, "sha256": _sha256(clip), "fps": _fps_value(fps or DEFAULT_FPS),
+                "duration": round(float(pr.get("duration") or 0.0), 3), "width": 0, "height": 0, "audio_only": True,
+                "has_audio": bool(pr.get("has_audio"))}
+        return info
+    vfps = pr.get("fps") or 30.0
+    if fps is not None and abs(float(fps) - float(vfps)) > 0.01:
+        raise ShowtimeError("%s is a video at %g fps; --fps is only for a recording with no picture" % (clip.name, float(vfps)),
+                            hint="leave out --fps: the events land on the clip's own frames")
     vfr = _is_vfr(pr)
-    info = {"file": clip.name, "sha256": _sha256(clip), "fps": round(float(fps), 6) if fps != int(fps) else int(fps),
+    info = {"file": clip.name, "sha256": _sha256(clip), "fps": _fps_value(vfps),
             "duration": round(float(pr.get("duration") or pr.get("video_duration") or 0.0), 3),
             "width": int(pr.get("width") or 0), "height": int(pr.get("height") or 0), "has_audio": bool(pr.get("has_audio"))}
     if vfr:
@@ -320,15 +357,15 @@ def _source_info(clip: Path) -> Dict[str, Any]:
 
 
 def validate_clip(clip: Any) -> Path:
-    """Refuse a clip that cannot be analyzed (missing, no picture, no sound) before anything is created for it."""
+    """Refuse a clip that cannot be analyzed (missing, no sound) before anything is created for it. A recording with
+    no picture is fine: the events come from the sound, and the page draws the picture side."""
     clip = Path(clip)
     if not clip.is_file():
-        raise ShowtimeError("clip not found: %s" % clip, hint="pass the video file you filmed")
+        raise ShowtimeError("clip not found: %s" % clip, hint="pass the video you filmed, or the recording (a WAV)")
     pr = ff.probe(clip)
-    if not pr.get("has_video"):
-        raise ShowtimeError("%s has no video stream" % clip.name, hint="x-ray analyzes a filmed clip (video with its sound)")
     if not pr.get("has_audio"):
-        raise ShowtimeError("%s has no sound to analyze" % clip.name, hint="x-ray reads the events from the clip's audio")
+        raise ShowtimeError("%s has no sound to analyze" % clip.name,
+                            hint="x-ray reads the events from the sound; events from a data stream: showtime xray import")
     return clip
 
 
@@ -343,19 +380,23 @@ VFR_WARNING = ("the clip is variable frame rate (a phone video): event frames ar
 
 
 def analyze(clip: Any, out_dir: Any, *, t_from: float = 0.0, t_to: Optional[float] = None, min_gap: Optional[float] = None,
-            sensitivity: float = 0.5, track: Optional[Dict[str, Any]] = None, engine: str = "auto") -> Dict[str, Any]:
-    """Write <out_dir>/xray.json and check.jpg for a clip. `track`: {"region": [[x, y]...], "ref_time": T,
-    "masks": [[[x, y]...]...]} to also track the object. Returns the xray.json dict."""
+            sensitivity: float = 0.5, track: Optional[Dict[str, Any]] = None, engine: str = "auto",
+            fps: Optional[float] = None) -> Dict[str, Any]:
+    """Write <out_dir>/xray.json and check.jpg for a clip, or a recording with no picture (`fps`: its frame grid,
+    default 30). `track`: {"region": [[x, y]...], "ref_time": T, "masks": [[[x, y]...]...]} to also track the
+    object. Returns the xray.json dict."""
     from .audio import wav
     clip = Path(clip)
     if not clip.is_file():
-        raise ShowtimeError("clip not found: %s" % clip, hint="pass the video file you filmed")
+        raise ShowtimeError("clip not found: %s" % clip, hint="pass the video you filmed, or the recording (a WAV)")
     out = Path(out_dir)
-    src = _source_info(clip)
+    src = _source_info(clip, fps)
     if src.get("vfr"):
         warn(VFR_WARNING)
     if not src.pop("has_audio"):
         raise ShowtimeError("%s has no sound to analyze" % clip.name, hint="x-ray reads the hits from the clip's audio")
+    if track and src.get("audio_only"):
+        raise ShowtimeError("%s has no picture to track" % clip.name, hint="leave out --track: the page draws the picture side")
     if t_to is not None and t_to <= t_from:
         raise ShowtimeError("--to (%g) must be after --from (%g)" % (t_to, t_from))
     out.mkdir(parents=True, exist_ok=True)
@@ -382,13 +423,352 @@ def analyze(clip: Any, out_dir: Any, *, t_from: float = 0.0, t_to: Optional[floa
     return doc
 
 
+# ------------------------------------------------------------------ import (events from a data stream)
+
+TIME_KEYS = ("t", "time", "t_data", "time_s", "t_s", "seconds", "sec")
+RESERVED = ("i", "t", "frame", "strength", "band", "t_data")
+PAGE_TEXT_KEYS = ("kind", "ch")           # the live page reads these as text
+PAGE_LIST_KEYS = ("notes", "pitches")     # ... and these as lists it built itself: a data column of that name is renamed
+MAX_EVENTS_BYTES = 50 * 1024 * 1024       # an events file above this is refused, as is one with more events than ...
+MAX_EVENTS = 100000
+MAX_FILM_SECONDS = 24 * 3600              # no data-only film (no --source) is longer than this
+MAX_LINES = 2 * 100000                    # every line read of a CSV (blank and comment lines too) counts against this
+MAX_VALUES = 64 * 100000                  # commas in a JSON file (a bound on every value in it) before it is parsed
+MAX_CONTAINERS = 8 * 100000               # "{" and "[" in a JSON file (each is a dict or list in memory) before it is parsed
+MAX_DIGITS = 1000                         # a run of digits longer than this is not a number a film can hold
+MAX_DEPTH = 32                            # JSON nesting an event may carry
+MAX_FRAME = 10 ** 9                       # a film time past this many frames is a mistake in the time map, not a film
+
+
+def _leaf(name: Any) -> str:
+    """A file name without any folder (either slash), for text that lands on a page that gets shared."""
+    return str(name).replace("\\", "/").rsplit("/", 1)[-1]
+
+
+BIG = "has a number too large to hold (an infinity or a huge integer)"
+
+
+def _json_problem(v: Any) -> Optional[str]:
+    """Why a parsed JSON value cannot be held (an infinity, or nesting too deep), else None. Iterative."""
+    stack = [(v, 0)]
+    while stack:
+        x, d = stack.pop()
+        if isinstance(x, float):
+            if not math.isfinite(x):
+                return BIG
+        elif isinstance(x, int) and not isinstance(x, bool):
+            if abs(x) > 10 ** 308:
+                return BIG
+        elif isinstance(x, (dict, list)):
+            if d >= MAX_DEPTH:
+                return "is nested more than %d levels deep" % MAX_DEPTH
+            stack.extend((y, d + 1) for y in (x.values() if isinstance(x, dict) else x))
+    return None
+
+
+def parse_time_map(text: Optional[str]) -> Dict[str, float]:
+    """"SLOW,T0" or "slow=SLOW,t0=T0" (either part may be left out) -> {"slow", "t0"}: film t = (t_data - T0) x SLOW."""
+    tm = {"slow": 1.0, "t0": 0.0}
+    if text is None or not str(text).strip():
+        return tm
+    parts = [v.strip() for v in str(text).replace(";", ",").split(",")]      # an omitted part ("", ",5") keeps its default
+    if len(parts) > 2:
+        raise ShowtimeError("--time-map is SLOW,T0 (got %r)" % text, hint="e.g. --time-map 100,-0.14: 100 film seconds per "
+                                                                         "data second, data time -0.14 s at film time 0")
+    given = set()
+    for k, part in enumerate(parts):
+        if not part:
+            continue
+        key, _, val = part.rpartition("=")
+        key = key.strip().lower() or ("slow", "t0")[k]
+        if key not in tm:
+            raise ShowtimeError("--time-map knows slow and t0 (got %r)" % key, hint="--time-map slow=100,t0=-0.14")
+        if key in given:
+            raise ShowtimeError("--time-map sets %s twice (got %r)" % (key, text), hint="give each of slow and t0 once: --time-map slow=100,t0=-0.14")
+        given.add(key)
+        try:
+            tm[key] = float(val)
+        except ValueError:
+            raise ShowtimeError("--time-map %s=%r is not a number" % (key, val))
+    if not (tm["slow"] > 0 and math.isfinite(tm["slow"])):
+        raise ShowtimeError("--time-map slow must be a number above 0 (got %g)" % tm["slow"])
+    if not math.isfinite(tm["t0"]):
+        raise ShowtimeError("--time-map t0 must be a number (got %g)" % tm["t0"])
+    return tm
+
+
+def _num(v: Any) -> Optional[float]:
+    if isinstance(v, bool):
+        return None
+    try:
+        f = float(v)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return f if math.isfinite(f) else None
+
+
+def read_event_rows(path: Path) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """(rows as dicts, column names in order) of a CSV (a header row; without one the first column is the time) or a
+    JSON file (a list of times, a list of objects, or {"events": [...]})."""
+    import csv
+    try:
+        size = path.stat().st_size
+        if size > MAX_EVENTS_BYTES:
+            raise ShowtimeError("%s is %.0f MB; an events file may be up to %d MB" % (path.name, size / 1048576.0, MAX_EVENTS_BYTES // 1048576),
+                                hint="keep the events you want in the film (peaks, not the whole signal)")
+        with open(path, encoding="utf-8-sig") as f:
+            first = f.read(4096)
+            as_json = path.suffix.lower() == ".json" or first.lstrip()[:1] in ("[", "{")
+            f.seek(0)
+            if as_json:
+                return _json_rows(path, f.read())
+            return _csv_rows(path, f, csv)
+    except (OSError, UnicodeDecodeError) as e:
+        raise ShowtimeError("cannot read %s: %s" % (path.name, e))
+    except csv.Error as e:
+        raise ShowtimeError("cannot read %s as a CSV file: %s" % (path.name, e),
+                            hint="a cell may hold up to %d characters and no NUL byte; keep the events, not whole signals" % csv.field_size_limit())
+
+
+def _json_rows(path: Path, text: str) -> Tuple[List[Dict[str, Any]], List[str]]:
+    if text.count(",") > MAX_VALUES:                          # bounds every value (numbers, nulls, strings, lists) before parsing
+        raise ShowtimeError("%s holds too many values (over %d)" % (path.name, MAX_VALUES), hint="keep the peaks, not every sample")
+
+    # a dict or list costs far more memory than a number: bound them on their own, so a small file of "{},{},..." is
+    # refused before it is parsed, while a legitimate file (100,000 events, each with arrays of numbers) is not
+    if text.count("{") + text.count("[") > MAX_CONTAINERS:
+        raise ShowtimeError("%s holds too many lists or objects (over %d)" % (path.name, MAX_CONTAINERS), hint="keep the peaks, not every sample")
+    if re.search(r"\d{%d,}" % MAX_DIGITS, text):                # before json.loads: older Pythons parse a huge integer in quadratic time
+        raise ShowtimeError("%s %s" % (path.name, BIG), hint="remove or fix that value")
+
+    def _bad(tok: str) -> Any:
+        raise ValueError("%s is not allowed in JSON" % tok)
+    try:
+        data = json.loads(text, parse_constant=_bad)
+    except RecursionError:
+        raise ShowtimeError("%s is nested too deeply" % path.name)
+    except ValueError as e:
+        if "digits" in str(e) and "limit" in str(e):         # Python 3.10.7+ refuses a huge integer here; older ones parse it
+            raise ShowtimeError("%s %s" % (path.name, BIG), hint="remove or fix that value")
+        raise ShowtimeError("%s is not valid JSON: %s" % (path.name, e))
+    why = _json_problem(data)
+    if why:
+        raise ShowtimeError("%s %s" % (path.name, why), hint="remove or fix that value")
+    if isinstance(data, dict):
+        data = data.get("events")
+    if not isinstance(data, list):
+        raise ShowtimeError("%s holds no list of events" % path.name, hint='a list of times, of objects with "t", or {"events": [...]}')
+    if len(data) > MAX_EVENTS:                                # top-level events only
+        raise ShowtimeError("%s has %d events; up to %d events are taken" % (path.name, len(data), MAX_EVENTS), hint="keep the peaks, not every sample")
+    rows: List[Dict[str, Any]] = []
+    cols: List[str] = []
+    seen = set()
+    for v in data:
+        r = dict(v) if isinstance(v, dict) else {"t": v}
+        rows.append(r)
+        for k in r:
+            if k not in seen:
+                seen.add(k)
+                cols.append(k)
+    return rows, cols
+
+
+def _csv_rows(path: Path, f: Any, csv: Any) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """Read a CSV line by line: every line read counts against MAX_LINES, every kept row against MAX_EVENTS."""
+    nlines = [0]
+
+    def lines() -> Iterator[str]:
+        for ln in f:
+            nlines[0] += 1
+            if nlines[0] > MAX_LINES:
+                raise ShowtimeError("%s has more than %d lines" % (path.name, MAX_LINES), hint="keep the peaks, not every sample")
+            yield ln
+    kept: List[List[str]] = []
+    limit = MAX_EVENTS + 1                                    # with a header row; one less without (decided at the first row)
+    for ln in csv.reader(lines()):
+        if ln and any(c.strip() for c in ln) and not ln[0].lstrip().startswith("#"):
+            kept.append(ln)
+            if len(kept) == 1:
+                for c in ln:                                  # a number too big to hold is an error, not a reason to call the row a header
+                    try:
+                        big = math.isinf(float(c.strip())) and re.fullmatch(r"[+-]?[\d.]+(?:[eE][+-]?\d+)?", c.strip()) is not None
+                    except ValueError:
+                        big = False
+                    if big:
+                        raise ShowtimeError("%s %s" % (path.name, BIG), hint="remove or fix that value")
+            if len(kept) == 1 and all(_num(c.strip()) is not None for c in ln):
+                limit = MAX_EVENTS                            # no header: the first row is an event
+            if len(kept) > limit:                             # stop reading as soon as the cap is passed
+                raise ShowtimeError("%s has more than %d events" % (path.name, MAX_EVENTS), hint="keep the peaks, not every sample")
+    if not kept:
+        return [], []
+    head = [c.strip() for c in kept[0]]
+    if all(_num(c) is not None for c in head):            # no header: the first column is the time
+        head = ["t"] + ["c%d" % k for k in range(1, len(head))]
+        body = kept
+    else:
+        body = kept[1:]
+    return [dict(zip(head, [c.strip() for c in ln])) for ln in body], head
+
+
+def import_events(events_file: Any, out_dir: Any, **kw: Any) -> Dict[str, Any]:
+    """Write <out_dir>/xray.json (detector.engine "data") and check.jpg from event times measured in a data stream
+    (the options of build_import). Returns the xray.json dict."""
+    doc, x = build_import(events_file, **kw)
+    write_import(doc, x, events_file, out_dir, kw.get("source"))
+    return doc
+
+
+def write_import(doc: Dict[str, Any], x: np.ndarray, events_file: Any, out_dir: Any, source: Optional[Any] = None) -> None:
+    """Write what build_import returned: xray.json, source.path (with a source) and check.jpg."""
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    try:
+        json.dumps(doc, allow_nan=False)                    # no bare NaN or Infinity may reach xray.json
+    except (ValueError, RecursionError) as e:
+        raise ShowtimeError("the events cannot be written as JSON: %s" % e)
+    write_json(out / "xray.json", doc)
+    if source is not None:
+        try:
+            (out / "source.path").write_text(str(Path(source).resolve()), encoding="utf-8")   # local only: for verify
+        except OSError:
+            pass
+    check_sheet(Path(source) if source is not None else Path(events_file), doc, x, 0.0, out / "check.jpg")
+
+
+def build_import(events_file: Any, *, time_map: Optional[Dict[str, float]] = None, source: Optional[Any] = None,
+                 fps: Optional[float] = None, duration: Optional[float] = None, column: Optional[str] = None,
+                 strength: Optional[str] = None, note: Optional[str] = None) -> Tuple[Dict[str, Any], np.ndarray]:
+    """(xray.json dict, the source's sound or an empty array) from event times measured in a data stream; writes
+    nothing, so every refusal comes before a job or a folder exists. Film time t = (t_data - t0) x slow, frame =
+    frame_of(t, fps). `source`: the clip or recording the film plays (its fps, duration and sha256; verify finds
+    it), else `fps` (default 30) and `duration`."""
+    from .audio import wav
+    path = Path(events_file)
+    if not path.is_file():
+        raise ShowtimeError("events file not found: %s" % path, hint="a CSV with a time column, or a JSON list of times")
+    tm = time_map or {"slow": 1.0, "t0": 0.0}
+    _check_fps(fps)
+    if duration is not None and not (0 < duration <= MAX_FILM_SECONDS):
+        raise ShowtimeError("--duration must be above 0 and at most %d seconds (got %g)" % (MAX_FILM_SECONDS, duration))
+    if source is not None and duration is not None:
+        raise ShowtimeError("--duration is for an import without --source (the source has its own length)")
+    rows, cols = read_event_rows(path)
+    if not rows:
+        raise ShowtimeError("%s has no events" % path.name)
+    low = {c.lower(): c for c in cols}
+    if column:
+        if column not in cols:
+            raise ShowtimeError("%s has no column %r (columns: %s)" % (path.name, column, ", ".join(cols)))
+        tcol = column
+    else:
+        tcol = next((low[k] for k in TIME_KEYS if k in low), None)
+        if tcol is None:
+            raise ShowtimeError("%s has no time column (columns: %s)" % (path.name, ", ".join(cols)),
+                                hint="name it with --column, or call it t or time")
+    if strength and strength not in cols:
+        raise ShowtimeError("%s has no column %r (columns: %s)" % (path.name, strength, ", ".join(cols)))
+    times = []
+    for n, r in enumerate(rows, start=1):
+        v = _num(r.get(tcol))
+        if v is None:
+            raise ShowtimeError("%s, event %d: the time %r is not a number" % (path.name, n, r.get(tcol)))
+        times.append(v)
+    src: Dict[str, Any]
+    x = np.zeros(0, dtype=np.float32)
+    if source is not None:
+        clip = Path(source)
+        if not clip.is_file():
+            raise ShowtimeError("--source not found: %s" % clip, hint="the clip or recording the film plays")
+        src = _source_info(clip, fps)
+        if src.pop("has_audio"):
+            x = wav.load(clip, sr=SR, mono=True)
+    else:
+        src = {"file": None, "sha256": None, "fps": _fps_value(fps or DEFAULT_FPS),
+               "duration": round(float(duration), 3) if duration else None, "width": 0, "height": 0}
+    sfps = float(src["fps"])
+    end = float(src["duration"]) if src.get("duration") else None
+    sv: Optional[List[float]] = None
+    if strength:
+        sv = []
+        for n, r in enumerate(rows, start=1):
+            raw = r.get(strength)
+            v = _num(raw)
+            if v is None and raw is not None and str(raw).strip() != "":
+                raise ShowtimeError("%s, event %d: the %s value %r is not a number" % (path.name, n, strength, raw))
+            sv.append(abs(v) if v is not None else 0.0)
+        blank = sum(1 for r in rows if r.get(strength) is None or str(r.get(strength)).strip() == "")
+        if blank:
+            warn("%d event(s) have no %s value: drawn at strength 0" % (blank, strength))
+    top = max(sv or [0.0]) or 1.0
+    order = sorted(range(len(rows)), key=lambda k: times[k])
+    events: List[Dict[str, Any]] = []
+    dropped: List[Dict[str, Any]] = []
+    for k in order:
+        r, td = rows[k], times[k]
+        t = (td - tm["t0"]) * tm["slow"]
+        if not math.isfinite(t) or t * sfps > MAX_FRAME:
+            raise ShowtimeError("%s, event at data time %g: film time is too large to hold with this time map" % (path.name, td),
+                                hint="check --time-map: film t = (t_data - t0) x slow")
+        if end is None and t > MAX_FILM_SECONDS:
+            raise ShowtimeError("%s, event at data time %g: film time %g s is past %d s (24 h)" % (path.name, td, t, MAX_FILM_SECONDS),
+                                hint="check --time-map: film t = (t_data - t0) x slow")
+        t = round(t, 4)
+        if t < 0:
+            dropped.append({"t": t, "t_data": td, "why": "before film time 0 (data time %g is before t0 %g)" % (td, tm["t0"])})
+            continue
+        if end is not None and t >= end:
+            dropped.append({"t": t, "t_data": td, "why": "after the end of the source (%.3f s)" % end})
+            continue
+        if sv is not None:
+            st = round(sv[k] / top, 3)
+        else:
+            own = _num(r.get("strength"))
+            st = round(min(1.0, max(0.0, own)), 3) if own is not None else 1.0
+        band = r.get("band") if r.get("band") in ("low", "mid", "high") else (_band_of(x, int(t * 1000), SR) if len(x) else "mid")
+        e = {"i": len(events), "t": t, "frame": frame_of(t, sfps), "strength": st, "band": band, "t_data": td}
+        for c, v in r.items():
+            if c == tcol or c in RESERVED or v is None or v == "":
+                continue
+            nv = _num(v)
+            val: Any = (int(nv) if nv.is_integer() and isinstance(v, int) else nv) if nv is not None else v
+            if isinstance(v, float) and nv is None:
+                continue                                    # a NaN or an infinity: not data, and not valid JSON
+            if c in PAGE_TEXT_KEYS:
+                if isinstance(v, (dict, list)):
+                    c = c + "_data"
+                else:
+                    val = str(v)
+            elif c in PAGE_LIST_KEYS:
+                c = c + "_data"
+            e[c] = val
+        events.append(e)
+    if not events:
+        raise ShowtimeError("none of the %d events of %s lands inside the film" % (len(rows), path.name),
+                            hint="check --time-map: film t = (t_data - t0) x slow must be 0 or more%s" % (
+                                " and under the source's %.3f s" % end if end is not None else ""))
+    frames = [e["frame"] for e in events]
+    if len(set(frames)) < len(frames):
+        warn("%d event(s) share a film frame with another: raise the time map's slow, or --fps" % (len(frames) - len(set(frames))))
+    auto = "written from %s (column %s, %d rows), not from the sound: film time = (t - (%g s)) x %g" % (
+        _leaf(path.name), tcol, len(rows), tm["t0"], tm["slow"])
+    doc: Dict[str, Any] = {
+        "schema": SCHEMA, "source": src,
+        "detector": {"engine": "data", "min_gap": None, "sensitivity": None, "from": 0.0, "to": None,
+                     "note": (note or "").strip() or auto, "time_map": {"slow": tm["slow"], "t0": tm["t0"]},
+                     "input": {"file": _leaf(path.name), "sha256": _sha256(path), "column": tcol, "rows": len(rows)}},
+        "events": events, "dropped": dropped, "track": None}
+    return doc, x
+
+
 def check_sheet(clip: Path, doc: Dict[str, Any], x: np.ndarray, t0: float, dest: Path) -> Path:
     """check.jpg: the waveform with a numbered tick per event (dropped ones grey) and, with a track, the region on 6 frames."""
     from PIL import Image, ImageDraw
     W, H = 1800, 360
     img = Image.new("RGB", (W, H), (18, 20, 26))
     d = ImageDraw.Draw(img)
-    dur = float(doc["source"]["duration"]) or (t0 + len(x) / SR)
+    last = max([float(e["t"]) for e in doc["events"]] or [0.0])
+    dur = float(doc["source"].get("duration") or 0.0) or max(t0 + len(x) / SR, last + 0.5)
     t1 = t0 + len(x) / SR
     left, right, top, bot = 30, W - 20, 40, H - 30
     mid = (top + bot) // 2
@@ -407,7 +787,7 @@ def check_sheet(clip: Path, doc: Dict[str, Any], x: np.ndarray, t0: float, dest:
             if len(seg):
                 lo, hi = float(seg.min()) / peak, float(seg.max()) / peak
                 d.line([(a + c, mid - hi * (mid - top)), (a + c, mid - lo * (mid - top))], fill=(120, 150, 200))
-    for s in range(int(dur) + 1):
+    for s in range(0, int(dur) + 1, max(1, int(dur) // 600 + 1)):
         d.line([(px(s), bot + 2), (px(s), bot + 8)], fill=(120, 120, 130))
         d.text((px(s) + 2, bot + 10), "%ds" % s, fill=(150, 150, 160))
     for dr in doc.get("dropped") or []:
@@ -416,9 +796,11 @@ def check_sheet(clip: Path, doc: Dict[str, Any], x: np.ndarray, t0: float, dest:
         xx = px(e["t"])
         d.line([(xx, top - 8), (xx, bot)], fill=(255, 90, 60), width=1)
         d.text((xx + 2, 8 + (e["i"] % 2) * 12), str(e["i"]), fill=(255, 180, 160))
-    d.text((left, H - 14), "%s  %d events (red), %d dropped (grey)  min_gap %.3g  sensitivity %.3g" % (
-        doc["source"]["file"], len(doc["events"]), len(doc.get("dropped") or []),
-        doc["detector"]["min_gap"], doc["detector"]["sensitivity"]), fill=(200, 200, 210))
+    det = doc["detector"]
+    how = ("from data, time map x%g from %g s" % (det["time_map"]["slow"], det["time_map"]["t0"]) if det.get("engine") == "data"
+           else "min_gap %.3g  sensitivity %.3g" % (det["min_gap"], det["sensitivity"]))
+    d.text((left, H - 14), "%s  %d events (red), %d dropped (grey)  %s" % (
+        doc["source"].get("file") or "no sound", len(doc["events"]), len(doc.get("dropped") or []), how), fill=(200, 200, 210))
     tr = doc.get("track")
     if tr:
         img = _with_track_row(img, clip, doc, tr)

@@ -50,6 +50,10 @@ ENV = build_env(showtime_home())
 TMP = Path(tempfile.mkdtemp(prefix="st-variety-"))
 
 
+class _Server(http.server.ThreadingHTTPServer):
+    request_queue_size = 128     # Windows refuses connects past the default backlog (5)
+
+
 def tearDownModule():
     shutil.rmtree(TMP, ignore_errors=True)
 
@@ -451,7 +455,7 @@ class TestReference(HistoryCase):
         class Quiet(http.server.SimpleHTTPRequestHandler):
             def log_message(self, *a):  # noqa: D401 - keep the test output clean
                 pass
-        srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Quiet, directory=str(root)))
+        srv = _Server(("127.0.0.1", 0), functools.partial(Quiet, directory=str(root)))
         th = threading.Thread(target=srv.serve_forever, daemon=True)
         th.start()
         try:

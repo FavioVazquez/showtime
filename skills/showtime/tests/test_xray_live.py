@@ -293,6 +293,59 @@ class TestTouch(unittest.TestCase):
         self.assertGreater(r["embedHeight"], 200, "framed with #embed, the page reports its height")
 
 
+EMBED = r"""
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+const [SKILL, HOST] = process.argv.slice(2);
+const { openBrowser } = await import(pathToFileURL(path.join(SKILL, 'scripts', 'lib', 'stagehost.mjs')).href);
+const { browser } = await openBrowser({ headless: true, args: ['--allow-file-access-from-files'] });
+const out = { logs: [] };
+try {
+  const ctx = await browser.newContext({ viewport: { width: 1000, height: 800 } });
+  const pg = await ctx.newPage();
+  pg.on('pageerror', (e) => out.logs.push(String(e.message || e)));
+  await pg.goto(pathToFileURL(HOST).href);
+  out.loaded = await pg.evaluate(() => [...document.querySelectorAll('showtime-xray')].map((el) => {
+    const f = el.load(false);
+    return f ? { src: f.getAttribute('src'), sandbox: f.getAttribute('sandbox'), h: f.style.height } : null;
+  }));
+  const h0 = out.loaded[0] && out.loaded[0].h;
+  // the page in the sandboxed frame still tells the host its height
+  out.resized = await pg.waitForFunction((h) => document.querySelector('showtime-xray iframe').style.height !== h, h0, { timeout: 30000, polling: 100 }).then(() => true, () => false);
+  out.frames = await pg.evaluate(() => document.querySelectorAll('showtime-xray iframe').length);
+} catch (e) { out.error = String(e && e.stack || e); }
+await browser.close();
+console.log(JSON.stringify(out));
+"""
+
+
+@unittest.skipIf(FAST or not NODE, "--fast: no browser")
+class TestEmbed(unittest.TestCase):
+    def test_sources_and_the_sandboxed_frame(self):
+        _, live, _ = sample()
+        host = TMP / "embed-host.html"
+        srcs = [live.name + "#old", "javascript:alert(1)", "data:text/html,<p>x</p>", "vbscript:x", "java\tscript:alert(1)"]
+        host.write_text('<!doctype html><meta charset="utf-8"><script src="%s"></script><body style="width:900px">%s'
+                        % ((LIVE / "embed.js").as_uri(), "".join(
+                            '<showtime-xray src="%s" ratio="16/9"%s></showtime-xray>' % (v, ' hit="2"' if k == 0 else "")
+                            for k, v in enumerate(srcs))), encoding="utf-8")
+        drv = TMP / "embed.mjs"
+        drv.write_text(EMBED, encoding="utf-8")
+        cp = subprocess.run([NODE, str(drv), str(SKILL), str(host)], env=ENV, cwd=str(TMP), stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, encoding="utf-8", errors="replace", timeout=300)
+        self.assertEqual(cp.returncode, 0, cp.stderr[-2000:])
+        r = json.loads(cp.stdout.strip().splitlines()[-1])
+        self.assertNotIn("error", r, r.get("error"))
+        self.assertEqual(r["logs"], [], "no page error")
+        ok = r["loaded"][0]
+        self.assertIsNotNone(ok, "a page opened from disk (file:) loads its film")
+        self.assertEqual(ok["src"], live.as_uri() + "#embed_hit2", "built from the parsed address, its old fragment replaced")
+        self.assertEqual(ok["sandbox"], "allow-scripts", "the frame gets no storage, forms, popups or top navigation")
+        self.assertEqual(r["loaded"][1:], [None] * 4, "javascript:, data: and vbscript: leave the poster")
+        self.assertEqual(r["frames"], 1)
+        self.assertTrue(r["resized"], "the sandboxed page still reports its height to the host")
+
+
 @unittest.skipIf(FAST or not NODE, "--fast: no browser")
 class TestBrowser(unittest.TestCase):
     def test_jump_lands_on_the_peak(self):

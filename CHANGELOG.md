@@ -5,6 +5,87 @@ All notable changes to showtime. Each entry says what changed and why, so this f
 `skills/showtime/lib/st/__init__.py` and `python3 scripts/check_release.py` keeps the plugin manifests, the registry files and
 `setup/package.json` in sync with it.
 
+## 0.4.5 (2026-10-14)
+
+- **New: X-ray events from a data stream.** `showtime xray import <events.csv|json> --job <job> --time-map SLOW,T0`
+  writes `xray.json` from event times measured in data (peaks of a signal, a sensor log) instead of from the clip's
+  sound: film time = (t_data - T0) x SLOW, each event's frame = floor(t * fps), `detector.engine: "data"` with a note
+  that says how. A CSV with a time column or a JSON list; `--strength <column>` sizes the events, other columns
+  travel with them, events outside the film are listed under `dropped`, and `--source` (the sound the film plays)
+  gives the frame rate and length and lets `xray verify` check the film. The live page's commands then start with
+  `xray import`. A film made this way used to need a hand-written `xray.json`. Limits: an events file up to 50 MB and
+  100,000 events, film times up to 24 h; a file it cannot hold (NaN or infinity, a huge number, deep nesting, an
+  over-long CSV cell) is refused with the reason, before a job exists. `--strength` with a cell that is not a number
+  is refused (a blank cell is strength 0, counted in one warning); `--time-map ",5"` sets T0 alone, and a part given
+  twice is refused. The note it writes names the events file, never a folder. A data column named `kind`, `ch`,
+  `notes` or `pitches` can no longer break the live page.
+- **New: X-ray of a recording with no picture.** `xray analyze` takes a WAV or any recording without
+  a video stream instead of refusing it: the events land on a frame grid of `--fps` (default 30), and `xray notes` takes one too, always at 30 fps; xray.json marks the
+  source `audio_only`, and the page draws the picture side. `--track` on such a recording is refused with the reason.
+  `xray notes --help` says so too (it still called the clip "the video you filmed").
+- **Fixed: the X-ray live page states how the events were measured.** It said "from the clip's own sound" for every
+  film; it now uses `"xray".measured` from showtime.json, else xray.json's detector (the sound, or a data stream and
+  its note).
+- **New: `"xray".made.commands` lists the steps that made a film** on its live page, in place of the four standard
+  commands, and the export warns when the commands name a mechanism the library does not have (a command that would
+  not run) or carry a local path.
+- **Fixed: an X-ray project without notes passes `showtime check`.** The page asks for `notes.json` only in case
+  `xray notes` wrote one; its absence was a "missing file" error in check and a warning in render.
+- **Fixed: `footage trim -o <file>` writes that file.** An existing `-o` file was kept and the trim went to
+  `<name>-2` next to it, with only the printed path to say so; now trim refuses with the reason, `--overwrite` (or
+  `--force`) replaces the file, and `-o` naming the input clip is refused, whatever its spelling (a different case on
+  a case-insensitive disk, a hard link). Without `-o` nothing changes.
+- **Fixed: the embed element takes only safe addresses.** `<showtime-xray src="...">` now loads a page only when `src`
+  is a relative path, an http(s) address or a `file:` address (a post you open from your disk still loads its film);
+  anything else (`javascript:`, `data:`, `vbscript:`) leaves the poster with no frame. The frame is sandboxed so the
+  live page can run its own scripts and nothing more (no storage, forms, popups or navigating the page around it).
+- **Fixed: the Type field on living diagrams you touch.** A paste or an input method's burst types at most 200
+  characters at a time; a focused summary (the Narration line), slider, button or link keeps all of its own keys
+  (letters, Space, Enter, Backspace) instead of having them typed on the board, and the Type field itself takes them
+  as before; an emoji is one key press, and Backspace on an empty field works on Android keyboards too; the field's
+  text is 16 px, so iOS does not zoom the page when you tap it; and an input method (Chinese, Japanese, Korean and
+  others) keeps its pending text until you commit it instead of the field being cleared under it.
+- **Fixed: the heat pump's discharge tag.** The starting scene said 70 °C on the discharge pipe while its default
+  weather (2 °C outside) works out to 63 °C; both tags now show what the scene computes for its default.
+- **Changed: the X-ray live page and the gallery say what sharing shares.** A live page carries the prompt it was made
+  with and the commands that made it, showtime.json's whole `xray` block (so `xray.made.prompt` too, even when
+  `--prompt` shows another), the source recording's file name and sha256 (never a path) and, for a film made from
+  data, the events file's name and sha256 with its column names, labels and values; the page, the gallery, the X-ray
+  guide and the workflow say so. The export warns if your own commands hold a local path; it does not remove it.
+- **Changed: SKILL.md routes by family, at 1,200 words or fewer.** The router was one row per feature (26 rows, the
+  body at its 1,500-word cap). It now sends a request to one of six families (something that happened; a product, repo,
+  site or paper; an idea or a system; numbers; their own media; a format) and each family names its guides;
+  `references/index.md` lists every route by family with its first command, and flags live in the guides and
+  `showtime <cmd> --help`. The pipeline, the "Done when" lines, the red flags and the rules are kept.
+  A routing eval for contributors (`benchmarks/routing-eval/`, 18 typical requests, each graded on the guide it reads
+  and the first command it names) scored the restructured skill 48 of 54 runs, against 46 for the old router; the
+  cases were written with the restructure and the skill text was edited after those runs, so the score is measured on
+  the cases it was tuned against. The release check caps the body at 1,200 words and wants an eval case for every
+  workflow guide except three older ones (slideshow, trailer, voice-over only), so a new feature
+  adds a case and a line in its family's guide, not rows to SKILL.md.
+- **Fixed: the skill description** covers an interactive figure or living diagram for a web page, not only a video
+  (a request for one used to leave the skill unloaded), and gets back its triggers for an animated logo intro, outro
+  or sting, removing silences, re-voicing or subtitling a video in another language, and the "not for still-image
+  edits or photo-post captions" line; every earlier trigger is kept, reworded to fit 1,024 characters. A logo sting,
+  lower third or title routes to `references/components.md` by its path, which now opens with the transparent render
+  for an editor (`render --alpha`). A command the host kills at its timeout keeps its one-line pointer in SKILL.md
+  (`--background`, then `status <id> --wait 240`).
+- **Fixed: recap on Windows with short folder names.** A session recorded in a folder under its 8.3 short name
+  (`RUNNER~1`, common on build machines) lost its files from the recap because git reports the long name; recap now
+  matches both spellings.
+- **Fixed: a screenshot stopped at its time limit says when the browser was stuck.** When a frame never came, the
+  check that found the browser silent (or its drawing processes idle) could also be the one that reached the
+  screenshot's time limit, and the error then gave only the limit ("still not there after N s, the longest a
+  screenshot may take"). It now names the stuck browser ("the browser did not say what it was doing for N s"); the
+  wait ends at the same moment. It happened on a slow or busy machine, with a low `SHOWTIME_SHOT_TIMEOUT`, or when
+  reading the page's size had used most of a screenshot's time.
+- **Fixed: tests and checks.** The detector test now fails when no event is found, the two figure test files are
+  balanced across the shards, the embed element is tested in a browser, the X-ray page tests skip where node is missing,
+  every test server accepts many parallel connects (Windows refused past 5), `scripts/check_release.py` fails on a
+  merge-conflict marker left in a file, and `test_pace` derives the stuck-frame guard's waits from its constants with
+  room for a loaded Windows runner's late answers and timers; the cut-frame tests say why `check` skipped the cut
+  walk.
+
 ## 0.4.4 (2026-10-13)
 
 - **New: X-ray, a film of a real thing with its inside drawn on the frames its own sound says.** Film something doing
@@ -29,8 +110,8 @@ All notable changes to showtime. Each entry says what changed and why, so this f
   it. A film made at another frame rate than its clip is converted by `floor(t * film fps) + offset`. The inside is
   a generic mechanism of that kind of object, which the film says on screen, and which key or note a hit was needs
   evidence (the paper, a display, the notes), otherwise the film says "a keystroke". Guide: [X-ray](docs/guides/xray.md)
-  and [xray.md](skills/showtime/references/workflows/xray.md). Tests: `test_xray.py`, `test_xray_notes.py`,
-  `test_xray_drums.py`, `test_xray_template.py`.
+  and [xray.md](skills/showtime/references/workflows/xray.md). Checked by tests that detect events in generated sound,
+  read notes and drum hits, and start a project from the template.
 - **New: the X-ray live page, a film you play.** `showtime export html <xray project> --interactive` writes
   `<name>-live.html`, one offline file: the clip with its own sound and the inside drawn on every frame, slow motion,
   light or dark, see-through or beside, labels on hover, the receipt and the credit. It then went further. Pads under
@@ -44,7 +125,7 @@ All notable changes to showtime. Each entry says what changed and why, so this f
   with `<showtime-xray src="you-live.html" ratio="16/9">` (a poster and a Play button; the one script is `embed.js`) or
   an iframe with `#embed`, and its policy allows framing. The letter shortcuts moved to Shift (Shift+S quarter speed,
   Shift+T theme, Shift+L layout). The live export takes the mechanism for its commands from `xray.made`, else from the
-  project's own `mechanism.js`, and warns when it can only guess. Tests: `test_xray_live.py`, `test_xray_made.py`.
+  project's own `mechanism.js`, and warns when it can only guess. Checked by tests that open the exported page in a browser and read what the export embeds.
 - **New: living diagrams you touch.** A figure's scene can answer the viewer, not only the knobs: `interactive.type`
   receives every character typed on the figure (from anywhere on the page, or from a Type field on a phone's soft
   keyboard; Enter and Backspace arrive too), `parts[].press` runs when a part is clicked or tapped (or Enter on its
@@ -56,8 +137,9 @@ All notable changes to showtime. Each entry says what changed and why, so this f
   happens when you press a key: the keyboard, a USB poll, an interrupt, RAM, the GPU and the screen's refresh, in slow
   motion with typical, labelled numbers; click a part to pulse it). The heat pump template's outdoor unit now drags to
   set the weather. Each still films from its tour, and a figure framed with `#embed` reports its height to the host
-  like an X-ray page. `showtime check` walks a typed line and every pressable part. Tests: `test_figure_examples.py`,
-  `test_figure_computer.py`.
+  like an X-ray page. `showtime check` walks a typed line and every pressable part. Checked by tests that type on the exported figures in a browser.
+- **Fixed: code scanning.** The exported figure's title is cleaned of markup in one linear pass instead of a repeated
+  search.
 - **The site's X-ray page.** A gallery of ten films (the typewriter four ways, the music box in a phone and a wide cut,
   the switch, the piano, the guitar and the drums), each with its receipt, the clip's credit with a link to the
   clip's file page (a share-alike clip says the film has the same license), and the commands that made it, with a

@@ -17,6 +17,14 @@ var CUE = {
   duration: 20,
 };
 
+// the illustrative numbers, from one place (the tags below show the default): 45% of the Carnot limit for a 35 °C coil and refrigerant 7 °C below the air
+var HP = {
+  cop: function (outside) { var hot = 35 + 273.15, cold = outside - 7 + 273.15; return 0.45 * hot / (hot - cold); },
+  open: 2,
+  discharge: function (outside) { return Math.round(55 + (15 - outside) * 0.6); },
+  fmt: function (c) { return (c < 0 ? '−' + (-c) : String(c)) + ' °C'; },
+};
+
 window.SCENE = {
   world: { scale: 8.2, origin: [1000, 268] },
   bands: [300, 170],
@@ -59,8 +67,8 @@ window.SCENE = {
     { for: 'valve', at: CUE.valve, title: 'Expansion valve', sub: 'pressure drops, the fluid chills' },
   ],
   tags: [
-    { id: 't-suction', pipe: 'suction', f: 0.42, tone: 'cold', text: '−5 °C', at: CUE.cold },
-    { id: 't-discharge', pipe: 'discharge', f: 0.8, tone: 'hot', text: '70 °C', at: CUE.hot },
+    { id: 't-suction', pipe: 'suction', f: 0.42, tone: 'cold', text: HP.fmt(HP.open - 7), at: CUE.cold },
+    { id: 't-discharge', pipe: 'discharge', f: 0.8, tone: 'hot', text: HP.fmt(HP.discharge(HP.open)), at: CUE.hot },
   ],
   focus: [{ part: 'compressor', with: ['suction', 'discharge'], at: CUE.compressor, until: CUE.indoor - 0.5 }],
   // camera keys run in order, each from where the last one left it; focus is a part, a world point or a screen point
@@ -87,14 +95,14 @@ window.SCENE = {
       { id: 'indoor', name: 'Indoor coil', sub: 'gives the heat to the room' },
       { id: 'valve', name: 'Expansion valve', sub: 'pressure drops, the fluid chills' },
     ],
-    knobs: { outside: { label: 'Outside air', hint: 'drag the outdoor unit', min: -20, max: 15, step: 1, default: 2, format: function (v) { return v + ' °C'; } } },
+    knobs: { outside: { label: 'Outside air', hint: 'drag the outdoor unit', min: -20, max: 15, step: 1, default: HP.open, format: function (v) { return v + ' °C'; } } },
     steps: [{
       id: 'weather', kicker: 'The weather', knob: 'outside',
       text: function (s) { return 'At ' + s.outside + ' °C outside, each unit of electricity moves ' + HP.cop(s.outside).toFixed(1) + ' units of heat indoors (illustrative).'; },
       run: function (fx) {
         var o = fx.state.outside;
         fx.say('t-suction', HP.fmt(o - 7), 'cold');
-        fx.say('t-discharge', HP.fmt(Math.round(55 + (15 - o) * 0.6)), 'hot');
+        fx.say('t-discharge', HP.fmt(HP.discharge(o)), 'hot');
         fx.pulse('outdoor', 'cold'); fx.pulse('compressor', 'hot', { delay: 0.35 });
       },
     }],
@@ -107,10 +115,4 @@ window.SCENE = {
     },
     tour: [[{ step: 'weather' }, 2200], [{ knob: ['outside', -10] }, 2600], [{ knob: ['outside', 10] }, 2600], [{ knob: ['outside', 2] }, 2600]],
   },
-};
-
-// the illustrative numbers above, from one place: 45% of the Carnot limit for a 35 °C coil and refrigerant 7 °C below the air
-var HP = {
-  cop: function (outside) { var hot = 35 + 273.15, cold = outside - 7 + 273.15; return 0.45 * hot / (hot - cold); },
-  fmt: function (c) { return (c < 0 ? '−' + (-c) : String(c)) + ' °C'; },
 };

@@ -52,6 +52,10 @@ ENV = build_env(showtime_home())
 TMP = Path(tempfile.mkdtemp(prefix="st-capture-"))
 
 
+class _Server(http.server.ThreadingHTTPServer):
+    request_queue_size = 128     # Windows refuses connects past the default backlog (5)
+
+
 def showtime(*args, check=True, timeout=240, cwd=None):
     cp = subprocess.run([sys.executable, str(LAUNCHER)] + [str(a) for a in args], env=ENV, cwd=cwd,
                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8",
@@ -132,7 +136,7 @@ def setUpModule():
     global SERVER, BASE
     if LISTEN_BLOCKED:   # T1Site, T1bServe and T2Demo skip; the rest runs without a server
         return
-    SERVER = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    SERVER = _Server(("127.0.0.1", 0), handler)
     threading.Thread(target=SERVER.serve_forever, daemon=True).start()
     BASE = "http://127.0.0.1:%d/" % SERVER.server_address[1]
 

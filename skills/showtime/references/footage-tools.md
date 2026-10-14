@@ -44,15 +44,15 @@ and `footage view`. `--edit-dir` picks any folder, e.g. next to the footage when
 | Section | Lines |
 |---|---|
 | Inventory: probe and scenes | 57-74 |
-| Trim and proxies | 76-88 |
-| Timeline views (self-review) | 90-99 |
-| Reframe (16:9 -> 9:16, 1:1, 4:5) | 101-118 |
-| Cut out the speaker | 120-146 |
-| Denoise speech | 148-166 |
-| Stabilise | 168-180 |
-| Colour: correction and looks | 182-200 |
-| Screen recordings: auto zoom | 202-205 |
-| Platform notes | 207-216 |
+| Trim and proxies | 76-89 |
+| Timeline views (self-review) | 91-100 |
+| Reframe (16:9 -> 9:16, 1:1, 4:5) | 102-119 |
+| Cut out the speaker | 121-147 |
+| Denoise speech | 149-167 |
+| Stabilise | 169-181 |
+| Colour: correction and looks | 183-201 |
+| Screen recordings: auto zoom | 203-206 |
+| Platform notes | 208-217 |
 
 ## Inventory: probe and scenes
 
@@ -82,7 +82,8 @@ showtime footage trim demo.mp4 --webm --no-audio -o project/media/demo.webm     
 ```
 
 Re-encodes (H.264 + AAC, +faststart, a keyframe every `--gop` 0.5 s) unless `--copy` (instant, starts on
-a keyframe). Use it instead of a one-range EDL or bare ffmpeg.
+a keyframe). Use it instead of a one-range EDL or bare ffmpeg. `-o` is the file written: when it exists, trim
+refuses (`--overwrite` replaces it); without `-o` a new `name-2.mp4` is written next to the last one.
 
 Talking-head footage for a "cut the ums" demo: resource reels and press soundbites are already edited
 (no fillers left to cut); raw interview recordings and live shots are where fillers are.

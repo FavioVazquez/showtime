@@ -1190,7 +1190,10 @@ def _register_footage(sub) -> None:
     p.add_argument("--webm", action="store_true", help="VP9 in WebM instead of H.264 in MP4")
     p.add_argument("--no-audio", action="store_true", help="drop the audio (a silent <video> layer)")
     p.add_argument("--copy", action="store_true", help="stream copy (no re-encode; starts on a keyframe)")
-    p.add_argument("-o", "--output", help="output file (default <job>/work/footage/<name>.trim.mp4)")
+    p.add_argument("-o", "--output", help="output file (default <job>/work/footage/<name>.trim.mp4); an existing "
+                                          "file is refused unless --overwrite")
+    p.add_argument("--overwrite", "--force", action="store_true",
+                   help="replace the -o file when it exists (default: refuse; without -o a new name-2.mp4 is written)")
     _add_json(p)
     p.set_defaults(func=cmd_trim)
 
@@ -1425,8 +1428,15 @@ def cmd_trim(args) -> int:
     if not b > a:
         raise ShowtimeError("nothing to cut: --from %.3f is not before --to %.3f (the clip is %.2fs)" % (a, b, dur))
     ext = ".webm" if args.webm else (src.suffix if args.copy else ".mp4")
-    out = Path(args.output).expanduser() if args.output else footage_out(src, "%s.trim%s" % (src.stem, ext))
-    out = U.unique_path(out) if out.exists() else out
+    if args.output:                    # an explicit -o is the file written: never a quiet name-2 next to it
+        out = Path(args.output).expanduser()
+        if out.exists() and (out.resolve() == src or os.path.samefile(out, src)):
+            raise ShowtimeError("-o %s is the input clip itself" % args.output, hint="write the trim to another file")
+        if out.exists() and not args.overwrite:
+            raise ShowtimeError("%s exists" % out, hint="pass --overwrite to replace it, or pick another -o")
+    else:
+        out = footage_out(src, "%s.trim%s" % (src.stem, ext))
+        out = U.unique_path(out) if out.exists() else out
     out.parent.mkdir(parents=True, exist_ok=True)
     fps = float(pr.get("fps") or 30.0)
     gop = max(1, int(round(float(args.gop) * fps)))

@@ -29,6 +29,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from urllib.parse import unquote
 
 TESTS_DIR = Path(__file__).resolve().parent
 SKILL = TESTS_DIR.parent
@@ -339,7 +340,8 @@ class TestEmbed(unittest.TestCase):
         self.assertEqual(r["logs"], [], "no page error")
         ok = r["loaded"][0]
         self.assertIsNotNone(ok, "a page opened from disk (file:) loads its film")
-        self.assertEqual(ok["src"], live.as_uri() + "#embed_hit2", "built from the parsed address, its old fragment replaced")
+        # compared decoded: the browser writes a Windows 8.3 short name's "~" (RUNNER~1) as %7E, the same file
+        self.assertEqual(unquote(ok["src"]), unquote(live.as_uri()) + "#embed_hit2", "built from the parsed address, its old fragment replaced")
         self.assertEqual(ok["sandbox"], "allow-scripts", "the frame gets no storage, forms, popups or top navigation")
         self.assertEqual(r["loaded"][1:], [None] * 4, "javascript:, data: and vbscript: leave the poster")
         self.assertEqual(r["frames"], 1)

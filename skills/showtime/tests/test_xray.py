@@ -1179,7 +1179,7 @@ class ReaderLimits(unittest.TestCase):
 
     def test_a_csv_cell_the_reader_cannot_take_is_a_refusal(self):
         self.refused(self.f("wide.csv", "t,note\n1," + "x" * 140000 + "\n"), "cannot read wide.csv as a CSV file")
-        self.refused(self.f("nul.csv", "t,note\n1,a\x00b\n"), "NUL byte")                  # the same on every platform and Python
+        self.refused(self.f("zero-byte.csv", "t,note\n1,a\x00b\n"), "NUL byte")            # not "nul.csv": NUL is a device name on Windows
         u16 = Path(self.f("u16.csv", "")); u16.write_bytes("t\n1\n".encode("utf-16"))
         self.refused(u16, "NUL byte")
         self.refused(u16, "UTF-16")

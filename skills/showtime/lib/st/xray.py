@@ -516,7 +516,7 @@ def read_event_rows(path: Path) -> Tuple[List[Dict[str, Any]], List[str]]:
         if size > MAX_EVENTS_BYTES:
             raise ShowtimeError("%s is %.0f MB; an events file may be up to %d MB" % (path.name, size / 1048576.0, MAX_EVENTS_BYTES // 1048576),
                                 hint="keep the events you want in the film (peaks, not the whole signal)")
-        with open(path, "rb") as raw:                          # a NUL byte: csv reads it on some Pythons and drops the row on others
+        with open(path, "rb") as raw:                          # a NUL byte: csv refuses it before 3.11 and reads it after
             at = 0
             while True:
                 chunk = raw.read(1048576)

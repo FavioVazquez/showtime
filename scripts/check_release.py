@@ -46,7 +46,9 @@ Checks:
   directory   the plugin directory's limits for the published repository: under 10,000 files, 256 MiB
               unpacked and 50 MiB zipped, every file under 5 MiB, no symlinks, submodules or LFS, no OS
               junk files, names valid on Windows (no reserved characters or names, no case-only
-              duplicates), no export-ignore/filter in .gitattributes, README of 40+ words, a LICENSE,
+              duplicates), no .gitattributes attribute that rewrites files at checkout (filter, ident,
+              working-tree-encoding, eol, text, export-ignore, export-subst), CRLF in the Windows shims
+              (*.cmd, *.bat, *.ps1) and no CR in *.sh and the POSIX launcher, README of 40+ words, a LICENSE,
               plugin.json name/description/author/version, a default for every userConfig option, no
               top-level bin/. Warnings for what makes a review slower (over 512 files, non-image
               binaries over 256 KiB). Runs by default where there is no examples/ folder (the plugin
@@ -943,6 +945,44 @@ def directory_stats(files: Sequence[Path]) -> Dict[str, Any]:
             "largest": max(sizes.items(), key=lambda kv: kv[1]) if sizes else (None, 0), "sizes": sizes}
 
 
+_REWRITING_ATTRS = re.compile(r"^(?:-?filter\b.*|filter=.*|ident|-ident|working-tree-encoding=.*|eol=.*|!?text|text=.*|"
+                              r"!?crlf(?:=.*)?|-crlf(?:=.*)?|export-ignore|-export-ignore|export-subst|-export-subst)$")
+
+
+def checkout_rewrites(line: str) -> List[str]:
+    """The attributes on one .gitattributes line that change files at checkout (or archive): filter (LFS), ident,
+    working-tree-encoding, eol, text (set, auto, unspecified or re-enabled after `* -text`; only `-text` and `binary`
+    leave bytes alone), the legacy crlf, export-ignore/-subst. A `#` starts a comment only at the line start or after
+    whitespace."""
+    parts = re.split(r"(?:^|\s)#", line, 1)[0].split()
+    return [a for a in parts[1:] if _REWRITING_ATTRS.match(a) and a != "-text"] if len(parts) > 1 else []
+
+
+def check_checkout_bytes(f: Findings, files: Sequence[Path]) -> None:
+    """Files are stored byte-exact: no .gitattributes attribute (root or nested) rewrites them at checkout, the root has
+    `* -text`, the Windows shims carry CRLF in their bytes and the POSIX scripts carry no CR."""
+    ga = REPO / ".gitattributes"
+    attr_files = [ga] + [p for p in files if p.name == ".gitattributes" and p != ga]
+    if not ga.is_file() or not re.search(r"(?m)^\*[ \t]+-text[ \t]*(?:[ \t]#.*)?$", read(ga)):
+        f.add("directory", "error", "the root .gitattributes needs a `* -text` line (store files byte-exact)", ".gitattributes")
+    for g in attr_files:
+        if not g.is_file():
+            continue
+        for i, line in enumerate(read(g).splitlines(), 1):
+            for bad in checkout_rewrites(line):
+                f.add("directory", "error", "%s rewrites files at checkout (store them byte-exact): %s" % (bad, line.strip()), "%s:%d" % (rel(g), i))
+    for p in files:
+        r = rel(p)
+        crlf_shim = Path(r).suffix.lower() in (".cmd", ".bat", ".ps1")
+        if not (crlf_shim or r.endswith(".sh") or r == "skills/showtime/bin/showtime"):
+            continue
+        data = p.read_bytes()
+        if crlf_shim and re.search(rb"(?<!\r)\n", data):
+            f.add("directory", "error", "Windows shim has LF-only lines (commit it with CRLF; nothing converts it at checkout)", r)
+        elif not crlf_shim and b"\r" in data:
+            f.add("directory", "error", "has CR bytes (a POSIX script must be LF; a CR breaks the shebang)", r)
+
+
 def check_directory(f: Findings, files: Sequence[Path]) -> Dict[str, Any]:
     """The plugin directory's submission limits, on the files git would publish."""
     st = directory_stats(files)
@@ -982,11 +1022,7 @@ def check_directory(f: Findings, files: Sequence[Path]) -> Dict[str, Any]:
                 f.add("directory", "error", "symlink", rel(Path(d) / n))
     if (REPO / ".gitmodules").exists():
         f.add("directory", "error", "git submodules are not allowed", ".gitmodules")
-    ga = REPO / ".gitattributes"
-    if ga.is_file():
-        for i, line in enumerate(read(ga).splitlines(), 1):
-            if re.search(r"(?:^|\s)(export-ignore|export-subst|filter=|-?filter\b)", line.split("#", 1)[0]):
-                f.add("directory", "error", "no export-ignore/filter (LFS) attributes: %s" % line.strip(), ".gitattributes:%d" % i)
+    check_checkout_bytes(f, files)
     readme = REPO / "README.md"
     if not readme.is_file():
         f.add("directory", "error", "README.md is missing")

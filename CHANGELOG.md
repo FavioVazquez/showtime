@@ -5,6 +5,13 @@ All notable changes to showtime. Each entry says what changed and why, so this f
 `skills/showtime/lib/st/__init__.py` and `python3 scripts/check_release.py` keeps the plugin manifests, the registry files and
 `setup/package.json` in sync with it.
 
+## 0.4.6 (unreleased)
+
+- **Fixed: the repository stores files exactly as they are installed.** `.gitattributes` is now `* -text`, so nothing is
+  converted at checkout, and the Windows launchers (`.cmd`, `.bat`, `.ps1`) are committed with CRLF; installed files
+  match the repository byte for byte on every OS. `scripts/check_release.py` now fails on any attribute that converts
+  content, on a Windows launcher with LF-only lines and on a shell script with CR bytes.
+
 ## 0.4.5 (2026-10-14)
 
 - **New: X-ray events from a data stream.** `showtime xray import <events.csv|json> --job <job> --time-map SLOW,T0`

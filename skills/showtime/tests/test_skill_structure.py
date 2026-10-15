@@ -100,11 +100,76 @@ class TestRepoHygiene(unittest.TestCase):
                     bad.append("%s: %s" % (page.relative_to(SKILL), url))
         self.assertEqual(bad, [])
 
-    def test_gitattributes_line_endings(self):
+    def test_gitattributes_rewrites_nothing_at_checkout(self):
+        """The plugin directory refuses checkout rewrites: no text/eol/filter/ident/encoding attribute, shims stored with CRLF."""
         text = (REPO / ".gitattributes").read_text(encoding="utf-8")
-        for pat, eol in (("*.sh", "lf"), ("*.py", "lf"), ("*.mjs", "lf"), ("*.md", "lf"),
-                         ("*.cmd", "crlf"), ("*.ps1", "crlf")):
-            self.assertRegex(text, r"(?m)^%s\s+.*eol=%s\b" % (pat.replace("*", r"\*").replace(".", r"\."), eol))
+        self.assertRegex(text, r"(?m)^\*\s+-text\s*$")
+        for line in text.splitlines():
+            self.assertEqual(cr.checkout_rewrites(line), [], line)
+        import subprocess
+        tracked = subprocess.run(["git", "ls-files", "-z"], cwd=str(REPO), stdout=subprocess.PIPE, check=True).stdout.decode("utf-8").split("\0")
+        tracked = [t for t in tracked if t and (REPO / t).is_file()]
+        shims = [t for t in tracked if t.lower().endswith((".cmd", ".bat", ".ps1"))]
+        posix = [t for t in tracked if t.endswith(".sh") or t == "skills/showtime/bin/showtime"]
+        self.assertTrue(shims and posix)
+        for name in shims:
+            data = (REPO / name).read_bytes()
+            self.assertNotRegex(data, rb"(?<!\r)\n", "%s must be stored with CRLF" % name)
+        for name in posix:
+            self.assertNotIn(b"\r", (REPO / name).read_bytes(), "%s must be stored with LF only" % name)
+
+    def test_checkout_rewrite_check_and_mutants(self):
+        import shutil
+        import tempfile
+        for line in ("*.cmd text eol=crlf", "* text=auto eol=lf", "*.a filter=lfs diff=lfs merge=lfs", "*.b ident",
+                     "*.c working-tree-encoding=UTF-16", "d export-ignore", "e export-subst", "*.f eol=lf", "*.g text=auto",
+                     "*.i crlf", "*.j -crlf", "*.k crlf=input", "*.l !text", "*.m text", "*.n !crlf", "a#b text eol=lf"):
+            self.assertNotEqual(cr.checkout_rewrites(line), [], line)
+        for line in ("* -text", "*.png binary", "# *.cmd text eol=crlf", "", "*.h -text  # eol=lf", "a#b -text", "*.png binary # text"):
+            self.assertEqual(cr.checkout_rewrites(line), [], line)
+        d = Path(tempfile.mkdtemp(prefix="st-ga-"))
+        real = cr.REPO
+        try:
+            (d / "skills" / "showtime" / "bin").mkdir(parents=True)
+            files = {"a.cmd": b"@echo off\r\nexit /b 0\r\n", "b.ps1": b"x\r\n", "run.sh": b"#!/bin/sh\n", "skills/showtime/bin/showtime": b"#!/bin/sh\n"}
+            for n, data in files.items():
+                (d / n).write_bytes(data)
+            (d / ".gitattributes").write_text("# stored byte-exact\n* -text\n*.png binary\n", encoding="utf-8")
+            cr.REPO = d
+            paths = [d / n for n in files]
+
+            def errors():
+                f = cr.Findings()
+                cr.check_checkout_bytes(f, paths)
+                return [i["message"] for i in f.errors()]
+
+            self.assertEqual(errors(), [])
+            # mutant 1: the old attributes come back
+            (d / ".gitattributes").write_text("* -text\n*.cmd text eol=crlf\n", encoding="utf-8")
+            self.assertTrue(any("rewrites files at checkout" in m for m in errors()), errors())
+            (d / ".gitattributes").write_text("* -text\n", encoding="utf-8")
+            # mutant 2: a shim stored with LF
+            (d / "a.cmd").write_bytes(b"@echo off\nexit /b 0\n")
+            self.assertTrue(any("LF-only" in m for m in errors()), errors())
+            (d / "a.cmd").write_bytes(files["a.cmd"])
+            # mutant 3: a POSIX script with CR
+            (d / "run.sh").write_bytes(b"#!/bin/sh\r\n")
+            self.assertTrue(any("CR bytes" in m for m in errors()), errors())
+            (d / "run.sh").write_bytes(files["run.sh"])
+            # mutants 4-5: no `* -text` in the root, and a nested .gitattributes
+            (d / ".gitattributes").write_text("*.png binary\n", encoding="utf-8")
+            self.assertTrue(any("needs a `* -text`" in m for m in errors()), errors())
+            (d / ".gitattributes").write_text("* -text\n", encoding="utf-8")
+            (d / "sub").mkdir()
+            (d / "sub" / ".gitattributes").write_text("*.x text\n", encoding="utf-8")
+            paths.append(d / "sub" / ".gitattributes")
+            self.assertTrue(any("rewrites files" in m for m in errors()), errors())
+            paths.pop()
+            (d / "skills" / "showtime" / "bin" / "showtime").write_bytes(b"#!/bin/sh\r\n")
+            self.assertTrue(any("CR bytes" in m for m in errors()), errors())
+        finally:
+            cr.REPO = real
+            shutil.rmtree(str(d), ignore_errors=True)
 
     def test_every_test_file_takes_fast(self):
         """run_all.py --fast (the CI fast tier) passes --fast to every file; a bare unittest.main() exits 2 on it."""

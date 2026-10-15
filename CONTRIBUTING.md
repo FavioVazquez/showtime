@@ -58,6 +58,8 @@ or on the folder it already runs. `setup --link` points it at the linked checkou
   shows it with an example.
 - Mention it in SKILL.md or a reference only as it really exists: `scripts/check_release.py` fails when the
   docs name a command or sub-command the CLI does not have.
+- A new workflow guide needs a `route-<topic>` case in `benchmarks/routing-eval/` and a line in its family in
+  `references/index.md`, not a row in SKILL.md; `python3 scripts/check_release.py --only routing` checks it.
 
 ## Add an X-ray mechanism
 

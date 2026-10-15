@@ -29,6 +29,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from urllib.parse import unquote
 
 TESTS_DIR = Path(__file__).resolve().parent
 SKILL = TESTS_DIR.parent
@@ -167,25 +168,28 @@ try {
   }
   // what a viewer does: a key, a click on a tick, the pointer on a part label, space
   await pg.evaluate(`xrayLive.jump(${st.kept[0]})`);
+  const wantKey = await pg.evaluate(`xrayLive.state().events.find((e) => e.i === ${st.kept[1]}).frame`);
   await pg.keyboard.press('ArrowRight');
-  await pg.waitForFunction(() => !window.xrayLive.state().playing && window.xrayLive.state().frame > 0, null, { polling: 100 });
-  await pg.waitForTimeout(300);
-  out.key = await pg.evaluate(`({ frame: xrayLive.state().frame, want: xrayLive.state().events.find((e) => e.i === ${st.kept[1]}).frame })`);
+  // wait for the key's jump itself (the start frame already satisfied "frame > 0", so a slow runner was read too early)
+  await pg.waitForFunction((w) => !window.xrayLive.state().playing && window.xrayLive.state().frame === w, wantKey, { polling: 100, timeout: 10000 }).catch(() => {});
+  out.key = await pg.evaluate(`({ frame: xrayLive.state().frame, want: ${wantKey}, playing: xrayLive.state().playing, focus: document.activeElement && (document.activeElement.className || document.activeElement.tagName) })`);
   const nth = Math.floor(st.kept.length / 2);
   await pg.locator('.xl-tick:not(.is-skip)').nth(nth).click();
-  await pg.waitForTimeout(400);
-  out.tick = await pg.evaluate(`({ frame: xrayLive.state().frame, want: xrayLive.state().events.find((e) => e.i === ${st.kept[nth]}).frame })`);
+  // wait for the jump itself (a slow runner seeks for longer than a fixed pause); if it never lands, say what the page shows
+  const wantTick = await pg.evaluate(`xrayLive.state().events.find((e) => e.i === ${st.kept[nth]}).frame`);
+  await pg.waitForFunction((w) => !window.xrayLive.state().playing && window.xrayLive.state().frame === w, wantTick, { polling: 100, timeout: 10000 }).catch(() => {});
+  out.tick = await pg.evaluate(`({ frame: xrayLive.state().frame, want: ${wantTick}, playing: xrayLive.state().playing, focus: document.activeElement && (document.activeElement.className || document.activeElement.tagName) })`);
   const lab = await pg.evaluate('xrayLive.seek(2.5).then((s) => s.labels[0] || null)');
   if (lab) {
     const box = await pg.evaluate(() => { const r = document.querySelector('.xl-scale').getBoundingClientRect(); return { x: r.left, y: r.top, k: r.width / document.getElementById('stage').offsetWidth }; });
     await pg.mouse.move(box.x + (lab.x + lab.w / 2) * box.k, box.y + (lab.y + lab.h / 2) * box.k);
-    await pg.waitForTimeout(300);
+    await pg.waitForFunction((w) => window.xrayLive.state().hot === w, lab.name.toLowerCase(), { polling: 100, timeout: 10000 }).catch(() => {});
     out.hover = { want: lab.name.toLowerCase(), hot: await pg.evaluate('xrayLive.state().hot') };
     await pg.mouse.move(1, 1);
   }
   await pg.locator('.xl-play').focus(); await pg.locator('.xl-play').blur();
   await pg.keyboard.press(' ');
-  await pg.waitForTimeout(500);
+  await pg.waitForFunction(() => window.xrayLive.state().playing, null, { polling: 100, timeout: 10000 }).catch(() => {});
   out.spacePlays = await pg.evaluate('xrayLive.state().playing');
   await pg.evaluate('xrayLive.pause()');
   out.marker = await pg.evaluate("getComputedStyle(document.getElementById('xmark')).display");
@@ -293,6 +297,60 @@ class TestTouch(unittest.TestCase):
         self.assertGreater(r["embedHeight"], 200, "framed with #embed, the page reports its height")
 
 
+EMBED = r"""
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+const [SKILL, HOST] = process.argv.slice(2);
+const { openBrowser } = await import(pathToFileURL(path.join(SKILL, 'scripts', 'lib', 'stagehost.mjs')).href);
+const { browser } = await openBrowser({ headless: true, args: ['--allow-file-access-from-files'] });
+const out = { logs: [] };
+try {
+  const ctx = await browser.newContext({ viewport: { width: 1000, height: 800 } });
+  const pg = await ctx.newPage();
+  pg.on('pageerror', (e) => out.logs.push(String(e.message || e)));
+  await pg.goto(pathToFileURL(HOST).href);
+  out.loaded = await pg.evaluate(() => [...document.querySelectorAll('showtime-xray')].map((el) => {
+    const f = el.load(false);
+    return f ? { src: f.getAttribute('src'), sandbox: f.getAttribute('sandbox'), h: f.style.height } : null;
+  }));
+  const h0 = out.loaded[0] && out.loaded[0].h;
+  // the page in the sandboxed frame still tells the host its height
+  out.resized = await pg.waitForFunction((h) => document.querySelector('showtime-xray iframe').style.height !== h, h0, { timeout: 30000, polling: 100 }).then(() => true, () => false);
+  out.frames = await pg.evaluate(() => document.querySelectorAll('showtime-xray iframe').length);
+} catch (e) { out.error = String(e && e.stack || e); }
+await browser.close();
+console.log(JSON.stringify(out));
+"""
+
+
+@unittest.skipIf(FAST or not NODE, "--fast: no browser")
+class TestEmbed(unittest.TestCase):
+    def test_sources_and_the_sandboxed_frame(self):
+        _, live, _ = sample()
+        host = TMP / "embed-host.html"
+        srcs = [live.name + "#old", "javascript:alert(1)", "data:text/html,<p>x</p>", "vbscript:x", "java\tscript:alert(1)"]
+        host.write_text('<!doctype html><meta charset="utf-8"><script src="%s"></script><body style="width:900px">%s'
+                        % ((LIVE / "embed.js").as_uri(), "".join(
+                            '<showtime-xray src="%s" ratio="16/9"%s></showtime-xray>' % (v, ' hit="2"' if k == 0 else "")
+                            for k, v in enumerate(srcs))), encoding="utf-8")
+        drv = TMP / "embed.mjs"
+        drv.write_text(EMBED, encoding="utf-8")
+        cp = subprocess.run([NODE, str(drv), str(SKILL), str(host)], env=ENV, cwd=str(TMP), stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, encoding="utf-8", errors="replace", timeout=300)
+        self.assertEqual(cp.returncode, 0, cp.stderr[-2000:])
+        r = json.loads(cp.stdout.strip().splitlines()[-1])
+        self.assertNotIn("error", r, r.get("error"))
+        self.assertEqual(r["logs"], [], "no page error")
+        ok = r["loaded"][0]
+        self.assertIsNotNone(ok, "a page opened from disk (file:) loads its film")
+        # compared decoded: the browser writes a Windows 8.3 short name's "~" (RUNNER~1) as %7E, the same file
+        self.assertEqual(unquote(ok["src"]), unquote(live.as_uri()) + "#embed_hit2", "built from the parsed address, its old fragment replaced")
+        self.assertEqual(ok["sandbox"], "allow-scripts", "the frame gets no storage, forms, popups or top navigation")
+        self.assertEqual(r["loaded"][1:], [None] * 4, "javascript:, data: and vbscript: leave the poster")
+        self.assertEqual(r["frames"], 1)
+        self.assertTrue(r["resized"], "the sandboxed page still reports its height to the host")
+
+
 @unittest.skipIf(FAST or not NODE, "--fast: no browser")
 class TestBrowser(unittest.TestCase):
     def test_jump_lands_on_the_peak(self):
@@ -311,8 +369,8 @@ class TestBrowser(unittest.TestCase):
             self.assertEqual(j["frame"], j["evframe"], j)
             self.assertEqual(j["cur"], j["i"], "the kit's acting event is the one jumped to: %s" % j)
             self.assertEqual(j["s"], 1, "the strike peaks on its event's frame: %s" % j)
-        self.assertEqual(r["key"]["frame"], r["key"]["want"], "→ lands on the next event's frame")
-        self.assertEqual(r["tick"]["frame"], r["tick"]["want"], "a click on a tick lands on its event's frame")
+        self.assertEqual(r["key"]["frame"], r["key"]["want"], "→ lands on the next event's frame: %s" % r["key"])
+        self.assertEqual(r["tick"]["frame"], r["tick"]["want"], "a click on a tick lands on its event's frame: %s" % r["tick"])
         self.assertIn("hover", r, "the sample draws part labels")
         self.assertEqual(r["hover"]["hot"], r["hover"]["want"], "the pointer on a part label lights it")
         self.assertTrue(r["spacePlays"], "space plays")

@@ -8,6 +8,8 @@
   * CLI: `new xray` copies a runnable project (no layout variants left behind); --mechanism copies a library entry
     and drops the sample clip's evidence for another object; an unknown mechanism, or --mechanism on another
     template, is an error; --layout sets showtime.json "xray".layout
+  * notes.json is optional: a 404 for it is no missing file in an X-ray project (check and render), a 404 for
+    xray.json still is; a fresh project without notes passes `showtime check` (browser, skipped with --fast)
 
 Stdlib only. usage: python tests/test_xray_template.py [--fast] [-v]
 """
@@ -19,6 +21,7 @@ import hashlib
 import json
 import math
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -36,6 +39,8 @@ from st.launcher import build_env, showtime_home  # noqa: E402
 
 ENV = build_env(showtime_home())
 TMP = Path(tempfile.mkdtemp(prefix="st-xray-tpl-"))
+FAST = "--fast" in sys.argv
+NODE = shutil.which("node", path=ENV.get("PATH"))
 
 
 def showtime(*args, check=True, timeout=300):
@@ -126,7 +131,8 @@ class TestStatic(unittest.TestCase):
 
     def test_guide_routed(self):
         skill = (SKILL / "SKILL.md").read_text(encoding="utf-8")
-        self.assertIn("| `xray` |", skill)
+        routes = skill[skill.index("## Situation"):skill.index("## Red flags")]
+        self.assertRegex(routes, r"\| [^\n]*`xray`[^\n]*\|\n", "SKILL.md routes the xray guide in its family row")
         self.assertTrue((SKILL / "references" / "workflows" / "xray.md").is_file())
 
 
@@ -191,6 +197,47 @@ class TestCLI(unittest.TestCase):
         cp = showtime("new", "dom", TMP / "bad2", "--mechanism", "typewriter", check=False)
         self.assertNotEqual(cp.returncode, 0)
         self.assertIn("xray template", cp.stdout + cp.stderr)
+
+
+MISSING = r"""
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+const [SKILL] = process.argv.slice(2);
+const { missing404 } = await import(pathToFileURL(path.join(SKILL, 'scripts', 'lib', 'stagehost.mjs')).href);
+const B = 'http://127.0.0.1:9';
+const log = { http: [{ url: B + '/notes.json', status: 404 }, { url: B + '/xray.json?x=1', status: 404 }, { url: B + '/a.png', status: 500 }] };
+const urls = (cfg) => missing404(log, cfg, B).map((h) => h.url.replace(B, ''));
+console.log(JSON.stringify({ xray: urls({ xray: {} }), plain: urls({}), none: urls(null) }));
+"""
+
+
+@unittest.skipIf(not NODE, "needs node")
+class TestOptionalNotes(unittest.TestCase):
+    """xray.js fetches notes.json in case `showtime xray notes` wrote one; without it the project is fine."""
+
+    def test_the_filter(self):
+        drv = TMP / "missing.mjs"
+        drv.write_text(MISSING, encoding="utf-8")
+        cp = subprocess.run([NODE, str(drv), str(SKILL)], env=ENV, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            encoding="utf-8", errors="replace", timeout=120)
+        self.assertEqual(cp.returncode, 0, cp.stderr[-2000:])
+        r = json.loads(cp.stdout.strip().splitlines()[-1])
+        self.assertEqual(r["xray"], ["/xray.json?x=1"], "notes.json is optional in an X-ray project, xray.json is not")
+        self.assertEqual(r["plain"], ["/notes.json", "/xray.json?x=1"])
+        self.assertEqual(r["none"], ["/notes.json", "/xray.json?x=1"])
+        self.assertIn("getJSON('notes.json').catch", (TEMPLATE / "xray.js").read_text(encoding="utf-8"), "the page goes on without it")
+        for f in ("check.mjs", "render.mjs"):
+            self.assertIn("missing404(", (SKILL / "scripts" / f).read_text(encoding="utf-8"), f)
+
+    @unittest.skipIf(FAST, "--fast: no browser")
+    def test_a_project_without_notes_passes_check(self):
+        proj = TMP / "nonotes"
+        showtime("new", "xray", proj)
+        self.assertFalse((proj / "notes.json").exists())
+        cp = showtime("check", proj, "--json", check=False, timeout=600)
+        rep = json.loads(cp.stdout[cp.stdout.index("{"):])
+        miss = [f["message"] for f in rep["findings"] if f.get("code") == "missing_file"]
+        self.assertEqual(miss, [])
 
 
 if __name__ == "__main__":

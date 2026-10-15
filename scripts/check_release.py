@@ -20,6 +20,10 @@ Checks:
               compatibility <= 500 chars) and a body within the word budget; no command runs a
               path built from ${CLAUDE_SKILL_DIR} or ${CLAUDE_PLUGIN_ROOT} (other hosts leave them empty,
               and "${CLAUDE_SKILL_DIR}/bin/showtime" becomes /bin/showtime)
+  routing     every workflow guide (references/workflows/*.md) is the guide some eval case must read: a
+              `Read` grader in benchmarks/routing-eval/ or benchmarks/plugin-eval/ whose pattern matches its
+              path (one routing case per new feature; ROUTING_LEGACY lists the guides older than the rule),
+              and every routing case's guide exists. Skipped where there is no benchmarks/routing-eval/
   links       every relative link / `references/...` path in SKILL.md and references/ exists; no links
               to documentation that moved (MOVED_URLS, e.g. the old Codex docs address)
   commands    every `showtime <cmd> [sub]` named in SKILL.md, references/ and agents/ exists in the CLI
@@ -34,6 +38,7 @@ Checks:
               table of its sections and their line ranges; the tables are fixed (rewritten) unless --check
   paths       no machine-specific paths (a developer's home folder, temp folders) in shipped files
   names       no names of outside projects this repo must not mention (list kept encoded below)
+  conflicts   a merge-conflict marker line (<<<<<<< , =======, >>>>>>> ) left in a tracked text file
   terms       words CONTEXT.md says to avoid (warning only)
   media       committed videos under 20 MB, no render work folders, and large example media (over
               10 MB, every .mov) listed in examples/MEDIA.json and ignored by git: they ship as release
@@ -70,7 +75,15 @@ SKILL = REPO / "skills" / "showtime"
 LIB = SKILL / "lib"
 
 DESCRIPTION_MAX = 1024
-BODY_WORDS_MAX = 1500
+BODY_WORDS_MAX = 1200   # SKILL.md routes by family; detail lives in the guides and --help (was 1,500 up to 0.4.4)
+
+# Routing evals: every workflow guide is read by at least one eval case (benchmarks/routing-eval/README.md).
+EVALS_DIR = REPO / "benchmarks"
+ROUTING_EVAL = "routing-eval"
+ROUTING_SUITES = (ROUTING_EVAL, "plugin-eval")
+# Workflow guides written before the one-case-per-feature rule (0.4.5). Give each a `route-<topic>` case when it is
+# next touched and take it off this list (the check warns once one is covered).
+ROUTING_LEGACY = {"slideshow", "trailer", "voiceover-only"}
 
 # Plugin sub-agents (the crew). Loaded by Claude Code from agents/*.md at the plugin root.
 AGENTS_DIR = REPO / "agents"
@@ -489,6 +502,59 @@ def check_skill(f: Findings) -> Optional[str]:
 
 
 # ---------------------------------------------------------------------------
+# routing (one eval case per workflow guide)
+# ---------------------------------------------------------------------------
+
+def read_patterns(evals: Path) -> List[Tuple[str, str, Path]]:
+    """(case name, pattern, grader file) for every `tool_used` grader on `Read` in the routing suites."""
+    out = []
+    for suite in ROUTING_SUITES:
+        for g in sorted((evals / suite).glob("*/graders/*.md")):
+            fields, _, err = parse_frontmatter(read(g))
+            if fields is None or fields.get("type") != "tool_used" or fields.get("tool") != "Read":
+                continue
+            pat = fields.get("input_match", "").replace("''", "'")
+            if pat:
+                out.append((g.parent.parent.name, pat, g))
+    return out
+
+
+def check_routing(f: Findings, evals: Optional[Path] = None, skill: Optional[Path] = None,
+                  legacy: Optional[Set[str]] = None) -> None:
+    evals = evals or EVALS_DIR
+    skill = skill or SKILL
+    legacy = ROUTING_LEGACY if legacy is None else legacy
+    if not (evals / ROUTING_EVAL).is_dir():
+        return
+    pats = []
+    for case, pat, where in read_patterns(evals):
+        try:
+            pats.append((case, re.compile(pat), where))
+        except re.error as e:
+            f.add("routing", "error", "%s: the Read pattern %r is not a regex (%s)" % (case, pat, e), rel(where))
+    refs = sorted(p.relative_to(skill).as_posix() for p in (skill / "references").rglob("*.md"))
+    for case_dir in sorted(p for p in (evals / ROUTING_EVAL).iterdir() if (p / "prompt.md").is_file()):
+        mine = [rx for c, rx, _ in pats if c == case_dir.name]
+        if not mine:
+            f.add("routing", "error", "routing case %s has no Read grader naming the guide it must read"
+                  % case_dir.name, rel(case_dir))
+        elif not any(rx.search(r) for rx in mine for r in refs):
+            f.add("routing", "error", "routing case %s reads a guide that does not exist (no reference matches %s)"
+                  % (case_dir.name, " or ".join(rx.pattern for rx in mine)), rel(case_dir))
+        if not (case_dir / "graders" / "names-the-first-command.md").is_file():
+            f.add("routing", "error", "routing case %s has no names-the-first-command grader" % case_dir.name,
+                  rel(case_dir))
+    for wf in sorted((skill / "references" / "workflows").glob("*.md")):
+        topic, path = wf.stem, "references/workflows/" + wf.name
+        covered = any(rx.search(path) for _, rx, _ in pats)
+        if not covered and topic not in legacy:
+            f.add("routing", "error", "workflow guide %s has no routing eval case: add benchmarks/%s/route-%s "
+                  "(one case per feature, see its README)" % (wf.name, ROUTING_EVAL, topic), rel(wf))
+        elif covered and topic in legacy:
+            f.add("routing", "warning", "%s now has a routing case: take it off ROUTING_LEGACY" % topic, rel(wf))
+
+
+# ---------------------------------------------------------------------------
 # links
 # ---------------------------------------------------------------------------
 
@@ -773,6 +839,26 @@ def check_paths_and_names(f: Findings, files: Sequence[Path]) -> None:
                 f.add("names", "error", "file name mentions a banned project", rel(p))
 
 
+_CONFLICT_OPEN = re.compile(r"^(?:<<<<<<<|>>>>>>>) ", re.M)
+_CONFLICT_MID = re.compile(r"^=======$", re.M)
+
+
+def check_conflict_markers(f: Findings, files: Sequence[Path]) -> None:
+    """A merge that was committed with its conflict markers still in a file. The `=======` line alone is also a Markdown
+    heading underline, so it counts only in a file that has an opening or closing marker too (git writes all three)."""
+    for p in files:
+        if not is_text(p):
+            continue
+        text = read(p)
+        if "<<<<<<<" not in text and ">>>>>>>" not in text:
+            continue
+        opens = list(_CONFLICT_OPEN.finditer(text))
+        if not opens:
+            continue
+        for m in opens + list(_CONFLICT_MID.finditer(text)):
+            f.add("conflicts", "error", "merge-conflict marker left in the file: %s" % m.group(0).strip(), "%s:%d" % (rel(p), _line(text, m.start())))
+
+
 def avoid_terms() -> Dict[str, str]:
     """{avoid-word: preferred term} from the `backticked` words of CONTEXT.md `_Avoid_:` lines."""
     ctx = REPO / "CONTEXT.md"
@@ -999,7 +1085,7 @@ def check_mirror(f: Findings, assets: Optional[List[Tuple[str, str, Optional[int
 
 
 def default_checks() -> List[str]:
-    default = ["versions", "skill", "links", "commands", "agents", "guides", "paths", "names", "terms", "media"]
+    default = ["versions", "skill", "routing", "links", "commands", "agents", "guides", "paths", "names", "conflicts", "terms", "media"]
     if not (REPO / "examples").is_dir():
         default.append("directory")   # the plugin repository (the examples have their own)
     return default
@@ -1013,6 +1099,8 @@ def run_checks(fix: bool = False, set_version: Optional[str] = None,
         check_versions(f, fix, set_version)
     if "skill" in want:
         check_skill(f)
+    if "routing" in want:
+        check_routing(f)
     if "links" in want:
         check_links(f)
         check_moved_urls(f, shipped_files())
@@ -1024,6 +1112,8 @@ def run_checks(fix: bool = False, set_version: Optional[str] = None,
         check_guides(f, fix)
     if want & {"paths", "names"}:
         check_paths_and_names(f, shipped_files())
+    if "conflicts" in want:
+        check_conflict_markers(f, shipped_files())
     if "terms" in want:
         check_terms(f)
     if "media" in want:
@@ -1135,7 +1225,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                         "  python scripts/check_release.py --check --only commands,links")
     ap.add_argument("--check", action="store_true", help="report only; never modify files")
     ap.add_argument("--set-version", metavar="X.Y.Z", help="bump every version field to X.Y.Z")
-    ap.add_argument("--only", help="comma list: versions,skill,links,commands,agents,guides,paths,names,terms,media,"
+    ap.add_argument("--only", help="comma list: versions,skill,routing,links,commands,agents,guides,paths,names,conflicts,terms,media,"
                                    "directory,mirror")
     ap.add_argument("--mirror", action="store_true", help="also HEAD every model and audio mirror asset on its release "
                                                           "(network; run before a release)")

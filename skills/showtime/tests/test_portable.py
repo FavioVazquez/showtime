@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import _isolate  # noqa: F401  (run from a scratch folder: never write into the repository)
 
+import http.server
 import json
 import os
 import re
@@ -46,6 +47,11 @@ sys.path.insert(0, str(SKILL / "lib"))
 
 from st import __version__, runs, sandbox, shim  # noqa: E402
 from st import launcher as L  # noqa: E402
+
+
+class _Server(http.server.ThreadingHTTPServer):
+    request_queue_size = 128     # Windows refuses connects past the default backlog (5)
+
 
 IS_WIN = os.name == "nt"
 POSIX_ONLY = unittest.skipIf(IS_WIN, "POSIX shell shim")
@@ -728,7 +734,7 @@ class TestChildEnv(Tmp):
 
         servers = []
         for name in ("proxy", "target"):
-            s = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+            s = _Server(("127.0.0.1", 0), H)
             s.name = name
             threading.Thread(target=s.serve_forever, daemon=True).start()
             servers.append(s)

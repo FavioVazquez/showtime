@@ -252,6 +252,46 @@ class TestCheckersBite(unittest.TestCase):
         real = cr.mirror_assets(audio_items=[])
         self.assertTrue(any(n == "modnet--model.onnx" for n, _u, _s in real))
 
+    def test_routing_rule(self):
+        # every workflow guide is read by an eval case; a routing case names a guide that exists
+        import shutil
+        import tempfile
+        d = Path(tempfile.mkdtemp(prefix="st-route-"))
+        try:
+            skill, evals = d / "skill", d / "benchmarks"
+            (skill / "references" / "workflows").mkdir(parents=True)
+            for t in ("covered", "uncovered", "old", "oldcovered"):
+                (skill / "references" / "workflows" / (t + ".md")).write_text("# x\n", encoding="utf-8")
+
+            def case(suite, name, pattern, first=True):
+                g = evals / suite / name / "graders"
+                g.mkdir(parents=True)
+                (g.parent / "prompt.md").write_text("---\nruns: 3\n---\n\nMake a video.\n", encoding="utf-8")
+                (g / "reads-the-guide.md").write_text("---\ntype: tool_used\ntool: Read\ninput_match: '%s'\n---\n"
+                                                      % pattern, encoding="utf-8")
+                if first:
+                    (g / "names-the-first-command.md").write_text("---\ntype: regex\ntarget: last_message\n"
+                                                                  "pattern: 'x'\n---\n", encoding="utf-8")
+            case("routing-eval", "route-covered", r"workflows/covered\.md")
+            case("routing-eval", "route-gone", r"workflows/gone\.md", first=False)
+            case("plugin-eval", "old-trigger", r"workflows/oldcovered\.md")
+            f = cr.Findings()
+            cr.check_routing(f, evals=evals, skill=skill, legacy={"old", "oldcovered"})
+            errs = sorted(i["message"] for i in f.errors())
+            self.assertEqual(len(errs), 3, fmt(f.items))
+            self.assertIn("route-gone has no names-the-first-command", " ".join(errs))
+            self.assertIn("route-gone reads a guide that does not exist", " ".join(errs))
+            self.assertIn("uncovered.md has no routing eval case", " ".join(errs))
+            warns = [i["message"] for i in f.items if i["level"] == "warning"]
+            self.assertEqual(len(warns), 1, fmt(f.items))
+            self.assertIn("oldcovered now has a routing case", warns[0])
+            # the real suite passes, and the cap is the restructured one
+            self.assertEqual(cr.run_checks(only=["routing"]).errors(), [])
+            self.assertIn("routing", cr.default_checks())
+            self.assertLessEqual(cr.BODY_WORDS_MAX, 1200, "the cap SKILL.md was restructured to (0.4.5)")
+        finally:
+            shutil.rmtree(str(d), ignore_errors=True)
+
     def test_banned_and_path_rules(self):
         import codecs
         import tempfile
@@ -267,6 +307,27 @@ class TestCheckersBite(unittest.TestCase):
             cr.check_paths_and_names(f, [bad])
             checks = sorted(i["check"] for i in f.errors())
             self.assertEqual(checks, ["names", "paths", "paths"], fmt(f.items))
+        finally:
+            import shutil
+            shutil.rmtree(str(d), ignore_errors=True)
+
+    def test_conflict_markers_are_errors(self):
+        import tempfile
+        d = Path(tempfile.mkdtemp(prefix="st-conflict-"))
+        try:
+            mark = lambda c: c * 7   # noqa: E731  (built here so this file holds no marker line itself)
+            bad = d / "merged.md"
+            bad.write_text("## 0.4.5\n%s HEAD\n- ours\n%s\n- theirs\n%s other\n" % (mark("<"), mark("="), mark(">")), encoding="utf-8")
+            tail = d / "tail.py"
+            tail.write_text("x = 1\n%s main\n" % mark(">"), encoding="utf-8")
+            heading = d / "ok.md"
+            heading.write_text("Title\n%s\n\ntext\n" % mark("="), encoding="utf-8")
+            f = cr.Findings()
+            cr.check_conflict_markers(f, [bad, tail, heading])
+            where = sorted((Path(i["where"].rsplit(":", 1)[0]).name, i["where"].rsplit(":", 1)[1]) for i in f.errors())
+            self.assertEqual([i["check"] for i in f.errors()], ["conflicts"] * 4, fmt(f.items))
+            self.assertEqual(where, [("merged.md", "2"), ("merged.md", "4"), ("merged.md", "6"), ("tail.py", "2")])
+            self.assertIn("conflicts", cr.default_checks())
         finally:
             import shutil
             shutil.rmtree(str(d), ignore_errors=True)

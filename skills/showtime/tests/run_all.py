@@ -105,7 +105,8 @@ SHARD_WEIGHTS = {
     "test_foundation.py": 35, "test_job.py": 34, "test_mcp.py": 26, "test_studio.py": 26,
     "test_manim.py": 4, "test_skill_structure.py": 3, "test_doc.py": 3, "test_delight.py": 1,
     "test_film.py": 1, "test_diagram.py": 1, "test_caption_cards.py": 1, "test_runtime.py": 1, "test_chart_labels.py": 1,
-    "test_run_all.py": 5, "test_xray.py": 30, "test_xray_template.py": 12, "test_xray_live.py": 12, "test_xray_made.py": 8, "test_xray_notes.py": 20, "test_xray_drums.py": 12, "test_preview_server.py": 3, "test_packages.py": 8, "test_hosts.py": 4,
+    "test_run_all.py": 5, "test_xray.py": 55, "test_xray_template.py": 12, "test_xray_live.py": 12, "test_xray_made.py": 20, "test_server_backlog.py": 1, "test_xray_notes.py": 20, "test_xray_drums.py": 12, "test_preview_server.py": 3, "test_packages.py": 8, "test_hosts.py": 4,
+    "test_figure_computer.py": 14, "test_figure_examples.py": 9,
 }
 SHARD_DEFAULT_WEIGHT = 60
 

@@ -158,8 +158,8 @@ class Detector(unittest.TestCase):
         x[SR: SR + len(thump)] += thump
         # the detector high-passes at 500 Hz to follow the attack; a thump's attack still reads as one event and its band is low
         ev, _ = xray.detect(x, sensitivity=0.8)
-        if ev:
-            self.assertEqual(ev[0]["band"], "low")
+        self.assertTrue(ev, "the thump is detected as an event")
+        self.assertEqual(ev[0]["band"], "low")
 
 
 NOTE_TIMES = [round(0.5 + 0.12 * k, 3) for k in range(25)]
@@ -703,6 +703,16 @@ class Smoothness(unittest.TestCase):
             shutil.rmtree(film.parent, True)
 
 
+def have_audio_stack():
+    """numpy, soundfile and an ffmpeg that exists: what the audio-only and import tests build their inputs from."""
+    import importlib.util
+    try:
+        return (importlib.util.find_spec("numpy") is not None and importlib.util.find_spec("soundfile") is not None
+                and Path(ff.ffmpeg_path()).exists())
+    except Exception:  # noqa: BLE001 - no ffmpeg resolved: skip
+        return False
+
+
 def have_cv2():
     try:
         import cv2  # noqa: F401
@@ -813,6 +823,405 @@ class Tracking(unittest.TestCase):
         with self.assertRaises(ShowtimeError):
             xray.parse_points("10,10 a,b 30,30")
         self.assertEqual(xray.parse_points("1,2 3,4 5,6.5"), [[1.0, 2.0], [3.0, 4.0], [5.0, 6.5]])
+
+
+
+@unittest.skipUnless(have_audio_stack(), "needs numpy, soundfile and ffmpeg")
+class AudioOnly(unittest.TestCase):
+    """A recording with no picture (a WAV, a sonified data stream) is a source: its events land on a frame grid of
+    --fps (default 30) and the page draws the picture side."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = Path(tempfile.mkdtemp(prefix="st-xray-test-"))
+        cls.wav = write_wav(cls.tmp / "clicks.wav", click_wave(CLICKS, LEVELS))
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.tmp, True)
+
+    def test_analyze_a_wav(self):
+        self.assertEqual(xray.validate_clip(self.wav), self.wav)
+        doc = xray.analyze(self.wav, self.tmp / "a")
+        src = doc["source"]
+        self.assertEqual((src["file"], src["fps"], src["width"], src["height"], src["audio_only"]), ("clicks.wav", 30, 0, 0, True))
+        self.assertNotIn("has_audio", src)
+        self.assertEqual(len(doc["events"]), len(CLICKS))
+        for e, t in zip(doc["events"], CLICKS):
+            self.assertTrue(within(e["t"], t, 0.004), (e, t))
+            self.assertEqual(e["frame"], xray.frame_of(e["t"], 30))
+        self.assertTrue((self.tmp / "a" / "check.jpg").is_file())
+        doc25 = xray.analyze(self.wav, self.tmp / "b", fps=25)
+        self.assertEqual(doc25["source"]["fps"], 25)
+        self.assertEqual([e["frame"] for e in doc25["events"]], [xray.frame_of(e["t"], 25) for e in doc25["events"]])
+
+    def test_cli_and_its_refusals(self):
+        job = self.tmp / "wjob"
+        cp = st("xray", "analyze", self.wav, "--job", job, "--fps", "24", "--json")
+        doc = json.loads(cp.stdout[cp.stdout.index("{"):])
+        self.assertEqual(doc["source"]["fps"], 24)
+        self.assertTrue((job / "xray" / "xray.json").is_file())
+        bad = self.tmp / "tjob"
+        cp = st("xray", "analyze", self.wav, "--job", bad, "--track", "--region", "1,1 9,1 9,9", "--ref-time", "0.5", check=False)
+        self.assertEqual(cp.returncode, 1)
+        self.assertIn("no picture to track", cp.stderr)
+        self.assertFalse(bad.exists())
+        clip = make_film(self.tmp / "clip.mkv", self.wav, [])
+        cp = st("xray", "analyze", clip, "--job", bad, "--fps", "25", check=False)
+        self.assertEqual(cp.returncode, 1)
+        self.assertIn("only for a recording with no picture", cp.stderr)
+        self.assertFalse(bad.exists())
+
+    def test_notes_read_a_wav_too(self):
+        job = self.tmp / "njob"
+        st("xray", "notes", self.wav, "--job", job, "--instrument", "drums")
+        doc = json.loads((job / "xray" / "notes.json").read_text(encoding="utf-8"))
+        self.assertTrue(doc["source"]["audio_only"])
+        self.assertTrue(doc["drums"])
+        self.assertTrue((job / "xray" / "check-notes.jpg").is_file())
+
+
+DATA_SLOW, DATA_T0 = 20.0, -0.15                       # film t = (t_data - T0) x SLOW
+
+
+@unittest.skipUnless(have_audio_stack(), "needs numpy, soundfile and ffmpeg")
+class Import(unittest.TestCase):
+    """`xray import`: events from a data stream (CSV or JSON of times) through a time map, detector.engine "data",
+    frames by frame_of, and a film made from them verifies."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = Path(tempfile.mkdtemp(prefix="st-xray-test-"))
+        cls.wav = write_wav(cls.tmp / "sonified.wav", click_wave(CLICKS, LEVELS))     # the same time map as the events
+        rows = ["t_data,h_sigma"] + ["%.6f,%g" % (t / DATA_SLOW + DATA_T0, 5 + k) for k, t in enumerate(CLICKS)]
+        rows += ["%.6f,4" % (DATA_T0 - 0.01), "%.6f,4" % (6.0 / DATA_SLOW + DATA_T0)]   # before film 0; after the 5 s source
+        cls.csv = cls.tmp / "peaks.csv"
+        cls.csv.write_text("\n".join(rows) + "\n", encoding="utf-8")
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.tmp, True)
+
+    def test_csv_with_a_source_and_a_time_map(self):
+        out = self.tmp / "job1" / "xray"
+        tm = xray.parse_time_map("slow=%g,t0=%g" % (DATA_SLOW, DATA_T0))
+        self.assertEqual(tm, xray.parse_time_map("%g,%g" % (DATA_SLOW, DATA_T0)))
+        doc = xray.import_events(self.csv, out, time_map=tm, source=self.wav, strength="h_sigma")
+        self.assertEqual(doc["schema"], "showtime.xray/1")
+        det = doc["detector"]
+        self.assertEqual(det["engine"], "data")
+        self.assertEqual(det["time_map"], {"slow": DATA_SLOW, "t0": DATA_T0})
+        self.assertEqual((det["input"]["file"], det["input"]["column"], det["input"]["rows"]), ("peaks.csv", "t_data", 8))
+        self.assertIn("not from the sound", det["note"])
+        self.assertEqual(doc["source"]["file"], "sonified.wav")
+        self.assertTrue(doc["source"]["audio_only"])
+        self.assertEqual(len(doc["events"]), len(CLICKS))
+        for e, t in zip(doc["events"], CLICKS):
+            self.assertAlmostEqual(e["t"], t, places=3)
+            self.assertEqual(e["frame"], xray.frame_of(e["t"], 30))
+            self.assertIn("h_sigma", e)
+        self.assertEqual(doc["events"][-1]["strength"], 1.0)
+        self.assertEqual([d["why"].split(" (")[0] for d in doc["dropped"]], ["before film time 0", "after the end of the source"])
+        self.assertTrue((out / "check.jpg").is_file())
+        self.assertEqual(Path((out / "source.path").read_text(encoding="utf-8")), self.wav.resolve())
+
+    def test_a_film_made_from_imported_events_verifies(self):
+        job = self.tmp / "job2"
+        doc = xray.import_events(self.csv, job / "xray", time_map={"slow": DATA_SLOW, "t0": DATA_T0}, source=self.wav)
+        film = make_film(job / "final.mp4", self.wav, [e["frame"] for e in doc["events"]])
+        res = xray.verify(job, film)
+        self.assertEqual((res["on_frame"], res["events"], res["status"]), (len(CLICKS), len(CLICKS), "PASS"), res)
+        self.assertLess(abs(res["audio_lag_ms"]), 2.0)
+
+    def test_json_inputs_without_a_source(self):
+        objs = self.tmp / "ev.json"
+        objs.write_text(json.dumps({"events": [{"time": 1.5, "kind": "merger"}, {"time": 0.25}]}), encoding="utf-8")
+        doc = xray.import_events(objs, self.tmp / "j1", fps=25)
+        self.assertEqual([(e["t"], e["frame"]) for e in doc["events"]], [(0.25, 6), (1.5, 37)])
+        self.assertEqual(doc["events"][1]["kind"], "merger")
+        self.assertEqual((doc["source"]["file"], doc["source"]["fps"], doc["source"]["duration"]), (None, 25, None))
+        nums = self.tmp / "ev2.json"
+        nums.write_text("[0.1, 0.2]", encoding="utf-8")
+        doc = xray.import_events(nums, self.tmp / "j2", note="peaks of the sensor log")
+        self.assertEqual([e["frame"] for e in doc["events"]], [3, 6])
+        self.assertEqual(doc["detector"]["note"], "peaks of the sensor log")
+
+    def test_cli_and_its_refusals(self):
+        job = self.tmp / "cli"
+        cp = st("xray", "import", self.csv, "--job", job, "--time-map", "%g,%g" % (DATA_SLOW, DATA_T0), "--source", self.wav, "--json")
+        self.assertEqual(len(json.loads(cp.stdout[cp.stdout.index("{"):])["events"]), len(CLICKS))
+        self.assertTrue((job / "xray" / "xray.json").is_file())
+        bad = self.tmp / "bad.csv"
+        bad.write_text("t\n0.1\nsoon\n", encoding="utf-8")
+        for n, args in enumerate(((self.csv, "--time-map", "0,1"), (self.csv, "--column", "nope"), (bad,),
+                                  (self.tmp / "missing.csv",), (self.csv, "--source", self.tmp / "missing.wav"))):
+            j = self.tmp / ("badjob%d" % n)
+            cp = st("xray", "import", *args, "--job", j, check=False)
+            self.assertEqual(cp.returncode, 1, (args, cp.stderr))
+            self.assertNotIn("Traceback", cp.stderr)
+            self.assertFalse(j.exists(), args)
+        self.assertIn("'soon' is not a number", st("xray", "import", bad, check=False).stderr)
+
+    def _csv(self, name, text):
+        p = self.tmp / name
+        p.write_text(text, encoding="utf-8")
+        return p
+
+    def _refused(self, args, needle, name):
+        j = self.tmp / ("r-" + name)
+        cp = st("xray", "import", *args, "--job", j, check=False)
+        self.assertEqual(cp.returncode, 1, (name, cp.stdout, cp.stderr))
+        self.assertNotIn("Traceback", cp.stderr)
+        self.assertIn(needle, cp.stderr, name)
+        self.assertFalse(j.exists(), name)
+
+    def test_more_refusals(self):
+        self._refused([self._csv("empty.csv", "")], "has no events", "empty")
+        self._refused([self._csv("notime.csv", "a,b\n1,2\n3,4\n")], "has no time column", "notime")
+        self._refused([self._csv("early2.csv", "t\n0.1\n0.2\n"), "--time-map", "1,5"], "lands inside the film", "early2")
+        self._refused([self._csv("bad.json", "[0.1, ")], "is not valid JSON", "badjson")
+        self._refused([self.csv, "--source", self.wav, "--duration", "5"], "--duration is for an import without --source", "dur")
+        self._refused([self.csv, "--fps", "0"], "--fps must be 1..240", "fps0")
+        self._refused([self.csv, "--fps", "1000"], "--fps must be 1..240", "fps1000")
+
+    def test_a_one_row_file(self):
+        doc = xray.import_events(self._csv("one.csv", "t\n0.5\n"), self.tmp / "one")
+        self.assertEqual([(e["t"], e["frame"]) for e in doc["events"]], [(0.5, 15)])
+        self.assertTrue((self.tmp / "one" / "check.jpg").is_file())
+
+    def test_a_strength_cell_that_is_not_a_number_is_refused(self):
+        self._refused([self._csv("sg.csv", "t,h\n1,5\n2,loud\n3,7\n"), "--strength", "h"], "event 2: the h value 'loud' is not a number", "sg")
+
+    def test_a_blank_strength_cell_is_zero_with_a_warning(self):
+        j = self.tmp / "sg-blank"
+        cp = st("xray", "import", self._csv("sg2.csv", "t,h\n1,5\n2,\n3, \n4,10\n"), "--strength", "h", "--job", j, check=False)
+        self.assertEqual(cp.returncode, 0, cp.stderr)
+        self.assertIn("2 event(s) have no h value: drawn at strength 0", cp.stderr)
+        self.assertEqual(cp.stderr.count("have no h value"), 1)
+        doc = json.loads((j / "xray" / "xray.json").read_text())
+        self.assertEqual([e["strength"] for e in doc["events"]], [0.5, 0.0, 0.0, 1.0])
+
+    def test_time_map_refuses_a_part_given_twice(self):
+        for text in ("t0=5,2", "slow=2,slow=3", "2,slow=3"):
+            with self.assertRaises(ShowtimeError) as cm:
+                xray.parse_time_map(text)
+            self.assertIn("twice", str(cm.exception), text)
+        self.assertEqual(xray.parse_time_map("t0=5,slow=2"), {"slow": 2.0, "t0": 5.0})
+        self._refused([self._csv("tw.csv", "t\n1\n"), "--time-map", "t0=5,2"], "sets t0 twice", "tw")
+
+    def test_notes_help_says_a_recording_is_accepted(self):
+        out = st("xray", "notes", "--help").stdout
+        flat = " ".join(out.split())
+        self.assertIn("WAV", flat)
+        self.assertIn("no picture", flat)
+        self.assertNotIn("the video you filmed\n", out)
+
+    def test_time_map_keeps_an_omitted_part(self):
+        self.assertEqual(xray.parse_time_map(",5"), {"slow": 1.0, "t0": 5.0})
+        self.assertEqual(xray.parse_time_map("100,"), {"slow": 100.0, "t0": 0.0})
+        self.assertEqual(xray.parse_time_map(","), {"slow": 1.0, "t0": 0.0})
+        self.assertEqual(xray.parse_time_map("slow=2,"), {"slow": 2.0, "t0": 0.0})
+        with self.assertRaises(ShowtimeError):
+            xray.parse_time_map("1,2,3")
+        doc = xray.import_events(self._csv("tm.csv", "t\n5.5\n7\n"), self.tmp / "tm", time_map=xray.parse_time_map(",5"))
+        self.assertEqual([e["t"] for e in doc["events"]], [0.5, 2.0])
+
+    def test_size_and_count_caps(self):
+        many = self._csv("many.csv", "t\n" + "\n".join(str(k / 1000.0) for k in range(xray.MAX_EVENTS + 1)) + "\n")
+        self._refused([many], "more than %d events" % xray.MAX_EVENTS, "many")
+        rows = [{"t": k / 1000.0} for k in range(xray.MAX_EVENTS + 1)]
+        self._refused([self._csv("many.json", json.dumps(rows))], "up to %d events" % xray.MAX_EVENTS, "manyjson")
+        old = xray.MAX_EVENTS_BYTES
+        xray.MAX_EVENTS_BYTES = 10
+        try:
+            with self.assertRaises(ShowtimeError) as cm:
+                xray.import_events(self.csv, self.tmp / "big")
+            self.assertIn("an events file may be up to", str(cm.exception))
+            self.assertFalse((self.tmp / "big").exists())
+        finally:
+            xray.MAX_EVENTS_BYTES = old
+        edge = self._csv("edge.csv", "t\n" + "\n".join(str(k / 1000.0) for k in range(xray.MAX_EVENTS)) + "\n")
+        self.assertEqual(len(xray.read_event_rows(edge)[0]), xray.MAX_EVENTS)
+
+    def test_times_that_overflow_are_refused(self):
+        self._refused([self._csv("huge.csv", "t\n1e308\n"), "--time-map", "1000,0"], "too large to hold", "huge")
+        self._refused([self._csv("huge2.csv", "t\n1e308\n")], "too large to hold", "huge2")
+        self._refused([self._csv("inf.json", "[1e999, 1]")], "an infinity", "inf")
+
+    def test_nan_and_infinity_are_refused_or_dropped(self):
+        self._refused([self._csv("nan.json", '[{"t": 1, "x": NaN}]')], "NaN is not allowed in JSON", "nan")
+        self._refused([self._csv("inf2.json", '{"events": [{"t": 1, "x": Infinity}]}')], "Infinity is not allowed", "inf2")
+        self._refused([self._csv("nested.json", '[{"t": 1, "x": {"y": [1e999]}}]')], "an infinity", "nested")
+        # a CSV cell "nan" or "inf" is text, not a number: the event keeps it as a string and xray.json is valid JSON
+        doc = xray.import_events(self._csv("cellnan.csv", "t,x,w\n0.5,nan,inf\n1,2,3\n"), self.tmp / "cn")
+        text = (self.tmp / "cn" / "xray.json").read_text(encoding="utf-8")
+        json.loads(text, parse_constant=lambda c: self.fail("bare %s in xray.json" % c))
+        self.assertEqual(doc["events"][0]["x"], "nan")
+
+    def test_columns_the_page_reads_cannot_break_it(self):
+        doc = xray.import_events(self._csv("res.csv", "t,kind,ch,notes,pitches,label\n0.5,3,7,C4,60,a\n1,merger,x,D4,62,b\n"), self.tmp / "res")
+        for e in doc["events"]:
+            self.assertIsInstance(e["kind"], str)
+            self.assertIsInstance(e["ch"], str)
+            self.assertNotIn("notes", e)
+            self.assertNotIn("pitches", e)
+        self.assertEqual((doc["events"][0]["kind"], doc["events"][0]["ch"], doc["events"][0]["notes_data"]), ("3", "7", "C4"))
+        self.assertEqual(doc["events"][0]["pitches_data"], 60)
+        self.assertEqual(doc["events"][0]["label"], "a")
+        js = self._csv("res.json", json.dumps([{"t": 1, "kind": {"a": 1}, "ch": 5, "notes": "C4"}]))
+        e = xray.import_events(js, self.tmp / "resj")["events"][0]
+        self.assertEqual((e["kind_data"], e["ch"], e["notes_data"]), ({"a": 1}, "5", "C4"))
+        self.assertNotIn("kind", e)
+
+    def test_the_auto_note_names_the_file_never_a_folder(self):
+        deep = self.tmp / "private-folder" / "sub"
+        deep.mkdir(parents=True)
+        f = deep / "secret.csv"
+        f.write_text("t\n0.5\n", encoding="utf-8")
+        doc = xray.import_events(f, self.tmp / "leaf")
+        blob = json.dumps(doc)
+        self.assertIn("secret.csv", doc["detector"]["note"])
+        self.assertNotIn("private-folder", blob)
+        self.assertNotIn(str(self.tmp), blob)
+        self.assertEqual(xray._leaf("a\\b\\c.csv"), "c.csv")
+
+    def test_absurd_durations_and_times(self):
+        for d in ("inf", "nan", "1e308", "-1", "100000"):
+            self._refused([self.csv, "--duration", d], "--duration must be above 0", "dur" + d)
+        self._refused([self._csv("day.csv", "t\n1e6\n")], "(24 h)", "day")
+        # with a source, a late event is dropped, not a refusal
+        doc = xray.import_events(self._csv("late.csv", "t\n1\n1e6\n"), self.tmp / "late", source=self.wav)
+        self.assertEqual(len(doc["events"]), 1)
+        self.assertEqual(len(doc["dropped"]), 1)
+        # the backstop: no bare Infinity or NaN reaches xray.json
+        doc = {"events": [{"t": float("inf")}]}
+        with self.assertRaises(ShowtimeError):
+            xray.write_import(doc, np.zeros(0, dtype=np.float32), self.csv, self.tmp / "inf", None)
+        self.assertFalse((self.tmp / "inf" / "xray.json").exists())
+
+    def test_a_source_is_read_once(self):
+        from st import cli_xray
+        calls = []
+        real = xray.build_import
+        xray.build_import = lambda *a, **k: calls.append(1) or real(*a, **k)
+        try:
+            args = cli_xray.argparse.Namespace(events=str(self.csv), job=str(self.tmp / "once"), out=None, json=True, time_map="20,-0.15",
+                                               source=str(self.wav), fps=None, duration=None, column=None, strength=None, note=None)
+            self.assertEqual(cli_xray.cmd_import(args), 0)
+        finally:
+            xray.build_import = real
+        self.assertEqual(len(calls), 1)
+        self.assertTrue((self.tmp / "once" / "xray" / "xray.json").is_file())
+
+
+class ReaderLimits(unittest.TestCase):
+    """The events reader (no audio needed): caps while reading, JSON that cannot be held, the time map's messages."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = Path(tempfile.mkdtemp(prefix="st-xray-test-"))
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.tmp, True)
+
+    def f(self, name, text):
+        p = self.tmp / name
+        p.write_text(text, encoding="utf-8")
+        return p
+
+    def refused(self, path, needle):
+        with self.assertRaises(ShowtimeError) as cm:
+            xray.read_event_rows(path)
+        self.assertIn(needle, str(cm.exception))
+
+    def test_csv_boundary_with_and_without_a_header(self):
+        n = xray.MAX_EVENTS
+        rows = [str(k / 1000.0) for k in range(n + 1)]
+        self.assertEqual(len(xray.read_event_rows(self.f("h-ok.csv", "t\n" + "\n".join(rows[:n]) + "\n"))[0]), n)
+        self.refused(self.f("h-over.csv", "t\n" + "\n".join(rows) + "\n"), "more than %d events" % n)
+        self.assertEqual(len(xray.read_event_rows(self.f("n-ok.csv", "\n".join(rows[:n]) + "\n"))[0]), n)
+        self.refused(self.f("n-over.csv", "\n".join(rows) + "\n"), "more than %d events" % n)
+
+    def test_csv_is_read_line_by_line_and_every_line_counts(self):
+        import csv as csvmod
+        real, pulled = csvmod.reader, []
+
+        def spy(lines, *a, **k):
+            for row in real(lines, *a, **k):
+                pulled.append(1)
+                yield row
+        old = xray.MAX_LINES
+        xray.MAX_LINES = 50
+        csvmod.reader = spy
+        try:
+            self.refused(self.f("blank.csv", "t\n" + "\n" * 20000 + "1\n"), "more than 50 lines")
+            self.refused(self.f("comments.csv", "t\n" + "# note\n" * 20000 + "1\n"), "more than 50 lines")
+            self.assertLess(len(pulled), 120)                        # not the 40,000 lines
+        finally:
+            csvmod.reader = real
+            xray.MAX_LINES = old
+
+    def test_a_small_file_of_empty_objects_is_refused_before_it_is_parsed(self):
+        from unittest import mock
+        hostile = self.f("objs.json", "[" + ",".join(["{}"] * (xray.MAX_CONTAINERS + 1)) + "]")
+        with mock.patch.object(xray.json, "loads", side_effect=AssertionError("parsed")):
+            self.refused(hostile, "too many lists or objects")
+        # a legitimate file: the most events, each with an array of numbers, is read
+        rows = ",".join('{"t":%d.5,"spectrum":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]}' % k for k in range(xray.MAX_EVENTS))
+        self.assertEqual(len(xray.read_event_rows(self.f("spectra.json", "[" + rows + "]"))[0]), xray.MAX_EVENTS)
+
+    def test_a_huge_integer_is_refused_before_json_parses_it(self):
+        from unittest import mock
+        with mock.patch.object(xray.json, "loads", side_effect=AssertionError("parsed")):
+            self.refused(self.f("digits.json", "[1" + "9" * 5000 + "]"), "too large to hold")
+            self.refused(self.f("digits2.json", '{"events": [{"t": 1, "x": ' + "7" * 2000 + "}]}"), "too large to hold")
+
+    def test_a_csv_cell_the_reader_cannot_take_is_a_refusal(self):
+        self.refused(self.f("wide.csv", "t,note\n1," + "x" * 140000 + "\n"), "cannot read wide.csv as a CSV file")
+        self.refused(self.f("zero-byte.csv", "t,note\n1,a\x00b\n"), "NUL byte")            # not "nul.csv": NUL is a device name on Windows
+        u16 = Path(self.f("u16.csv", "")); u16.write_bytes("t\n1\n".encode("utf-16"))
+        self.refused(u16, "NUL byte")
+        self.refused(u16, "UTF-16")
+
+    def test_a_first_row_with_a_huge_number_is_not_a_header(self):
+        self.refused(self.f("big1.csv", "1" * 400 + ",2\n0.5,3\n"), "too large to hold")
+        self.refused(self.f("big2.csv", "0.5," + "9" * 400 + "\n1,2\n"), "too large to hold")
+        rows, cols = xray.read_event_rows(self.f("hdr.csv", "t,label\n1,a\n"))             # a real header is still a header
+        self.assertEqual((cols, len(rows)), (["t", "label"], 1))
+
+    def test_json_counts_every_kind_of_value_and_only_top_level_events(self):
+        old = xray.MAX_VALUES
+        xray.MAX_VALUES = 10
+        try:
+            self.refused(self.f("nulls.json", "[" + ",".join(["null"] * 50) + "]"), "too many values")
+            self.refused(self.f("strs.json", json.dumps({"events": [{"t": 1, "s": "a"}] * 20})), "too many values")
+        finally:
+            xray.MAX_VALUES = old
+        old = xray.MAX_EVENTS
+        xray.MAX_EVENTS = 5
+        try:
+            nested = {"t": 1, "x": {chr(97 + k): {} for k in range(12)}}      # 13 objects inside ONE event
+            self.assertEqual(len(xray.read_event_rows(self.f("nest.json", json.dumps([nested])))[0]), 1)
+            self.refused(self.f("six.json", json.dumps([{"t": k} for k in range(6)])), "up to 5 events")
+        finally:
+            xray.MAX_EVENTS = old
+
+    def test_huge_numbers_and_deep_nesting(self):
+        for name, text in (("bigint.json", "[%s]" % ("9" * 400)), ("bigx.json", '[{"t": 1, "x": %s}]' % ("9" * 400)),
+                           ("digits.json", "[%s]" % ("9" * 6000))):
+            self.refused(self.f(name, text), "too large to hold")           # one message on every Python
+        self.refused(self.f("deep.json", "[" * 100000 + "]" * 100000), "nested")
+        self.refused(self.f("deep2.json", '[{"t": 1, "x": %s1%s}]' % ("[" * 40, "]" * 40)), "nested more than")
+        rows, _ = xray.read_event_rows(self.f("bigcsv.csv", "t,x\n1,%s\n" % ("9" * 400)))     # a CSV cell stays text
+        self.assertEqual(rows[0]["x"], "9" * 400)
+
+    def test_time_map_names_the_bad_value(self):
+        for text, needle in (("1,nan", "t0 must be a number"), ("nan,1", "slow must be a number above 0"),
+                             ("0,1", "slow must be a number above 0"), ("1,inf", "t0 must be a number")):
+            with self.assertRaises(ShowtimeError) as cm:
+                xray.parse_time_map(text)
+            self.assertIn(needle, str(cm.exception), text)
 
 
 if __name__ == "__main__":

@@ -286,12 +286,14 @@ def repo_roots(ses: Dict[str, Any], repo: Optional[str] = None) -> Tuple[str, Li
             raise ShowtimeError("the session's working folder is not a git repository here (or no longer exists)",
                                 why="recap shows only files inside one repository, as paths relative to it",
                                 hint="pass --repo <the repository folder>")
+    top = _real(top)                             # git echoes the folder it was given (an 8.3 short name on Windows)
     roots = [top]
     common = _common_dir(top)
     for cwd in ses["cwds"]:
         c = _real(cwd)
         if os.path.isdir(c):
             t = git_toplevel(c)
+            t = _real(t) if t else t
             if t and t not in roots and common and _common_dir(t) == common:
                 roots.append(t)
         elif c.startswith(top + "/"):
@@ -303,9 +305,10 @@ def repo_roots(ses: Dict[str, Any], repo: Optional[str] = None) -> Tuple[str, Li
 
 
 def _real(p: str) -> str:
-    """The path with symlinked folders resolved (/tmp -> /private/tmp), as git reports its folders."""
+    """The path with symlinked folders resolved (/tmp -> /private/tmp) and, on Windows, 8.3 short names
+    (RUNNER~1) expanded, as git reports its folders."""
     p = _norm(p)
-    if p.startswith("/") and os.name != "nt":
+    if p.startswith("/") or (os.name == "nt" and re.match(r"^[a-z]:/", p)):
         try:
             return _norm(os.path.realpath(p))
         except (OSError, ValueError):

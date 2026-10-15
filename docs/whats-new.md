@@ -3,6 +3,58 @@
 What each release changes for you, newest first, one sentence a feature. The
 [changelog](../CHANGELOG.md) has every change and the reason for it.
 
+## 0.4.5
+
+### X-ray from data
+
+`showtime xray import <events.csv|json> --job <job> --time-map SLOW,T0` turns event times measured in data (the peaks of
+a signal, a sensor log) into an X-ray film. Film time is (t_data - T0) x SLOW, each event lands on its frame, and
+`--source` names the sound the film plays so `xray verify` can check it. The live page's commands then start with
+`xray import`.
+
+### X-ray of a recording with no picture
+
+`xray analyze` takes a WAV: the events land on a frame grid (30 fps, or `--fps`), and the page draws the picture side.
+`xray notes` takes one too, always at 30 fps.
+
+### The live page says what it knows
+
+It states how the events were measured, the sound or a data stream and its note (`"xray".measured` lets you say it
+yourself), and shows your own steps when `"xray".made.commands` lists them. The export warns about a command that would
+not run or a local path. The page, the gallery and the guide also say what sharing a page shares: its prompt and
+commands, the whole `xray` block, the source's name and sha256 and, from data, the events file's name, sha256 and
+columns.
+
+### The skill routes by family
+
+SKILL.md sends a request to one of six families (something that happened; a product, repo, site or paper; an idea or a
+system; numbers; your own media; a format) in 1,200 words or fewer, and flags live in the guides and `--help`. The
+skill also loads now for an interactive figure or living diagram for a web page, and a logo sting, lower third or title
+goes straight to the transparent render for an editor (`render --alpha`). Contributors get a routing eval
+(`benchmarks/routing-eval/`, one case per workflow guide) and a release check that wants a case for each new guide.
+
+### `footage trim -o` writes the file you name
+
+An existing file is refused unless you pass `--overwrite`, and `-o` naming the input clip is refused whatever its
+spelling. Without `-o` nothing changes.
+
+### The embed element takes only safe addresses
+
+`<showtime-xray src>` loads a relative, http(s) or `file:` page and nothing else, in a frame that may run its own
+scripts and nothing more.
+
+### Living diagrams on a phone
+
+The Type field takes a paste or an input-method burst 200 characters at a time, keeps a Chinese, Japanese or Korean
+composition until you commit it, works with Android Backspace and no longer zooms the page on iOS. Letters, Space, Enter
+and Backspace pressed on a focused slider, button or link are no longer typed on the board.
+
+### Small fixes
+
+An X-ray project without notes passes `showtime check`. The heat pump's tags show what the scene computes (63 °C, not
+70 °C). Recap finds a session's files under a Windows 8.3 folder name. A screenshot that hits its time limit now
+says when the browser was stuck.
+
 ## 0.4.4
 
 ### X-ray: film a real thing and see its inside

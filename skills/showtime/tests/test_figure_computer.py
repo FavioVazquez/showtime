@@ -143,6 +143,37 @@ try {
   await page.mouse.click(pt[0], pt[1]);
   await tagIs(page, 'screen', 'on screen: a');
   out.pin = await page.evaluate(() => Figure.current.S.pin);
+  // the Type field: a 200-character cap per event, 16px text, an input method's text kept until it is committed,
+  // and a focused summary or slider keeps its own Space
+  const presses = () => page.evaluate(() => { const e = [...document.querySelectorAll('.fg-ro .ro')].find((r) => r.querySelector('.k').textContent === 'Keys pressed'); return e ? +e.querySelector('.v').textContent : -1; });
+  const base = await presses();
+  out.field = await page.evaluate(() => { const i = document.querySelector('.fg-type input'); return [i.getAttribute('maxlength'), getComputedStyle(i).fontSize]; });
+  await page.evaluate(() => { const i = document.querySelector('.fg-type input'); i.value = 'q'.repeat(500); i.dispatchEvent(new Event('input', { bubbles: true })); });
+  out.burst = (await presses()) - base;
+  await page.evaluate(() => { const i = document.querySelector('.fg-type input'); i.value = 'ni'; i.dispatchEvent(new InputEvent('input', { bubbles: true, isComposing: true })); });
+  out.composing = await page.evaluate(() => document.querySelector('.fg-type input').value);
+  out.composingKeys = (await presses()) - base - out.burst;
+  await page.evaluate(() => document.querySelector('.fg-type input').dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: 'ni' })));
+  out.committed = (await presses()) - base - out.burst;
+  out.ownKeys = await page.evaluate(() => {
+    const res = [];
+    for (const html of ['<details><summary>Narration</summary>x</details>', '<div role="slider" tabindex="0"></div>', '<button type="button">b</button>', '<a href="#x">a</a>']) {
+      const w = document.createElement('div'); w.innerHTML = html; document.querySelector('.fg').appendChild(w);
+      const t = w.firstChild.firstChild && w.firstChild.firstChild.nodeType === 1 ? w.firstChild.firstChild : w.firstChild;
+      res.push(['h', ' ', 'Enter', 'Backspace'].map((k) => { const ev = new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }); t.dispatchEvent(ev); return ev.defaultPrevented; }));
+      w.remove();
+    }
+    return res;
+  });
+  // whole characters: one emoji is one key press, never two halves
+  const before = await presses();
+  await page.evaluate(() => { const i = document.querySelector('.fg-type input'); i.value = '\u{1F600}'; i.dispatchEvent(new Event('input', { bubbles: true })); });
+  out.emoji = (await presses()) - before;
+  // Backspace on an empty field where the key is reported as "Unidentified" (Android): only beforeinput tells
+  const b2 = await presses();
+  out.androidBackspace = await page.evaluate(() => { const i = document.querySelector('.fg-type input'); i.value = '';
+    const ev = new InputEvent('beforeinput', { inputType: 'deleteContentBackward', bubbles: true, cancelable: true }); i.dispatchEvent(ev); return ev.defaultPrevented; });
+  out.backspaceKeys = (await presses()) - b2;
   out.walk = await page.evaluate(() => Figure.current.walk());
   await ctx.close();
 } finally { await browser.close(); }
@@ -178,6 +209,18 @@ class TestComputerFigure(unittest.TestCase):
     def test_backspace_enter_and_a_click(self):
         self.assertEqual(self.r["buffer2"], '"h\\n"', "Backspace took the i, Enter started a line")
         self.assertEqual(self.r["pin"], "", "a key click types; it does not pin the keyboard")
+
+    def test_type_field_edges(self):
+        self.assertEqual(self.r["field"], ["200", "16px"], "capped, and no iOS focus zoom")
+        self.assertEqual(self.r["burst"], 200, "a 500-character burst types 200")
+        self.assertEqual(self.r["composing"], "ni", "an input method's text is left alone while composing")
+        self.assertEqual(self.r["composingKeys"], 0)
+        self.assertEqual(self.r["committed"], 2, "and typed when it is committed")
+        self.assertEqual(self.r["ownKeys"], [[False] * 4] * 4,
+                         "a focused summary, slider, button and link keep all of their keys (letters, Space, Enter, Backspace)")
+        self.assertEqual(self.r["emoji"], 1, "an emoji is one key press, not two halves of a surrogate pair")
+        self.assertTrue(self.r["androidBackspace"], "Backspace reported only through beforeinput is taken")
+        self.assertEqual(self.r["backspaceKeys"], 1)
 
     def test_every_state_walks_clean(self):
         w = self.r["walk"]

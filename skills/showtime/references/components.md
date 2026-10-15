@@ -9,6 +9,8 @@ Run `showtime motion` for the live list.
 
 ## Essentials
 
+- A logo sting, lower third or title for an editor: render it transparent, `showtime render <project> --alpha
+  animation` (flat graphics, small files) or `--alpha prores` (`showtime render --help`)
 - Setup: `/_st/stage.js`, a theme CSS, then `/_st/components/index.js` as a module. Any element with
   `data-st="<component>"` mounts itself; options are kebab-case `data-*` (`data-exit-at` = `exitAt`) or JSON (§1)
 - `at` is seconds local to the clip the component sits in (the nearest ancestor with `data-start`); every other
@@ -51,15 +53,15 @@ Run `showtime motion` for the live list.
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| 1. Setup (two lines) and the time model | 64-114 |
-| 2. Text: kinetic-type, typewriter, caption-karaoke | 116-176 |
-| 3. Identification and numbers: lower-third, count-up, steps, question-beat | 178-219 |
-| 4. Data: chart, world-map | 221-272 |
-| 5. Product and UI: browser-frame / device-frame, cursor and keystrokes, code-block, ... | 274-336 |
-| 6. Camera, stills, closers, texture | 338-379 |
-| 7. Looks (WebGL): fluted-glass, tilt-shift, liquid-metal, mesh-gradient, god-rays, marble, metaballs | 381-551 |
-| 8. Themes (runtime/themes) | 553-566 |
-| 9. Writing your own component | 568-587 |
+| 1. Setup (two lines) and the time model | 66-116 |
+| 2. Text: kinetic-type, typewriter, caption-karaoke | 118-178 |
+| 3. Identification and numbers: lower-third, count-up, steps, question-beat | 180-221 |
+| 4. Data: chart, world-map | 223-274 |
+| 5. Product and UI: browser-frame / device-frame, cursor and keystrokes, code-block, ... | 276-338 |
+| 6. Camera, stills, closers, texture | 340-381 |
+| 7. Looks (WebGL): fluted-glass, tilt-shift, liquid-metal, mesh-gradient, god-rays, marble, metaballs | 383-553 |
+| 8. Themes (runtime/themes) | 555-568 |
+| 9. Writing your own component | 570-589 |
 
 ## 1. Setup (two lines) and the time model
 

@@ -6,30 +6,69 @@ for that step) with a table of its sections; read only what the current step nee
 `showtime guide <topic> [section]` prints them, `showtime guide --find <words>` searches every file
 (every word after `--find` counts; `showtime guide <topic> --find <words>` searches one).
 
-## Workflows (start here for a request)
+## Workflows by family (start here for a request)
 
-| File | Read when the user wants |
-|---|---|
-| `references/workflows/launch-video.md` | a launch, promo or announcement video from a repo, app or URL |
-| `references/workflows/explainer.md` | an idea, product or process explained (canvas film, voice-over, score) |
-| `references/workflows/repo-explainer.md` | a codebase explained: what it does, code map, one request traced through real files and lines |
-| `references/workflows/paper-explainer.md` | a paper, preprint or technical PDF explained, claims tied to pages, figures credited, Manim for the math |
-| `references/workflows/tutorial.md` | a tutorial, walkthrough or product demo (recorded app or drawn) |
-| `references/workflows/social-short.md` | a reel, TikTok, Short, vertical cut-down or audiogram |
-| `references/workflows/data-story.md` | numbers or charts animated into a story |
-| `references/workflows/diagram.md` | how a system works as a living diagram: parts, flows, states and labels that build over time (light, dark or white); the same scene as a live figure people poke (`export html --interactive`) |
-| `references/workflows/footage-edit.md` | recorded footage cut, captioned, reframed, cleaned or graded; a long recording's best moments as short clips |
-| `references/workflows/music-video.md` | picture cut or animated to a song |
-| `references/workflows/changelog-video.md` | a pull request, release or changelog turned into a video (unattended, in CI: `showtime release-video`; a PR video for its description: `showtime pr-video`) |
-| `references/workflows/recap.md` | a coding agent's session turned into a short film of what it did (`showtime recap`: allow-listed facts only, script.md read first) |
-| `references/workflows/repro.md` | a failing browser test (a Playwright trace, or the test command) as a short narrated video for a bug report or PR: `showtime repro` |
-| `references/workflows/trailer.md` | a teaser or trailer |
-| `references/workflows/slideshow.md` | photos or screenshots set to music |
-| `references/workflows/voiceover-only.md` | narration added to an existing video |
-| `references/workflows/xray.md` | an X-ray of the user's clip of a machine or instrument: the inside drawn in sync with its sound, measured and verified; a live page to play (`showtime xray`) |
-| `references/workflows/localize.md` | a video re-voiced or subtitled in another language |
-| `references/adopt.md` | their own video code (a page with seek/render/draw(t), CSS animations, a Python frame script) checked, scored and rendered as it is |
-| `references/adopt.md` § From Claude Design | a Claude Design animation (its HTML zip export) made into an MP4, then voice, music, captions and exports |
+SKILL.md routes a request by family; each family lists its routes, the guide to read and the route's first
+command after `showtime job init` (its flags: the guide and `showtime <cmd> --help`). A new feature adds its
+line here and one routing eval case (`benchmarks/routing-eval/`), not a row to SKILL.md.
+
+A `<job>` can be named by its folder or a shorthand: `launch` is the newest `launch-*` job.
+
+### Something that happened (a change, a session, a failure)
+
+| File | Read when the user wants | First command |
+|---|---|---|
+| `references/workflows/changelog-video.md` | a pull request, release or changelog turned into a video (unattended, in CI: `showtime release-video`) | `showtime pr-video <N>`, `showtime release-video` |
+| `references/workflows/recap.md` | a coding agent's session turned into a short film of what it did (allow-listed facts only, script.md read first) | `showtime recap --latest` (or a `.jsonl`) |
+| `references/workflows/repro.md` | a failing browser test (a Playwright trace, or the test command) as a short narrated video for a bug report or PR | `showtime repro <trace.zip>` |
+
+### A product, repo, site or paper
+
+| File | Read when the user wants | First command |
+|---|---|---|
+| `references/workflows/launch-video.md` | a launch, promo or announcement video from a repo, app or URL | `showtime brand capture <repo\|url> --job <job>` |
+| `references/workflows/repo-explainer.md` | a codebase explained: what it does, code map, one request traced through real files and lines | evidence first, then `showtime new dom` |
+| `references/workflows/paper-explainer.md` | a paper, preprint or technical PDF explained, claims tied to pages, figures credited, Manim for the math | `showtime doc extract` |
+| `references/workflows/tutorial.md` | a tutorial, walkthrough or product demo (recorded app or drawn) | `showtime demo record` (drawn: `showtime new tutorial`) |
+| `references/adopt.md` | their own video code (a page with seek/render/draw(t), CSS animations, a Python frame script) checked, scored and rendered as it is | `showtime adopt <folder>` |
+| `references/adopt.md` § From Claude Design | a Claude Design animation (its HTML zip export) made into an MP4, then voice, music, captions and exports | `showtime adopt <file>.zip` |
+
+### An idea or a system
+
+| File | Read when the user wants | First command |
+|---|---|---|
+| `references/workflows/explainer.md` | an idea, product or process explained (canvas film, voice-over, score); another skill's storyboard table; a video that stops and asks (showtime.json `"questions"`) | `showtime new film` (a storyboard: `showtime new dom <dir> --from-storyboard <file>`) |
+| `references/workflows/diagram.md` | how a system works as a living diagram: parts, flows, states and labels that build over time (light, dark or white); the same scene as a live figure people poke, type on or drag | `showtime new diagram` (`--example typewriter\|computer`); the live figure: `showtime export html <project> --interactive` |
+| `references/manim.md` | math: equations, proofs, graphs, grid transforms | `showtime manim` |
+| `references/html-export.md` | a web page, artifact or embed; a video that stops and asks | `showtime export html` |
+
+### Numbers
+
+| File | Read when the user wants | First command |
+|---|---|---|
+| `references/workflows/data-story.md` | numbers or charts animated into a story | `showtime data inspect`, `showtime new data`, `showtime data import <csv>` |
+
+### Their own media
+
+| File | Read when the user wants | First command |
+|---|---|---|
+| `references/workflows/footage-edit.md` | recorded footage cut, captioned, reframed, cleaned or graded; a long recording's best moments as short clips | `showtime transcribe <files> --edit-dir <job>/edit` |
+| `references/workflows/xray.md` | an X-ray of the user's clip of a machine or instrument, or a recording or data stream of one (`xray import`): the inside drawn in sync with its sound, measured and verified; a live page to play | `showtime xray analyze <clip> --job <job>`; data: `showtime xray import <events> --job <job> --time-map SLOW,T0`; the live page: `showtime export html <project> --interactive` |
+| `references/workflows/music-video.md` | picture cut or animated to a song | `showtime audio beats <track>` |
+| `references/workflows/slideshow.md` | photos or screenshots set to music | `showtime assets sheet <folder>` |
+| `references/workflows/voiceover-only.md` | narration added to an existing video | `showtime footage probe <video>` |
+| `references/workflows/localize.md` | a video re-voiced or subtitled in another language | `showtime voice list --lang <code>` |
+| `references/reference.md` | "make it like this video" | `showtime reference <video> --job <job>` |
+
+### A format
+
+| File | Read when the user wants | First command |
+|---|---|---|
+| `references/workflows/social-short.md` | a reel, TikTok, Short, vertical cut-down or audiogram (their footage, even as a reel: footage-edit) | `showtime new short` |
+| `references/workflows/trailer.md` | a teaser or trailer | `showtime new film` or `showtime new dom` |
+| `references/tones.md` | a showreel, hype reel or "go all out" | `showtime new showreel` |
+| `references/components.md` | a logo sting, lower third, title or motion graphic | `showtime new dom`, then `showtime render --alpha animation` for an editor |
+| `references/platforms.md` § 4 | a thumbnail or poster | `showtime deliver thumb` |
 
 ## Working with the user
 

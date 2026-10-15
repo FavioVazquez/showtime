@@ -347,13 +347,17 @@
       ui();
     }
     if (TYPE) {
-      var tin = $('.fg-type input');
-      tin.addEventListener('input', function (e) {
-        var v = tin.value; tin.value = '';
-        for (var i = 0; i < v.length; i++) typeCh(v.charAt(i));
-      });
+      var tin = $('.fg-type input'), TYPE_BURST = 200;
+      tin.setAttribute('maxlength', TYPE_BURST);
+      // a paste or an input method's burst: at most TYPE_BURST characters per event; an input method's text waits until it is committed
+      function drain() { var v = Array.from(tin.value).slice(0, TYPE_BURST); tin.value = ''; for (var i = 0; i < v.length; i++) typeCh(v[i]); }   // whole characters, never half a surrogate pair
+      tin.addEventListener('input', function (e) { if (!e.isComposing) drain(); });
+      tin.addEventListener('compositionend', drain);
+      // Backspace on an empty field where the keyboard reports no key name (Android: e.key is "Unidentified")
+      tin.addEventListener('beforeinput', function (e) { if (e.inputType === 'deleteContentBackward' && !tin.value && !e.isComposing) { e.preventDefault(); typeCh('\b'); } });
       tin.addEventListener('keydown', function (e) {
         e.stopPropagation();
+        if (e.isComposing) return;
         if (e.key === 'Enter') { e.preventDefault(); typeCh('\n'); }
         else if (e.key === 'Backspace' && !tin.value) { e.preventDefault(); typeCh('\b'); }
         else if (e.key === 'Escape') tin.blur();
@@ -369,9 +373,11 @@
       else if (I.keys && I.keys[e.key.toLowerCase()]) pressKey(e.key.toLowerCase());
       else if (TYPE) {
         if (e.repeat && e.key.length !== 1) return;
-        if (e.key === 'Enter') { if (tag === 'BUTTON' || tag === 'A') return; e.preventDefault(); typeCh('\n'); }
+        // a focused control (a summary, the time slider, a button, a link) keeps all of its keys
+        if (tag === 'SUMMARY' || tag === 'BUTTON' || tag === 'A' || (e.target.getAttribute && e.target.getAttribute('role') === 'slider')) return;
+        if (e.key === 'Enter') { e.preventDefault(); typeCh('\n'); }
         else if (e.key === 'Backspace') { e.preventDefault(); typeCh('\b'); }
-        else if (e.key.length === 1) { if (e.key === ' ' && (tag === 'BUTTON' || tag === 'A')) return; e.preventDefault(); typeCh(e.key); }
+        else if (e.key.length === 1) { e.preventDefault(); typeCh(e.key); }
       }
       else if (/^[1-9]$/.test(e.key) && +e.key <= I.steps.length) enter(+e.key - 1);
       else if (e.key === 'r' || e.key === 'R') enter(S.step);

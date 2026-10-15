@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import _isolate  # noqa: F401  (run from a scratch folder: never write into the repository)
 
+import http.server
 import json
 import re
 import shutil
@@ -639,6 +640,10 @@ try {
 """
 
 
+class _Server(http.server.ThreadingHTTPServer):
+    request_queue_size = 128     # Windows refuses connects past the default backlog (5)
+
+
 class DataImportTests(unittest.TestCase):
     """12.5/12.6/12.9: `data import` writes the data even when --scene has no chart element (and prints the
     element to add), --names sets display names, --where reduces a long table."""
@@ -733,7 +738,7 @@ class AssetsTests(unittest.TestCase):
             def log_message(self, *a):
                 pass
         need_listen()
-        srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Quiet)
+        srv = _Server(("127.0.0.1", 0), Quiet)
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         old_paths = media.paths
         media.paths = lambda: {"media": self.tmp / "cache"}

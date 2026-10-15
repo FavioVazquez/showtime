@@ -6,8 +6,12 @@ placeholder commands, and the site's X-ray page builds the live buttons, prompts
   * export: --prompt (else showtime.json xray.made.prompt, else none) and commands with placeholders in the page's
     config; no absolute path anywhere in them; the report states what was embedded; FIGURE_CSP has no frame-ancestors
   * site: build_xray with a live entry writes "Play it live", the prompt with its copy mechanism, the Embed snippet
+  * the page says how the events were measured ("xray".measured, else the detector: sound or a data stream) and
+    lists showtime.json xray.made.commands when the project gives them; the export warns when the commands name a
+    mechanism the library does not have, or carry a local path
 
-Stdlib only (the site part needs markdown-it-py). usage: python tests/test_xray_made.py [-v]
+Stdlib only (the site part needs markdown-it-py; the page check a browser, skipped with --fast).
+usage: python tests/test_xray_made.py [--fast] [-v]
 """
 from __future__ import annotations
 
@@ -33,6 +37,8 @@ from st.launcher import build_env, showtime_home  # noqa: E402
 
 ENV = build_env(showtime_home())
 TMP = Path(tempfile.mkdtemp(prefix="st-xray-made-"))
+FAST = "--fast" in sys.argv
+NODE = shutil.which("node", path=ENV.get("PATH"))
 
 
 def showtime(*args, check=True, timeout=300):
@@ -51,6 +57,7 @@ def live_config(html: str) -> dict:
     return json.loads(m.group(1))["live"]
 
 
+@unittest.skipIf(not NODE, "needs node (the export is a node script)")
 class TestMade(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -133,6 +140,163 @@ class TestMade(unittest.TestCase):
         self.assertNotIn("frame-ancestors", (SKILL / "scripts" / "lib" / "export" / "xray.mjs").read_text(encoding="utf-8"))
 
 
+def variant(base, name, xr=None, detector=None):
+    """A copy of a project with showtime.json "xray" keys set (None removes one) and xray.json's detector changed."""
+    proj = TMP / name
+    shutil.copytree(base, proj)
+    p = proj / "showtime.json"
+    cfg = json.loads(p.read_text(encoding="utf-8"))
+    for k, v in (xr or {}).items():
+        if v is None:
+            cfg["xray"].pop(k, None)
+        else:
+            cfg["xray"][k] = v
+    p.write_text(json.dumps(cfg), encoding="utf-8")
+    if detector:
+        x = proj / "xray.json"
+        doc = json.loads(x.read_text(encoding="utf-8"))
+        doc["detector"] = detector
+        x.write_text(json.dumps(doc), encoding="utf-8")
+    return proj
+
+
+DATA_DETECTOR = {"engine": "data", "min_gap": None, "sensitivity": None, "from": 0.0, "to": None,
+                 "note": "written from peaks.csv (column t, 19 rows), not from the sound: film time = (t - (-0.14 s)) x 100",
+                 "time_map": {"slow": 100, "t0": -0.14}}
+
+PAGE_TEXT = r"""
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+const [SKILL, FILE] = process.argv.slice(2);
+const { openBrowser } = await import(pathToFileURL(path.join(SKILL, 'scripts', 'lib', 'stagehost.mjs')).href);
+const { browser } = await openBrowser({ headless: true });
+const out = {};
+try {
+  const pg = await (await browser.newContext({ viewport: { width: 1280, height: 860 } })).newPage();
+  await pg.goto(pathToFileURL(FILE).href);
+  await pg.evaluate('xrayLive.ready');
+  out.receipt = await pg.locator('.xl-receipt').textContent();
+  out.drawn = await pg.locator('.xl-drawn').textContent();
+  out.cmds = await pg.locator('.xl-cmds textarea').inputValue();
+} catch (e) { out.error = String(e && e.stack || e); }
+await browser.close();
+console.log(JSON.stringify(out));
+"""
+
+
+@unittest.skipIf(not NODE, "needs node (the export is a node script)")
+class TestMeasuredAndCommands(unittest.TestCase):
+    """The page states the method that measured the events and the steps that made it."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.base = TMP / "proj-base"
+        showtime("new", "xray", cls.base, "--layout", "split")
+
+    def export(self, proj, name):
+        out = TMP / name
+        report = json.loads(showtime("export", "html", proj, "--interactive", "-o", out, "--json").stdout)
+        return report, live_config(out.read_text(encoding="utf-8")), out
+
+    def test_measured_from_the_project_and_from_the_detector(self):
+        _, live, _ = self.export(variant(self.base, "m1", {"measured": "Red: each wave cycle, lit on its own frame."}), "m1.html")
+        self.assertEqual(live["measured"], "Red: each wave cycle, lit on its own frame.")
+        self.assertEqual(live["detector"]["engine"], "envelope")
+        _, live, _ = self.export(variant(self.base, "m2", {"measured": None}, DATA_DETECTOR), "m2.html")
+        self.assertEqual(live["measured"], "")
+        self.assertEqual(live["detector"], {"engine": "data", "note": DATA_DETECTOR["note"]})
+        self.assertEqual(live["made"]["commands"][0],
+                         "showtime xray import events.csv --job xray-typewriter --time-map 100,-0.14 --source clip.mp4")
+        js = (SKILL / "runtime" / "xray-live" / "live.js").read_text(encoding="utf-8")
+        self.assertIn("var how = L.measured || (", js, "the sound wording is only the fallback")
+
+    def test_made_commands_override_the_list(self):
+        steps = ["showtime job init xray-gw", "showtime xray import peaks.csv --job <job> --time-map 100,-0.14",
+                 "showtime new xray <job>/project --mechanism typewriter --layout split", "showtime render <job>/project --job <job>"]
+        made = {"mechanism": "typewriter", "layout": "split", "theme": "dark", "commands": steps}
+        report, live, _ = self.export(variant(self.base, "c1", {"made": made}), "c1.html")
+        self.assertEqual(live["made"]["commands"], steps)
+        self.assertEqual(report["made"]["commands"], steps)
+        self.assertTrue(report["made"]["own"])
+        self.assertEqual(report["made"]["unknown_mechanisms"], [])
+        self.assertFalse([w for w in report["warnings"] if "library" in w or "local path" in w], report["warnings"])
+
+    def test_a_mechanism_the_library_lacks_is_warned(self):
+        made = {"mechanism": "binary", "layout": "split", "theme": "dark"}
+        report, live, _ = self.export(variant(self.base, "u1", {"made": made}), "u1.html")
+        self.assertIn("--mechanism binary", live["made"]["commands"][1])
+        self.assertEqual(report["made"]["unknown_mechanisms"], ["binary"])
+        self.assertTrue([w for w in report["warnings"] if "library" in w and "xray.made.commands" in w], report["warnings"])
+        own = dict(made, commands=["showtime new xray <job>/project --mechanism binary", "cp /Users/someone/strain.csv <job>/"])
+        report, _, _ = self.export(variant(self.base, "u2", {"made": own}), "u2.html")
+        self.assertEqual(report["made"]["unknown_mechanisms"], ["binary"])
+        self.assertTrue([w for w in report["warnings"] if "does not run" in w], report["warnings"])
+        self.assertTrue([w for w in report["warnings"] if "local path" in w], report["warnings"])
+        report, _, _ = self.export(variant(self.base, "u3", {"made": dict(made, mechanism="musicbox")}), "u3.html")
+        self.assertEqual(report["made"]["unknown_mechanisms"], [])
+        self.assertFalse([w for w in report["warnings"] if "library" in w], report["warnings"])
+
+    def test_the_docs_say_the_commands_travel_and_what_the_export_checks(self):
+        guide = (SKILL.parent.parent / "docs" / "guides" / "xray.md").read_text(encoding="utf-8")
+        flow = (SKILL / "references" / "workflows" / "xray.md").read_text(encoding="utf-8")
+        self.assertLessEqual(len(guide.splitlines()), 90)
+        self.assertNotIn("never your paths", guide)
+        self.assertIn("only warns if one holds a local", " ".join(guide.split()))
+        self.assertIn("showtime.json's `xray` block (`made.prompt` too, even with `--prompt`)", " ".join(guide.split()))
+        self.assertIn("the prompt and the commands it shows", flow)
+        self.assertIn("even when `--prompt` shows another prompt", flow)
+        self.assertNotIn("never the project's own paths", flow)
+        self.assertIn("only warns if one holds a local path", flow)
+
+    @unittest.skipIf(not NODE, "needs node")
+    def test_the_local_path_check_is_exact_and_linear(self):
+        mod = (SKILL / "scripts" / "lib" / "export" / "xray.mjs").as_uri()
+        js = ("import {localPathLines} from %r; const cmds = JSON.parse(process.argv[1]);"
+              " const t = Date.now(); const bad = localPathLines({own: true, commands: cmds});"
+              " console.log(JSON.stringify({bad, ms: Date.now() - t}));" % mod)
+        cmds = ["showtime xray import events.csv --job <job>", "showtime new xray /Users/me/clip", "x --out=\"/tmp/a b\"",
+                "open ~/clips/a.mp4", "ffmpeg -i C:\\Users\\me\\a.mp4", "see https://example.com/a/b", "a=//host/x", "=/" * 13000]
+        cp = subprocess.run([NODE, "--input-type=module", "-e", js, json.dumps(cmds)], env=ENV, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, encoding="utf-8", timeout=120)
+        self.assertEqual(cp.returncode, 0, cp.stderr)
+        res = json.loads(cp.stdout)
+        self.assertEqual(res["bad"][:4], cmds[1:5])
+        self.assertNotIn(cmds[0], res["bad"])
+        self.assertNotIn(cmds[5], res["bad"])
+        self.assertLess(res["ms"], 500)
+
+    def test_the_sharing_note_does_not_depend_on_the_commands(self):
+        src = (SKILL / "runtime" / "xray-live" / "live.js").read_text(encoding="utf-8")
+        note = src.index("Sharing a live page shares what is in it")
+        self.assertLess(note, src.index("if (made.prompt ||"))             # outside the "Make your own" box
+        self.assertIn("the whole xray block of showtime.json (its made.prompt and made.commands travel with the page even when --prompt shows another prompt)", src)
+
+    def test_the_config_prompt_travels_even_when_prompt_overrides_it(self):
+        proj = variant(self.base, "ov", {"made": {"mechanism": "typewriter", "prompt": "config prompt zq81"}})
+        out = TMP / "ov.html"
+        rep = json.loads(showtime("export", "html", proj, "--interactive", "-o", out, "--json", "--prompt", "shown prompt").stdout)
+        self.assertEqual(rep["made"]["prompt"], "shown prompt")
+        self.assertIn("config prompt zq81", out.read_text(encoding="utf-8"), "showtime.json's xray block is packed whole")
+
+    @unittest.skipIf(FAST or not NODE, "--fast: no browser")
+    def test_the_page_says_it(self):
+        steps = ["showtime xray import peaks.csv --job <job> --time-map 100,-0.14", "showtime render <job>/project --job <job>"]
+        _, _, out = self.export(variant(self.base, "p1", {"measured": None, "made": {"mechanism": "typewriter", "commands": steps}},
+                                        DATA_DETECTOR), "p1.html")
+        drv = TMP / "page-text.mjs"
+        drv.write_text(PAGE_TEXT, encoding="utf-8")
+        cp = subprocess.run([NODE, str(drv), str(SKILL), str(out)], env=ENV, cwd=str(TMP), stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, encoding="utf-8", errors="replace", timeout=300)
+        self.assertEqual(cp.returncode, 0, cp.stderr[-2000:])
+        r = json.loads(cp.stdout.strip().splitlines()[-1])
+        self.assertNotIn("error", r, r.get("error"))
+        self.assertIn("from a data stream, not from the sound (written from peaks.csv", r["drawn"])
+        self.assertNotIn("clip’s own sound", r["drawn"])
+        self.assertIn("measured from the data", r["receipt"])
+        for line in steps:
+            self.assertIn(line, r["cmds"])
+
+
 try:
     import markdown_it  # noqa: F401
     _spec = importlib.util.spec_from_file_location("site_build", REPO / "site" / "build.py")
@@ -140,6 +304,20 @@ try:
     _spec.loader.exec_module(build)
 except ImportError:  # pragma: no cover
     build = None
+
+
+class TestGuards(unittest.TestCase):
+    def test_the_export_tests_skip_without_node(self):
+        """On a machine with no node the export classes skip; they do not fail in setUpClass."""
+        from unittest import mock
+        spec = importlib.util.spec_from_file_location("xray_made_no_node", str(Path(__file__).resolve()))
+        mod = importlib.util.module_from_spec(spec)
+        with mock.patch("shutil.which", return_value=None):
+            spec.loader.exec_module(mod)
+        shutil.rmtree(mod.TMP, ignore_errors=True)
+        self.assertIsNone(mod.NODE)
+        for cls in (mod.TestMade, mod.TestMeasuredAndCommands):
+            self.assertTrue(getattr(cls, "__unittest_skip__", False), cls.__name__)
 
 
 @unittest.skipIf(build is None, "needs markdown-it-py (showtime's venv has it)")

@@ -69,6 +69,10 @@ PSNR_MIN = 38.0   # same runtime, same browser: frames are normally identical (i
 TMP = None
 
 
+class _Server(http.server.ThreadingHTTPServer):
+    request_queue_size = 128     # Windows refuses connects past the default backlog (5)
+
+
 def showtime(*args, check=True, timeout=300):
     cp = subprocess.run([sys.executable, str(LAUNCHER)] + [str(a) for a in args], env=ENV,
                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8",
@@ -418,7 +422,7 @@ def serve(folder):
                 self.send_header("Content-Security-Policy", STRICT_CSP)
             super().end_headers()
     handler = functools.partial(Quiet, directory=str(folder))
-    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    srv = _Server(("127.0.0.1", 0), handler)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv
 
@@ -1292,7 +1296,7 @@ class NoRangeSeekTest(unittest.TestCase):
                         return
                     if slow:
                         time.sleep(0.05)
-        srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Slow, directory=str(tmp / "www")))
+        srv = _Server(("127.0.0.1", 0), functools.partial(Slow, directory=str(tmp / "www")))
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         try:
             drv = tmp / "norange.mjs"

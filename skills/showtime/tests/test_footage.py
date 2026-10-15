@@ -30,6 +30,7 @@ from __future__ import annotations
 import _isolate  # noqa: F401  (run from a scratch folder: never write into the repository)
 
 import json
+import os
 import re
 import shutil
 import statistics
@@ -883,6 +884,29 @@ class LatestRenderTest(unittest.TestCase):
         r = json.loads(self.run_st("footage", "trim", clip, "--webm", "--no-audio", "-o", root / "cut.webm", "--json").stdout)
         self.assertEqual(r["codec"], "vp9")
         self.assertTrue(Path(r["output"]).is_file())
+        # an explicit -o that exists is refused (never a quiet cut-2.webm), --overwrite replaces it
+        before = (root / "cut.webm").read_bytes()
+        cp = self.run_st("footage", "trim", clip, "--webm", "--to", "1", "-o", root / "cut.webm", check=False)
+        self.assertEqual(cp.returncode, 1, cp.stderr)
+        self.assertIn("cut.webm exists", cp.stderr)
+        self.assertIn("--overwrite", cp.stderr)
+        self.assertFalse((root / "cut-2.webm").exists())
+        self.assertEqual((root / "cut.webm").read_bytes(), before)
+        cp = self.run_st("footage", "trim", clip, "-o", clip, "--overwrite", check=False)
+        self.assertEqual(cp.returncode, 1, cp.stderr)
+        self.assertIn("the input clip itself", cp.stderr)
+        link = root / "same-file.mp4"                    # another spelling of the input (a hard link; a case variant on a
+        os.link(clip, link)                              # case-insensitive disk): refused, the clip is not overwritten
+        size = Path(clip).stat().st_size
+        cp = self.run_st("footage", "trim", clip, "-o", link, "--overwrite", check=False)
+        self.assertEqual(cp.returncode, 1, cp.stderr)
+        self.assertIn("the input clip itself", cp.stderr)
+        self.assertEqual(Path(clip).stat().st_size, size)
+        r = json.loads(self.run_st("footage", "trim", clip, "--webm", "--no-audio", "--to", "1", "-o", root / "cut.webm",
+                                   "--overwrite", "--json").stdout)
+        self.assertEqual(Path(r["output"]), root / "cut.webm")
+        self.assertAlmostEqual(r["duration"], 1.0, delta=0.1)
+        self.assertFalse((root / "cut-2.webm").exists())
         cp = self.run_st("footage", "scenes", clip, "--every", "0.25", "--from", "1", "--to", "2", "-o", root / "dense.png",
                          "--json")
         rep = json.loads(cp.stdout)

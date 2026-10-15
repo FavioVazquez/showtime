@@ -15,6 +15,7 @@ from __future__ import annotations
 import _isolate  # noqa: F401  (run from a scratch folder: never write into the repository)
 
 import html
+import http.server
 import json
 import os
 import re
@@ -34,6 +35,10 @@ sys.path.insert(0, str(SKILL / "lib"))
 from st import pr_video as pv  # noqa: E402
 from st.common import ShowtimeError  # noqa: E402
 from st.launcher import build_env, showtime_home  # noqa: E402
+
+class _Server(http.server.ThreadingHTTPServer):
+    request_queue_size = 128     # Windows refuses connects past the default backlog (5)
+
 
 ENV = build_env(showtime_home())
 DIFF = (FIX / "acme-482.diff").read_text(encoding="utf-8")
@@ -136,7 +141,7 @@ class FakeApi:
 
             def log_message(self, *a):
                 pass
-        self.httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+        self.httpd = _Server(("127.0.0.1", 0), H)
         self.url = "http://127.0.0.1:%d" % self.httpd.server_address[1]
         threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
 

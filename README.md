@@ -107,6 +107,17 @@ languages or what leaves your machine: the [FAQ](docs/faq.md). Something went wr
 > quality (the default) has a critic review every finished video; lean skips the critic unless the video is going
 > to be published. Say **"no crew"** to keep the whole job in one session.
 
+**What's new in 0.4.5** (the list is [below](#new-in-045), and [What's new](docs/whats-new.md) has a short
+paragraph for each):
+
+- **X-ray from data and from a recording.** `showtime xray import` turns event times measured in a data stream into a
+  film; `xray analyze` takes a WAV with no picture.
+- **A live page that says what it knows.** How the events were measured, your own steps, and what sharing the page
+  shares.
+- **A shorter skill router.** Six families instead of one row per feature, with a routing eval for contributors.
+- **Safer and smoother.** `footage trim -o` writes the file you name, the embed takes only safe addresses, and living
+  diagrams type properly on a phone.
+
 **What's new in 0.4.4** (the list is [below](#new-in-044), and [What's new](docs/whats-new.md) has a short
 paragraph for each):
 
@@ -377,8 +388,8 @@ setup:
 is the same server from npm ([@faviovazquez/showtime-mcp](https://www.npmjs.com/package/@faviovazquez/showtime-mcp),
 also listed in the [MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.FavioVazquez/showtime)
 as `io.github.FavioVazquez/showtime` and on [Smithery](https://smithery.ai/servers/favio-vazquezp/showtime)), and
-[`showtime-0.4.4.mcpb`](https://github.com/FavioVazquez/showtime/releases/download/v0.4.4/showtime-0.4.4.mcpb) from
-the v0.4.4 release opens in Claude Desktop with a double click. Setup still runs once on your machine: the
+[`showtime-0.4.5.mcpb`](https://github.com/FavioVazquez/showtime/releases/download/v0.4.5/showtime-0.4.5.mcpb) from
+the v0.4.5 release opens in Claude Desktop with a double click. Setup still runs once on your machine: the
 models and tools never travel inside a package. Long tools answer with a task id after about 20 seconds when a
 client stops calls early; the `status` tool reports progress and the result. Besides the tools that mirror the commands,
 `guide` reads a reference by the piece and `receipt` writes a job's receipt (tokens and cost are "not reported by this
@@ -952,6 +963,36 @@ scene files written for it. `showtime manim check` also renders a draft and runs
 detectors on it, so a near-black scene or a barely visible change is reported before the full render.
 
 </details>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/readme/divider-dark.svg">
+  <img alt="" src="assets/readme/divider-light.svg" width="100%">
+</picture>
+
+## New in 0.4.5
+
+[What's new](docs/whats-new.md) has a short paragraph for each.
+
+**X-ray**
+
+- **From data.** `showtime xray import <events.csv|json> --job <job> --time-map SLOW,T0` writes `xray.json` from event
+  times measured in data (peaks of a signal, a sensor log): film time is (t_data - T0) x SLOW and each event lands on
+  its frame. `--source` names the sound the film plays, so `xray verify` can check it.
+- **From a recording with no picture.** `xray analyze` takes a WAV (events on a frame grid of `--fps`, default 30) and
+  `xray notes` takes one too, always at 30 fps; the page draws the picture side.
+- **The live page.** It states how the events were measured, lists your own steps when `"xray".made.commands` has them,
+  and the page, the gallery and the guide say what sharing a page shares
+  ([guide](docs/guides/xray.md), [xray](skills/showtime/references/workflows/xray.md)).
+
+**The skill and the tools**
+
+- **Routing by family.** SKILL.md sends a request to one of six families at 1,200 words or fewer; flags live in the
+  guides and `--help`. A routing eval (`benchmarks/routing-eval/`) and a release check keep a case for every new
+  workflow guide.
+- **`footage trim -o <file>`** writes that file. An existing file is refused unless `--overwrite`.
+- **The embed element** loads only a relative, http(s) or `file:` address.
+- **Living diagrams on a phone.** The Type field takes a paste, an input-method composition and Android Backspace, and
+  no longer zooms the page on iOS.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/readme/divider-dark.svg">

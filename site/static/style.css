@@ -271,6 +271,8 @@ p{margin:0}
 .prose blockquote > * + *{margin-top:.6em}
 .prose .alert-title{font-size:.8rem;font-weight:600;letter-spacing:.04em;color:var(--ink);text-transform:uppercase}
 .prose img{border-radius:8px;max-height:72vh;width:auto}
+.prose .guide-video{margin:1.2em 0}
+.prose .guide-video video{display:block;width:100%;height:auto;aspect-ratio:16/9;border-radius:8px;background:#15110e}
 .prose picture img{border-radius:0}
 .prose pre{font-size:.83rem}
 .crumbs{font-size:.84rem;color:var(--muted);margin-bottom:18px}

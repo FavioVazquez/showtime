@@ -8,7 +8,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { startServer } from './server.mjs';
 import { parseCli, runMain, failNow, stage, resolveProject, info, c, fmtTime, fmtDuration, parseTimes, parseTime, UserError, cpuCount, workName, briefOutput, runPyCli, hasPyModule, sinceLastLooked, printSince } from './lib/cli.mjs';
-import { openBrowser, openPage, openLab, parseSize, paceSummary, watchBrowser, closeSoon, STUCK_HINT, onStuckShot, missing404 } from './lib/stagehost.mjs';
+import { openBrowser, openPage, openLab, parseSize, paceSummary, watchBrowser, closeSoon, STUCK_HINT, onStuckShot, missing404, withPacedTimeout } from './lib/stagehost.mjs';
 import { textSnapshot, hideText, fontInfo, leafAlpha, captionCollisions, gpuProbeScript } from './lib/audit.mjs';
 import { phoneConfig, createPhone, readNeed, readingRate, ptOf, phoneLine } from './lib/phone.mjs';
 import { brandFindings } from './lib/brandcheck.mjs';
@@ -325,9 +325,28 @@ async function main() {
     let pageFamilies = null;          // @font-face families the page has loaded (lowercase), read once
     let seekMs = 0, shotMs = 0;
     const seekErrors = new Map();
+    // A page that stops answering (its renderer stuck; the browser itself still answers watchBrowser's ping) ends
+    // check naming the step. Before, a seek past its deadline only skipped the step, so a stuck page cost 60 s x pace
+    // per step of the timeline (31 steps for a 3 s film), longer than any caller waits (macOS CI runners).
+    let seekLate = 0;   // seeks past their deadline in a row, on a page that still answers
+    const PAGE_STUCK_HINT = 'the page\'s own code may be stuck there (its ST.onSeek handler or a script it runs at that time): open it with `showtime preview` and seek to that time; or the machine is too busy: close other heavy programs and retry';
+    const pageStuck = async (what) => {
+      const alive = await withPacedTimeout(sess.page.evaluate(() => 1), 15000, 'answering a ping', sess.pace).then(() => true, () => false);
+      if (!alive) failNow(`the page stopped answering: ${what}; check's last step: ${doing}`, PAGE_STUCK_HINT);
+    };
+    /** A page call on the timeline under the seek's deadline: past it, a page that does not answer ends check. */
+    const onPage = (p, what) => withPacedTimeout(p, 60000, what, sess.pace).catch(async (e) => {
+      if (!e || !e.deadline) throw e;
+      await pageStuck(String(e.message));
+      return p;   // slow, but the page answers: wait for it as before
+    });
     const trySeek = async (x) => {
-      try { await sess.seek(x); return true; } catch (e) {
+      try { await sess.seek(x); seekLate = 0; return true; } catch (e) {
         const msg = String(e.message || e).replace(/^page\.evaluate: (Error: )?/, '').split('\n')[0];
+        if (e && e.deadline) {
+          await pageStuck(msg);
+          if (++seekLate >= 2) failNow(`the page's seeks stopped finishing: ${msg}, twice in a row; check's last step: ${doing}`, PAGE_STUCK_HINT);
+        }
         const k = msg.split(' at t=')[0];
         if (!seekErrors.has(k)) seekErrors.set(k, { t: x, msg });
         return false;
@@ -558,7 +577,7 @@ async function main() {
     let hasCaptions = null;
     const auditCaptionZone = async (st) => {
       if (hasCaptions === false || inTx(st)) return;
-      const cz = await sess.page.evaluate(captionCollisions, { width: W, height: H }).catch(() => null);
+      const cz = await onPage(sess.page.evaluate(captionCollisions, { width: W, height: H }), 'reading the captions').catch(() => null);
       if (!cz) return;
       hasCaptions = cz.captions > 0;
       if (!cz.captioned || !cz.zone) return;
@@ -581,7 +600,7 @@ async function main() {
       const shot = await sess.shot({ format: 'jpeg', quality: 90 });
       shotMs += Date.now() - t2; seekMs += t2 - t1;
       sheetItems.push({ buf: shot, label: `${fmtTime(st)}`, sub: `f${Math.round(st * fps)}` });
-      const snap = await sess.page.evaluate(textSnapshot, { width: W, height: H, full: true, labelGapEm: LABEL_GAP });
+      const snap = await onPage(sess.page.evaluate(textSnapshot, { width: W, height: H, full: true, labelGapEm: LABEL_GAP }), 'reading the text');
       report.samples.push({ t: st, blocks: snap.blocks.length });
       for (const blk of snap.blocks) if (blk.opacity >= 0.5 && blk.onCanvas >= 0.5) seenText(blk.text, st, 'dom', blk.caption);
       if (isFilm) await auditFilmFrame(st, shot);
@@ -788,7 +807,7 @@ async function main() {
             const raw = t0 + dir * k * stepW;
             const x = q(Math.max(0, Math.min(lastT, raw)));
             if (!(await trySeek(x))) break;
-            const pr = await sess.page.evaluate(leafAlpha, [...live]).catch(() => ({}));
+            const pr = await onPage(sess.page.evaluate(leafAlpha, [...live]), 'reading the opacity').catch(() => ({}));
             for (const lid of [...live]) {
               const p = pr[lid];
               if (!p || !p.on || p.alpha < 0.05) { live.delete(lid); continue; }   // the end of its visible window
@@ -818,7 +837,7 @@ async function main() {
       }
       for (const [tm, lids] of [...plan].sort((x, y) => x[0] - y[0])) {
         if (!(await trySeek(tm))) continue;
-        const snap = await sess.page.evaluate(textSnapshot, { width: W, height: H, full: true, labelGapEm: LABEL_GAP });
+        const snap = await onPage(sess.page.evaluate(textSnapshot, { width: W, height: H, full: true, labelGapEm: LABEL_GAP }), 'reading the text');
         await measureContrast(snap, tm, lids);
       }
       report.timings.settle = Date.now() - t;
@@ -1067,14 +1086,14 @@ async function main() {
         if (!(await trySeek(gt))) continue;
         okGrid.push(gt);
         tiny.push(await sess.shot({ format: 'jpeg', quality: 70, scale: Math.min(1, 192 / W) }));
-        activeClips.push(await sess.page.evaluate(() => document.querySelectorAll('[data-start][data-active]').length));
+        activeClips.push(await onPage(sess.page.evaluate(() => document.querySelectorAll('[data-start][data-active]').length), 'counting the active clips'));
         await auditCaptionZone(gt);
         let anyText = false;
-        const snap = await sess.page.evaluate(textSnapshot, { width: W, height: H, full: false, overlaps: true });
+        const snap = await onPage(sess.page.evaluate(textSnapshot, { width: W, height: H, full: false, overlaps: true }), 'reading the text');
         const si = okGrid.length - 1;
         // canvas text on this step: the stage's records of every page canvas (raw fillText/strokeText), plus the film
         // API's F.text records below; all in frame pixels
-        const stepTexts = (await sess.page.evaluate(() => (window.__stCanvasText ? window.__stCanvasText() : [])).catch(() => []))
+        const stepTexts = (await onPage(sess.page.evaluate(() => (window.__stCanvasText ? window.__stCanvasText() : [])), 'reading the canvas text').catch(() => []))
           .filter((t) => t.x < W && t.y < H && t.x + t.w > 0 && t.y + t.h > 0);   // off the frame: not on screen
         const bidText = new Map(snap.blocks.map((b) => [b.bid, b]));
         for (const [x, y, frac, px] of snap.overlaps || []) {
@@ -1096,7 +1115,7 @@ async function main() {
         }
         const filmNow = new Set();   // the film API's texts on this step, measured below
         if (isFilm) {
-          const fi = await filmInfo();
+          const fi = await onPage(filmInfo(), 'reading the film');
           auditCovers(fi, gt);
           const kx = fi && fi.width ? W / fi.width : 1, ky = fi && fi.height ? H / fi.height : 1;
           {

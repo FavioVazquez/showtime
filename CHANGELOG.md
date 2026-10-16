@@ -90,6 +90,12 @@ it.
 - **Fixed: the `25-nobel-physics-ice-telescope` example had text over text.** Its "2,450 m" depth mark sat under a
   caption line at 0:57; both depth marks now sit above their ruler ticks. The `tutorial` template's closing line,
   drawn over the dimmed app on purpose, is marked as layered, so a new tutorial project checks clean.
+- **Fixed: `check` ends with an error when the page stops answering.** A seek on the dense timeline that missed its
+  deadline only skipped that step, so a page whose renderer had stopped answering (while the browser itself still
+  did) cost a minute per step, half an hour for a 3 s film, and check could wait with no end. Now a seek past its
+  deadline asks the page for a quick answer: no answer, or a second late seek in a row, ends check with an error
+  naming the seek and its last step, with a hint that points at the page's own code, and the browser closes with it.
+  The dense timeline's other page reads, and the samples' text reads, wait under the same deadline.
 - **Fixed: `export html --interactive` packs a page's own fonts** (#71). The X-ray live page and the living diagram's
   figure packed the files of linked stylesheets only; a project's own `@font-face` in the page's `<style>`
   (`url("fonts/x.woff2")`) stayed a file the page's policy (`font-src data:`) blocks, so the text fell back to another

@@ -42,7 +42,8 @@ RESULTS = {}
 
 
 def showtime(*args, check=True, timeout=300):
-    cp = subprocess.run([sys.executable, str(LAUNCHER)] + [str(a) for a in args], env=ENV,
+    # SHOWTIME_TIMEOUT under this call's own timeout: a stuck command ends itself naming its step instead of being killed
+    cp = subprocess.run([sys.executable, str(LAUNCHER)] + [str(a) for a in args], env=dict(ENV, SHOWTIME_TIMEOUT=str(max(30, timeout - 30))),
                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8",
                         errors="replace", timeout=timeout)
     if check and cp.returncode != 0:
@@ -1085,6 +1086,68 @@ Film.start({ look: 'dark', design: [960, 540], fonts: ['600 1em "Inter Variable"
         self.assertEqual(len([f for f in tiny if "film tiny note" in f["message"]]), 1, tiny)
         for word in ("Film readable", "decor tiny detail"):
             self.assertFalse([f for f in tiny if word in f["message"]], (word, tiny))
+
+    def stuck_check(self, name, script):
+        """check on a 3 s page with script in it, as a page that stops answering is checked: SHOWTIME_TEST_WAIT_SCALE
+        0.25 (the seek's 60 s deadline is 15 s, the probe's 15 s is 3.75 s) with the page open's own deadline kept at
+        300 s (SHOWTIME_TEST_OPEN_TIMEOUT 1200 x 0.25: a busy machine opens the page slowly, which is not under test;
+        a Mac running hung browsers took over 30 s to open one, while 4 CPU burners alone did not slow it),
+        SHOWTIME_TIMEOUT 200 (a check that does not give up says where it is), the browser's profile in its own
+        temporary folder (its processes are found by it).
+        -> (the completed check, seconds, the browser processes still running when it ended)"""
+        proj = self.tmp / name
+        write(proj / "showtime.json", json.dumps({"width": 640, "height": 360, "fps": 30, "duration": 3}))
+        write(proj / "index.html", """<!doctype html><html><head><style>body{margin:0;background:#0b0d12;color:#fff}</style>
+<script src="/_st/stage.js"></script></head><body><h1 id="h">Stuck page</h1>
+<script>ST.onSeek(function (t) { document.getElementById('h').textContent = 'Stuck page ' + t.toFixed(2); });
+%s</script></body></html>""" % script)
+        tmp = Path(tempfile.mkdtemp(prefix="st-stuck-", dir=str(self.tmp)))
+        env = dict(ENV, SHOWTIME_TEST_WAIT_SCALE="0.25", SHOWTIME_TEST_OPEN_TIMEOUT="1200", SHOWTIME_TIMEOUT="200",
+                   TMPDIR=str(tmp), TEMP=str(tmp), TMP=str(tmp))
+        t0 = time.time()
+        cp = subprocess.run([sys.executable, str(LAUNCHER), "check", str(proj), "--json", "--no-determinism", "--samples", "2"],
+                            env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8", errors="replace",
+                            timeout=240)
+        took = time.time() - t0
+
+        def left():   # browser processes still running with their profile in tmp
+            if os.name == "nt":
+                cmd = ["powershell", "-NoProfile", "-Command", "Get-CimInstance Win32_Process | ForEach-Object { $_.CommandLine }"]
+            else:
+                cmd = ["ps", "-axww", "-o", "command="]
+            out = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, encoding="utf-8", errors="replace",
+                                 timeout=60).stdout
+            return [x for x in out.splitlines() if str(tmp) in x and "--user-data-dir" in x]
+        for _ in range(20):
+            procs = left()
+            if not procs:
+                break
+            time.sleep(1)
+        return cp, took, procs
+
+    def test_13h_check_ends_when_the_page_stops_answering(self):
+        """A page that stops answering on the timeline ends check with an error naming where, instead of a check
+        that skips step after step at the seek's deadline each (31 steps for 3 s; macOS CI runners), and leaves no
+        browser behind: a seek that spins (between 1.25 s and 1.45 s, away from the samples: no answer to the probe),
+        a seek that never finishes while the page still answers (two late seeks in a row), and a read on the
+        timeline that spins (the step's canvas text)."""
+        cases = (
+            ("stuckseek", "ST.onSeek(function (t) { if (t >= 1.25 && t < 1.45) for (;;) {} });",
+             ("the page stopped answering", "seek to 1.300s")),
+            ("lateseek", "ST.onSeek(function (t) { if (t >= 1.25 && t < 1.45) return new Promise(function () {}); });",
+             ("the page's seeks stopped finishing", "seek to 1.400s", "twice in a row")),
+            ("stuckread", "window.__stCanvasText = function () { for (;;) {} };",
+             ("the page stopped answering", "reading the canvas text")),
+        )
+        for name, script, says in cases:
+            with self.subTest(name):
+                cp, took, procs = self.stuck_check(name, script)
+                self.assertEqual(cp.returncode, 1, cp.stderr[-2000:])
+                for s in says:
+                    self.assertIn(s, cp.stderr, cp.stderr[-2000:])
+                self.assertIn("showtime preview", cp.stderr, "the hint points at the page's own code")
+                self.assertLess(took, 200, "check took %.0f s to give up on the stuck page" % took)
+                self.assertEqual(procs, [], "the stuck page's browser was left running")
 
     def test_14_check_judges_settled_frame_after_transition(self):
         """Text sliding through the vertical safe zone during a push transition is a note naming the

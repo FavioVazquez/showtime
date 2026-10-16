@@ -49,13 +49,13 @@ slow, fails, or looks different from the preview; or when you need the exact fla
 |---|---|
 | The loop | 60-138 |
 | showtime render <project> | 140-281 |
-| showtime check <project> | 283-343 |
-| showtime snap <project / video> | 345-366 |
-| showtime preview <project> | 368-385 |
-| showtime retime <project> -d <seconds> | 387-442 |
-| Speed | 444-547 |
-| Troubleshooting | 549-563 |
-| Platforms | 565-580 |
+| showtime check <project> | 283-344 |
+| showtime snap <project / video> | 346-367 |
+| showtime preview <project> | 369-386 |
+| showtime retime <project> -d <seconds> | 388-443 |
+| Speed | 445-548 |
+| Troubleshooting | 550-564 |
+| Platforms | 566-581 |
 
 ## The loop
 
@@ -288,6 +288,7 @@ exactly like the renderer and reports findings with the time they happen and a f
 | Code | Severity | Means |
 |---|---|---|
 | `ready_failed`, `page_error`, `seek_error` | error | the page throws, or never becomes ready |
+| `page_stuck` | error | the page stopped answering, or its seeks stopped finishing (the first late seek is named): check ends there, and `--json` gets this one finding |
 | `network`, `missing_file` | error | remote request (blocked in renders) or 404 |
 | `request_failed` | warning | a local request failed (not a 404). A load cancelled while it ran (an image whose `src` changed again before it arrived, as when check's seeks swap pictures) is not a failure: report.json `cancelled_loads` counts those |
 | `unstable_frame` | error | pixels keep changing after a seek finished: something runs on real time |

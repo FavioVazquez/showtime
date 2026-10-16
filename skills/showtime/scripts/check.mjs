@@ -329,10 +329,32 @@ async function main() {
     // check naming the step. Before, a seek past its deadline only skipped the step, so a stuck page cost 60 s x pace
     // per step of the timeline (31 steps for a 3 s film), longer than any caller waits (macOS CI runners).
     let seekLate = 0;   // seeks past their deadline in a row, on a page that still answers
+    let lateFirst = null;   // the first of them, where the page got stuck (later seeks wait behind it): { t, s, i }
+    const seekOther = { n: 0, first: '' };   // seeks that failed without a deadline since the last one that worked
+    const seekTrail = [];   // the last 6 seeks: { t, outcome: 'ok' | 'late' | 'error', ms }
+    let seekN = 0;
+    // tests only: SHOWTIME_TEST_CHECK_STUCK=1 fails every seek at its deadline (the page itself answers), so the tests of
+    // check's callers reach this ending without a stuck page; =pad:N adds N bytes to its --json report (a large report)
+    const TEST_STUCK = /^(1|pad:(\d+))$/.exec(process.env.SHOWTIME_TEST_CHECK_STUCK || '');
     const PAGE_STUCK_HINT = 'the page\'s own code may be stuck there (its ST.onSeek handler or a script it runs at that time): open it with `showtime preview` and seek to that time; or the machine is too busy: close other heavy programs and retry';
+    /** End check on a stuck page: the last seeks go to stderr, then the error. With --json, stdout gets the report
+     *  so far with one page_stuck finding, its counts and the seeks: render's layout check and adopt read them. */
+    const stuckEnd = async (message) => {
+      const trail = seekTrail.map((r) => `${r.t.toFixed(3)}s ${r.outcome} ${r.ms} ms`).join(', ');
+      if (trail) process.stderr.write(c.dim(`  the last seeks: ${trail}\n`));
+      if (a.json) {
+        const json = JSON.stringify({ ...report, ok: false, error: message, seeks: seekTrail,
+          findings: [{ severity: 'error', code: 'page_stuck', message }], summary: { errors: 1, warnings: 0, infos: 0 },
+          ...(TEST_STUCK && TEST_STUCK[2] ? { test_pad: 'x'.repeat(Number(TEST_STUCK[2])) } : {}) }, null, 2) + '\n';
+        // failNow exits at once: a pipe takes the write in parts (64 KB), so the rest waits for this callback, for 10 s
+        // x pace at most (a reader that does not read never lets it come)
+        await withPacedTimeout(new Promise((resolve) => process.stdout.write(json, () => resolve())), 10000, 'writing the report', sess.pace).catch(() => {});
+      }
+      failNow(`${message}; check's last step: ${doing}`, PAGE_STUCK_HINT);
+    };
     const pageStuck = async (what) => {
       const alive = await withPacedTimeout(sess.page.evaluate(() => 1), 15000, 'answering a ping', sess.pace).then(() => true, () => false);
-      if (!alive) failNow(`the page stopped answering: ${what}; check's last step: ${doing}`, PAGE_STUCK_HINT);
+      if (!alive) await stuckEnd(`the page stopped answering: ${what}`);
     };
     /** A page call on the timeline under the seek's deadline: past it, a page that does not answer ends check. */
     const onPage = (p, what) => withPacedTimeout(p, 60000, what, sess.pace).catch(async (e) => {
@@ -341,12 +363,27 @@ async function main() {
       return p;   // slow, but the page answers: wait for it as before
     });
     const trySeek = async (x) => {
-      try { await sess.seek(x); seekLate = 0; return true; } catch (e) {
+      const i = ++seekN, t1 = Date.now();
+      const note = (outcome) => { seekTrail.push({ t: x, outcome, ms: Date.now() - t1 }); if (seekTrail.length > 6) seekTrail.shift(); };
+      try {
+        if (TEST_STUCK) throw Object.assign(new Error(`timed out after 15s: seek to ${x.toFixed(3)}s`), { deadline: 'test' });
+        await sess.seek(x);
+        note('ok'); seekLate = 0; lateFirst = null; seekOther.n = 0;
+        return true;
+      } catch (e) {
         const msg = String(e.message || e).replace(/^page\.evaluate: (Error: )?/, '').split('\n')[0];
+        note(e && e.deadline ? 'late' : 'error');
         if (e && e.deadline) {
           await pageStuck(msg);
-          if (++seekLate >= 2) failNow(`the page's seeks stopped finishing: ${msg}, twice in a row; check's last step: ${doing}`, PAGE_STUCK_HINT);
-        }
+          const late = { t: x, s: +((msg.match(/timed out after (\d+)s/) || [])[1] || 0), i };
+          if (++seekLate >= 2) {
+            const f = lateFirst;
+            const which = late.i === f.i + 1 ? `the seek to ${f.t.toFixed(3)}s and the one after it` : `the seeks to ${f.t.toFixed(3)}s and ${late.t.toFixed(3)}s`;
+            const other = seekOther.n ? ` (after ${seekOther.n} other seek error${seekOther.n > 1 ? 's' : ''}; the first: ${seekOther.first.slice(0, 160)})` : '';
+            await stuckEnd(`the page's seeks stopped finishing: ${which} timed out (${f.s === late.s ? `${f.s} s each` : `${f.s} s and ${late.s} s`})${other}`);
+          }
+          lateFirst = late;
+        } else if (!seekOther.n++) seekOther.first = msg;
         const k = msg.split(' at t=')[0];
         if (!seekErrors.has(k)) seekErrors.set(k, { t: x, msg });
         return false;

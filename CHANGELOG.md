@@ -95,7 +95,11 @@ it.
   did) cost a minute per step, half an hour for a 3 s film, and check could wait with no end. Now a seek past its
   deadline asks the page for a quick answer: no answer, or a second late seek in a row, ends check with an error
   naming the seek and its last step, with a hint that points at the page's own code, and the browser closes with it.
-  The dense timeline's other page reads, and the samples' text reads, wait under the same deadline.
+  The dense timeline's other page reads, and the samples' text reads, wait under the same deadline. The error names
+  the first seek that ran late, where the page got stuck (the seeks after it wait behind it), counts the seeks that
+  failed in another way just before, and lists the last six seeks with how long each took; with `--json` the output is
+  a report holding one `page_stuck` error and those seeks (`adopt` counts it as an error; `render --size` notes that
+  check stopped early and goes on).
 - **Fixed: `export html --interactive` packs a page's own fonts** (#71). The X-ray live page and the living diagram's
   figure packed the files of linked stylesheets only; a project's own `@font-face` in the page's `<style>`
   (`url("fonts/x.woff2")`) stayed a file the page's policy (`font-src data:`) blocks, so the text fell back to another

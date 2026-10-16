@@ -17,6 +17,7 @@ import _isolate  # noqa: F401  (run from a scratch folder: never write into the 
 import array
 import json
 import os
+import re
 import shutil
 import struct
 import subprocess
@@ -1125,29 +1126,94 @@ Film.start({ look: 'dark', design: [960, 540], fonts: ['600 1em "Inter Variable"
             time.sleep(1)
         return cp, took, procs
 
+    def test_13i_check_json_on_a_stuck_page_comes_whole_through_a_pipe(self):
+        """check --json on a stuck page ends with failNow's exit right after the report: a report over 64 KB still
+        arrives whole through a pipe (on macOS a pipe takes a write in parts; SHOWTIME_TEST_CHECK_STUCK=pad:N fails
+        every seek at its deadline and pads the report by N bytes)."""
+        proj = self.tmp / "stuck-json"
+        write(proj / "showtime.json", json.dumps({"width": 640, "height": 360, "fps": 30, "duration": 2}))
+        write(proj / "index.html", """<!doctype html><html><head><script src="/_st/stage.js"></script></head>
+<body style="margin:0;background:#0b0d12;color:#fff"><h1>Stuck page</h1></body></html>""")
+        cp = subprocess.run([sys.executable, str(LAUNCHER), "check", str(proj), "--json", "--no-determinism", "--samples", "2"],
+                            env=dict(ENV, SHOWTIME_TEST_CHECK_STUCK="pad:300000"), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            encoding="utf-8", errors="replace", timeout=300)
+        self.assertEqual(cp.returncode, 1, cp.stderr[-2000:])
+        self.assertGreater(len(cp.stdout), 300000, "the report was cut at %d bytes" % len(cp.stdout))
+        report = json.loads(cp.stdout)
+        self.assertEqual(len(report["test_pad"]), 300000)
+        self.assertEqual([f["code"] for f in report["findings"]], ["page_stuck"])
+        self.assertIn("the page's seeks stopped finishing", report["error"])
+
+    @unittest.skipIf(os.name == "nt", "Node writes to pipes synchronously on Windows: a pipe nobody reads blocks the write")
+    def test_13j_check_on_a_stuck_page_ends_when_nobody_reads_its_report(self):
+        """check --json on a stuck page waits for its report to be written before it exits, for 10 s x pace at most: a
+        caller that never reads stdout (the pipe full after 64 KB) still sees check end, with its error, instead of a
+        check that waits for a reader with no end (SHOWTIME_TEST_CHECK_STUCK=pad:N pads the report past the pipe)."""
+        proj = self.tmp / "stuck-unread"
+        write(proj / "showtime.json", json.dumps({"width": 640, "height": 360, "fps": 30, "duration": 2}))
+        write(proj / "index.html", """<!doctype html><html><head><script src="/_st/stage.js"></script></head>
+<body style="margin:0;background:#0b0d12;color:#fff"><h1>Stuck page</h1></body></html>""")
+        err = self.tmp / "stuck-unread.err"
+        env = dict(ENV, SHOWTIME_TEST_CHECK_STUCK="pad:300000", SHOWTIME_TEST_WAIT_SCALE="0.25", SHOWTIME_TEST_OPEN_TIMEOUT="1200")
+        with open(err, "w") as ef:
+            p = subprocess.Popen([sys.executable, str(LAUNCHER), "check", str(proj), "--json", "--no-determinism", "--samples", "2"],
+                                 env=env, stdout=subprocess.PIPE, stderr=ef, start_new_session=True)
+            try:
+                rc = p.wait(timeout=120)   # stdout is never read
+            except subprocess.TimeoutExpired:
+                os.killpg(p.pid, 9)
+                p.wait()
+                self.fail("check kept waiting for a reader of its report")
+            finally:
+                p.stdout.close()
+        self.assertEqual(rc, 1)
+        self.assertIn("the page's seeks stopped finishing", err.read_text(encoding="utf-8", errors="replace"))
+
     def test_13h_check_ends_when_the_page_stops_answering(self):
         """A page that stops answering on the timeline ends check with an error naming where, instead of a check
         that skips step after step at the seek's deadline each (31 steps for 3 s; macOS CI runners), and leaves no
         browser behind: a seek that spins (between 1.25 s and 1.45 s, away from the samples: no answer to the probe),
-        a seek that never finishes while the page still answers (two late seeks in a row), and a read on the
-        timeline that spins (the step's canvas text)."""
+        a seek that never finishes while the page still answers (two late seeks in a row: the error names the first,
+        where the page got stuck, as the last seeks listed show it), the same after a seek that failed (counted), and
+        a read on the timeline that spins (the step's canvas text). The time and the browser are checked first, so a
+        message that changes never hides a browser left running."""
         cases = (
             ("stuckseek", "ST.onSeek(function (t) { if (t >= 1.25 && t < 1.45) for (;;) {} });",
              ("the page stopped answering", "seek to 1.300s")),
             ("lateseek", "ST.onSeek(function (t) { if (t >= 1.25 && t < 1.45) return new Promise(function () {}); });",
-             ("the page's seeks stopped finishing", "seek to 1.400s", "twice in a row")),
+             ("the page's seeks stopped finishing", "the last seeks: ")),
+            ("errseek", "ST.onSeek(function (t) { if (t >= 1.25 && t < 1.35) throw new Error('broken at ' + t);"
+             " if (t >= 1.35 && t < 1.55) return new Promise(function () {}); });",
+             ("the page's seeks stopped finishing", "the last seeks: ", "other seek error",
+              "the first: onSeek#2 at t=1.300: broken at 1.3)")),
             ("stuckread", "window.__stCanvasText = function () { for (;;) {} };",
              ("the page stopped answering", "reading the canvas text")),
         )
         for name, script, says in cases:
             with self.subTest(name):
                 cp, took, procs = self.stuck_check(name, script)
+                self.assertEqual(procs, [], "the stuck page's browser was left running")
+                self.assertLess(took, 200, "check took %.0f s to give up on the stuck page" % took)
                 self.assertEqual(cp.returncode, 1, cp.stderr[-2000:])
                 for s in says:
                     self.assertIn(s, cp.stderr, cp.stderr[-2000:])
                 self.assertIn("showtime preview", cp.stderr, "the hint points at the page's own code")
-                self.assertLess(took, 200, "check took %.0f s to give up on the stuck page" % took)
-                self.assertEqual(procs, [], "the stuck page's browser was left running")
+                if name in ("lateseek", "errseek"):
+                    # the first late seek is in the window (or after it: later seeks wait behind the stuck one) and
+                    # is the first late one the listed seeks show after the last that worked
+                    m = re.search(r"the seeks? to (\d+\.\d+)s and ", cp.stderr)
+                    self.assertTrue(m, cp.stderr[-2000:])
+                    self.assertGreaterEqual(float(m.group(1)), 1.3 if name == "lateseek" else 1.4, cp.stderr[-2000:])
+                    trail = re.findall(r"(\d+\.\d+)s (ok|late|error) \d+ ms", cp.stderr.split("the last seeks: ")[1].split("\n")[0])
+                    since = trail[max([i for i, r in enumerate(trail) if r[1] == "ok"] or [-1]) + 1:]
+                    self.assertEqual(next(t for t, o in since if o == "late"), m.group(1), cp.stderr[-2000:])
+                if name == "lateseek":
+                    report = json.loads(cp.stdout)
+                    self.assertIs(report["ok"], False)
+                    self.assertEqual([r["outcome"] for r in report["seeks"]][-2:], ["late", "late"], cp.stdout)
+                    # a failed report its readers count (render's layout check and adopt read the findings)
+                    self.assertEqual([(f["severity"], f["code"]) for f in report["findings"]], [("error", "page_stuck")])
+                    self.assertEqual(report["summary"]["errors"], 1)
 
     def test_14_check_judges_settled_frame_after_transition(self):
         """Text sliding through the vertical safe zone during a push transition is a note naming the

@@ -595,7 +595,9 @@ class TestEmbed(unittest.TestCase):
             self.assertIn(r["toast"], ("Copied", "Press Ctrl+C or \u2318C to copy"), (how, r["toast"]))
             if how == "grant":
                 self.assertEqual(r["toast"], "Copied", r)
-                self.assertEqual(r["clip"], r["field"]["value"], "the sandboxed frame's copy is on the clipboard")
+                # Windows' clipboard holds text with \r\n line ends; a textarea's value always has \n
+                self.assertEqual(r["clip"].replace("\r\n", "\n"), r["field"]["value"],
+                                 "the sandboxed frame's copy is on the clipboard")
             if r["toast"] != "Copied":
                 self.assertTrue(r["field"]["focused"], (how, r["field"]))
                 self.assertEqual((r["field"]["start"], r["field"]["end"]), (0, len(r["field"]["value"])),

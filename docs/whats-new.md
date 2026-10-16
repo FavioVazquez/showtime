@@ -3,6 +3,66 @@
 What each release changes for you, newest first, one sentence a feature. The
 [changelog](../CHANGELOG.md) has every change and the reason for it.
 
+## 0.4.6
+
+### `check` reads the text a page draws on its own canvas
+
+`check` used to measure only the film API's text, at its sample times. Now every text a page paints on any canvas
+(`fillText`, `strokeText`) is followed on the whole timeline: text outside the 9:16 safe box (a `safe_zone` warning with
+its span), text too small for a phone (`tiny_text`), and text drawn over other text, canvas or DOM (`text_overlap`, with
+when it starts and ends). A counter whose number changes is one text. Text layered on purpose can say so with
+`F.text(..., {layer: true})`, `F.layer` or `ST.layer`. A probe that could not run (`cut_probe_failed`,
+`webgpu_probe_failed`) is now a warning, so such a check never reads as clean.
+
+### X-ray on a phone
+
+At 9:16 the X-ray template's sound strip sits above the counters inside the safe box, and the part labels are 44 px in
+a column at the safe box's edge, ordered so no two leaders cross; the drawing sits between the columns and never moves.
+The 9:16 layout change leaves 16:9, 4:5 and 1:1 as they were. A project made with 0.4.5 keeps its own copy of the
+template: start a new one with `showtime new xray` to get the layout. A new 16:9 project passes its own check, and the
+strip's label fits a long mechanism word.
+
+### X-ray in sync with an offset clip
+
+With `"xray".offset_frames` (the clip starts some frames into the film), the sound strip's ticks and caret,
+`track_until`, and the piano, drums and guitar mechanisms follow the recording's own clock. The drawing kit gives a
+mechanism `k.rt` and `k.frameAt(t)` for its own drawings.
+
+### X-ray tools
+
+`xray verify` reads the sync marker on a `--preview` or `--scale` render. The receipt says what "the original" is when
+the clip's sound is a rendering of data. `export html --interactive` packs the fonts a page names in its own `<style>`,
+and `export html` run from inside a job writes into that job. `xray import` refuses a JSON file with too many object
+keys, and a word in a `strength` column, before it does any work.
+
+### Small fixes
+
+Installed files match the repository byte for byte on every OS. `showtime setup --home X` installs ffmpeg into X even
+when a default install exists. Space or Enter on a focused control of a living diagram no longer also fires the scene's
+key. The X-ray embed element takes a `file:` address only on a page opened from disk. `showtime assets icon` suggests
+the right name at once for a misspelled one. A page address with a malformed `%` escape no longer stops the page
+runtime in preview.
+
+### What changes for you
+
+- `check --strict` fails when the first-frame-after-cut walk or the WebGPU probe could not run (it was info).
+- `check`, `qa --platform reels` and the phone check can report new `text_overlap`, `safe_zone` and `tiny_text`
+  warnings on an existing project that draws its own canvas text.
+- `<showtime-xray src="file:...">` on a web page shows the poster; a page opened from disk still loads the film.
+- `xray import` refuses a word in a `strength` column (on any row, the ones the time map drops too) and a JSON file
+  with more than 1,600,000 colons.
+- `export html --interactive` run from inside a job writes into that job, not a new `showtime-out/` folder.
+- `setup --home X` downloads its own ffmpeg into X instead of using the default install's.
+- Space or Enter on a focused control of a living diagram presses the control only.
+- The repository's files are checked out exactly as stored (`* -text`).
+
+### For contributors
+
+`scripts/check_release.py` now refuses a bullet repeated in the unreleased CHANGELOG section, a file name Windows
+reserves, a credential-shaped literal in a shipped file, a merge-conflict marker left in a file, a routing case that
+does not read its own guide, a workflow guide with no line in `references/index.md`, and a `.gitattributes` line git
+ignores.
+
 ## 0.4.5
 
 ### X-ray from data

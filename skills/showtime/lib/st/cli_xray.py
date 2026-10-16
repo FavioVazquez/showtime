@@ -103,7 +103,8 @@ def register(sub: argparse._SubParsersAction) -> None:
     n = s.add_parser("notes", help="clip -> notes.json (pitch, onset, tempo map, key, chords) + MIDI, MusicXML, check-notes.jpg",
                      formatter_class=_F, description=(
                          "Read the notes an instrument plays (guitar, piano, music box) from the clip's sound, or from a WAV\n"
-                         "recording with no picture, with Basic Pitch (ONNX, no TensorFlow). Every note keeps frame = floor(t * fps) of the clip. Adds a smooth\n"
+                         "recording with no picture, with Basic Pitch (ONNX, no TensorFlow). Every note keeps frame = floor(t * fps): the\n"
+                         "clip's frame rate, or the 30 fps grid for a recording with no picture. Adds a smooth\n"
                          "tempo map (scroll with it, never snap to the last note), eighth-note quantization, the key, a chord per\n"
                          "beat, the melody (loudest note from E4 up) and bass voices, and with --instrument guitar the string,\n"
                          "fret and finger of every note (standard tuning, open position first).\n"

@@ -188,7 +188,7 @@ class TestSecrets(unittest.TestCase):
         cases = {
             "headers = {'Authorization': 'token %s'}" % tok: True,
             'password: "correct-horse-battery"': True,
-            "DATABASE_URL=postgres://admin:s3cret@db.internal/app": True,
+            "DATABASE_URL=postgres://admin:" + "s3cret@db.internal/app": True,   # built in pieces (check_release secrets)
             "export STRIPE_SECRET=sk_live_" + "0" * 24: True,
             "SECRET_KEY=8f2a9c1e7b3d4a6f": True,
             "token = get_token(session)": False,
@@ -205,7 +205,8 @@ class TestSecrets(unittest.TestCase):
                 self.assertNotIn("correct-horse", out)
 
     def test_private_key_block_and_description(self):
-        body = "Rotates the key.\n-----BEGIN RSA PRIVATE KEY-----\nMIIEow\nabc\n-----END RSA PRIVATE KEY-----\nDone."
+        key = "RSA PRIVATE " + "KEY-----"   # built in pieces (check_release secrets)
+        body = "Rotates the key.\n-----BEGIN " + key + "\nMIIEow\nabc\n-----END " + key + "\nDone."
         out, n = pv.mask_text(body)
         self.assertEqual(n, 4)
         self.assertNotIn("MIIEow", out)

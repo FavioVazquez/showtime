@@ -584,12 +584,15 @@ class ReelPlacementTest(unittest.TestCase):
             "-filter_complex", ";".join(parts) + ";%sformat=rgb24[v]" % cur, "-map", "[v]", "-f", "rawvideo", "-"],
             stdout=subprocess.PIPE, check=True).stdout
         px = [raw[(k * W * H + (H // 2) * W + W // 2) * 3] for k in range(len(raw) // (W * H * 3))]
-        vals = [v if v > 245 else int(round(v / 8.0)) for v in px]
+        # BASE: the white base, not a reel frame (those are at most 29 * 8 = 232). White comes back from yuv420p as 255
+        # here and 253 with some ffmpeg 7.1 builds (an outside run): its exact value is the build's, not the reel's.
+        BASE = "base"
+        vals = [BASE if v > 245 else int(round(v / 8.0)) for v in px]
         for p in plan:
             f0 = int(round(p["card"]["start"] * float(fps)))
-            want = [255] + [i % 30 for i in range(p["offset_frames"], p["offset_frames"] + p["frames"])] + [255]
-            self.assertEqual(vals[f0 - 1:f0 + p["frames"] + 1], want, "card %d at frame %d (%s fps)" % (
-                p["card"]["index"], f0, rate))
+            want = [BASE] + [i % 30 for i in range(p["offset_frames"], p["offset_frames"] + p["frames"])] + [BASE]
+            self.assertEqual(vals[f0 - 1:f0 + p["frames"] + 1], want, "card %d at frame %d (%s fps); raw %s; frame 0 "
+                             "(no card) reads %d" % (p["card"]["index"], f0, rate, px[f0 - 1:f0 + p["frames"] + 1], px[0]))
 
     def test_every_reel_frame_on_its_output_frame(self):
         self.placed(Fraction(30), [13, 63, 123, 183])          # 13: start/TB came out 12.999..., truncated a frame early

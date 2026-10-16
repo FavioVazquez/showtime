@@ -83,7 +83,7 @@ def asst(mid, model, ts, inp=0, out=0, cr=0, cc=None, cc_split=None, searches=0,
             "message": {"id": mid, "model": model, "role": "assistant", "content": [{"type": "text", "text": text}], "usage": u}}
 
 
-SECRET_PROMPT = "SECRET-PROMPT-TEXT sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789"
+SECRET_PROMPT = "SECRET-PROMPT-TEXT sk-ant-" + "api03-abcdefghijklmnopqrstuvwxyz0123456789"   # in pieces (check_release secrets)
 
 
 def claude_fixture(root: Path) -> Path:

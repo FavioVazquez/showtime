@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { skillDir, nodeModulesDir } from '../deps.mjs';
 import { UserError } from '../cli.mjs';
-import { addCodePoints, pruneFontFaces } from './collect.mjs';
+import { addCodePoints, pruneFontFaces, replaceOwnStyles } from './collect.mjs';
 import { minifyJs, minifyCss } from './minify.mjs';
 import { notices } from './build.mjs';
 
@@ -165,10 +165,17 @@ export function packFigure(o) {
     files.push({ url: r.url, bytes: r.buf.length, kind: 'style' });
     const k = `\u0000C${styles.length}\u0000`; styles.push({ text: r.text, url: r.url }); return k;
   });
+  // the page's own <style> blocks that name a file (a project's @font-face url("fonts/x.woff2"), a background image):
+  // their files are packed like a stylesheet's, relative to the page (the policy allows only data: fonts and images)
+  html = replaceOwnStyles(html, (m, attrs, text) => {
+    if (!/url\(/i.test(text)) return m;
+    const k = `\u0000C${styles.length}\u0000`; styles.push({ text, url: '/figure.html', attrs }); return k;
+  });
   // the characters any text can show: the page, its scripts (the scene's words, the figure's own) and styles
   const used = new Set();
   addCodePoints(used, html.replace(/<[^>]+>/g, ' '));
   scripts.forEach((s) => addCodePoints(used, s));
+  styles.forEach((st) => { if (st.attrs !== undefined) addCodePoints(used, st.text); });   // the page's own <style> text (content: "...")
   let fontsDropped = 0;
   const cssOut = styles.map((st) => {
     let css = st.text;
@@ -189,7 +196,7 @@ export function packFigure(o) {
   const jsSafe = (t) => t.replace(/<\/(script)/gi, (m, w) => '<\\/' + w).replace(/<!--/g, '<\\x21--');
   const jsOut = scripts.map((s) => jsSafe(o.minify === false ? s : minifyJs(s).text));
   html = html.replace(/\u0000S(\d+)\u0000/g, (m, i) => `<script>\n${jsOut[+i]}\n</script>`);
-  html = html.replace(/\u0000C(\d+)\u0000/g, (m, i) => `<style>\n${cssOut[+i].replace(/<\/style/gi, '<\\/style')}\n</style>`);
+  html = html.replace(/\u0000C(\d+)\u0000/g, (m, i) => `<style${styles[+i].attrs || ''}>\n${cssOut[+i].replace(/<\/style/gi, '<\\/style')}\n</style>`);
   const attr = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   // function replacers throughout: a title with $& or $' is text, never a replacement pattern
   if (o.title) html = html.replace(/<title>[^<]*<\/title>/i, () => `<title>${attr(o.title)}</title>`);

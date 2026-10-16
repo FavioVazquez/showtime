@@ -364,17 +364,19 @@
       });
     }
     root.addEventListener('keydown', function (e) {
-      var tag = (e.target && e.target.tagName) || '';
+      var tag = (e.target && e.target.tagName) || '', role = (e.target && e.target.getAttribute && e.target.getAttribute('role')) || '';
+      // a focused control (a summary, the time slider, a button, a link) keeps its own keys: nothing is typed from there,
+      // and its Space and Enter press it, never a scene key too (a letter it has no use for still reaches the scene)
+      var control = tag === 'SUMMARY' || tag === 'BUTTON' || tag === 'A' || role === 'slider';
       touched();
       if (e.key === 'Escape') { S.pin = ''; setHover(''); api.focus(null, { at: clock.now() }); dirty = true; ui(); sync(); return; }
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === 'ArrowRight' || e.key === 'PageDown') { if (I.steps.length) { e.preventDefault(); enter(S.step + 1); } }
       else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { if (I.steps.length) { e.preventDefault(); enter(S.step - 1); } }
-      else if (I.keys && I.keys[e.key.toLowerCase()]) pressKey(e.key.toLowerCase());
+      else if (I.keys && I.keys[e.key.toLowerCase()]) { if (!control || (e.key !== ' ' && e.key !== 'Enter')) pressKey(e.key.toLowerCase()); }
       else if (TYPE) {
         if (e.repeat && e.key.length !== 1) return;
-        // a focused control (a summary, the time slider, a button, a link) keeps all of its keys
-        if (tag === 'SUMMARY' || tag === 'BUTTON' || tag === 'A' || (e.target.getAttribute && e.target.getAttribute('role') === 'slider')) return;
+        if (control) return;
         if (e.key === 'Enter') { e.preventDefault(); typeCh('\n'); }
         else if (e.key === 'Backspace') { e.preventDefault(); typeCh('\b'); }
         else if (e.key.length === 1) { e.preventDefault(); typeCh(e.key); }
@@ -382,7 +384,6 @@
       else if (/^[1-9]$/.test(e.key) && +e.key <= I.steps.length) enter(+e.key - 1);
       else if (e.key === 'r' || e.key === 'R') enter(S.step);
       else if (e.key === 'l' || e.key === 'L') copyLink();
-      else if (I.keys && I.keys[e.key.toLowerCase()]) pressKey(e.key.toLowerCase());
     });
     ['pointerdown', 'wheel', 'touchstart'].forEach(function (ev) { root.addEventListener(ev, function () { touched(); }, { passive: true }); });
     host.addEventListener('focusin', function () { touched(); });

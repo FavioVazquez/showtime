@@ -337,6 +337,28 @@ class RenderSizeChecksItsPage(Tmp):
         self.assertNotIn("the layout breaks", cp.stderr + cp.stdout)
         self.assertEqual(cp.returncode, 0, cp.stderr[-1500:])
 
+    def test_a_check_that_ends_on_a_stuck_page_is_not_a_layout_break(self):
+        """check's --json on a stuck page is a report with one page_stuck finding (SHOWTIME_TEST_CHECK_STUCK fails every
+        seek at its deadline): the layout check reads its findings, finds no layout error, notes that check stopped
+        early and the render goes on."""
+        proj = self.tmp / "p"
+        proj.mkdir()
+        (proj / "showtime.json").write_text(json.dumps({"width": 1280, "height": 720, "fps": 30, "duration": 2}), encoding="utf-8")
+        (proj / "index.html").write_text(SIZE_PAGE % ("", "Fine"), encoding="utf-8")
+        cp = subprocess.run([sys.executable, str(LAUNCHER), "render", str(proj), "--size", "9:16", "--to", "0.5", "--quiet"],
+                            env=dict(ENV, SHOWTIME_TEST_CHECK_STUCK="1"), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            encoding="utf-8", errors="replace", timeout=600)
+        out = cp.stderr + cp.stdout
+        self.assertNotIn("Cannot read properties", out)
+        # check's own error is not swallowed: one note says it stopped and the render goes on
+        self.assertIn("showtime render: note: check stopped early: the page's seeks stopped finishing: ", out)
+        self.assertIn("; rendering on", out)
+        self.assertNotIn("the layout breaks", out)
+        self.assertEqual(cp.returncode, 0, cp.stderr[-1500:])
+        # the check ended on the stuck page: a check that ran to its end writes its report (index.html: no page name)
+        self.assertTrue((proj / "work" / "render-check-1080x1920").is_dir(), sorted(p.name for p in (proj / "work").iterdir()))
+        self.assertFalse((proj / "work" / "render-check-1080x1920" / "report.json").exists())
+
 
 if __name__ == "__main__":
     argv = [a for a in sys.argv if a != "--fast"]

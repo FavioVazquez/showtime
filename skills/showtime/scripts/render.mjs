@@ -196,6 +196,9 @@ async function main(retry = null) {
       { encoding: 'utf8', env: process.env, maxBuffer: 64 * 1024 * 1024 });
     let rep = null;
     try { rep = JSON.parse(r.stdout); } catch { rep = null; }
+    // check itself stopped (a page that stopped answering, a page that never got ready): say so, then render on
+    const stopped = /showtime check: error: ([^\n]*)/.exec(String(r.stderr || '').replace(/\x1b\[[0-9;]*m/g, ''));
+    if (stopped) { info(c.yellow(`showtime render: note: check stopped early: ${stopped[1]}; rendering on`)); logLine(`check stopped: ${stopped[1]}`); }
     const LAYOUT = new Set(['text_clipped', 'text_off_canvas', 'safe_zone', 'text_overlap', 'overflow']);
     const bad = rep ? rep.findings.filter((f) => f.severity === 'error' && f.code !== 'clip_timing' && (LAYOUT.has(f.code) || /clip|off_canvas|overflow/.test(f.code))) : [];
     if (bad.length) {

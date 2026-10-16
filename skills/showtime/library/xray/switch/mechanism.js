@@ -71,7 +71,7 @@
       k.ell(PIV[0], PIV[1], 16, 16, snap > 0.05 ? C.hot : C.line, 3, 0, false);
       if (snap > 0.05) { g.save(); g.shadowColor = C.hot; g.shadowBlur = 26 * snap; k.dot(CONTACT, Math.max(6, 18 * snap * Math.min(1.6, k.scale + 0.4)), C.h(.9)); g.restore(); }
       k.label('pivot', PIV, panel ? -40 : -200, panel ? -190 : -150, false);
-      k.label('over-centre spring', [(tail[0] + BLADE0[0]) / 2, (tail[1] + BLADE0[1]) / 2], -160, panel ? 150 : 170, snap > 0.05);
+      k.label(k.reels ? 'spring' : 'over-centre spring', [(tail[0] + BLADE0[0]) / 2, (tail[1] + BLADE0[1]) / 2], -160, panel ? 150 : 170, snap > 0.05);
       k.label('contacts', CONTACT, 120, panel ? -150 : 150, closed);
     }
   });

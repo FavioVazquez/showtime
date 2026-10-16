@@ -33,12 +33,14 @@
   var PLAYER = W.__ST_PLAYER__ || null;
   var search = '';
   try { search = W.location.search || ''; } catch (e) { /* opaque origin */ }
-  var params = {};
+  var params = Object.create(null);   // own keys only: an inherited Object.prototype.st is not a query value
   search.replace(/^\?/, '').split('&').forEach(function (kv) {
     if (!kv) return;
     var i = kv.indexOf('=');
-    var k = decodeURIComponent(i < 0 ? kv : kv.slice(0, i));
-    params[k] = i < 0 ? '1' : decodeURIComponent(kv.slice(i + 1));
+    try {
+      var k = decodeURIComponent(i < 0 ? kv : kv.slice(0, i));
+      params[k] = i < 0 ? '1' : decodeURIComponent(kv.slice(i + 1));
+    } catch (e) { /* a malformed escape (?x=%): that pair is skipped, the runtime still starts */ }
   });
   var EMBED = params.st === 'embed';
   var RAW = params.st === 'raw';
@@ -1746,6 +1748,7 @@
     return nextFrame().then(nextFrame);
   }
   async function doSeek(tIn) {
+    canvasText.gen++;   // each canvas's text list is replaced on its first draw of this frame
     var t = quantize(tIn);
     var f = Math.round(t * cfg.fps);
     var t0 = real.now();
@@ -1911,6 +1914,236 @@
     });
   }
 
+  // ------------------------------------------------------------- canvas text (for showtime check)
+  // Every fillText/strokeText on a page canvas, so `showtime check` finds text drawn over text on canvases too (charts,
+  // overlays and scenes drawn with the canvas's own calls; the film API records its F.text calls itself and marks
+  // them skip). A canvas's list is replaced on its first draw after each seek; a canvas not redrawn keeps what it shows.
+  // by: canvas -> its records, held weakly (a scratch canvas a page drops is not kept alive through a render);
+  // refs: the canvases recorded, as weak references, to walk them
+  var canvasText = { gen: 0, by: new WeakMap(), refs: [], skip: 0, layer: 0, decor: 0, seq: 0,
+    cover: function (g, x, y, w, h) { try { noteCover(g, x, y, w, h); } catch (e) { /* a QA record only */ } } };
+  // per 2D context: the bounds of the path being built (since beginPath) and the clip in force, in canvas pixels, so
+  // text clipped away (an odometer's next digit, a masked reveal) is not on screen. A clip is taken as its path's
+  // bounding box under the transform in force when clip() is called; clip(Path2D) is not known and taken as no clip.
+  var ctxState = new WeakMap(), ctxOf = new WeakMap();
+  function stateOf(g) {
+    var st = ctxState.get(g);
+    if (!st) { st = { p: null, rectOnly: true, rects: [], clip: null, stack: [] }; ctxState.set(g, st); if (g.canvas) ctxOf.set(g.canvas, g); }
+    return st;
+  }
+  function growPath(g, x0, y0, x1, y1) {
+    if (!(isFinite(x0) && isFinite(y0) && isFinite(x1) && isFinite(y1))) return;
+    var st = stateOf(g), q = st.p;
+    if (!q) st.p = [Math.min(x0, x1), Math.min(y0, y1), Math.max(x0, x1), Math.max(y0, y1)];
+    else { q[0] = Math.min(q[0], x0, x1); q[1] = Math.min(q[1], y0, y1); q[2] = Math.max(q[2], x0, x1); q[3] = Math.max(q[3], y0, y1); }
+  }
+  // a user-space box [x0, y0, x1, y1] in canvas pixels through the current transform
+  function devBox(g, b) {
+    var m = g.getTransform(), xs = [], ys = [];
+    [[b[0], b[1]], [b[2], b[1]], [b[0], b[3]], [b[2], b[3]]].forEach(function (pt) { xs.push(m.a * pt[0] + m.c * pt[1] + m.e); ys.push(m.b * pt[0] + m.d * pt[1] + m.f); });
+    return [Math.min.apply(null, xs), Math.min.apply(null, ys), Math.max.apply(null, xs), Math.max.apply(null, ys)];
+  }
+  function boxArea(b) { return Math.max(0, b[2] - b[0]) * Math.max(0, b[3] - b[1]); }
+  function boxMeet(a, b) { return [Math.max(a[0], b[0]), Math.max(a[1], b[1]), Math.min(a[2], b[2]), Math.min(a[3], b[3])]; }
+  function noteClip(g, args) {
+    if (args.length && args[0] && typeof args[0] === 'object') return;
+    var st = stateOf(g);
+    if (!st.p) return;
+    var b = devBox(g, st.p);
+    st.clip = st.clip ? boxMeet(st.clip, b) : b;
+  }
+  function noteCanvasText(g, str, x, y, maxWidth, stroke) {
+    var c = g.canvas;
+    // an OffscreenCanvas, or a canvas not in the document (a scratch buffer), is not on screen
+    if (!c || !c.getBoundingClientRect || !c.isConnected || canvasText.skip > 0) return;
+    str = String(str);
+    if (!str.trim()) return;
+    var rec = canvasText.by.get(c);
+    if (!rec) canvasText.refs.push(W.WeakRef ? new W.WeakRef(c) : { deref: function () { return c; } });
+    if (!rec || rec.gen !== canvasText.gen) { rec = { gen: canvasText.gen, list: [] }; canvasText.by.set(c, rec); }
+    if (rec.list.length >= 1000) return;   // check compares 300 a side and says when a frame has more
+    var mt = g.measureText(str), l = mt.actualBoundingBoxLeft, r = mt.actualBoundingBoxRight;
+    var asc = mt.actualBoundingBoxAscent, desc = mt.actualBoundingBoxDescent;
+    if (!(isFinite(l) && isFinite(r) && isFinite(asc) && isFinite(desc)) || l + r <= 0 || asc + desc <= 0) return;
+    if (maxWidth > 0 && l + r > maxWidth) { var k = maxWidth / (l + r); l *= k; r *= k; }   // squeezed to maxWidth
+    var b = devBox(g, [x - l, y - asc, x + r, y + desc]), m = g.getTransform();
+    var st = ctxState.get(g);
+    if (st && st.clip) {
+      var cb = boxMeet(b, st.clip);
+      if (boxArea(cb) < 0.1 * boxArea(b)) return;   // clipped away
+      b = cb;
+    }
+    var px = /(\d+(?:\.\d+)?)px/.exec(g.font || ''), paint = stroke ? g.strokeStyle : g.fillStyle;
+    rec.list.push({ text: str.slice(0, 120), b: b, size: (px ? +px[1] : 10) * Math.hypot(m.b, m.d), alpha: g.globalAlpha,
+      color: typeof paint === 'string' ? paint : null, layer: canvasText.layer > 0, decor: canvasText.decor > 0, z: ++canvasText.seq });
+  }
+  // the canvas's bitmap is reset (canvas.width/height set, ctx.reset()): its text and clip are gone
+  function forgetCanvas(c) {
+    var rec = canvasText.by.get(c), g = ctxOf.get(c);
+    if (rec) { rec.gen = canvasText.gen; rec.list = []; }
+    if (g) ctxState.delete(g);
+  }
+  // text painted over this frame by an opaque box (a clear, an opaque fillRect, a film card): a record at least half
+  // inside it is gone. A clear or fill of the whole canvas empties the list, so a canvas cleared after a seek that
+  // draws no text shows none.
+  function noteCover(g, x, y, w, h) {
+    var m = g.getTransform();
+    if (m.b !== 0 || m.c !== 0) return;   // a rotated box is not judged
+    noteCoverBox(g, devBox(g, [x, y, x + w, y + h]));
+  }
+  // b: a box in canvas pixels
+  function noteCoverBox(g, b) {
+    var c = g.canvas, rec = c && canvasText.by.get(c);
+    if (!rec) return;
+    var st = ctxState.get(g);
+    if (st && st.clip) b = boxMeet(b, st.clip);   // a clear or fill reaches only inside the clip
+    // a box with a NaN or infinite side (its own, or its clip's under an overflowing transform) paints nothing, and
+    // would drop every record in the filter below
+    if (!b.every(isFinite)) return;
+    if (b[0] <= 0.5 && b[1] <= 0.5 && b[2] >= c.width - 0.5 && b[3] >= c.height - 0.5) { rec.gen = canvasText.gen; rec.list = []; return; }
+    rec.list = rec.list.filter(function (t) { return boxArea(boxMeet(t.b, b)) < 0.5 * boxArea(t.b); });
+  }
+  function opaqueFill(g) {
+    return g.globalAlpha >= 0.99 && g.globalCompositeOperation === 'source-over' && typeof g.fillStyle === 'string' && canvasAlpha(g.fillStyle) >= 0.99;
+  }
+  function noteCanvasWipe(g, x, y, w, h, fill) {
+    if (fill && !opaqueFill(g)) return;
+    noteCover(g, x, y, w, h);
+  }
+  function canvasAlpha(s) {
+    var m = /^(?:rgba|hsla)\([^)]*[,/]\s*([\d.]+)(%?)\s*\)$/.exec(s) || /^(?:rgb|hsl)\([^)]*\/\s*([\d.]+)(%?)\s*\)$/.exec(s);
+    if (m) return m[2] ? +m[1] / 100 : +m[1];
+    if (/^#[0-9a-f]{8}$/i.test(s)) return parseInt(s.slice(7), 16) / 255;
+    if (/^#[0-9a-f]{4}$/i.test(s)) return parseInt(s[4] + s[4], 16) / 255;
+    return s === 'transparent' ? 0 : 1;
+  }
+  function hookCanvasText() {
+    var P = W.CanvasRenderingContext2D && W.CanvasRenderingContext2D.prototype;
+    if (!P || P.__stText) return;
+    P.__stText = true;
+    // each hook paints first, then only reads the context (a QA record; it never changes what is drawn)
+    function after(name, fn) {
+      var orig = P[name];
+      if (typeof orig !== 'function') return;
+      P[name] = function () {
+        var out = orig.apply(this, arguments);
+        try { fn(this, arguments); } catch (e) { /* a QA record only */ }
+        return out;
+      };
+    }
+    after('fillText', function (g, a) { noteCanvasText(g, a[0], a[1], a[2], a[3], false); });
+    after('strokeText', function (g, a) { noteCanvasText(g, a[0], a[1], a[2], a[3], true); });
+    after('clearRect', function (g, a) { noteCanvasWipe(g, +a[0], +a[1], +a[2], +a[3], false); });
+    after('fillRect', function (g, a) { noteCanvasWipe(g, +a[0], +a[1], +a[2], +a[3], true); });
+    // rectOnly: the path so far is boxes (rect, roundRect; a moveTo alone paints nothing), so an opaque fill() of it is
+    // cards that cover text; each box covers only itself (a path of bars does not cover the labels between them), where
+    // the transform put it when it was added to the path. Boxes that wind both ways (a negative width or height, or a
+    // mirroring transform) cancel where they overlap under the nonzero rule, so such a path is not judged
+    var curve = function (g) { stateOf(g).rectOnly = false; };
+    var box = function (g, a) {
+      var st = stateOf(g), m = g.getTransform(), x = +a[0], y = +a[1], w = +a[2], h = +a[3];
+      var dir = (w < 0) !== (h < 0) !== (m.a * m.d < 0);
+      if (st.rects.length >= 64 || m.b !== 0 || m.c !== 0 || !(isFinite(x) && isFinite(y) && isFinite(w) && isFinite(h)) ||
+          (st.rects.length && dir !== st.dir)) st.rectOnly = false;
+      else st.dir = dir, st.rects.push(devBox(g, [Math.min(x, x + w), Math.min(y, y + h), Math.max(x, x + w), Math.max(y, y + h)]));
+      growPath(g, x, y, x + w, y + h);
+    };
+    after('beginPath', function (g) { var st = stateOf(g); st.p = null; st.rectOnly = true; st.rects = []; });
+    after('rect', box);
+    after('roundRect', box);
+    after('moveTo', function (g, a) { growPath(g, +a[0], +a[1], +a[0], +a[1]); });
+    after('lineTo', function (g, a) { curve(g); growPath(g, +a[0], +a[1], +a[0], +a[1]); });
+    after('arcTo', function (g, a) { curve(g); growPath(g, +a[0], +a[1], +a[2], +a[3]); });
+    after('quadraticCurveTo', function (g, a) { curve(g); growPath(g, +a[0], +a[1], +a[2], +a[3]); });
+    after('bezierCurveTo', function (g, a) { curve(g); growPath(g, +a[0], +a[1], +a[2], +a[3]); growPath(g, +a[4], +a[5], +a[4], +a[5]); });
+    after('arc', function (g, a) { curve(g); growPath(g, +a[0] - +a[2], +a[1] - +a[2], +a[0] + +a[2], +a[1] + +a[2]); });
+    after('ellipse', function (g, a) { curve(g); var rr = Math.max(+a[2], +a[3]); growPath(g, +a[0] - rr, +a[1] - rr, +a[0] + rr, +a[1] + rr); });
+    after('fill', function (g, a) {
+      var st = ctxState.get(g);
+      // not fill(Path2D); not 'evenodd' (overlapping boxes leave their shared part unpainted)
+      if (!st || !st.rectOnly || (a.length && a[0] && (typeof a[0] === 'object' || a[0] === 'evenodd')) || !opaqueFill(g)) return;
+      st.rects.forEach(function (b) { noteCoverBox(g, b); });
+    });
+    after('clip', function (g, a) { noteClip(g, a); });
+    after('save', function (g) { var st = stateOf(g); st.stack.push(st.clip); });
+    after('restore', function (g) { var st = stateOf(g); if (st.stack.length) st.clip = st.stack.pop(); });
+    after('reset', function (g) { if (g.canvas) forgetCanvas(g.canvas); });
+    var CP = W.HTMLCanvasElement && W.HTMLCanvasElement.prototype;
+    ['width', 'height'].forEach(function (name) {
+      var d = CP && Object.getOwnPropertyDescriptor(CP, name);
+      if (!d || !d.set || !d.configurable) return;
+      Object.defineProperty(CP, name, { configurable: true, enumerable: d.enumerable, get: d.get, set: function (v) {
+        d.set.call(this, v);
+        try { forgetCanvas(this); } catch (e) { /* a QA record only */ }
+      } });
+    });
+  }
+  // a point of canvas text is hidden when something opaque is painted above the canvas there (an end card over a
+  // chart), or the canvas is not under it at all (clipped away). null: the point is off the page.
+  function opaqueEl(e) {
+    for (var a = e, op = 1; a && a.nodeType === 1; a = a.parentElement) op *= +W.getComputedStyle(a).opacity;
+    if (op < 0.9) return false;
+    if (e.hasAttribute('data-st-gl')) return true;
+    // a loaded picture or a playing video paints its box (a transparent PNG would not: taken as opaque all the same)
+    if (e.tagName === 'IMG' && e.complete && e.naturalWidth > 0) return true;
+    if (e.tagName === 'VIDEO' && e.readyState >= 2) return true;
+    var cs = W.getComputedStyle(e), bi = cs.backgroundImage;
+    if (/text/.test(cs.webkitBackgroundClip || cs.backgroundClip || '')) return false;   // paints its letters, not its box
+    return canvasAlpha(cs.backgroundColor) >= 0.9 || (!!bi && bi !== 'none' && /gradient\(/.test(bi) && !/url\(/.test(bi) && !/transparent|rgba\([^)]*,\s*(0?\.\d+|0)\s*\)/.test(bi));
+  }
+  function hiddenAt(c, x, y) {
+    if (!(x >= 0 && y >= 0 && x < W.innerWidth && y < W.innerHeight)) return null;
+    var stack = document.elementsFromPoint(x, y), root = c.getRootNode && c.getRootNode(), host = root && root.host;
+    for (var i = 0; i < stack.length; i++) {
+      var e = stack[i];
+      // a canvas in a shadow root is hit as its host
+      if (e === c || e.contains(c) || (host && (e === host || e.contains(host)))) return false;
+      if (opaqueEl(e)) return true;
+    }
+    return true;
+  }
+  /** The text on the page's canvases now, in page CSS pixels (alpha includes the canvas element's own opacity). Text
+   * under an opaque element painted above its canvas is left out. */
+  function canvasTexts() {
+    var out = [];
+    // hit testing skips pointer-events: none (cards and overlays often set it): make everything hit-testable meanwhile
+    var hit = document.createElement('style');
+    hit.textContent = '*, *::before, *::after { pointer-events: auto !important; }';
+    (document.head || document.documentElement).appendChild(hit);
+    try { collectCanvasTexts(out); } finally { hit.remove(); }
+    return out;
+  }
+  function collectCanvasTexts(out) {
+    // a canvas taken off the page is forgotten (put back, it is recorded afresh)
+    canvasText.refs = canvasText.refs.filter(function (ref) {
+      var c = ref.deref();
+      if (c && !c.isConnected) canvasText.by.delete(c);
+      return !!c && c.isConnected;
+    });
+    canvasText.refs.forEach(function (ref) {
+      var c = ref.deref(), rec = c && canvasText.by.get(c);
+      if (!rec) return;
+      var rect = c.getBoundingClientRect();
+      if (!(rect.width > 0 && rect.height > 0 && c.width > 0 && c.height > 0)) return;
+      var op = 1;
+      for (var e = c; e && e.nodeType === 1; e = e.parentElement) {
+        var cs = W.getComputedStyle(e);
+        if (cs.display === 'none' || (e === c && cs.visibility === 'hidden')) return;
+        op *= +cs.opacity;
+      }
+      if (op < 0.05) return;
+      var sx = rect.width / c.width, sy = rect.height / c.height, id = c.id ? '#' + c.id : 'canvas';
+      rec.list.forEach(function (t) {
+        var x = rect.left + t.b[0] * sx, y = rect.top + t.b[1] * sy, w = (t.b[2] - t.b[0]) * sx, h = (t.b[3] - t.b[1]) * sy;
+        var tested = 0, hidden = 0;
+        [0.2, 0.5, 0.8].forEach(function (f) { var v = hiddenAt(c, x + w * f, y + h / 2); if (v !== null) { tested++; if (v) hidden++; } });
+        if (tested > 0 && hidden === tested) return;
+        out.push({ text: t.text, x: x, y: y, w: w, h: h, gx: x, gy: y, gw: w, gh: h, size: t.size * sy, alpha: t.alpha * op,
+          color: t.color, layer: t.layer, decor: t.decor, z: t.z, raw: true, canvas: id });
+      });
+    });
+  }
+
   var ST = {
     __stage: true,
     version: VERSION,
@@ -1953,6 +2186,8 @@
     ease: ease,
     clamp: clamp,
     lerp: function (a, b, p) { return a + (b - a) * p; },
+    /** Text drawn on a canvas inside `draw` is layered over other text on purpose: check does not call it an overlap. */
+    layer: function (draw) { canvasText.layer++; try { return draw(); } finally { canvasText.layer--; } },
     /** Motion blur on an element while it moves fast (references/stage-api.md § Shutter blur). */
     blur: function (target, opts) { return blurApi(target, opts); },
     _setPlaying: function (v) { playingHint = !!v; },
@@ -1967,7 +2202,12 @@
     scan: blurScan,
   };
 
+  // for tools (showtime check): text on the page's canvases, and the counters the film API sets around its own text
+  W.__stCanvasText = canvasTexts;
+  W.__stCanvasTextFlags = canvasText;
+
   if (RENDER) {
+    hookCanvasText();
     installShim(RENDER.seed);
     holdAnimations();
     watchGL();

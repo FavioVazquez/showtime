@@ -186,8 +186,12 @@ def get_json(url: str, *, headers: Optional[Dict[str, str]] = None, ttl: Optiona
                             timeout=timeout, retries=retries)
     except ShowtimeError:
         if cp is not None and cp.is_file():
-            debug("network failed; using stale cache for %s" % _short(url))
-            return json.loads(cp.read_text(encoding="utf-8"))
+            try:
+                data = json.loads(cp.read_text(encoding="utf-8"))
+                debug("network failed; using stale cache for %s" % _short(url))
+                return data
+            except (OSError, ValueError):
+                pass   # a corrupt cache entry is no cache: the network error stands
         raise
     try:
         data = json.loads(body.decode("utf-8"))

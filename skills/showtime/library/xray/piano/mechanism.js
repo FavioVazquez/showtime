@@ -1,7 +1,7 @@
 /* A piano, written as it is heard (showtime X-ray mechanism library: piano).
    Design space: 1000 x 440 units (the 9:16 panel, about 0.95 px per unit), a grand staff on top (treble and bass,
    brace, clefs and key signature drawn as paths, no music font needed) and an 88-key keyboard below.
-   The staff scrolls left past a fixed playhead on the smooth tempo map (k.beat of the frame's time: never a jump to
+   The staff scrolls left past a fixed playhead on the smooth tempo map (k.beat of k.rt, the recording's time: never a jump to
    the latest note). Each event is a strike: its notes (notes.json, joined to the event by the runtime) are written
    at the playhead, red on the event's frame, with their stems, flags, beams, dots, ledger lines and accidentals;
    their keys go down and light up on the keyboard while they sound.
@@ -59,10 +59,10 @@
     if (fifths == null) { fifths = 0; keyName = null; }
     var keyAlt = {};
     for (var s = 0; s < Math.abs(fifths); s++) keyAlt[fifths > 0 ? SHARPS[s] : FLATS[s]] = fifths > 0 ? 1 : -1;
-    var minc = cfg.min_confidence || 0, fps = k.fps;
+    var minc = cfg.min_confidence || 0;
     var notes = raw.filter(function (n) { return n.confidence == null || n.confidence >= minc; }).map(function (n, j) {
       var i = n.i != null ? n.i : j, qd = q[i], sp = spell(n.pitch, fifths, keyAlt);
-      var fr = Math.floor(n.t * fps + 1e-9), ev = evOf[i];
+      var fr = k.frameAt(n.t), ev = evOf[i];
       return { i: i, pitch: n.pitch, t: n.t, end: n.end || n.t + 0.3, beat: qd ? qd.beat : k.beat(n.t), dur: qd ? qd.dur_beats : 1,
                li: sp.li, alt: sp.alt, step: sp.step, ev: ev, show: ev != null ? k.ev[ev].frame : fr };
     });
@@ -166,6 +166,8 @@
     g.fillStyle = col; g.textAlign = align || 'left'; g.textBaseline = 'alphabetic'; g.globalAlpha = k.alpha * (k.labelAlpha == null ? 1 : k.labelAlpha);
     g.fillText(s, x, y); g.restore();
   }
+  // a caption: in the 9:16 panel the page sets it in its caption row at the label size (k.caption), else drawn here
+  function cap(k, s, x, y, px, col, align) { if (k.caption) k.caption(s, align === 'right' ? 'right' : 'left', col); else text(k, s, x, y, px, col, align); }
 
   // ------------------------------------------------------------------ one column of the score (a staff, a beat)
   function geom(col, vis) {
@@ -223,7 +225,7 @@
     draw: function (k) {
       if (k.view === 'inplace') return;
       if (!M) build(k);
-      var g = k.g, C = k.C, f = k.f, now = f / k.fps, bNow = k.beat(now), pxb = M.pxb, hx = M.hx;
+      var g = k.g, C = k.C, f = k.f, now = k.rt, bNow = k.beat(now), pxb = M.pxb, hx = M.hx;
       var o = k.pr(0, 0);
       g.save(); g.translate(o[0], o[1]); g.scale(k.scale, k.scale);
       var X = function (b) { return PLAY + (b - bNow) * pxb; };
@@ -349,11 +351,11 @@
       g.restore();
       // words: the key and tempo heard, and where the playhead is
       var info = [M.keyName ? M.keyName.toUpperCase() : null, M.has ? Math.round(M.bpm) + ' BPM' : null].filter(Boolean).join(' · ');
-      if (info) text(k, info, 0, 26, 30, C.muted, 'left');
+      if (info) cap(k, info, 0, 26, 30, C.muted, 'left');
       if (M.meter && bNow >= M.down) {
         var rel = bNow - M.down, barN = Math.floor(rel / M.meter) + 1, beatN = Math.floor(rel % M.meter) + 1;
         if (M.has && bNow > M.last + M.meter) barN = null;
-        if (barN) text(k, 'BAR ' + barN + ' · ' + beatN, PLAY + 8, 26, 30, C.ink, 'right');
+        if (barN) cap(k, 'BAR ' + barN + ' · ' + beatN, PLAY + 8, 26, 30, C.ink, 'right');
       }
       g.restore();
     }

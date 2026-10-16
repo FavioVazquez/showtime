@@ -63,10 +63,14 @@ export function textSnapshot(o) {
   }
   const cnv = document.createElement('canvas'); cnv.width = cnv.height = 1;
   const g = cnv.getContext('2d', { willReadFrequently: true });
+  const rgbaCache = new Map();
   function rgba(str) {
+    if (rgbaCache.has(str)) return rgbaCache.get(str);
     g.clearRect(0, 0, 1, 1); g.fillStyle = '#000'; g.fillStyle = str; g.fillRect(0, 0, 1, 1);
     const d = g.getImageData(0, 0, 1, 1).data;
-    return [d[0], d[1], d[2], d[3] / 255];
+    const v = [d[0], d[1], d[2], d[3] / 255];
+    rgbaCache.set(str, v);
+    return v;
   }
   let nextId = Number(document.documentElement.getAttribute('data-st-next') || 1);
   function idOf(el, attr) {
@@ -169,6 +173,7 @@ export function textSnapshot(o) {
   function paintsOpaque(e) {
     if (e.hasAttribute && e.hasAttribute('data-st-gl')) return true; // a WebGL transition frame (opaque)
     const s = cs(e);
+    if (/text/.test(s.webkitBackgroundClip || s.backgroundClip || '')) return false;   // gradient text paints its letters only
     if (rgba(s.backgroundColor)[3] >= 0.9) return true;
     const bi = s.backgroundImage;
     return !!bi && bi !== 'none' && /gradient\(/.test(bi) && !/url\(/.test(bi) && !TRANSLUCENT.test(bi);
@@ -256,6 +261,37 @@ export function textSnapshot(o) {
   } finally {
     hitStyle.remove();
   }
+  // turned text: a rotated element's client rects are axis-aligned bounds, taller than its letters by about
+  // width x sin(angle). Text is judged as turned (and left out of box overlaps) when that adds more than half its
+  // own height: kinetic rows at -8 degrees are, a sticker tilted 2 degrees is not. The angle adds up the ancestors'.
+  const angCache = new Map();
+  function angleOf(el) {
+    if (!el || el.nodeType !== 1 || el === document.body) return 0;
+    if (angCache.has(el)) return angCache.get(el);
+    const t = cs(el).transform;
+    let a = 0;
+    if (t && t !== 'none') { try { const m = new DOMMatrix(t); a = Math.atan2(m.b, m.a); } catch { a = 0; } }
+    a += angleOf(el.parentElement);
+    angCache.set(el, a);
+    return a;
+  }
+  function rotatedOf(el) {
+    const a = angleOf(el);
+    if (Math.abs(Math.sin(a)) < 0.005) return false;
+    const w = el.offsetWidth || 0, h = el.offsetHeight || 0;
+    return Math.abs(Math.sin(a)) * w > 0.5 * Math.abs(Math.cos(a)) * h;
+  }
+  // a text on its own opaque plate (a caption pill, a badge): whatever canvas text lies under it is hidden there.
+  // A plate is a small box (<= 25% of the frame) with no canvas inside it (a canvas inside would paint above it).
+  function plateOf(el) {
+    for (let e = el, i = 0; e && e !== document.body && i < 6; e = e.parentElement, i++) {
+      if (e.hasAttribute('data-start')) return false;
+      if (opacity(e) < 0.9 || !paintsOpaque(e)) continue;
+      const r = e.getBoundingClientRect();
+      return r.width * r.height <= 0.25 * W * H && !e.querySelector('canvas');
+    }
+    return false;
+  }
   const blocks = new Map();
   const leaves = [];
   for (const leaf of leafMap.values()) {
@@ -276,6 +312,9 @@ export function textSnapshot(o) {
     const fs = (parseFloat(s.fontSize) || 0) * svgScale(leaf.el);
     blk.opacity = Math.max(blk.opacity, op);
     blk.fontSize = Math.max(blk.fontSize, fs);
+    // text painted by its background (background-clip: text, a gradient title) reads at full strength whatever `color` says
+    blk.colorAlpha = /text/.test(s.webkitBackgroundClip || s.backgroundClip || '') && ((s.backgroundImage && s.backgroundImage !== 'none') || rgba(s.backgroundColor)[3] > 0) ? 1
+      : Math.max(blk.colorAlpha || 0, rgba(s.webkitTextFillColor && s.webkitTextFillColor !== s.color && !/rgba\(0, 0, 0, 0\)/.test(s.webkitTextFillColor) ? s.webkitTextFillColor : s.color)[3]);
     if (o.full) {
       const outlined = (s.textShadow && s.textShadow !== 'none') || parseFloat(s.webkitTextStrokeWidth) > 0;
       const clipText = /text/.test(s.webkitBackgroundClip || s.backgroundClip || '');
@@ -323,12 +362,13 @@ export function textSnapshot(o) {
     const iv = blk.ibox || v;
     out.push({ bid: blk.bid, text: blk.text, len: blk.len, rect, opacity: +blk.opacity.toFixed(3), fontSize: blk.fontSize, scale: +blk.scale.toFixed(3), decor: blk.decor, flash: blk.flash, sel: blk.sel,
       clipped, offCanvas, onCanvas: inside, caption: blk.caption, moving: !!(blk.el.closest && blk.el.closest('[data-st-moving]')), vrect: { x: v.x, y: v.y, w: v.r - v.x, h: v.b - v.y },
-      irect: { x: iv.x, y: iv.y, w: Math.max(0, iv.r - iv.x), h: Math.max(0, iv.b - iv.y) } });
+      irect: { x: iv.x, y: iv.y, w: Math.max(0, iv.r - iv.x), h: Math.max(0, iv.b - iv.y) },
+      ...(o.full || o.overlaps ? { rotated: rotatedOf(blk.el), plate: plateOf(blk.el), colorAlpha: +(blk.colorAlpha ?? 1).toFixed(3) } : {}) });
   }
   const res = { blocks: out };
-  if (o.full) {
+  if (o.full || o.overlaps) {   // o.overlaps: only the text-over-text pairs (check's dense timeline)
     const overlaps = [];
-    const vis = out.filter((b) => b.opacity >= 0.5 && b.onCanvas > 0 && b.rect.w * b.rect.h > 4);
+    const vis = out.filter((b) => b.opacity >= 0.5 && b.onCanvas > 0 && b.rect.w * b.rect.h > 4 && !b.rotated);
     const byId = new Map([...blocks.values()].map((b) => [b.bid, b.el]));
     for (let i = 0; i < vis.length && i < 150; i++) {
       for (let j = i + 1; j < vis.length && j < 150; j++) {
@@ -343,6 +383,8 @@ export function textSnapshot(o) {
       }
     }
     res.overlaps = overlaps;
+  }
+  if (o.full) {
     // SVG labels (chart values and axes, map names), pair by pair within each <svg>, on their painted
     // glyphs. The overlap test above only fires past 15% of the smaller text, so labels that touch or
     // sit shoulder to shoulder ("−0.02−0.01") pass it: here glyphs that touch at all, or labels side by
@@ -828,6 +870,7 @@ export function elementSnapshot(o) {
   const paintsOpaque = (e) => {
     if (e.hasAttribute('data-st-gl') || /^(IMG|VIDEO)$/.test(e.tagName)) return true;
     const s = cs(e);
+    if (/text/.test(s.webkitBackgroundClip || s.backgroundClip || '')) return false;   // gradient text paints its letters only
     if (alphaOf(s.backgroundColor) >= 0.9) return true;
     const bi = s.backgroundImage || '';
     return /gradient\(/.test(bi) && !/url\(/.test(bi) && !TRANSLUCENT.test(bi);

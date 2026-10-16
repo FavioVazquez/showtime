@@ -646,6 +646,115 @@ class TestPacksIconsBrowser(unittest.TestCase):
         finally:
             shutil.rmtree(str(tmp), ignore_errors=True)
 
+    def test_misspelled_icon_is_refused_from_the_listing(self):
+        """An icon that is not cached yet is checked against the package listing first: a misspelled name gets the
+        suggestion without fetching its file (the CDN takes about 40 s to answer a missing one, past the read timeout:
+        public showtime#78), even when that fetch would time out; a real name is fetched as before."""
+        from unittest import mock
+        from st.assets import icons, net
+        tmp = Path(tempfile.mkdtemp(prefix="st-dl-ic2-"))
+        fetched = []
+        listing = {"files": [{"name": "/icons/rocket.svg"}, {"name": "/icons/zap.svg"}, {"name": "/package.json"}]}
+
+        def get_bytes(url, **kw):
+            fetched.append(url)
+            if url.endswith("/icons/rocket.svg"):
+                return b'<svg xmlns="http://www.w3.org/2000/svg"><path/></svg>', {}
+            raise common.ShowtimeError("network error fetching %s: The read operation timed out" % url)
+        try:
+            with env(SHOWTIME_HOME=tmp / "h", SHOWTIME_NODE_MODULES=tmp / "nm", SHOWTIME_OFFLINE="0"), \
+                    mock.patch.object(net, "get_json", lambda url, **kw: listing), \
+                    mock.patch.object(net, "get_bytes", get_bytes), mock.patch.object(icons, "_tags", lambda s: {}):
+                with self.assertRaises(common.ShowtimeError) as cm:
+                    icons.raw_svg("lucide", "rockt")
+                self.assertIn("no icon 'rockt'", str(cm.exception))
+                self.assertIn("rocket", cm.exception.hint)
+                self.assertEqual(fetched, [], "a name the listing lacks is never fetched")
+                self.assertIn("<svg", icons.raw_svg("lucide", "rocket"))
+                self.assertEqual(len(fetched), 1)
+                self.assertIn("<svg", icons.raw_svg("lucide", "rocket"), "cached now")
+                self.assertEqual(len(fetched), 1)
+            # no listing to read (its request fails too): the file is fetched and its network error comes through
+            def no_listing(url, **kw):
+                raise common.ShowtimeError("network error fetching the listing")
+            with env(SHOWTIME_HOME=tmp / "h2", SHOWTIME_NODE_MODULES=tmp / "nm", SHOWTIME_OFFLINE="0"), \
+                    mock.patch.object(net, "get_json", no_listing), mock.patch.object(net, "get_bytes", get_bytes):
+                with self.assertRaises(common.ShowtimeError) as cm:
+                    icons.raw_svg("lucide", "rockt")
+                self.assertIn("timed out", str(cm.exception))
+        finally:
+            shutil.rmtree(str(tmp), ignore_errors=True)
+
+    def test_icon_listing_down_or_corrupt(self):
+        """The listing check costs seconds when the index is down (one try, a 10 s timeout, then the file is fetched as
+        before), and a corrupt listing cache with the network failing is no cache (a valid icon is still served, the
+        network error stands for anything else) instead of a ValueError."""
+        from unittest import mock
+        from st.assets import icons, net
+        tmp = Path(tempfile.mkdtemp(prefix="st-dl-ic3-"))
+        calls = []
+        s = icons.SETS["lucide"]
+        listing_url = "https://data.jsdelivr.com/v1/packages/npm/%s@%s?structure=flat" % (s["pkg"], s["version"])
+
+        def get_bytes(url, timeout=30, retries=2, **kw):
+            calls.append((url, timeout, retries))
+            if url.endswith("/icons/rocket.svg"):
+                return b'<svg xmlns="http://www.w3.org/2000/svg"><path/></svg>', "image/svg+xml"
+            raise common.ShowtimeError("network error fetching %s: timed out" % url)
+        try:
+            with env(SHOWTIME_HOME=tmp / "h", SHOWTIME_NODE_MODULES=tmp / "nm", SHOWTIME_OFFLINE="0"), \
+                    mock.patch.object(net, "get_bytes", get_bytes):
+                self.assertIn("<svg", icons.raw_svg("lucide", "rocket"))
+                listing = [c for c in calls if c[0] == listing_url]
+                self.assertEqual(len(listing), 1, calls)
+                self.assertLessEqual(listing[0][1], 10)
+                self.assertEqual(listing[0][2], 0, "one try: a dead index costs seconds, not minutes")
+                # a corrupt, expired listing cache and no network: the cache is ignored, the icon is fetched
+                cp = net._cache_path(listing_url)
+                cp.parent.mkdir(parents=True, exist_ok=True)
+                cp.write_text('{"files": [', encoding="utf-8")
+                os.utime(str(cp), (1, 1))
+                self.assertIn("<svg", icons.raw_svg("lucide", "rocket"))   # cached icon: no listing needed
+                (icons.cache_dir("lucide") / "icons" / "rocket.svg").unlink()
+                self.assertIn("<svg", icons.raw_svg("lucide", "rocket"))   # uncached: the corrupt listing is no listing
+                with self.assertRaises(common.ShowtimeError) as cm:
+                    net.get_json(listing_url, ttl=30 * 86400)
+                self.assertIn("network error", str(cm.exception))
+        finally:
+            shutil.rmtree(str(tmp), ignore_errors=True)
+
+    def test_icon_listing_from_an_older_install_or_malformed(self):
+        """An older install's icon package in node_modules (another version than the pin) is not the pinned listing: a
+        newer icon is fetched, not refused. A listing cache of the wrong shape is no listing (the file is fetched)."""
+        from unittest import mock
+        from st.assets import icons, net
+        tmp = Path(tempfile.mkdtemp(prefix="st-dl-ic4-"))
+        svg = b'<svg xmlns="http://www.w3.org/2000/svg"><path/></svg>'
+        fetched = []
+
+        def get_bytes(url, **kw):
+            fetched.append(url)
+            return svg, "image/svg+xml"
+        try:
+            old = tmp / "nm" / "lucide-static"
+            (old / "icons").mkdir(parents=True)
+            (old / "package.json").write_text('{"name": "lucide-static", "version": "1.30.0"}', encoding="utf-8")
+            (old / "icons" / "zap.svg").write_bytes(svg)
+            listing = {"files": [{"name": "/icons/zap.svg"}, {"name": "/icons/a-arrow-down.svg"}]}
+            with env(SHOWTIME_HOME=tmp / "h", SHOWTIME_NODE_MODULES=tmp / "nm", SHOWTIME_OFFLINE="0"), \
+                    mock.patch.object(net, "get_json", lambda url, **kw: listing), mock.patch.object(net, "get_bytes", get_bytes):
+                self.assertIsNone(icons._names_local("lucide"), "1.30.0 is not the pinned version")
+                self.assertIn("<svg", icons.raw_svg("lucide", "a-arrow-down"))   # newer than the old install: fetched
+                self.assertIn("<svg", icons.raw_svg("lucide", "zap"))            # the old install's own file still works
+            for bad in (["a", "b"], {"files": None}, [{"name": 1}]):
+                fetched.clear()
+                with env(SHOWTIME_HOME=tmp / ("h-%d" % len(str(bad))), SHOWTIME_NODE_MODULES=tmp / "none", SHOWTIME_OFFLINE="0"), \
+                        mock.patch.object(net, "get_json", lambda url, _b=bad, **kw: _b), mock.patch.object(net, "get_bytes", get_bytes):
+                    self.assertIn("<svg", icons.raw_svg("lucide", "rocket"), bad)
+                    self.assertEqual(len(fetched), 1, bad)
+        finally:
+            shutil.rmtree(str(tmp), ignore_errors=True)
+
     def test_headless_shell_discovery(self):
         tmp = Path(tempfile.mkdtemp(prefix="st-dl-br-"))
         try:

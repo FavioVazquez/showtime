@@ -2,7 +2,7 @@
    Design space: 1000 x 440 units (the 9:16 panel, about 0.95 px per unit): a percussion staff on top, a drum kit
    seen from above below it (the drummer's seat at the bottom): kick, snare, hi-hat, two mounted toms, floor tom,
    crash and ride.
-   The staff scrolls left past a fixed playhead on the smooth tempo map (k.beat of the frame's time, never a jump).
+   The staff scrolls left past a fixed playhead on the smooth tempo map (k.beat of k.rt, the recording's time: never a jump).
    Each event is a hit: its pieces (notes.json drums[], joined to the event by the runtime) are written at the
    playhead in the usual drum key (kick in the bottom space, floor tom, snare in the third space, toms above it,
    hi-hat x above the staff with an o when open, crash x on a ledger line), red on the event's frame; on the kit
@@ -40,7 +40,7 @@
       }
       if (!KEY[p]) p = 'snare';
       return { i: i, t: d.t, piece: p, vel: d.velocity == null ? 0.8 : d.velocity, beat: q[i] ? q[i].beat : k.beat(d.t), ev: ev,
-               show: ev != null ? k.ev[ev].frame : Math.floor(d.t * k.fps + 1e-9) };
+               show: ev != null ? k.ev[ev].frame : k.frameAt(d.t) };
     });
     var cols = {};
     hits.forEach(function (h) { (cols[h.beat] = cols[h.beat] || { beat: h.beat, hits: [] }).hits.push(h); });
@@ -56,6 +56,8 @@
     g.fillStyle = col; g.textAlign = align || 'left'; g.textBaseline = 'alphabetic'; g.globalAlpha *= (k.labelAlpha == null ? 1 : k.labelAlpha);
     g.fillText(s, x, y); g.restore();
   }
+  // a caption: in the 9:16 panel the page sets it in its caption row at the label size (k.caption), else drawn here
+  function cap(k, s, x, y, px, col, align) { if (k.caption) k.caption(s, align === 'right' ? 'right' : 'left', col); else text(k, s, x, y, px, col, align); }
   function head(g, x, y, kind, col) {
     if (kind === 'x') { line(g, x - 6.5, y - 6.5, x + 6.5, y + 6.5, col, 2.4); line(g, x - 6.5, y + 6.5, x + 6.5, y - 6.5, col, 2.4); return; }
     g.save(); g.translate(x, y); g.rotate(-0.35); g.beginPath(); g.ellipse(0, 0, 9.2, 6.4, 0, 0, Math.PI * 2); g.fillStyle = col; g.fill(); g.restore();
@@ -77,7 +79,7 @@
     draw: function (k) {
       if (k.view === 'inplace') return;
       if (!M) build(k);
-      var g = k.g, C = k.C, f = k.f, now = f / k.fps, bNow = k.beat(now), pxb = M.pxb;
+      var g = k.g, C = k.C, f = k.f, now = k.rt, bNow = k.beat(now), pxb = M.pxb;
       var o = k.pr(0, 0);
       g.save(); g.translate(o[0], o[1]); g.scale(k.scale, k.scale); g.shadowBlur = 0;
       var X = function (b) { return PLAY + (b - bNow) * pxb; };
@@ -204,7 +206,7 @@
         }
         g.restore();
       });
-      text(k, M.has ? 'PIECES SORTED BY THEIR SOUND' : 'HITS, NO PIECES (NO NOTES.JSON)', 0, 26, 28, C.muted, 'left');
+      cap(k, M.has ? 'PIECES SORTED BY THEIR SOUND' : 'HITS, NO PIECES (NO NOTES.JSON)', 0, 26, 28, C.muted, 'left');
       g.restore();
       // labels: each piece, red while it rings
       var LBL = { crash: [-60, -36], ride: [70, -36], hihat: [-60, 0], tom_high: [-30, -80], tom_mid: [30, -80], snare: [-50, 36],

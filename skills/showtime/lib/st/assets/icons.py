@@ -99,6 +99,13 @@ def _rel_path(set_name: str, name: str, variant: Optional[str]) -> str:
     raise AssertionError(set_name)
 
 
+def _pkg_version(d: Path) -> Optional[str]:
+    try:
+        return str(json.loads((d / "package.json").read_text(encoding="utf-8")).get("version"))
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
 def _names_local(set_name: str, variant: Optional[str] = None) -> Optional[List[str]]:
     s = SETS[set_name]
     if not _seeded(set_name):
@@ -106,6 +113,8 @@ def _names_local(set_name: str, variant: Optional[str] = None) -> Optional[List[
     d = _pkg_dir(s["pkg"])
     if not d.is_dir():
         return None
+    if d == _node_pkg_dir(s["pkg"]) and _pkg_version(d) != s["version"]:
+        return None                  # an older install's package is not the pinned version's listing
     rel = _rel_path(set_name, "__X__", variant)
     folder = d / Path(rel).parent
     if not folder.is_dir():
@@ -114,10 +123,10 @@ def _names_local(set_name: str, variant: Optional[str] = None) -> Optional[List[
     return sorted(p.name[:-len(suffix)] for p in folder.iterdir() if p.name.endswith(suffix))
 
 
-def _names_cdn(set_name: str, variant: Optional[str] = None) -> List[str]:
+def _names_cdn(set_name: str, variant: Optional[str] = None, timeout: float = 30, retries: int = 2) -> List[str]:
     s = SETS[set_name]
     data = net.get_json("https://data.jsdelivr.com/v1/packages/npm/%s@%s?structure=flat" % (s["pkg"], s["version"]),
-                        ttl=30 * 86400)
+                        ttl=30 * 86400, timeout=timeout, retries=retries)
     rel = _rel_path(set_name, "__X__", variant)
     prefix = "/" + str(Path(rel).parent).replace("\\", "/") + "/"
     suffix = Path(rel).name.replace("__X__", "")
@@ -129,10 +138,13 @@ def _names_cdn(set_name: str, variant: Optional[str] = None) -> List[str]:
     return sorted(out)
 
 
-def names(set_name: str, variant: Optional[str] = None) -> List[str]:
+def names(set_name: str, variant: Optional[str] = None, quick: bool = False) -> List[str]:
+    """Every icon name of a set (and variant). quick: one try with a short timeout (a check that may be skipped)."""
     set_name = norm_set(set_name)
     local = _names_local(set_name, variant)
-    return local if local is not None else _names_cdn(set_name, variant)
+    if local is not None:
+        return local
+    return _names_cdn(set_name, variant, timeout=10, retries=0) if quick else _names_cdn(set_name, variant)
 
 
 def _tags(set_name: str) -> Dict[str, List[str]]:
@@ -214,26 +226,49 @@ def brand_hex(slug: str) -> Optional[str]:
     return None
 
 
+def _no_icon(set_name: str, name: str, pool: List[str]) -> ShowtimeError:
+    import difflib
+    close = difflib.get_close_matches(name, pool, n=6, cutoff=0.6) or \
+        [r["name"] for r in search(name, set_name, limit=6)]
+    return ShowtimeError("no icon %r in %s" % (name, set_name),
+                         hint=("similar: " + ", ".join(close)) if close else
+                         "search with: showtime assets icons <words> --set %s" % set_name)
+
+
+def _have_file(set_name: str, rel: str) -> bool:
+    s = SETS[set_name]
+    return any((base / rel).is_file() for base in (_node_pkg_dir(s["pkg"]), cache_dir(set_name)))
+
+
 def raw_svg(set_name: str, name: str, variant: Optional[str] = None) -> str:
     set_name = norm_set(set_name)
     name = name.strip().lower().replace(" ", "-")
     if not re.match(r"^[a-z0-9][a-z0-9._-]*$", name):
         raise ShowtimeError("invalid icon name: %r" % name)
     rel = _rel_path(set_name, name, variant)
+    pool: Optional[List[str]] = None
+    if not _have_file(set_name, rel):
+        # a name the package does not have is refused from its listing (seeded, or the jsDelivr index cached for 30
+        # days, one quick request) before any fetch: the CDN takes about 40 s to answer a missing file, past the read
+        # timeout, so a misspelled name got a network error and no suggestion (public showtime#78). One try with a
+        # short timeout: an index that is down costs seconds before the file is fetched as before
+        try:
+            pool = names(set_name, variant, quick=True)
+        except Exception as e:  # noqa: BLE001 - the listing is a shortcut: offline, down or malformed, fetch and see
+            debug("cannot list %s: %s" % (set_name, e))
+            pool = None
+        if pool and name not in pool:
+            raise _no_icon(set_name, name, pool)
     try:
         body = _pkg_file(set_name, rel)
     except net.HTTPStatusError as e:
         if e.status == 404:
-            import difflib
-            try:
-                pool = names(set_name, variant)
-            except ShowtimeError:
-                pool = []
-            close = difflib.get_close_matches(name, pool, n=6, cutoff=0.6) or \
-                [r["name"] for r in search(name, set_name, limit=6)]
-            raise ShowtimeError("no icon %r in %s" % (name, set_name),
-                                hint=("similar: " + ", ".join(close)) if close else
-                                "search with: showtime assets icons <words> --set %s" % set_name)
+            if pool is None:
+                try:
+                    pool = names(set_name, variant, quick=True)
+                except ShowtimeError:
+                    pool = []
+            raise _no_icon(set_name, name, pool)
         raise
     return body.decode("utf-8")
 

@@ -40,6 +40,18 @@ function abs(spec, fromPath) {
   } catch { return null; }
 }
 
+// a script ends at "</script" then a space, "/" or ">" (anything after, up to ">"), a comment at "-->" or "--!>", as
+// browsers end them ("</script-x>" does not end a script)
+const OWN_STYLES = /<!--[\s\S]*?--!?>|<script\b[^>]*>[\s\S]*?<\/script(?=[\s/>])[^>]*>|<style\b([^>]*)>([\s\S]*?)<\/style>/gi;
+
+/**
+ * The page's own <style> blocks, each replaced by fn(m, attrs, text), never one inside an inline <script> or an HTML
+ * comment: a script's "<style>@font-face { src: url(...) }" string is code and stays byte for byte.
+ */
+export function replaceOwnStyles(html, fn) {
+  return html.replace(OWN_STYLES, (m, attrs, text) => (attrs === undefined ? m : fn(m, attrs, text)));
+}
+
 /** Rewrite relative/root import specifiers and import.meta.url to absolute virtual URLs. -> {text, deps} */
 export function rewriteJs(text, filePath) {
   const deps = new Set();

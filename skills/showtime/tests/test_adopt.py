@@ -544,6 +544,23 @@ class Adopt(unittest.TestCase):
         rep = json.loads((out / "adopt.json").read_text()) if (out / "adopt.json").exists() else None
         return cp, out, rep
 
+    def test_a_check_that_ends_on_a_stuck_page_fails_the_adoption(self):
+        """check's --json on a stuck page is a report with one page_stuck finding (SHOWTIME_TEST_CHECK_STUCK fails every
+        seek at its deadline): adopt counts it as an error and exits non-zero."""
+        out = TMP / "stuck-check"
+        cp = subprocess.run([sys.executable, str(LAUNCHER), "adopt", str(FIX / "html-seek"), "-o", str(out)],
+                            env=dict(ENV, SHOWTIME_TEST_CHECK_STUCK="1"), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            encoding="utf-8", errors="replace", timeout=900)
+        self.assertNotEqual(cp.returncode, 0, cp.stdout[-2000:])
+        rep = json.loads((out / "adopt.json").read_text())
+        self.assertFalse(rep["ok"])
+        self.assertGreaterEqual(rep["check"]["errors"], 1, rep["check"])
+        self.assertTrue(any("page_stuck" in t for t in rep["check"]["top"]), rep["check"])
+        # the stopped check wrote no sheet or report: none is named
+        self.assertIsNone(rep["check"].get("sheet"), rep["check"])
+        self.assertIsNone(rep["check"].get("report"), rep["check"])
+        self.assertNotIn("sheet:", cp.stdout + cp.stderr)
+
     def test_html_seek(self):
         cp, out, rep = self.adopt("html-seek")
         self.assertEqual(rep["contract"], "page: seek(t)")

@@ -10,16 +10,25 @@
   var X = window.XRAY = { mech: null, ready: false };
   X.mechanism = function (m) { X.mech = m; };
 
+  // 9:16: the sound strip (tick height; the plate's room over the ticks for the caret; the whole plate's height), the
+  // HUD's height (index.html .portrait.reels .card) and the gaps; its labels are S.lpx (the phone floor, 2.2% of the
+  // height, and a pixel: 44 px at 1920)
+  var PSTRIP = { h: 56, pad: 22 }, PHUD = 136, PGAP = 12;
+  // the reels safe box as fractions of the frame (check's: x 64-916, y 220-1440 at 1080x1920)
+  var BOX = { x: 64 / 1080, r: 916 / 1080, y: 220 / 1920, b: 1440 / 1920 };
+  PSTRIP.block = PSTRIP.pad + PSTRIP.h + 16;
+
   // palettes: dark = the radiograph (cyan lines on night), light = a blueprint on paper (navy lines); red = acting now
+  // (hotink: the red for text, 4.5:1 on the cards and the end card)
   var THEMES = {
-    dark: { l: [143, 211, 255], i: [233, 243, 255], bg: [7, 11, 22], h: [255, 74, 61], muted: '#a9bdd6', glow: 8,
+    dark: { l: [143, 211, 255], i: [233, 243, 255], bg: [7, 11, 22], h: [255, 74, 61], hotink: '#ff7468', muted: '#a9bdd6', glow: 8,
             filter: 'grayscale(1) invert(1) brightness(.62) contrast(1.7) sepia(1) hue-rotate(165deg) saturate(2.6)' },
-    light: { l: [24, 62, 120], i: [18, 30, 52], bg: [244, 240, 231], h: [214, 40, 57], muted: '#55627a', glow: 0,
+    light: { l: [24, 62, 120], i: [18, 30, 52], bg: [244, 240, 231], h: [214, 40, 57], hotink: '#a81b2b', muted: '#465267', glow: 0,
              filter: 'grayscale(1) brightness(1.55) contrast(.62) sepia(.25)' }
   };
   function palette(name) {
     var P = THEMES[name] || THEMES.dark, f = function (c) { return function (a) { return 'rgba(' + c.join(',') + ',' + a + ')'; }; };
-    var C = { name: THEMES[name] ? name : 'dark', l: f(P.l), i: f(P.i), bg: f(P.bg), h: f(P.h), muted: P.muted, glow: P.glow, filter: P.filter };
+    var C = { name: THEMES[name] ? name : 'dark', l: f(P.l), i: f(P.i), bg: f(P.bg), h: f(P.h), hotink: P.hotink, muted: P.muted, glow: P.glow, filter: P.filter };
     C.line = C.l(1); C.soft = C.l(name === 'light' ? .55 : .5); C.faint = C.l(name === 'light' ? .22 : .2); C.hot = C.h(1); C.ink = C.i(1);
     C.ground = C.bg(1);
     return C;
@@ -59,7 +68,7 @@
   function apply(h, x, y) { var w = h[6] * x + h[7] * y + h[8]; return [(h[0] * x + h[1] * y + h[2]) / w, (h[3] * x + h[4] * y + h[5]) / w]; }
   function affine(sx, sy, tx, ty) { return [sx, 0, tx, 0, sy, ty, 0, 0, 1]; }
   function fit(box, r, pad) {                  // box [x0,y0,x1,y1] into rect {x,y,w,h}, aspect kept, centred
-    var bw = box[2] - box[0], bh = box[3] - box[1], s = Math.min((r.w - 2 * pad) / bw, (r.h - 2 * pad) / bh);
+    var bw = box[2] - box[0], bh = box[3] - box[1], s = Math.max(1e-3, Math.min((r.w - 2 * pad) / bw, (r.h - 2 * pad) / bh));
     return affine(s, s, r.x + (r.w - bw * s) / 2 - box[0] * s, r.y + (r.h - bh * s) / 2 - box[1] * s);
   }
   function bbox(pts) {
@@ -91,15 +100,25 @@
     var info = ST.info(), W = info.width, H = info.height, fps = info.fps || 30;
     var src = doc.source || {}, sw = src.width || 1920, sh = src.height || 1080, sfps = src.fps || fps;
     var m = X.mech, track = doc.track && doc.track.H && doc.track.H.length ? doc.track : null;
-    var portrait = H > W * 1.2, inplace = cfg.layout !== 'split' && !!track;
+    // reels: a frame at least 1.6 times as tall as wide (9:16) gets the reels box's layout; 4:5 keeps the portrait one
+    var portrait = H > W * 1.2, reels = H >= W * 1.6, inplace = cfg.layout !== 'split' && !!track;
     var clip, panel = null, hud, lay = null;
     if (portrait) {                            // phone: the clip on top, the inside below, all text in the reels safe box
       var ch = W * sh / sw, cw = W;
       if (ch > H * 0.36) { ch = H * 0.36; cw = ch * sw / sh; }
       clip = { x: (W - cw) / 2, y: 0, w: cw, h: ch };
-      var top = Math.max(H * 0.115, ch + 28), hudTop = H * 0.75 - 172;
-      lay = { brand: top, tag: top + 76, panelTop: top + 150, hud: hudTop };
-      panel = { x: 40, y: lay.panelTop, w: W - 80, h: hudTop - 16 - lay.panelTop };
+      var top = Math.max(H * 0.115, ch + 28);
+      if (reels) {
+        // the sound strip sits above the HUD, inside the safe box too: its plate ends PGAP px over the HUD (see strip());
+        // the panel (its frame too) ends at the safe box's right edge: right of it the platform's buttons cover the frame.
+        // A hand-set size too short for this layout gets a thin panel, never a negative (mirrored) one
+        var hudTop = H * 0.75 - PHUD, stripTop = hudTop - PGAP - PSTRIP.block;
+        lay = { brand: top, tag: top + 76, panelTop: top + 150, hud: hudTop, strip: stripTop };
+        panel = { x: 40 * W / 1080, y: lay.panelTop, w: BOX.r * W - 40 * W / 1080, h: Math.max(1, stripTop - PGAP - lay.panelTop) };
+      } else {
+        lay = { brand: top, tag: top + 76, panelTop: top + 150, hud: H * 0.75 - 172 };
+        panel = { x: 40, y: lay.panelTop, w: W - 80, h: lay.hud - 16 - lay.panelTop };
+      }
       hud = 'portrait';
     } else if (inplace && cfg.panel) {         // 16:9 see-through with the panel beside it ("xray": {"panel": true})
       var w3 = W * 0.6, h3 = w3 * sh / sw;
@@ -145,13 +164,21 @@
       if (kind === 'event' && ti < text.length) o.ch = text[ti++];
       return o;
     });
+    // 9:16: a first fit; reelsLayout() then makes room for the part labels' columns and the captions
+    var pm = panel ? fit(m.box, panel, reels ? 12 : 24) : null;
+    if (pm && reels) pm[2] += BOX.r * W - 8 * W / 1080 - (m.box[2] * pm[0] + pm[2]);
     S = { off: off, W: W, H: H, fps: fps, sfps: sfps, sw: sw, sh: sh, doc: doc, cfg: cfg, m: m, track: track, inplace: inplace,
-          clip: clip, panel: panel, hud: hud, lay: lay, place: place, toFilm: toFilm, ev: ev, text: text, portrait: portrait,
-          panelMap: panel ? fit(m.box, panel, 24) : null, dur: info.duration, notes: [] };
+          clip: clip, panel: panel, hud: hud, lay: lay, place: place, toFilm: toFilm, ev: ev, text: text, portrait: portrait, reels: reels,
+          panelMap: pm, dur: info.duration, notes: [], lpx: Math.ceil(H * 0.022) + 1 };
     attachNotes(notesDoc);
+    if (reels) reelsLayout();
     build();
     X.ready = true;
   }
+  // the recording's clock: the clip starts at film frame "xray".offset_frames, so a time of the recording (xray.json,
+  // notes.json and its tempo map, track_until) sits at film frame floor(t * fps) + off, and film frame f at (f - off) / fps
+  function recTime(f) { return (f - S.off) / S.fps; }
+  function filmFrame(t) { return Math.floor(t * S.fps + 1e-9) + S.off; }
   // notes.json (pitches, from `showtime xray notes`): each note joins the event within 3 frames of it, so a
   // mechanism can say WHICH tooth, string or key, from the sound itself
   function attachNotes(nd) {
@@ -161,7 +188,7 @@
     var src = (nd.notes && nd.notes.length ? nd.notes : (nd.drums || []));
     S.notes = src.map(function (n, j) {
       return { i: n.i != null ? n.i : j, pitch: n.pitch, name: n.name || n.piece, piece: n.piece, t: n.t,
-               frame: Math.floor(n.t * S.fps + 1e-9) + S.off, end: n.end, velocity: n.velocity, confidence: n.confidence, hz: n.hz };
+               frame: filmFrame(n.t), end: n.end, velocity: n.velocity, confidence: n.confidence, hz: n.hz };
     });
     S.notes.forEach(function (n) {
       var best = null, bd = 4;
@@ -183,8 +210,8 @@
       var v = el(id); v.style.left = px(c.x); v.style.top = px(c.y); v.style.width = px(c.w); v.style.height = px(c.h);
     });
     el('scan').hidden = !S.inplace;
-    var st = el('stage'); st.className = 'stage ' + S.hud + (S.inplace ? ' inplace' : '') + ' ' + C.name;
-    [['--line', C.line], ['--ink', C.ink], ['--muted', C.muted], ['--hot', C.hot], ['--ground', C.ground],
+    var st = el('stage'); st.className = 'stage ' + S.hud + (S.reels ? ' reels' : '') + (S.inplace ? ' inplace' : '') + ' ' + C.name;
+    [['--line', C.line], ['--ink', C.ink], ['--muted', C.muted], ['--hot', C.hot], ['--hotink', C.hotink], ['--ground', C.ground],
      ['--card', C.bg(.84)], ['--edge', C.l(.35)], ['--tagbg', C.bg(.74)]].forEach(function (v) { st.style.setProperty(v[0], v[1]); });
     el('clipx').style.filter = C.filter;
     var cv = el('cv'); cv.width = S.W; cv.height = S.H;
@@ -222,7 +249,10 @@
     var pr = function (x, y) { return apply(map, x, y); };
     var scale = Math.sqrt(Math.abs(map[0] * map[4] - map[1] * map[3]));
     var K = { g: g, view: view, f: f, t: t, alpha: alpha, C: C, ease: ST.ease, pr: pr, scale: scale, ev: S.ev, text: S.text, notes: S.notes, music: S.music, cfg: S.cfg, fps: S.fps, panel: S.panel,
-              labels: view === 'panel' || !S.panel };
+              labels: view === 'panel' || !S.panel,
+              // the recording's clock (notes.json times and its tempo map are seconds of the recording, not the film):
+              // rt is this frame's time on it, frameAt(t) the film frame of a recording time t
+              rt: recTime(f), frameAt: filmFrame, off: S.off };
     K.env = function (i) {                     // 0..1: the motion of event i, 1 exactly on its frame
       var d = f - S.ev[i].frame;
       if (d < -RISE || d > FALL) return 0;
@@ -242,7 +272,8 @@
     S.ev.forEach(function (e, i) { if (e.kind === 'skip') return; var s = K.env(i); if (s > K.s) { K.s = s; K.cur = i; } });
     K.hot = K.s > 0.05; K.ch = K.cur >= 0 ? S.ev[K.cur].ch : null; K.kind = K.cur >= 0 ? S.ev[K.cur].kind : null;
     K.n = K.count('event');
-    var lw = function (w) { return Math.max(1, w * (view === 'panel' ? Math.min(1.6, scale) : Math.min(1.4, scale * 1.2))); };
+    // 9:16 panel: heavier lines, so the drawing outweighs its 44 px labels
+    var lw = function (w) { return view === 'panel' && S.reels ? Math.max(1.5, w * scale * 1.6) : Math.max(1, w * (view === 'panel' ? Math.min(1.6, scale) : Math.min(1.4, scale * 1.2))); };
     K.lw = lw;
     K.path = function (pts, close) { g.beginPath(); pts.forEach(function (p, i) { var q = pr(p[0], p[1]); if (i) g.lineTo(q[0], q[1]); else g.moveTo(q[0], q[1]); }); if (close) g.closePath(); };
     K.seg = function (a, b, col, w) { g.strokeStyle = col; g.lineWidth = lw(w); K.path([a, b]); g.stroke(); };
@@ -253,10 +284,31 @@
       g.strokeStyle = col; g.lineWidth = lw(w); K.path(pts, true); g.stroke();
     };
     K.dot = function (p, r, col) { var q = pr(p[0], p[1]); g.fillStyle = col; g.beginPath(); g.arc(q[0], q[1], r, 0, Math.PI * 2); g.fill(); };
-    K.label = function (text, at, dx, dy, on) {
+    // 9:16 panel: the labels sit in one column, each in the row the frame's dry run gave it (labelSlots), and each is
+    // drawn when the mechanism calls it, like at 16:9 (the live page reads a label's plate and dims it on that call)
+    var col = view === 'panel' && S.reels;
+    K.reels = col;                             // the 9:16 panel: labels in a column beside the drawing (keep names short)
+    // a mechanism's caption (its key, tempo, bar): in the 9:16 panel it goes to the caption row over the drawing, at
+    // the label size (the mechanism draws its own text when this is null, as at 16:9)
+    K.caption = col ? function (text, side, ink) {
+      if (K.collect) { K.caps.push({ s: String(text), side: side }); return; }
+      var px = S.lpx, right = side === 'right';
+      g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.shadowBlur = 0; g.globalAlpha = alpha * (K.labelAlpha == null ? 1 : K.labelAlpha);
+      g.font = '600 ' + px + 'px "IBM Plex Mono"'; g.fillStyle = ink; g.textBaseline = 'middle'; g.textAlign = right ? 'right' : 'left';
+      g.fillText(String(text), right ? BOX.r * S.W : BOX.x * S.W, S.panel.y + (S.capRow[right ? 'right' : 'left'] + 0.5) * (px + 12) + 1);
+      g.restore();
+    } : null;
+    // opts.keepCase: the label as written (guitar strings: e and E), else in capitals
+    K.label = function (text, at, dx, dy, on, opts) {
       if (!K.labels) return;
-      var p = pr(at[0], at[1]), r = view === 'panel' ? (S.portrait ? { x: S.W * 0.06, y: S.panel.y, w: S.W * 0.79, h: S.panel.h } : S.panel) : { x: 40, y: 170, w: S.W - 80, h: S.H - 400 };
+      var p = pr(at[0], at[1]), r = view === 'panel' ? (S.reels ? { x: BOX.x * S.W, y: S.panel.y, w: (BOX.r - BOX.x) * S.W, h: S.panel.h } : S.portrait ? { x: S.W * 0.06, y: S.panel.y, w: S.W * 0.79, h: S.panel.h } : S.panel) : { x: 40, y: 170, w: S.W - 80, h: S.H - 400 };
       if (p[0] < r.x - 20 || p[0] > r.x + r.w + 20 || p[1] < r.y - 20 || p[1] > r.y + r.h + 20) return;
+      if (col) {
+        var name = opts && opts.keepCase ? String(text) : String(text).toUpperCase(), key = name + '@' + Math.round(p[0]) + ',' + Math.round(p[1]);
+        if (K.collect) K.collect.push({ label: name, p: p, at: at, key: key });
+        else if (K.slots && K.slots[key]) colLabel(K.slots[key], name, p, on);
+        return;
+      }
       var size = S.portrait ? 34 : 28;
       g.save(); g.font = '600 ' + size + 'px "IBM Plex Mono"'; g.shadowBlur = 0;
       var label = String(text).toUpperCase(), w = g.measureText(label).width + 22, hgt = size + 16;
@@ -270,13 +322,186 @@
       g.fillText(label, dx < 0 ? x - 11 : x + 11, y + 1);
       g.restore();
     };
+    // a label in its column: its leader (grey, so the only red lines are the mechanism's own) runs from the label to
+    // the column's edge, then to its part; the part acting now gets a red dot and its label turns red and bold (the
+    // mono font keeps one width in both weights, so a label never shifts when it turns red); at rest, the muted ink.
+    // A right column's plates end at the safe box's right edge; a two-line label is one plate
+    var colLabel = function (q, name, p, on) {
+      var px = S.lpx, x = q.side === 'right' ? BOX.r * S.W - q.w : BOX.x * S.W, edge = q.side === 'right' ? x : x + q.w;
+      g.save(); g.shadowBlur = 0; g.globalAlpha = alpha * (K.labelAlpha == null ? 1 : K.labelAlpha);
+      g.strokeStyle = C.i(on ? .6 : .45); g.lineWidth = 1.5;
+      g.beginPath(); g.moveTo(edge, q.y); g.lineTo(q.ex, q.y); g.lineTo(p[0], p[1]); g.stroke();
+      if (on) { g.fillStyle = C.hot; g.beginPath(); g.arc(p[0], p[1], 5, 0, Math.PI * 2); g.fill(); }
+      g.fillStyle = C.bg(.86); g.fillRect(x, q.y - q.h / 2, q.w, q.h);
+      g.font = (on ? '600' : '500') + ' ' + px + 'px "IBM Plex Mono"'; g.fillStyle = on ? C.hot : C.muted;
+      g.textBaseline = 'middle'; g.textAlign = 'left';
+      q.lines.forEach(function (l, i) { g.fillText(l, x + 11, q.y + 1 + (i - (q.lines.length - 1) / 2) * (px + 2)); });
+      g.restore();
+    };
     return K;
   }
+
+  // 9:16 panel: a dry run of the mechanism's drawing on a context that draws nothing collects the labels and captions
+  // it calls (only measureText is real)
+  var dry = null;
+  function dryContext() {
+    if (dry) return dry;
+    var c = document.createElement('canvas').getContext('2d'), st = {}, none = function () { return stub; };
+    var stub = new Proxy(function () {}, { get: function () { return none; }, apply: function () { return stub; } });
+    dry = new Proxy(c, {
+      get: function (o, k) { if (k === 'measureText') return o.measureText.bind(o); if (k in st) return st[k]; return typeof o[k] === 'function' ? none : o[k]; },
+      set: function (o, k, v) { st[k] = v; if (k === 'font') o.font = v; return true; },
+      deleteProperty: function (o, k) { delete st[k]; return true; }
+    });
+    return dry;
+  }
+  function dryRun(f) {
+    var K = kit(dryContext(), 'panel', f, f / S.fps, 1), n = {};
+    K.collect = []; K.caps = [];
+    S.m.draw(K);
+    // a label's id: its name and which call of that name it is in the frame (drums names two parts TOM)
+    K.collect.forEach(function (q) { n[q.label] = (n[q.label] || 0) + 1; q.id = q.label + '#' + n[q.label]; });
+    return K;
+  }
+  // a label's plate: its lines plus `pad` (16 px; 8 or 4 when a column would not hold its labels otherwise, with the
+  // gap between two plates 8, 4 or 2: the text stays 44 px)
+  var PADS = [[16, 8], [8, 4], [4, 2]];
+  function rowH(n, pad) { return S.lpx + pad + (n - 1) * (S.lpx + 2); }
+  // a label's lines: one, or two when it is wider than the layout's limit (split at a space); null when it can't fit
+  function wrapLabel(name, lim) {
+    var g = dryContext(), words = name.split(' '), lines = [], cur = '';
+    g.font = '500 ' + S.lpx + 'px "IBM Plex Mono"';
+    words.forEach(function (w) { var t = cur ? cur + ' ' + w : w; if (cur && g.measureText(t).width > lim) { lines.push(cur); cur = w; } else cur = t; });
+    lines.push(cur);
+    return lines.length <= 2 && lines.every(function (l) { return g.measureText(l).width <= lim; }) ? lines : null;
+  }
+  function labInfo(name, side, lim, pad) {
+    var g = dryContext(), lines = wrapLabel(name, lim) || [name];
+    g.font = '500 ' + S.lpx + 'px "IBM Plex Mono"';
+    var w = Math.max.apply(null, lines.map(function (l) { return g.measureText(l).width; })) + 22;
+    return { lines: lines, w: w, h: rowH(lines.length, pad), side: side };
+  }
+
+  // 9:16 panel, once at setup: the part labels' columns and the captions' rows, from dry runs of sampled frames (every
+  // event's frame and 4 frames after it, and every half second), so the drawing never moves between frames. Labels go
+  // in one column at the reels box's left edge, or in two (left and right, by which half of the drawing their part is
+  // in); a long label wraps to two lines; captions get a row at the panel's top, and a column starts under the rows
+  // whose captions reach over it. Of the layouts whose columns hold every sampled frame's labels, the one with the
+  // largest drawing wins (then fewer columns, then fewer wrapped labels); no column covers the drawing's box
+  function reelsLayout() {
+    var P = S.panel, px = S.lpx, x0 = BOX.x * S.W, xr = BOX.r * S.W, box = S.m.box, bw = box[2] - box[0], bh = box[3] - box[1];
+    var frames = [0], per = [], at = {}, caps = { left: 0, right: 0 }, g = dryContext(), step = Math.max(1, Math.round(S.fps / 2));
+    S.ev.forEach(function (e) { frames.push(e.frame, e.frame + 4); });
+    for (var f = step; f < Math.round(S.dur * S.fps); f += step) frames.push(f);
+    S.capRow = { left: 0, right: 0 };
+    frames.forEach(function (f) {
+      var K = dryRun(f);
+      g.font = '600 ' + px + 'px "IBM Plex Mono"';
+      K.caps.forEach(function (c) { caps[c.side] = Math.max(caps[c.side], g.measureText(c.s).width); });
+      per.push(K.collect.map(function (q) { (at[q.id] = at[q.id] || []).push(q.at[0]); return q.id; }));
+    });
+    // captions: left and right on one row when both fit, else the right one on a second row
+    var both = caps.left && caps.right, two = both && caps.left + caps.right + 24 > xr - x0;
+    S.capRow = { left: 0, right: two ? 1 : 0 };
+    var rows = [];                               // per caption row, the x span its captions take
+    if (caps.left) rows[0] = [[x0, x0 + caps.left]];
+    if (caps.right) (rows[S.capRow.right] = rows[S.capRow.right] || []).push([xr - caps.right, xr]);
+    var crow = px + 12, band = rows.length * crow;
+    var colTop = function (a, b) {               // a column spanning x a..b starts under the last caption row over it
+      var top = P.y;
+      rows.forEach(function (r, i) { if (r && r.some(function (sp) { return sp[0] < b + 10 && sp[1] > a - 10; })) top = P.y + (i + 1) * crow; });
+      return top;
+    };
+    var names = Object.keys(at).sort(), cx = (box[0] + box[2]) / 2, bot = P.y + P.h, nm = function (id) { return id.slice(0, id.lastIndexOf('#')); };
+    var mid = {}; names.forEach(function (n) { mid[n] = at[n].reduce(function (a, b) { return a + b; }, 0) / at[n].length; });
+    var lims = [Infinity];                       // wrap limits worth trying: every run of words' width
+    g.font = '500 ' + px + 'px "IBM Plex Mono"';
+    names.forEach(function (n) { var w = nm(n).split(' '); for (var i = 0; i < w.length; i++) for (var j = i + 1; j <= w.length; j++) lims.push(Math.ceil(g.measureText(w.slice(i, j).join(' ')).width)); });
+    lims = lims.filter(function (v, i) { return lims.indexOf(v) === i; }).sort(function (a, b) { return b - a; });
+    var best = null;
+    [1, 2].forEach(function (cols) {
+      lims.forEach(function (lim) { PADS.some(function (pg) {
+        var info = {}, wd = { left: 0, right: 0 }, wraps = 0, ok = true;
+        names.forEach(function (n) {
+          if (!wrapLabel(nm(n), lim)) ok = false;
+          var q = info[n] = labInfo(nm(n), cols === 2 && mid[n] >= cx ? 'right' : 'left', lim, pg[0]);
+          wd[q.side] = Math.max(wd[q.side], q.w); if (q.lines.length > 1) wraps++;
+        });
+        if (!ok || (cols === 2 && !wd.right)) return true;
+        var top = { left: colTop(x0, x0 + wd.left), right: colTop(xr - wd.right, xr) }, over = 0;
+        per.forEach(function (list) {
+          ['left', 'right'].forEach(function (side) {
+            var mine = list.filter(function (n) { return info[n].side === side; });
+            var h = mine.reduce(function (a, n) { return a + info[n].h; }, 0) + pg[1] * Math.max(0, mine.length - 1);
+            over = Math.max(over, h - (bot - top[side]));
+          });
+        });
+        var l = wd.left ? x0 + wd.left + 16 : P.x + 12, r = wd.right ? xr - wd.right - 16 : xr - 8;
+        var s = Math.max(1e-3, Math.min((r - l) / bw, (P.h - band - 24) / bh));
+        var c = { cols: cols, lim: lim, info: info, wd: wd, top: top, l: l, r: r, s: s, over: Math.max(0, over), wraps: wraps, pad: pg[0], gap: pg[1] };
+        var better = !best || (c.over < best.over - 0.5) || (Math.abs(c.over - best.over) <= 0.5 &&
+          (c.s > best.s + 1e-9 || (Math.abs(c.s - best.s) <= 1e-9 && (c.cols < best.cols || (c.cols === best.cols && c.wraps < best.wraps)))));
+        if (better) best = c;
+        return over <= 0;                        // it fits: no tighter plates
+      }); });
+    });
+    var top = P.y + band, h = P.h - band;
+    if (!names.length) {                         // no labels: the drawing fills the panel under the captions, at its right edge
+      S.panelMap = fit(box, { x: P.x, y: top, w: P.w, h: h }, 12);
+      S.panelMap[2] += xr - 8 - (box[2] * S.panelMap[0] + S.panelMap[2]);
+      S.lay2 = { cols: 0, info: {}, wd: { left: 0, right: 0 }, top: { left: P.y, right: P.y }, lim: Infinity, pad: 16, gap: 8 };
+      return;
+    }
+    var s = best.s, x = best.wd.right ? (best.l + best.r - bw * s) / 2 : best.r - bw * s;   // one column: at the right edge
+    S.panelMap = affine(s, s, x - box[0] * s, top + (h - bh * s) / 2 - box[1] * s);
+    S.lay2 = best;
+  }
+  // this frame's rows: the labels of each column sorted by their part's height and spread so none sit on each other;
+  // two slanted leaders that cross swap places (equal rows swap their heights: each swap makes the leaders shorter in
+  // total, so this ends)
+  function labelSlots(view, f, t, alpha) {
+    var K = dryRun(f), list = K.collect, L = S.lay2, slots = {}, bot = S.panel.y + S.panel.h;
+    var side = function (q) {
+      if (L.info[q.id]) return L.info[q.id].side;
+      return L.cols === 2 && q.at[0] >= (S.m.box[0] + S.m.box[2]) / 2 ? 'right' : 'left';
+    };
+    ['left', 'right'].forEach(function (sd) {
+      var mine = list.filter(function (q) { return side(q) === sd; }), n = mine.length, i, top = L.top[sd];
+      if (!n) return;
+      mine.forEach(function (q) { var o = L.info[q.id] || labInfo(q.label, sd, L.lim, L.pad); q.lines = o.lines; q.w = o.w; q.h = o.h; });
+      mine.sort(function (a, b) { return a.p[1] - b.p[1]; });
+      var place = function () {
+        for (i = 0; i < n; i++) {
+          var q = mine[i], pv = mine[i - 1];
+          q.y = Math.max(top + q.h / 2, Math.min(bot - q.h / 2, q.p[1]), i ? pv.y + pv.h / 2 + L.gap + q.h / 2 : -Infinity);
+        }
+        for (i = n - 1; i >= 0; i--) { var nx = mine[i + 1]; mine[i].y = Math.min(mine[i].y, nx ? nx.y - nx.h / 2 - L.gap - mine[i].h / 2 : bot - mine[i].h / 2); }
+      };
+      place();
+      var ex = sd === 'right' ? BOX.r * S.W - L.wd.right - 10 : BOX.x * S.W + L.wd.left + 10;
+      var cross = function (a, b) {
+        var a0 = [ex, a.y], b0 = [ex, b.y];
+        return sideOf(a0, a.p, b0) * sideOf(a0, a.p, b.p) < 0 && sideOf(b0, b.p, a0) * sideOf(b0, b.p, a.p) < 0;
+      };
+      for (var pass = 0, swapped = true; swapped && pass < n * n; pass++) {
+        swapped = false;
+        for (i = 0; i < n && !swapped; i++) for (var j = i + 1; j < n && !swapped; j++) if (cross(mine[i], mine[j])) {
+          if (mine[i].h === mine[j].h) { var y = mine[i].y; mine[i].y = mine[j].y; mine[j].y = y; }
+          else { var tq = mine[i]; mine[i] = mine[j]; mine[j] = tq; place(); }
+          swapped = true;
+        }
+      }
+      mine.forEach(function (q) { slots[q.key] = { y: q.y, w: q.w, h: q.h, lines: q.lines, side: sd, ex: ex }; });
+    });
+    return slots;
+  }
+  function sideOf(a, b, c) { return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]); }
 
   // ------------------------------------------------------------------ per frame
   function drawView(g, view, f, t, alpha, clipRect) {
     var K = kit(g, view, f, t, alpha);
     K.labelAlpha = ST.progress(t, cue('labels', 1.4), cue('labels', 1.4) + 0.6, ST.ease.inOutCubic);
+    if (view === 'panel' && S.reels) K.slots = labelSlots(view, f, t, alpha);
     g.save();
     if (clipRect) { g.beginPath(); g.rect(clipRect.x, clipRect.y, clipRect.w, clipRect.h); g.clip(); }
     g.globalAlpha = alpha; g.lineCap = 'round'; g.lineJoin = 'round';
@@ -286,23 +511,41 @@
   }
 
   function strip(g, f, t, alpha) {
-    var portrait = S.hud === 'portrait', x0, w, y0, h = portrait ? 150 : 50;
-    if (portrait) { x0 = 64; w = S.W * 0.79; y0 = S.H * 0.75 + 70; }
+    var reels = S.hud === 'portrait' && S.reels, x0, w, y0, h = reels ? PSTRIP.h : S.hud === 'portrait' ? 150 : 50, pad = reels ? PSTRIP.pad : 38;
+    if (reels) { x0 = BOX.x * S.W + 16; w = BOX.r * S.W - 16 - x0; y0 = S.lay.strip + PSTRIP.pad; }   // its plate (16 px round the ticks) fills the safe box's width
+    else if (S.hud === 'portrait') { x0 = 64; w = S.W * 0.79; y0 = S.H * 0.75 + 70; }
     else if (S.hud === 'side') { x0 = S.panel.x; w = S.panel.w; y0 = S.H - 100; }
     else { x0 = S.W - 900; w = 852; y0 = S.H - 90; }
-    var dur = (S.doc.source && S.doc.source.duration) || S.dur;
+    // with no measured length, the recording is taken to run from its start to the film's end
+    var dur = (S.doc.source && S.doc.source.duration) || Math.max(0.1, S.dur - S.off / S.fps);
+    // where a film frame sits on the recording: the clip starts at film frame "xray".offset_frames, so the strip's
+    // clock is the recording's (frame - off), not the film's; before the clip starts the caret waits at 0
+    var at = function (fr) { return Math.max(0, Math.min(1, recTime(fr) / dur)); };
+    // the label fits its room: a long mechanism word shrinks it to the readable floor (2.2% of the frame height: 24 px
+    // at 1080, 43 px at 1920), then drops "the clip's sound", then cuts the word with an ellipsis; it never runs past
+    // the plate. At 9:16 it sits on the ticks' row, left of them, in at most 56% of the strip
+    var one = String(S.m.one || 'an event'), px = reels ? S.lpx : S.hud === 'portrait' ? 24 : 26, floor = Math.ceil((reels ? S.H : Math.min(S.W, S.H)) * 0.022), room = reels ? w * 0.56 : w;
+    var label = ('the clip’s sound · red = ' + one).toUpperCase(), fits = function () { return g.measureText(label).width <= room; };
+    var fitLabel = function () {
+      g.font = '500 ' + px + 'px "IBM Plex Mono"';
+      while (!fits() && px > floor) { px--; g.font = '500 ' + px + 'px "IBM Plex Mono"'; }
+      if (!fits()) label = ('red = ' + one).toUpperCase();
+      while (!fits() && one.length > 1) { one = one.slice(0, -1); label = ('red = ' + one.replace(/\s+$/, '') + '…').toUpperCase(); }
+    };
     g.save(); g.globalAlpha = alpha;
-    g.fillStyle = C.bg(.8); g.fillRect(x0 - 16, y0 - 38, w + 32, h + 54);
+    var bx = x0, bw = w;   // the ticks' span: the whole strip, or at 9:16 what the label leaves
+    if (reels) { fitLabel(); bx = x0 + g.measureText(label).width + 28; bw = x0 + w - bx; }
+    g.fillStyle = C.bg(.8); g.fillRect(x0 - 16, y0 - pad, w + 32, h + pad + 16);
     S.ev.forEach(function (e) {
-      var x = x0 + (e.frame / S.fps) / dur * w, hh = Math.max(6, (0.35 + 0.65 * (e.strength || 0.5)) * h);
+      var x = bx + at(e.frame) * bw, hh = Math.max(6, (0.35 + 0.65 * (e.strength || 0.5)) * h);
       var on = e.frame <= f, col = e.kind === 'skip' ? (on ? C.i(.55) : C.i(.2)) : (on ? C.hot : C.h(.32));
       g.fillStyle = col; g.fillRect(x - 2, y0 + h / 2 - hh / 2, 4, hh);
     });
     // now: a small caret over the ticks (no axis line, no full-height playhead: it must not read as a player's bar)
-    var cx = x0 + Math.min(1, (f / S.fps) / dur) * w;
+    var cx = bx + at(f) * bw;
     g.fillStyle = C.ink; g.beginPath(); g.moveTo(cx - 9, y0 - 8); g.lineTo(cx + 9, y0 - 8); g.lineTo(cx, y0 + 4); g.closePath(); g.fill();
-    g.font = '500 ' + (portrait ? 24 : 18) + 'px "IBM Plex Mono"'; g.fillStyle = C.muted; g.textBaseline = 'bottom'; g.textAlign = 'left';
-    g.fillText(('the clip’s sound · red = ' + (S.m.one || 'an event')).toUpperCase(), x0, y0 - 12);
+    if (reels) { g.fillStyle = C.muted; g.textBaseline = 'middle'; g.textAlign = 'left'; g.fillText(label, x0, y0 + h / 2); }
+    else { fitLabel(); g.fillStyle = C.muted; g.textBaseline = 'bottom'; g.textAlign = 'left'; g.fillText(label, x0, y0 - 12); }
     g.restore();
   }
 
@@ -321,8 +564,9 @@
       el('xbody').style.clipPath = poly.length > 2 ? 'polygon(' + poly.join(', ') + ')' : 'none';
       var sy = S.clip.y + S.clip.h * p;
       el('scan').style.clipPath = 'inset(0 0 ' + px(Math.max(0, S.H - sy)) + ' 0)';
-      // past "xray".track_until the see-through fades out instead of sliding off the object
-      var hold = typeof S.cfg.track_until === 'number' ? 1 - ST.progress(f / S.fps, S.cfg.track_until, S.cfg.track_until + 0.3, ST.ease.inOutCubic) : 1;
+      // past "xray".track_until (the clip's seconds, so on the recording's clock) the see-through fades out instead
+      // of sliding off the object
+      var hold = typeof S.cfg.track_until === 'number' ? 1 - ST.progress(recTime(f), S.cfg.track_until, S.cfg.track_until + 0.3, ST.ease.inOutCubic) : 1;
       el('scan').style.opacity = hold.toFixed(3);
       drawView(g, 'inplace', f, t, show * hold, { x: 0, y: 0, w: S.W, h: Math.max(0, sy) });
       if (p > 0 && p < 1) scanline(g, S.clip.x, S.clip.w, sy);

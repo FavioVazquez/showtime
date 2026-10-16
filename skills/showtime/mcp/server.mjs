@@ -31,6 +31,7 @@
 // audio, transcription, stills and studio tools. Each tool's schema is checked against the command line's own
 // flags by tests/test_mcp.py (see `cli` below).
 
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -624,8 +625,9 @@ const TOOLS = [
       if (typeof a.text !== 'string' || !a.text.trim()) throw new InputError('text is empty');
       if (a.text.length > 5000) throw new InputError('text is longer than 5000 characters; use voice_script for long narration');
       if (a.text.includes('\0')) throw new InputError('text contains a NUL character');
-      const tmp = path.join(os.tmpdir(), `showtime-mcp-say-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.txt`);
-      fs.writeFileSync(tmp, a.text, 'utf8');
+      // a name nobody can guess, created new (never through a file or link already there), readable by this user only
+      const tmp = path.join(os.tmpdir(), `showtime-mcp-say-${crypto.randomBytes(12).toString('hex')}.txt`);
+      fs.writeFileSync(tmp, a.text, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
       ctx.cleanup.push(tmp);
       const out = a.output !== undefined ? outputPath(a.output, 'output', ['.wav', '.flac'])
         : freshFile(baseDir(), `voice-${slug(a.text)}`, '.wav');

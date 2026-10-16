@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="/_st/themes/fonts/bricolage-grotesque.css">
 <link rel="stylesheet" href="/_st/themes/fonts/ibm-plex-mono.css">
 <style>
-  :root { --line: #8fd3ff; --ink: #e9f3ff; --muted: #a9bdd6; --hot: #ff4a3d; --ground: #070b16; }
+  :root { --line: #8fd3ff; --ink: #e9f3ff; --muted: #a9bdd6; --hot: #ff4a3d; --hotink: #ff7468; --ground: #070b16; }
   html, body { margin: 0; background: var(--ground); }
   .stage { background: var(--ground); }
   .stage { position: relative; width: 100vw; height: 100vh; overflow: hidden; color: var(--ink); font-family: "IBM Plex Mono", monospace; }
@@ -15,24 +15,25 @@
   .scan, .xbody { position: absolute; inset: 0; }
   /* the radiograph (#clipx): the same clip, filtered by the theme (xray.js), shown only inside the tracked outline */
   #cv { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
-  .brand { position: absolute; left: 48px; top: 40px; font: 800 64px/1 "Bricolage Grotesque", sans-serif; text-shadow: 0 2px 18px var(--tagbg); }
+  /* 16:9: text 96 px (5%) from the left edge, the counters above the player controls (bottom 8%), 26 px and up */
+  .brand { position: absolute; left: 96px; top: 40px; font: 800 64px/1 "Bricolage Grotesque", sans-serif; text-shadow: 0 2px 18px var(--tagbg); }
   .brand b { color: var(--hot); }
-  .tag { position: absolute; left: 50px; top: 116px; font: 500 26px/1 "IBM Plex Mono", monospace; letter-spacing: .06em; text-transform: uppercase;
+  .tag { position: absolute; left: 96px; top: 116px; font: 500 26px/1 "IBM Plex Mono", monospace; letter-spacing: .06em; text-transform: uppercase;
          background: var(--tagbg); padding: 9px 12px; border-radius: 4px; }
-  .hud { position: absolute; left: 48px; bottom: 40px; display: flex; gap: 22px; align-items: flex-end; }
+  .hud { position: absolute; left: 96px; bottom: 96px; display: flex; gap: 22px; align-items: flex-end; }
   .card { background: var(--card); border: 1px solid var(--edge); border-radius: 6px; padding: 14px 18px; min-width: 150px; }
   .card b { display: block; font: 800 60px/1 "Bricolage Grotesque", sans-serif; font-variant-numeric: tabular-nums; }
-  .card span { display: block; margin-top: 6px; font: 500 24px/1.2 "IBM Plex Mono", monospace; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
+  .card span { display: block; margin-top: 6px; font: 500 26px/1.2 "IBM Plex Mono", monospace; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
   .paper { min-width: 430px; }
   .paper b { font: 600 40px/1.25 "IBM Plex Mono", monospace; white-space: pre; }
-  .paper b i { color: var(--hot); font-style: normal; }
-  .end { position: absolute; top: 0; bottom: 0; right: 0; width: 900px; background: var(--card); z-index: 5; padding: 0 64px; box-sizing: border-box;
+  .paper b i { color: var(--hotink); font-style: normal; }
+  .end { position: absolute; top: 0; bottom: 0; right: 0; width: 900px; background: var(--ground); z-index: 5; padding: 0 64px; box-sizing: border-box;
          display: flex; flex-direction: column; justify-content: center; opacity: 0; }
   .end h2 { margin: 0; font: 800 84px/1.0 "Bricolage Grotesque", sans-serif; text-wrap: balance; }
-  .end h2 em { color: var(--hot); font-style: normal; }
+  .end h2 em { color: var(--hotink); font-style: normal; }
   .end p { margin: 26px 0 0; font: 500 26px/1.45 "IBM Plex Mono", monospace; }
   .end .receipt { margin-top: 30px; border: 2px solid var(--line); border-radius: 6px; padding: 16px 20px; font: 500 26px/1.45 "IBM Plex Mono", monospace; color: var(--line); }
-  .end .muted { color: var(--muted); font-size: 24px; }
+  .end .muted { color: var(--muted); font-size: 26px; }
   /* phone (9:16): every word inside the reels safe box (x 64-916, y 220-1440), 43 px and up */
   .portrait .brand { left: 64px; font-size: 68px; }
   .portrait .tag { left: 64px; font-size: 43px; padding: 6px 12px; letter-spacing: .02em; }
@@ -41,6 +42,10 @@
   .portrait .card span { font-size: 43px; letter-spacing: 0; }
   .portrait .paper { flex: 1; min-width: 0; }
   .portrait .paper b { font-size: 44px; line-height: 84px; }
+  .portrait.reels .card { padding: 8px 16px; }   /* 136 px tall with its border: xray.js PHUD */
+  .portrait.reels .card b { font-size: 64px; }
+  .portrait.reels .card span { margin-top: 2px; }
+  .portrait.reels .paper b { font-size: 44px; line-height: 64px; }   /* over .portrait.reels .card b */
   .portrait .end { left: 0; width: auto; top: 0; bottom: 0; background: var(--ground); padding: 220px 164px 480px 64px; }
   .portrait .end h2 { font-size: 92px; }
   .portrait .end p, .portrait .end .receipt { font-size: 43px; line-height: 1.3; }

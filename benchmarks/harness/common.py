@@ -160,7 +160,11 @@ def load_arms(only: Optional[List[str]] = None) -> Dict:
 # ---------------------------------------------------------------- misc
 
 def opaque(name: str, n: int = 8) -> str:
-    return "a" + hashlib.sha1(name.encode()).hexdigest()[:n]
+    try:   # a label, not security: FIPS builds refuse a plain sha1
+        h = hashlib.sha1(name.encode(), usedforsecurity=False)
+    except TypeError:   # Python 3.8 has no usedforsecurity
+        h = hashlib.sha1(name.encode())
+    return "a" + h.hexdigest()[:n]
 
 
 def now_iso() -> str:

@@ -33,12 +33,17 @@ REPO = SKILL.parents[1]
 LAUNCHER = SKILL / "lib" / "st" / "launcher.py"
 sys.path.insert(0, str(SKILL / "lib"))
 
+from st import platform as plat  # noqa: E402
 from st.launcher import build_env, showtime_home  # noqa: E402
 
 ENV = build_env(showtime_home())
 TMP = Path(tempfile.mkdtemp(prefix="st-xray-made-"))
 FAST = "--fast" in sys.argv
 NODE = shutil.which("node", path=ENV.get("PATH"))
+# the browser the page driver's openBrowser would start (stagehost: $SHOWTIME_CHROME, a system Chrome, Playwright's)
+BROWSER = plat.find_chrome(ENV.get("PLAYWRIGHT_BROWSERS_PATH"))
+NO_BROWSER = "--fast: no browser" if FAST else ("needs node" if not NODE else ("needs Chromium (showtime setup)"
+                                                                               if not BROWSER else ""))
 
 
 def showtime(*args, check=True, timeout=300):
@@ -278,7 +283,7 @@ class TestMeasuredAndCommands(unittest.TestCase):
         self.assertEqual(rep["made"]["prompt"], "shown prompt")
         self.assertIn("config prompt zq81", out.read_text(encoding="utf-8"), "showtime.json's xray block is packed whole")
 
-    @unittest.skipIf(FAST or not NODE, "--fast: no browser")
+    @unittest.skipIf(NO_BROWSER, NO_BROWSER)
     def test_the_page_says_it(self):
         steps = ["showtime xray import peaks.csv --job <job> --time-map 100,-0.14", "showtime render <job>/project --job <job>"]
         _, _, out = self.export(variant(self.base, "p1", {"measured": None, "made": {"mechanism": "typewriter", "commands": steps}},

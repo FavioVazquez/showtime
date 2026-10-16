@@ -37,11 +37,16 @@ LAUNCHER = SKILL / "lib" / "st" / "launcher.py"
 LIVE = SKILL / "runtime" / "xray-live"
 sys.path.insert(0, str(SKILL / "lib"))
 
+from st import platform as plat  # noqa: E402
 from st.launcher import build_env, showtime_home  # noqa: E402
 
 FAST = "--fast" in sys.argv
 ENV = build_env(showtime_home())
 NODE = shutil.which("node", path=ENV.get("PATH"))
+# the browser the drivers' openBrowser would start (stagehost: $SHOWTIME_CHROME, a system Chrome, Playwright's)
+BROWSER = plat.find_chrome(ENV.get("PLAYWRIGHT_BROWSERS_PATH"))
+NO_BROWSER = "--fast: no browser" if FAST else ("needs node" if not NODE else ("needs Chromium (showtime setup)"
+                                                                               if not BROWSER else ""))
 TMP = Path(tempfile.mkdtemp(prefix="st-xray-live-"))
 
 
@@ -139,6 +144,137 @@ class TestCli(unittest.TestCase):
         jobs.mkdir(exist_ok=True)
         cp = showtime("export", "html", proj, "--interactive", "--out-dir", jobs, "--json")
         self.assertTrue(json.loads(cp.stdout)["output"].endswith("-live.html"))
+
+    def test_the_pages_own_font_faces_are_packed(self):
+        # #71: a project's own @font-face in the page's <style> (url("fonts/...")) is packed like the theme fonts; the
+        # page's policy allows only data: fonts, so a font left as a file never loads. The living diagram's figure too.
+        face = b"wOF2" + bytes(range(60))                            # synthetic bytes: packing never parses a font
+        b64 = __import__("base64").b64encode(face).decode()
+        for tpl, page in (("xray", "index.html"), ("diagram", "figure.html")):
+            proj = TMP / ("ownfont-" + tpl)
+            showtime("new", tpl, proj)
+            (proj / "fonts").mkdir()
+            (proj / "fonts" / "own face.woff2").write_bytes(face)
+            html = (proj / page).read_text(encoding="utf-8")
+            style = ('<style media="all">@font-face { font-family: "Own Face"; src: url("fonts/own%20face.woff2") '
+                     'format("woff2"); } h1, .brand { font-family: "Own Face", sans-serif; }</style>\n</head>')
+            (proj / page).write_text(html.replace("</head>", style, 1), encoding="utf-8")
+            out = TMP / ("ownfont-" + tpl + ".html")
+            showtime("export", "html", proj, "--interactive", "-o", out, "--json")
+            got = out.read_text(encoding="utf-8")
+            self.assertIn("url(data:font/woff2;base64,%s)" % b64, got, tpl)
+            self.assertNotIn("own%20face.woff2", got, tpl)
+            self.assertIn('<style media="all">', got, "the block keeps its attributes")
+            # a page font that is not there stops the export with its name, instead of a page that falls back
+            (proj / "fonts" / "own face.woff2").unlink()
+            cp = showtime("export", "html", proj, "--interactive", "-o", TMP / ("ownfont-miss-" + tpl + ".html"), check=False)
+            self.assertNotEqual(cp.returncode, 0, tpl)
+            self.assertIn("own face.woff2", unquote(cp.stdout + cp.stderr), tpl)
+
+    def test_an_inline_script_is_never_rewritten(self):
+        # #71 review: the page's <style> packing must not reach into an inline <script> whose text holds "<style>",
+        # "@font-face" or "url(": the script stays byte for byte (its url names no file, so a rewrite would also fail)
+        script = ('<script>window.__css = \'<style>@font-face { font-family: "Code Face"; src: url("fonts/none.woff2"); }'
+                  '</style>\'; window.__u = "url(x)";</script>')
+        for tpl, page in (("xray", "index.html"), ("diagram", "figure.html")):
+            proj = TMP / ("inlinescript-" + tpl)
+            showtime("new", tpl, proj)
+            html = (proj / page).read_text(encoding="utf-8")
+            (proj / page).write_text(html.replace("</body>", script + "\n</body>", 1), encoding="utf-8")
+            out = TMP / ("inlinescript-" + tpl + ".html")
+            showtime("export", "html", proj, "--interactive", "-o", out, "--json")
+            self.assertIn(script, out.read_text(encoding="utf-8"), tpl)
+
+    def test_a_page_style_cannot_reach_outside_the_project(self):
+        # #71 review: a url() in the page's own <style> is read only inside the project; an encoded ".." that climbs
+        # out stops the export by its name, and a plain "../.." stays at the project's root (no such file there)
+        face = b"wOF2" + bytes(range(60, 120))
+        b64 = __import__("base64").b64encode(face).decode()
+        for tpl, page in (("xray", "index.html"), ("diagram", "figure.html")):
+            proj = TMP / "climb" / tpl / "proj"
+            showtime("new", tpl, proj)
+            (proj.parent / "outside.woff2").write_bytes(face)
+            (proj.parent.parent / "outside.woff2").write_bytes(face)
+            html = (proj / page).read_text(encoding="utf-8")
+            for i, url in enumerate(("../outside.woff2", "%2e%2e/outside.woff2", "..%2foutside.woff2",
+                                     "/_st/%2e%2e/%2e%2e/outside.woff2")):
+                style = '<style>@font-face { font-family: "Far"; src: url("%s"); }</style>\n</head>' % url
+                (proj / page).write_text(html.replace("</head>", style, 1), encoding="utf-8")
+                out = TMP / "climb" / ("%s-%d.html" % (tpl, i))
+                cp = showtime("export", "html", proj, "--interactive", "-o", out, check=False)
+                where = (tpl, url, (cp.stdout + cp.stderr)[-600:])
+                self.assertNotEqual(cp.returncode, 0, where)
+                self.assertIn("outside.woff2", unquote(cp.stdout + cp.stderr), where)
+                self.assertFalse(out.exists() and b64 in out.read_text(encoding="utf-8"), where)
+
+    def test_from_inside_a_job_it_writes_into_the_job(self):
+        # #72: run from a job folder (or on a project inside one), the live page lands in the job, noted in job.json,
+        # never in a new showtime-out/ folder nested inside it
+        base = TMP / "jobs72"
+        base.mkdir(exist_ok=True)
+        job = Path(json.loads(showtime("job", "init", "live72", "--base", base, "--no-check", "--json").stdout)["job"])
+        showtime("new", "xray", job / "project")
+        for cwd, arg in ((job, "project"), (TMP, str(job / "project"))):
+            cp = subprocess.run([sys.executable, str(LAUNCHER), "export", "html", arg, "--interactive", "--json"], env=ENV,
+                                cwd=str(cwd), stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8",
+                                errors="replace", timeout=300)
+            self.assertEqual(cp.returncode, 0, cp.stderr[-2000:])
+            rep = json.loads(cp.stdout)
+            self.assertEqual(Path(rep["output"]).parent.resolve(), job.resolve(), (cwd, rep["output"]))
+            self.assertEqual(Path(rep["job"]).resolve(), job.resolve())
+        self.assertFalse((job / "showtime-out").exists(), "no nested showtime-out folder")
+        self.assertFalse((TMP / "showtime-out").exists(), "the project's job wins over the folder it was run from")
+        hist = [h["event"] for h in json.loads((job / "job.json").read_text(encoding="utf-8"))["history"]]
+        self.assertEqual(len([h for h in hist if h.startswith("export html --interactive ") and "live" in h]), 2, hist)
+
+    def test_from_a_job_only_its_own_project_goes_in(self):
+        # #72 review: the folder the command runs from picks the job only for that job's own project (kept elsewhere
+        # and named by job.json "project"); another project exported from inside a job goes where it always did
+        base = TMP / "jobs72b"
+        base.mkdir(exist_ok=True)
+        own, other = TMP / "own72", TMP / "other72"
+        showtime("new", "xray", own)
+        showtime("new", "xray", other)
+        job = Path(json.loads(showtime("job", "init", "live72b", "--base", base, "--project", own, "--no-check",
+                                       "--json").stdout)["job"])
+
+        def export(arg):
+            cp = subprocess.run([sys.executable, str(LAUNCHER), "export", "html", str(arg), "--interactive", "--json"],
+                                env=ENV, cwd=str(job), stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8",
+                                errors="replace", timeout=300)
+            self.assertEqual(cp.returncode, 0, cp.stderr[-2000:])
+            return json.loads(cp.stdout)
+
+        rep = export(own)
+        self.assertEqual(Path(rep["output"]).parent.resolve(), job.resolve(), rep["output"])
+        self.assertEqual(Path(rep["job"]).resolve(), job.resolve())
+        rep = export(other)
+        out = Path(rep["output"]).resolve()
+        self.assertNotEqual(out.parent, job.resolve(), "another project's page is not written into this job")
+        self.assertEqual(out.parent.parent.name, "showtime-out", out)
+        self.assertFalse(rep.get("job"), rep)
+        hist = [h["event"] for h in json.loads((job / "job.json").read_text(encoding="utf-8"))["history"]]
+        self.assertEqual(len([h for h in hist if h.startswith("export html --interactive ")]), 1, hist)
+
+    def test_from_a_job_its_project_written_another_way_goes_in(self):
+        # #72 on Windows: job.json holds the project's long path while the argument can be its 8.3 short form (a temp
+        # folder under a short home name) or another letter case; it is still the job's own project, so the page goes in
+        base = TMP / "jobs72c"
+        base.mkdir(exist_ok=True)
+        own = TMP / "Own72c"
+        showtime("new", "xray", own)
+        variant = own.with_name(own.name.lower())
+        if not variant.exists():
+            self.skipTest("a case-sensitive file system: no other spelling of the same folder")
+        job = Path(json.loads(showtime("job", "init", "live72c", "--base", base, "--project", own, "--no-check",
+                                       "--json").stdout)["job"])
+        cp = subprocess.run([sys.executable, str(LAUNCHER), "export", "html", str(variant), "--interactive", "--json"],
+                            env=ENV, cwd=str(job), stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8",
+                            errors="replace", timeout=300)
+        self.assertEqual(cp.returncode, 0, cp.stderr[-2000:])
+        rep = json.loads(cp.stdout)
+        self.assertEqual(Path(rep["output"]).parent.resolve(), job.resolve(), rep["output"])
+        self.assertEqual(Path(rep["job"]).resolve(), job.resolve())
 
     def test_diagram_layout(self):
         _, out, rep = sample("diagram")
@@ -262,7 +398,7 @@ console.log(JSON.stringify(out));
 """
 
 
-@unittest.skipIf(FAST or not NODE, "--fast: no browser")
+@unittest.skipIf(NO_BROWSER, NO_BROWSER)
 class TestTouch(unittest.TestCase):
     def test_play_it(self):
         proj, _, _ = sample()
@@ -300,15 +436,27 @@ class TestTouch(unittest.TestCase):
 EMBED = r"""
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-const [SKILL, HOST] = process.argv.slice(2);
+const [SKILL, HOST, HOW] = process.argv.slice(2);
 const { openBrowser } = await import(pathToFileURL(path.join(SKILL, 'scripts', 'lib', 'stagehost.mjs')).href);
 const { browser } = await openBrowser({ headless: true, args: ['--allow-file-access-from-files'] });
 const out = { logs: [] };
+let server = null;
 try {
+  let url = pathToFileURL(HOST).href;
+  if (HOW === 'http') {   // the host served over http from its own folder (127.0.0.1 only)
+    const http = await import('node:http'), fs = await import('node:fs');
+    server = http.createServer((q, s) => {
+      const f = path.join(path.dirname(HOST), decodeURIComponent(new URL(q.url, 'http://x').pathname));
+      fs.readFile(f, (err, b) => { if (err) { s.statusCode = 404; s.end(); return; }
+        s.setHeader('content-type', f.endsWith('.js') ? 'text/javascript' : 'text/html; charset=utf-8'); s.end(b); });
+    });
+    await new Promise((r) => server.listen(0, '127.0.0.1', r));
+    url = 'http://127.0.0.1:' + server.address().port + '/' + path.basename(HOST);
+  }
   const ctx = await browser.newContext({ viewport: { width: 1000, height: 800 } });
   const pg = await ctx.newPage();
   pg.on('pageerror', (e) => out.logs.push(String(e.message || e)));
-  await pg.goto(pathToFileURL(HOST).href);
+  await pg.goto(url);
   out.loaded = await pg.evaluate(() => [...document.querySelectorAll('showtime-xray')].map((el) => {
     const f = el.load(false);
     return f ? { src: f.getAttribute('src'), sandbox: f.getAttribute('sandbox'), h: f.style.height } : null;
@@ -319,12 +467,144 @@ try {
   out.frames = await pg.evaluate(() => document.querySelectorAll('showtime-xray iframe').length);
 } catch (e) { out.error = String(e && e.stack || e); }
 await browser.close();
+if (server) server.close();
 console.log(JSON.stringify(out));
 """
 
 
-@unittest.skipIf(FAST or not NODE, "--fast: no browser")
+COPY = r"""
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+const [SKILL, HOST, GRANT] = process.argv.slice(2);
+const { openBrowser } = await import(pathToFileURL(path.join(SKILL, 'scripts', 'lib', 'stagehost.mjs')).href);
+const { browser } = await openBrowser({ headless: true });
+const out = { logs: [] };
+let server = null;
+try {
+  // the host served over http from its own folder (127.0.0.1 only), the way a site embeds the page
+  const http = await import('node:http'), fs = await import('node:fs');
+  server = http.createServer((q, s) => {
+    const f = path.join(path.dirname(HOST), decodeURIComponent(new URL(q.url, 'http://x').pathname));
+    fs.readFile(f, (err, b) => { if (err) { s.statusCode = 404; s.end(); return; }
+      s.setHeader('content-type', f.endsWith('.js') ? 'text/javascript' : 'text/html; charset=utf-8'); s.end(b); });
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const origin = 'http://127.0.0.1:' + server.address().port;
+  const ctx = await browser.newContext({ viewport: { width: 1000, height: 900 } });
+  if (GRANT === 'grant') await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin });
+  // a host that refuses the clipboard (a browser setting, a policy): writeText rejects, in every frame
+  if (GRANT === 'refuse') await ctx.addInitScript(() => { Object.defineProperty(navigator, 'clipboard', { configurable: true,
+    value: { writeText: () => Promise.reject(new DOMException('refused', 'NotAllowedError')) } }); });
+  const pg = await ctx.newPage();
+  pg.on('pageerror', (e) => out.logs.push(String(e.message || e)));
+  await pg.goto(origin + '/' + path.basename(HOST));
+  await pg.evaluate(() => document.querySelector('showtime-xray').load(false));
+  const fr = await (await pg.waitForSelector('showtime-xray iframe')).contentFrame();
+  await fr.waitForFunction(() => window.xrayLive && document.querySelector('.xl-embed'), null, { timeout: 30000, polling: 100 });
+  out.sandbox = await pg.evaluate(() => document.querySelector('showtime-xray iframe').getAttribute('sandbox'));
+  // real clicks in the frame (the clipboard needs the gesture): open the embed snippets, press the first Copy. The
+  // page posts its height to the host as it starts and as the panel opens, and the host resizes the frame: a click
+  // aimed while the frame moves on the host lands on nothing (the frame's own stability check cannot see that), so
+  // each click waits for the page to be ready and for the frame's place on the host to hold still for 250 ms
+  await fr.evaluate(() => Promise.race([window.xrayLive.ready,
+    new Promise((ok, no) => setTimeout(() => no(new Error('the page did not start in 30 s')), 30000))]));
+  // each settle forgets the last place first, so it always needs two equal reads 250 ms apart
+  const settle = async () => { await pg.evaluate(() => { window.__frameAt = null; });
+    await pg.waitForFunction(() => { const r = document.querySelector('showtime-xray iframe').getBoundingClientRect();
+      const k = [r.y, r.height, scrollY].join(); const same = k === window.__frameAt; window.__frameAt = k; return same; },
+      null, { timeout: 10000, polling: 250 }); };
+  // say which way a step failed: the panel toggled closed, emptied, or the frame hidden or resized on the host
+  const failed = async (e) => {
+    const st = await fr.evaluate(() => ({ expanded: document.querySelector('.xl-embed').getAttribute('aria-expanded'),
+      hidden: document.querySelector('.xl-share').hidden, what: document.querySelector('.xl-share').getAttribute('data-what'),
+      copies: document.querySelectorAll('.xl-copy').length, inPanel: document.querySelectorAll('.xl-share .xl-copy').length,
+      ready: !!(window.xrayLive && document.querySelector('.xl-veil') && document.querySelector('.xl-veil').hidden) })).catch((x) => String(x));
+    const host = await pg.evaluate(() => { const f = document.querySelector('showtime-xray iframe'), r = f.getBoundingClientRect(), c = getComputedStyle(f);
+      return [Math.round(r.y), Math.round(r.height), c.display, c.visibility, scrollY]; }).catch((x) => String(x));
+    return new Error(e.message.split('\n')[0] + ' | frame ' + JSON.stringify(st) + ' | host ' + JSON.stringify(host));
+  };
+  await settle();
+  await fr.click('.xl-embed');
+  try { await fr.waitForSelector('.xl-share:not([hidden]) .xl-copy', { timeout: 10000 }); } catch (e) { throw await failed(e); }
+  await settle();
+  // the share panel's own Copy (a field outside the panel has one too), and wait for one of Copy's two answers: the
+  // page's start hint sits in the same toast, so "any text" could read the hint
+  try { await fr.click('.xl-share .xl-field .xl-copy', { timeout: 15000 }); } catch (e) { throw await failed(e); }
+  try {
+    await fr.waitForFunction(() => ['Copied', 'Press Ctrl+C or \u2318C to copy'].includes(document.querySelector('.xl-toast').textContent),
+      null, { timeout: 10000, polling: 50 });
+  } catch (e) {
+    const shown = await fr.evaluate(() => document.querySelector('.xl-toast').textContent).catch((x) => String(x));
+    throw new Error('Copy gave no answer in 10 s; the toast reads ' + JSON.stringify(shown));
+  }
+  out.toast = await fr.evaluate(() => document.querySelector('.xl-toast').textContent);
+  out.field = await fr.evaluate(() => { const t = document.querySelector('.xl-share .xl-field textarea'), a = document.activeElement;
+    return { value: t.value, focused: a === t, start: t.selectionStart, end: t.selectionEnd }; });
+  out.clip = GRANT === 'grant' ? await pg.evaluate(() => navigator.clipboard.readText()).catch((e) => 'unreadable: ' + e) : null;
+} catch (e) { out.error = String(e && e.stack || e); }
+await browser.close();
+if (server) server.close();
+console.log(JSON.stringify(out));
+"""
+
+
+@unittest.skipIf(NO_BROWSER, NO_BROWSER)
 class TestEmbed(unittest.TestCase):
+    def test_a_web_page_never_takes_a_file_address(self):
+        """Served over http, the element loads a relative address and leaves the poster for a file: one (only a page
+        opened from disk may name a film on disk; a web page could never load it, and now it says so by not trying)."""
+        _, live, _ = sample()
+        shutil.copy(str(LIVE / "embed.js"), str(TMP / "embed.js"))
+        host = TMP / "embed-host-http.html"
+        host.write_text('<!doctype html><meta charset="utf-8"><script src="embed.js"></script><body style="width:900px">'
+                        '<showtime-xray src="%s" ratio="16/9"></showtime-xray><showtime-xray src="%s" ratio="16/9">'
+                        '</showtime-xray>' % (live.name, live.as_uri()), encoding="utf-8")
+        drv = TMP / "embed.mjs"
+        drv.write_text(EMBED, encoding="utf-8")
+        cp = subprocess.run([NODE, str(drv), str(SKILL), str(host), "http"], env=ENV, cwd=str(TMP),
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8", errors="replace", timeout=300)
+        self.assertEqual(cp.returncode, 0, cp.stderr[-2000:])
+        r = json.loads(cp.stdout.strip().splitlines()[-1])
+        self.assertNotIn("error", r, r.get("error"))
+        self.assertEqual(r["logs"], [], "no page error")
+        self.assertIsNotNone(r["loaded"][0], "a relative address loads from a web page")
+        self.assertTrue(r["loaded"][0]["src"].startswith("http://127.0.0.1:"), r["loaded"][0])
+        self.assertIsNone(r["loaded"][1], "a file: address from a web page leaves the poster")
+
+    def test_copy_buttons_in_the_sandboxed_frame(self):
+        """In the frame embed.js makes (sandbox allow-scripts, an opaque origin), a real click on Copy copies (checked on
+        the clipboard where the test may read it), and a host that refuses the clipboard gets the text selected with how
+        to copy it: never "Copied" with nothing copied."""
+        _, live, _ = sample()
+        shutil.copy(str(LIVE / "embed.js"), str(TMP / "embed.js"))
+        host = TMP / "copy-host.html"
+        host.write_text('<!doctype html><meta charset="utf-8"><script src="embed.js"></script><body style="width:900px">'
+                        '<showtime-xray src="%s" ratio="16/9"></showtime-xray>' % live.name, encoding="utf-8")
+        drv = TMP / "copy.mjs"
+        drv.write_text(COPY, encoding="utf-8")
+        seen = {}
+        for how in ("plain", "grant", "refuse"):
+            cp = subprocess.run([NODE, str(drv), str(SKILL), str(host), how], env=ENV, cwd=str(TMP), stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, encoding="utf-8", errors="replace", timeout=300)
+            self.assertEqual(cp.returncode, 0, cp.stderr[-2000:])
+            r = json.loads(cp.stdout.strip().splitlines()[-1])
+            self.assertNotIn("error", r, r.get("error"))
+            self.assertEqual(r["logs"], [], "no page error")
+            self.assertEqual(r["sandbox"], "allow-scripts")
+            self.assertIn("<showtime-xray", r["field"]["value"], "the first field is the embed snippet")
+            self.assertIn(r["toast"], ("Copied", "Press Ctrl+C or \u2318C to copy"), (how, r["toast"]))
+            if how == "grant":
+                self.assertEqual(r["toast"], "Copied", r)
+                # Windows' clipboard holds text with \r\n line ends; a textarea's value always has \n
+                self.assertEqual(r["clip"].replace("\r\n", "\n"), r["field"]["value"],
+                                 "the sandboxed frame's copy is on the clipboard")
+            if r["toast"] != "Copied":
+                self.assertTrue(r["field"]["focused"], (how, r["field"]))
+                self.assertEqual((r["field"]["start"], r["field"]["end"]), (0, len(r["field"]["value"])),
+                                 "the whole snippet is selected, ready for Ctrl+C")
+            seen[how] = r["toast"]
+        self.assertEqual(seen["refuse"], "Press Ctrl+C or \u2318C to copy", "a refused clipboard selects the text")
+
     def test_sources_and_the_sandboxed_frame(self):
         _, live, _ = sample()
         host = TMP / "embed-host.html"
@@ -351,7 +631,7 @@ class TestEmbed(unittest.TestCase):
         self.assertTrue(r["resized"], "the sandboxed page still reports its height to the host")
 
 
-@unittest.skipIf(FAST or not NODE, "--fast: no browser")
+@unittest.skipIf(NO_BROWSER, NO_BROWSER)
 class TestBrowser(unittest.TestCase):
     def test_jump_lands_on_the_peak(self):
         _, out, _ = sample()

@@ -254,6 +254,31 @@ class TestProtocol(unittest.TestCase):
             self.assertIn(want, text_of(step))
         self.assertFalse(any(self.tmp.iterdir()), "a rejected call must not write anything")
 
+    @unittest.skipIf(os.name == "nt", "POSIX file modes")
+    def test_voice_say_text_file_is_private(self):
+        """voice_say hands its text to `showtime voice say --file`: a new file (flag wx) with a random name, readable by
+        this user only (0600), removed afterwards. A stand-in Python records what the command was given."""
+        rec = self.tmp / "voice-say.json"
+        fake = self.tmp / "fake-python"
+        fake.write_text("#!%s\nimport json, os, stat, sys\nf = [x[7:] for x in sys.argv if x.startswith('--file=')][0]\n"
+                        "json.dump({'name': os.path.basename(f), 'mode': stat.S_IMODE(os.stat(f).st_mode),\n"
+                        "           'text': open(f, encoding='utf-8').read(), 'path': f}, open(%r, 'w'))\n"
+                        % (sys.executable, str(rec)), encoding="utf-8")
+        fake.chmod(0o755)
+        try:
+            out = mcp([call("voice_say", {"text": "hello there", "output": str(self.tmp / "v.wav")})], self.tmp,
+                      env=dict(self.env, SHOWTIME_MCP_TOOLS="all", SHOWTIME_PYTHON=str(fake)))
+            self.assertTrue(rec.is_file(), json.dumps(out["results"][1])[:1500])
+            got = json.loads(rec.read_text(encoding="utf-8"))
+            self.assertRegex(got["name"], r"^showtime-mcp-say-[0-9a-f]{24}\.txt$")
+            self.assertEqual(got["mode"], 0o600)
+            self.assertEqual(got["text"], "hello there")
+            self.assertFalse(os.path.exists(got["path"]), "the text file is removed after the call")
+        finally:
+            for p in (rec, fake):
+                if p.exists():
+                    p.unlink()
+
 
     def test_audio_search_produced_catalog(self):
         """audio_search with catalog=true or a use searches the produced-music catalog (no download)."""

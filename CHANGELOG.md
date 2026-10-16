@@ -1,35 +1,174 @@
 # Changelog
 
-All notable changes to showtime. Each entry says what changed and why, so this file also answers
-"where did X go?". Versions follow [semantic versioning](https://semver.org); the version lives in
-`skills/showtime/lib/st/__init__.py` and `python3 scripts/check_release.py` keeps the plugin manifests, the registry files and
-`setup/package.json` in sync with it.
+All notable changes to showtime. Each entry says what changed and why, so this file also answers "where did X go?".
+Versions follow [semantic versioning](https://semver.org); the version lives in `skills/showtime/lib/st/__init__.py` and
+`python3 scripts/check_release.py` keeps the plugin manifests, the registry files and `setup/package.json` in sync with
+it.
 
-## 0.4.6 (unreleased)
+## 0.4.6 (2026-10-16)
 
+- **Fixed: the X-ray template at 9:16 keeps its sound strip and labels where a phone shows them.** The strip sat under
+  the reels safe box (y 1472-1676 at 1080x1920), where the feed's caption and buttons cover it, and its label and the
+  part labels were 24-34 px, under the phone floor (43 px at 1920). The strip now sits above the counters, inside the
+  safe box, with its label on the ticks' row (the label fits as before: shrink to the floor, drop "the clip's sound",
+  then an ellipsis); the counters are one compact row, 64 px (they were 84). The part labels are 44 px, in a column at
+  the safe box's left edge, ordered so no two leaders in a column cross: parts at rest muted, the ones acting now red
+  with a dot on the part, leaders grey. When one column can't hold them (the drums name 8 parts), a second one sits at
+  the safe box's right edge; a long label wraps to two lines; the drawing sits between the columns, never under them,
+  with heavier lines, and ends at x 916, left of the platform's buttons. The layout is chosen once per film, so the
+  drawing never moves. The drums', guitar's and piano's captions (24-30 px inside the drawing) are a 44 px row over it,
+  and the guitar's string names (26 px on lines 21 px apart) are labels in the column; the kit's new calls for a
+  mechanism are in `showtime guide xray "Mechanism library"`. This change leaves 16:9, 4:5 and 1:1 as they were (16:9's
+  own fixes are the #68 entry below). Every library mechanism passes `check` in a fresh 9:16 project. At 4:5 and 1:1 the
+  template still has `check` findings it had before this change (text under the phone floor, labels on each other, and
+  at 4:5 text outside the safe box): a test keeps each mechanism's count of each kind at or under its count before this
+  change, until a later release fixes them.
+- **Fixed: the X-ray sound strip with `"xray".offset_frames`.** When the clip starts some frames into the film, the
+  strip placed its ticks and its caret by film time over the recording's length: late ticks were drawn past the
+  strip's end, off the frame, and the caret stopped at the end while the recording still played. Both now
+  follow the recording's own clock (the film frame minus the offset), in the `xray` template and its living-diagram
+  page; before the clip starts the caret waits at the strip's start. With no measured recording length the strip
+  takes the recording to run from the clip's start to the film's end (the diagram page: to the endcard), not from
+  frame 0. And `"xray".track_until` (the clip's seconds) is read on the recording's clock too: with an offset the
+  see-through used to fade out that many seconds early.
+- **Fixed: the X-ray piano, drums and guitar follow the recording's clock too.** `notes.json` times and its tempo map
+  are seconds of the recording, but a note that no event took was shown at the film frame of its time, and the
+  staff or tab scrolled by the film's time; with `"xray".offset_frames` both ran that many frames early. The drawing
+  kit now gives a mechanism `k.rt` (this frame's time on the recording) and `k.frameAt(t)` (the film frame of a
+  recording time), from the same mapping the sound strip and `track_until` use; the three mechanisms use them.
+- **New: `check` finds canvas text outside the vertical safe box between its samples, on any canvas.** The 9:16
+  safe-zone rule saw film-API text at the sample times only, so labels a page drew on its own canvas (chart notes, a
+  date counter) passed `check` and `qa --platform reels` while the feed's UI covered them. Now every step of the dense
+  timeline compares each canvas text with the safe box (x 64-916, y 220-1440 at 1080x1920): one `safe_zone` warning per
+  text with its span, when it sits outside two steps in a row without moving or for 1 s in all. A counter is one text
+  while its number changes. qa's phone check counts it, as before.
+- **New: `check` measures the size of canvas text a page draws itself** (#73, the check half). Raw
+  `fillText`/`strokeText` on any page canvas now feeds the `tiny_text` rule and the phone check on the dense timeline,
+  as DOM text and `F.text` already did; before, only the film API's text was measured, so a tiny label drawn by the page
+  passed. A counter in one place is one text; text inside `F.decor`, faint text (under half opacity) and text mostly off
+  the frame are not measured.
 - **Fixed: the repository stores files exactly as they are installed.** `.gitattributes` is now `* -text`, so nothing is
   converted at checkout, and the Windows launchers (`.cmd`, `.bat`, `.ps1`) are committed with CRLF; installed files
   match the repository byte for byte on every OS. `scripts/check_release.py` now fails on any attribute that converts
   content, on a Windows launcher with LF-only lines and on a shell script with CR bytes.
+- **Fixed: `showtime setup --home X` installs ffmpeg into X when a default install exists.** The default install's
+  ffmpeg (first on the PATH setup runs with) counted as "the system ffmpeg", so X got none of its own and had no ffmpeg
+  outside that PATH. Another showtime install's ffmpeg is no longer taken as the system's.
+- **Fixed: a page address with a malformed `%` escape** (`?x=%`) no longer stops the page runtime from starting in
+  preview; that query pair is skipped.
+- **Changed: hardening.** The page runtime keeps its URL query parameters in a map with no prototype; the MCP server's
+  `voice_say` writes its text to a new temporary file with a random name, readable by your user only; the benchmark
+  harness marks its short sha1 labels as not used for security.
+- **Changed: `check` reports a probe that did not run as a warning** (`cut_probe_failed` and `webgpu_probe_failed`,
+  were info), so a check whose first-frame-after-cut walk or WebGPU probe could not open its page never reads as
+  clean, and `check --strict` fails on it.
+- **Changed: the X-ray embed element takes a `file:` address only on a page opened from disk.** A post read offline
+  still loads its film from the disk; a web page that names a `file:` film now keeps the poster instead of framing an
+  address the browser would never load.
+- **Fixed: `xray import` refuses a JSON file with too many object keys before parsing it.** One object with millions
+  of keys passed the value and container limits and took about 930 MB to read (a 42 MB file); a file with more than
+  1,600,000 colons (object keys, counting those inside strings) is now refused, like too many values or objects.
+- **Fixed: `showtime assets icon` with a misspelled name suggests the right one at once.** A name the icon set does
+  not have is checked against the set's listing (fetched once, kept 30 days) before its file is fetched; the icon
+  CDN took about 40 s to say a file is missing, so the command ended with a network error and no suggestion.
+- **New: `check` finds text drawn over other text between its samples and on any canvas.** The page runtime records
+  every text a page canvas paints (`fillText`/`strokeText`, the film API's or a scene's own) in render and check runs,
+  and `check` compares their painted glyphs, the DOM's and both against each other on its whole-timeline grid: a pair
+  that overlaps on two steps in a row, both holding (still, or blinking at half opacity or more; a crossfade or a
+  fade does not hold), is a `text_overlap` warning that says when it starts and ends. A faint canvas text counts
+  (alpha 0.15 and up, one of the two 0.5 and up). Canvas text counts only while it is on screen: not after its canvas
+  is cleared, reset or painted over (an opaque fill or filled box, a film card), not clipped away, not under an opaque
+  element or image above the canvas. Gradient text (`background-clip: text`) reads at full strength and hides nothing
+  under it. A labelled counter ("TICK 12", "TICK 13", …) is one text, moving or not, while no other text on its canvas
+  has the same words; labels that share their words ("ORBIT 1", "ORBIT 2") are each their own text, so they are followed
+  as they move. A counter that shares its words with another label on its canvas is keyed by its string, which changes
+  every step, so an overlap with it is not reported. A bare number ("42") is keyed by where it sits: one that moves
+  gives short findings, or none when it moves more than 16 px a step. Not overlaps: the same string twice (a shadow
+  pass), decor, a caption on its own plate over a canvas, DOM text turned far enough that its box is mostly empty
+  (kinetic rows), and text layered on purpose: `F.text(..., {layer: true})`, `F.layer(() => ...)`, or
+  `ST.layer(() => ...)` around raw canvas calls.
+- **Fixed: the `25-nobel-physics-ice-telescope` example had text over text.** Its "2,450 m" depth mark sat under a
+  caption line at 0:57; both depth marks now sit above their ruler ticks. The `tutorial` template's closing line,
+  drawn over the dimmed app on purpose, is marked as layered, so a new tutorial project checks clean.
+- **Fixed: `check` ends with an error when the page stops answering.** A seek on the dense timeline that missed its
+  deadline only skipped that step, so a page whose renderer had stopped answering (while the browser itself still
+  did) cost a minute per step, half an hour for a 3 s film, and check could wait with no end. Now a seek past its
+  deadline asks the page for a quick answer: no answer, or a second late seek in a row, ends check with an error
+  naming the seek and its last step, with a hint that points at the page's own code, and the browser closes with it.
+  The dense timeline's other page reads, and the samples' text reads, wait under the same deadline. The error names
+  the first seek that ran late, where the page got stuck (the seeks after it wait behind it), counts the seeks that
+  failed in another way just before, and lists the last six seeks with how long each took; with `--json` the output is
+  a report holding one `page_stuck` error and those seeks (`adopt` counts it as an error; `render --size` notes that
+  check stopped early and goes on).
+- **Fixed: `export html --interactive` packs a page's own fonts** (#71). The X-ray live page and the living diagram's
+  figure packed the files of linked stylesheets only; a project's own `@font-face` in the page's `<style>`
+  (`url("fonts/x.woff2")`) stayed a file the page's policy (`font-src data:`) blocks, so the text fell back to another
+  font. Files named in the page's own `<style>` blocks are packed like a stylesheet's (only from inside the project),
+  and one that is missing stops the export with its name. An inline `<script>` or an HTML comment is never rewritten,
+  however it ends: a script at `</script` with more before its `>`, a comment at `--!>`, as browsers end them.
+- **Fixed: `export html` from inside a job writes into the job** (#72). On a project inside a job, or run from the job
+  folder of the project being exported (its `job.json` names it), it made a new `showtime-out/<title>-<time>/`
+  folder nested in the job; the export now goes into that job, and a live page or figure is noted in its `job.json`.
+  Another project exported from a job folder goes where it always did. The job's own project counts however its path
+  is written: a Windows short (8.3) name or another letter case.
+- **Fixed: a new 16:9 X-ray project passes its own check** (#68). The brand, the tag and the counters sit 96 px (5%)
+  from the left edge, the counters above the player controls' strip, their labels and the end card's small print are
+  26 px, and the red letter on the paper card and the end card's number use a red that reads at 4.5:1 on both themes
+  (the light theme's grey labels are darker too). The 16:9 end card is opaque, so the drawing's labels no longer show
+  through it.
+- **Fixed: the X-ray sound strip's label is 26 px at 16:9** (#73, the template half; the check half is the canvas text
+  size bullet above). It was 18 px, drawn on the canvas where `check`'s size rule did not see it. A
+  test reads the canvas text of a new project and holds every label at 25 px or more. A long mechanism word no longer
+  runs past the strip: the label shrinks to 24 px, then drops "the clip's sound", then ends the word with an ellipsis.
+- **Fixed: `xray verify` reads the sync marker on a `--preview` or `--scale` render** (#66). The marker was read at a
+  fixed 6x6 px patch in the corner; a draft fitted to 720p has it smaller and nearer the corner, so verify found none.
+  It now reads the marker at the film's scale against the project's size, and says so in its notes.
+- **Fixed: the X-ray receipt says what "the original" is** (#67). With `"xray": {"derived": "..."}` (the clip's
+  sound is a rendering of data, "the signal slowed 100x on a 400 Hz carrier") the line reads "audio ... ms from the
+  rendered sound" and the receipt adds that the audio check compares the film with that rendering, not with the
+  original data; events from `xray import` read "from the source sound", with the data file named. The audio check
+  passed against the rendering and read as a check of the data.
+- **Fixed: Space or Enter on a focused control of a living diagram no longer also fires the scene's key.** A scene
+  that maps Space or Enter to an action ran it as well as pressing the focused summary, button or link (0.4.5's
+  "keeps all of its own keys" held for typed letters, not for a scene's keys). A letter the control has no use for
+  still reaches the scene, so you can click a setting and then press its key.
+- **Release checks:** `scripts/check_release.py` refuses a bullet repeated in the unreleased CHANGELOG section (two
+  bullets with the same bold lead, and lines over 120 characters, are warnings) and any tracked path, or file a test
+  writes, with a name Windows reserves (`nul.csv` cost two 0.4.5 release CI rounds). A `route-<topic>` routing case must
+  read its own guide, a workflow guide needs its line in `references/index.md` (as CONTRIBUTING says), and a routing
+  pattern that is not a regex is reported once. A credential-shaped literal in a shipped file and a merge-conflict
+  marker left in a tracked file are errors (test fixtures build their credentials from pieces), and the directory check
+  refuses a `.gitattributes` line git ignores whole (`* -text # note` sets nothing). The CHANGELOG's long lines are
+  wrapped at 120.
+- **Fixed: `xray import` refuses a word in a `strength` column** even without `--strength`. A column named `strength`
+  sizes the events on its own; a cell that was not a number drew that event at full strength without a word. It is
+  refused like a bad `--strength` cell (a blank cell keeps the default). Every row is checked, the ones the time map
+  drops too, so a sheet with a word in a row before T0 that imported in 0.4.5 is now refused. Both refusals now come
+  before the `--source` recording is decoded, and the "no value: drawn at strength 0" count leaves out rows dropped by
+  the time map. The `xray notes` help says a recording with no picture keeps the 30 fps frame grid.
+- **Also in 0.4.5, missing from its notes:** `xray import` refuses a JSON file with more than 800,000 lists and
+  objects before parsing it, and a CSV whose first row holds a number too large to hold is refused with an error
+  instead of being taken for a header row.
 
 ## 0.4.5 (2026-10-14)
 
 - **New: X-ray events from a data stream.** `showtime xray import <events.csv|json> --job <job> --time-map SLOW,T0`
   writes `xray.json` from event times measured in data (peaks of a signal, a sensor log) instead of from the clip's
   sound: film time = (t_data - T0) x SLOW, each event's frame = floor(t * fps), `detector.engine: "data"` with a note
-  that says how. A CSV with a time column or a JSON list; `--strength <column>` sizes the events, other columns
-  travel with them, events outside the film are listed under `dropped`, and `--source` (the sound the film plays)
-  gives the frame rate and length and lets `xray verify` check the film. The live page's commands then start with
-  `xray import`. A film made this way used to need a hand-written `xray.json`. Limits: an events file up to 50 MB and
-  100,000 events, film times up to 24 h; a file it cannot hold (NaN or infinity, a huge number, deep nesting, an
-  over-long CSV cell, a file with a NUL byte (one saved as UTF-16, say)) is refused with the reason, before a job exists. `--strength` with a cell that is not a number
-  is refused (a blank cell is strength 0, counted in one warning); `--time-map ",5"` sets T0 alone, and a part given
-  twice is refused. The note it writes names the events file, never a folder. A data column named `kind`, `ch`,
-  `notes` or `pitches` can no longer break the live page.
-- **New: X-ray of a recording with no picture.** `xray analyze` takes a WAV or any recording without
-  a video stream instead of refusing it: the events land on a frame grid of `--fps` (default 30), and `xray notes` takes one too, always at 30 fps; xray.json marks the
-  source `audio_only`, and the page draws the picture side. `--track` on such a recording is refused with the reason.
-  `xray notes --help` says so too (it still called the clip "the video you filmed").
+  that says how. A CSV with a time column or a JSON list; `--strength <column>` sizes the events, other columns travel
+  with them, events outside the film are listed under `dropped`, and `--source` (the sound the film plays) gives the
+  frame rate and length and lets `xray verify` check the film. The live page's commands then start with `xray import`. A
+  film made this way used to need a hand-written `xray.json`. Limits: an events file up to 50 MB and 100,000 events,
+  film times up to 24 h; a file it cannot hold (NaN or infinity, a huge number, deep nesting, an over-long CSV cell, a
+  file with a NUL byte (one saved as UTF-16, say)) is refused with the reason, before a job exists. `--strength` with a
+  cell that is not a number is refused (a blank cell is strength 0, counted in one warning); `--time-map ",5"` sets T0
+  alone, and a part given twice is refused. The note it writes names the events file, never a folder. A data column
+  named `kind`, `ch`, `notes` or `pitches` can no longer break the live page.
+- **New: X-ray of a recording with no picture.** `xray analyze` takes a WAV or any recording without a video stream
+  instead of refusing it: the events land on a frame grid of `--fps` (default 30), and `xray notes` takes one too,
+  always at 30 fps; xray.json marks the source `audio_only`, and the page draws the picture side. `--track` on such a
+  recording is refused with the reason. `xray notes --help` says so too (it still called the clip "the video you
+  filmed").
 - **Fixed: the X-ray live page states how the events were measured.** It said "from the clip's own sound" for every
   film; it now uses `"xray".measured` from showtime.json, else xray.json's detector (the sound, or a data stream and
   its note).
@@ -124,27 +263,29 @@ All notable changes to showtime. Each entry says what changed and why, so this f
   light or dark, see-through or beside, labels on hover, the receipt and the credit. It then went further. Pads under
   the picture play the next event of their kind from the real clip with its sound (a typewriter's keys laid out as a
   keyboard, an instrument's notes in pitch order, a kit's drums named as people say them); the keys of your keyboard
-  press them, so you type on the typewriter; dragging the picture scrubs and a click plays the next event.
-  Links are plain anchors: `#hit4`, `#t2.5`, `_light`, `_split` (`#hit4_light`), and the Link button copies one. The page
-  shows the request that made the film in quotes with Copy, then the commands: pass `--prompt "<request>"` to the
-  export (or `xray.made.prompt` in showtime.json); the commands use placeholders and never your paths, `showtime new
-  xray` records only `xray.made` (mechanism, layout, theme), and the export report says what it embedded. The page embeds
-  with `<showtime-xray src="you-live.html" ratio="16/9">` (a poster and a Play button; the one script is `embed.js`) or
-  an iframe with `#embed`, and its policy allows framing. The letter shortcuts moved to Shift (Shift+S quarter speed,
+  press them, so you type on the typewriter; dragging the picture scrubs and a click plays the next event. Links are
+  plain anchors: `#hit4`, `#t2.5`, `_light`, `_split` (`#hit4_light`), and the Link button copies one. The page shows
+  the request that made the film in quotes with Copy, then the commands: pass `--prompt "<request>"` to the export (or
+  `xray.made.prompt` in showtime.json); the commands use placeholders and never your paths, `showtime new xray` records
+  only `xray.made` (mechanism, layout, theme), and the export report says what it embedded. The page embeds with
+  `<showtime-xray src="you-live.html" ratio="16/9">` (a poster and a Play button; the one script is `embed.js`) or an
+  iframe with `#embed`, and its policy allows framing. The letter shortcuts moved to Shift (Shift+S quarter speed,
   Shift+T theme, Shift+L layout). The live export takes the mechanism for its commands from `xray.made`, else from the
-  project's own `mechanism.js`, and warns when it can only guess. Checked by tests that open the exported page in a browser and read what the export embeds.
+  project's own `mechanism.js`, and warns when it can only guess. Checked by tests that open the exported page in a
+  browser and read what the export embeds.
 - **New: living diagrams you touch.** A figure's scene can answer the viewer, not only the knobs: `interactive.type`
   receives every character typed on the figure (from anywhere on the page, or from a Type field on a phone's soft
   keyboard; Enter and Backspace arrive too), `parts[].press` runs when a part is clicked or tapped (or Enter on its
   button) and `parts[].drag` turns a knob while the viewer drags the part (`axis`, and `span` in pixels for the whole
   range). With `type` set, plain letters belong to the scene and the figure's own shortcuts take Shift (Shift+R run
-  again, Shift+L copy link, Shift+1-9 steps). Two new examples start from it: `showtime new diagram <dir> --example
-  typewriter` (type on it: the key goes down, the typebar swings to the print point, the letter lands on the paper,
-  the carriage steps, the bell rings near the margin, Enter returns the carriage) and `--example computer` (what
-  happens when you press a key: the keyboard, a USB poll, an interrupt, RAM, the GPU and the screen's refresh, in slow
-  motion with typical, labelled numbers; click a part to pulse it). The heat pump template's outdoor unit now drags to
-  set the weather. Each still films from its tour, and a figure framed with `#embed` reports its height to the host
-  like an X-ray page. `showtime check` walks a typed line and every pressable part. Checked by tests that type on the exported figures in a browser.
+  again, Shift+L copy link, Shift+1-9 steps). Two new examples start from it:
+  `showtime new diagram <dir> --example typewriter` (type on it: the key goes down, the typebar swings to the print
+  point, the letter lands on the paper, the carriage steps, the bell rings near the margin, Enter returns the carriage)
+  and `--example computer` (what happens when you press a key: the keyboard, a USB poll, an interrupt, RAM, the GPU and
+  the screen's refresh, in slow motion with typical, labelled numbers; click a part to pulse it). The heat pump
+  template's outdoor unit now drags to set the weather. Each still films from its tour, and a figure framed with
+  `#embed` reports its height to the host like an X-ray page. `showtime check` walks a typed line and every pressable
+  part. Checked by tests that type on the exported figures in a browser.
 - **Fixed: code scanning.** The exported figure's title is cleaned of markup in one linear pass instead of a repeated
   search.
 - **The site's X-ray page.** A gallery of ten films (the typewriter four ways, the music box in a phone and a wide cut,
@@ -247,9 +388,9 @@ All notable changes to showtime. Each entry says what changed and why, so this f
 - **New: `showtime repro` turns a failing Playwright test into a short narrated video for a bug report.** From a
   `trace.zip`, or the test command after `--` (run with tracing on failure), it shows each step on the trace's own
   screenshots with a cursor and the target boxed, then the failing step slowed down with expected and received, the
-  error and the console errors, and writes `repro.md` to paste into the issue. It writes `script.md` and stops;
-  `--yes` renders it. Typed values are never shown or spoken (their fields are covered); paths are shortened to
-  the file name, URLs lose their query strings, and secrets are masked. Guide: `references/workflows/repro.md`. Test: `test_repro.py`.
+  error and the console errors, and writes `repro.md` to paste into the issue. It writes `script.md` and stops; `--yes`
+  renders it. Typed values are never shown or spoken (their fields are covered); paths are shortened to the file name,
+  URLs lose their query strings, and secrets are masked. Guide: `references/workflows/repro.md`. Test: `test_repro.py`.
 - **Docs and site for 0.4.3: the new features, with three demos and a live figure on the site.** The README has a
   "New in 0.4.3" section (living diagrams and live figures, recap, repro, the render fix, music per video and quiet
   cuts, the harness page), the new commands in its quick list and `diagram`, `recap` and `repro` in the command
@@ -281,63 +422,63 @@ All notable changes to showtime. Each entry says what changed and why, so this f
   (`test_write_json_retries_a_replace_another_process_holds`,
   `test_permission_denied_names_both_sides_of_a_rename`); `test_audio.py` (`test_08_parallel_mixes_share_the_cache`)
   is the end-to-end case.
-- **Docs, second pass: stale `--workers` and splice help, the voice Essentials, "Whisper for transcripts", and a doctor pointer.**
-  Left over from the 0.4.2 audit: `render --help` still described the old one-browser-per-8-threads rule and a splice
-  "mixed again" audio it now reuses; the README repeated the old worker rule; `voice.md` listed the fit command without
-  its `--estimate` dry run first and said "9 languages" for 9 Kokoro variants (8 languages); the site said Whisper is
-  fetched for transcripts (it is Parakeet). `showtime doctor` now ends with a link to the troubleshooting page when a
-  check fails. Test: `test_skill_structure.py` (`test_fit_is_estimated_before_synthesis` now scans `voice.md`; the
-  stale-phrase guard now scans `site/build.py` and `harness-notes.md`), `test_lean.py`
+- **Docs, second pass: stale `--workers` and splice help, the voice Essentials, "Whisper for transcripts", and a doctor
+  pointer.** Left over from the 0.4.2 audit: `render --help` still described the old one-browser-per-8-threads rule and
+  a splice "mixed again" audio it now reuses; the README repeated the old worker rule; `voice.md` listed the fit command
+  without its `--estimate` dry run first and said "9 languages" for 9 Kokoro variants (8 languages); the site said
+  Whisper is fetched for transcripts (it is Parakeet). `showtime doctor` now ends with a link to the troubleshooting
+  page when a check fails. Test: `test_skill_structure.py` (`test_fit_is_estimated_before_synthesis` now scans
+  `voice.md`; the stale-phrase guard now scans `site/build.py` and `harness-notes.md`), `test_lean.py`
   (`test_doctor_brief_and_verbose` asserts the link).
-- **A capture lane's page keeps its size when its browser window is resized late (issue #49).** Under load, a
-  whole capture lane of a normal render could come out wrong: with 3 workers on a 180-frame film, every frame from 60
-  or 120 on. Playwright sizes a new page with two calls at once, the window (`Browser.setWindowBounds`) and the
-  emulated viewport (`Emulation.setDeviceMetricsOverride`). A headless window on macOS is at least 500 px wide, so
-  there the window always resizes, and when that resize landed after the emulated size, the view the screenshots
-  copy took the window's content size, 500x57 for a 256x144 page, while the page itself still laid out at 256x144.
-  Every screenshot of that lane was 500x57 (the page in the top-left corner, black beside it), and ffmpeg scaled them
-  into the video; a clipped screenshot (`--scale` below 1, `--preview` above 720p) kept the right size with its bottom
-  black. The saved captures of the failing renders show it; the frame writes, the encoder's reads (same bytes) and
-  the frame order were right in every run. `stagehost.mjs` now sets the page's emulated size again from its own
-  DevTools session once the page is ready, which fixes the race wherever it happens. Then it checks: `shot()` checks
-  the size of every unclipped screenshot; a page whose screenshots are clipped gets one unclipped screenshot when it
-  opens (the clipped ones have the clip's size whatever the view's); and every seek and every clipped screenshot
-  read the page's layout size. A wrong size is set again and the screenshot or seek repeated (at most 3 times, then
-  the capture fails and the worker retries on a new page), and render.log says so. Not covered: a clipped
-  screenshot of a view that loses its size after the page opened while the page keeps its layout (not seen; the
-  size set again at ready held through later window resizes in every probe), and `demo.mjs`, `capture.mjs`,
-  `site.mjs` and `probe.mjs`, which take their own screenshots. Setting the size again also fixes `--scale 2`
-  captures, which were 1x on a Mac every time (a 512x288 render came out 256x144). Measured on a 6-core Intel Mac
-  with a GPU, a 256x144 page rendered with `--workers 3` against a 1-worker reference, every frame compared, under
-  eight `yes` loops plus a looping 4 GB `dd` (load 17-78): 7 of 40 renders had a wrong lane before, 0 of 30 after
-  (5 pages in those 30 runs opened with the 500x57 view and were set right when ready); at `--scale 0.5`, 5 of 20
-  before, 0 of 20 after. The `dd` alone did it in 1 of 20 (load about 10), the `yes` loops alone in 0 of 20. Waiting
-  for two equal screenshots before the first frame (tried first) does not catch it: two 500x57 screenshots are equal. Test: `test_render_speed.py`
-  `TestCaptureSize` (a real window resize after the page opened, at scale 1, 0.5 and 2; each of the ready-time
-  call, the screenshot size check, the seek's and the clipped screenshot's layout checks fails it when removed).
+- **A capture lane's page keeps its size when its browser window is resized late (issue #49).** Under load, a whole
+  capture lane of a normal render could come out wrong: with 3 workers on a 180-frame film, every frame from 60 or 120
+  on. Playwright sizes a new page with two calls at once, the window (`Browser.setWindowBounds`) and the emulated
+  viewport (`Emulation.setDeviceMetricsOverride`). A headless window on macOS is at least 500 px wide, so there the
+  window always resizes, and when that resize landed after the emulated size, the view the screenshots copy took the
+  window's content size, 500x57 for a 256x144 page, while the page itself still laid out at 256x144. Every screenshot of
+  that lane was 500x57 (the page in the top-left corner, black beside it), and ffmpeg scaled them into the video; a
+  clipped screenshot (`--scale` below 1, `--preview` above 720p) kept the right size with its bottom black. The saved
+  captures of the failing renders show it; the frame writes, the encoder's reads (same bytes) and the frame order were
+  right in every run. `stagehost.mjs` now sets the page's emulated size again from its own DevTools session once the
+  page is ready, which fixes the race wherever it happens. Then it checks: `shot()` checks the size of every unclipped
+  screenshot; a page whose screenshots are clipped gets one unclipped screenshot when it opens (the clipped ones have
+  the clip's size whatever the view's); and every seek and every clipped screenshot read the page's layout size. A wrong
+  size is set again and the screenshot or seek repeated (at most 3 times, then the capture fails and the worker retries
+  on a new page), and render.log says so. Not covered: a clipped screenshot of a view that loses its size after the page
+  opened while the page keeps its layout (not seen; the size set again at ready held through later window resizes in
+  every probe), and `demo.mjs`, `capture.mjs`, `site.mjs` and `probe.mjs`, which take their own screenshots. Setting the
+  size again also fixes `--scale 2` captures, which were 1x on a Mac every time (a 512x288 render came out 256x144).
+  Measured on a 6-core Intel Mac with a GPU, a 256x144 page rendered with `--workers 3` against a 1-worker reference,
+  every frame compared, under eight `yes` loops plus a looping 4 GB `dd` (load 17-78): 7 of 40 renders had a wrong lane
+  before, 0 of 30 after (5 pages in those 30 runs opened with the 500x57 view and were set right when ready); at
+  `--scale 0.5`, 5 of 20 before, 0 of 20 after. The `dd` alone did it in 1 of 20 (load about 10), the `yes` loops alone
+  in 0 of 20. Waiting for two equal screenshots before the first frame (tried first) does not catch it: two 500x57
+  screenshots are equal. Test: `test_render_speed.py` `TestCaptureSize` (a real window resize after the page opened, at
+  scale 1, 0.5 and 2; each of the ready-time call, the screenshot size check, the seek's and the clipped screenshot's
+  layout checks fails it when removed).
 - **Site: "Start here" in four places, the gallery in six shelves, and "New in 0.4" kept low.** A newcomer's first
   action sat two diagrams and three tables down the docs map, "Get started" only jumped within the landing, the gallery
   was sorted by history (01 to 32) under a 0.2.0 film, a guide page's crumb was a repo path, and the new glossary
   (docs/glossary.md) and CONTEXT.md would have built to one page. The docs sidebar's first group is now **Start here**
   (Your first video, The map, When something goes wrong, Questions people ask, Glossary, Works with your agent, What's
-  new with a version chip), which is also the start of Previous / Next; troubleshooting and the glossary are built,
-  and CONTEXT.md moves to `docs/house-vocabulary.html` ("House vocabulary" in Backstage, linked from the glossary).
-  The docs map opens with an **Overture · Start here** of three steps (install with Copy, your first video, if
-  something goes wrong), and the first-video guide ends on "Next: choose your path". The landing's "Get started"
-  opens the first-video guide, and its "New in 0.4" tile (all of 0.4.x) links each released 0.4 section and shows
-  five of the new examples. The gallery opens on its intro ("Thirty examples and two demos"), then the tabs and a
-  **Start here** shelf named by the kind of video (Launch video, Narrated explainer, Your footage, edited), then six shelves (Explainers, Your footage, Products and brands, Code and data, Social and
-  trailers, Looks and motion), each with a line and the guides behind it. The groups and their order live in
-  `site/content/gallery.json`, so the examples repository does not change, and the build stops when a card is on no
-  shelf or two. The ten 0.4 examples carry a "New in 0.4" badge and a last tab, every card shows its number and one
-  duration format (`25 · 2:38`, `02 · 0:45`) and a "Copy the request" button, example pages are titled "Example 25:
-  ...", guide pages name their act in the crumb ("Docs / Act IV · Sound and voice / Voice") with a "See it done" line
-  of examples, and the docs search opens install, error and first-video questions on the page written for them. The
-  film above the gallery is gone (`"gallery_film": null` in `site/config.json`; an object brings one back), the
-  footer credits its music only while one is set, and README.md's links to `gallery.html#launch-film` now go to the
-  gallery and the film's MP4. The old tab addresses (`gallery.html#data-and-reports`, `#for-developers` ...) open
-  All. The build stops when gallery.json's "New in" name is not the newest release's series, so the badges and the
-  landing tile cannot name different releases. Test:
+  new with a version chip), which is also the start of Previous / Next; troubleshooting and the glossary are built, and
+  CONTEXT.md moves to `docs/house-vocabulary.html` ("House vocabulary" in Backstage, linked from the glossary). The docs
+  map opens with an **Overture · Start here** of three steps (install with Copy, your first video, if something goes
+  wrong), and the first-video guide ends on "Next: choose your path". The landing's "Get started" opens the first-video
+  guide, and its "New in 0.4" tile (all of 0.4.x) links each released 0.4 section and shows five of the new examples.
+  The gallery opens on its intro ("Thirty examples and two demos"), then the tabs and a **Start here** shelf named by
+  the kind of video (Launch video, Narrated explainer, Your footage, edited), then six shelves (Explainers, Your
+  footage, Products and brands, Code and data, Social and trailers, Looks and motion), each with a line and the guides
+  behind it. The groups and their order live in `site/content/gallery.json`, so the examples repository does not change,
+  and the build stops when a card is on no shelf or two. The ten 0.4 examples carry a "New in 0.4" badge and a last tab,
+  every card shows its number and one duration format (`25 · 2:38`, `02 · 0:45`) and a "Copy the request" button,
+  example pages are titled "Example 25: ...", guide pages name their act in the crumb ("Docs / Act IV · Sound and voice
+  / Voice") with a "See it done" line of examples, and the docs search opens install, error and first-video questions on
+  the page written for them. The film above the gallery is gone (`"gallery_film": null` in `site/config.json`; an object
+  brings one back), the footer credits its music only while one is set, and README.md's links to
+  `gallery.html#launch-film` now go to the gallery and the film's MP4. The old tab addresses
+  (`gallery.html#data-and-reports`, `#for-developers` ...) open All. The build stops when gallery.json's "New in" name
+  is not the newest release's series, so the badges and the landing tile cannot name different releases. Test:
   `test_site_build.py` `StartHereAndShelves`, `PeoplePages` `test_glossary_and_house_vocabulary_have_their_own_pages`,
   `test_site_search.py` `RealBuild`.
 - **A name cleared in `readback.ok` also clears it inside a longer phrase, and `readback.note` keeps a respelled
@@ -365,43 +506,43 @@ All notable changes to showtime. Each entry says what changed and why, so this f
   found that newcomers were sent to the 1,382-line README, that troubleshooting answers were written for agents only,
   and that EDL, ledger and look signature were used before any page defined them. New pages:
   `docs/guides/first-video.md` (a 5-second test video step by step, timed on a 6-core Intel Mac, in the task-guide
-  shape), `docs/troubleshooting.md` (twelve symptoms, each with what showtime does today, what to say and the
-  command) and `docs/glossary.md` (the reader's glossary with a diagram of the job folder; CONTEXT.md stays the house
-  vocabulary and is linked from it).
-  The README, the docs map, the guides index and the FAQ link them. The two mode settings are now explained as two:
-  quick or studio (how much the agent asks) and quality or lean (how much it checks), in the README, SKILL.md, the
-  docs map and modes.md; the docs map no longer says "quick is lean". EDL, ledger and look signature are defined at
-  first use (SKILL.md, editing.md, color.md). The FAQ's GPU answer leads with the answer, its language count names the
-  eight Kokoro languages and the 32 in all (Kokoro's nine counts American and British English apart), the README's
-  scoreboard sentence says what was measured, and "How it works" opens with today's order instead of the 0.2.0
-  history. agents.md now says your agent runs setup, with terminal setup only for a sandbox that blocks the download,
-  and names the transcription model instead of Whisper. SKILL.md goes from about 1,500 to about 1,490 words with every
-  red flag kept: the new definitions are short there (the glossary has the long ones), and the opening line and a few phrases
-  are tighter. `check_release` now checks the links and commands of the two new
-  docs/ pages. Test: `test_skill_structure.py` `TestCheckersBite` `test_newcomer_pages_are_linked_and_checked`.
-- **Chapter mode: render a film in named pieces and join them with one soundtrack (issue #22).** Rendering
-  sections with `--from/--to` and joining them with `edit render` gave loudness steps of 2.6 and 0.7 dB at the
-  joins (each span mastered its own audio) and cut fades. `render --chapters` prints the plan from showtime.json
-  `"chapters"` (else the film's acts) and says first that on one machine a whole render is faster (measured: see
-  render.md § Speed); `render --chapter N --job J` splices chapter N into the job's full render, or without one
-  writes a video-only piece in `<job>/work/chapters/<W>x<H>/`; `render --join --job J` byte-joins the pieces at
-  their keyframes (or encodes once when their settings differ), builds the soundtrack once for the whole video,
-  muxes it and checks every seam against the master (frames, keyframes, the seam frames captured again against a frame inside the
-  same piece, so grain or a high CRF passes, loudness step <= 0.1 dB, lag 0 +-1 sample) before naming it `final.mp4`, `kind: "joined"`; `qa` adds a seam section.
-  Every whole render now has a keyframe at each chapter start, so after a whole render or a join a later
+  shape), `docs/troubleshooting.md` (twelve symptoms, each with what showtime does today, what to say and the command)
+  and `docs/glossary.md` (the reader's glossary with a diagram of the job folder; CONTEXT.md stays the house vocabulary
+  and is linked from it). The README, the docs map, the guides index and the FAQ link them. The two mode settings are
+  now explained as two: quick or studio (how much the agent asks) and quality or lean (how much it checks), in the
+  README, SKILL.md, the docs map and modes.md; the docs map no longer says "quick is lean". EDL, ledger and look
+  signature are defined at first use (SKILL.md, editing.md, color.md). The FAQ's GPU answer leads with the answer, its
+  language count names the eight Kokoro languages and the 32 in all (Kokoro's nine counts American and British English
+  apart), the README's scoreboard sentence says what was measured, and "How it works" opens with today's order instead
+  of the 0.2.0 history. agents.md now says your agent runs setup, with terminal setup only for a sandbox that blocks the
+  download, and names the transcription model instead of Whisper. SKILL.md goes from about 1,500 to about 1,490 words
+  with every red flag kept: the new definitions are short there (the glossary has the long ones), and the opening line
+  and a few phrases are tighter. `check_release` now checks the links and commands of the two new docs/ pages. Test:
+  `test_skill_structure.py` `TestCheckersBite` `test_newcomer_pages_are_linked_and_checked`.
+- **Chapter mode: render a film in named pieces and join them with one soundtrack (issue #22).** Rendering sections with
+  `--from/--to` and joining them with `edit render` gave loudness steps of 2.6 and 0.7 dB at the joins (each span
+  mastered its own audio) and cut fades. `render --chapters` prints the plan from showtime.json `"chapters"` (else the
+  film's acts) and says first that on one machine a whole render is faster (measured: see render.md § Speed);
+  `render --chapter N --job J` splices chapter N into the job's full render, or without one writes a video-only piece in
+  `<job>/work/chapters/<W>x<H>/`; `render --join --job J` byte-joins the pieces at their keyframes (or encodes once when
+  their settings differ), builds the soundtrack once for the whole video, muxes it and checks every seam against the
+  master (frames, keyframes, the seam frames captured again against a frame inside the same piece, so grain or a high
+  CRF passes, loudness step <= 0.1 dB, lag 0 +-1 sample) before naming it `final.mp4`, `kind: "joined"`; `qa` adds a
+  seam section. Every whole render now has a keyframe at each chapter start, so after a whole render or a join a later
   `--chapter N` fix re-renders exactly its frames. A piece cut short is refused with its `--chapter N` command, a
-  one-chapter film is refused, and the receipt counts each piece's time once. Pieces carry `sources_hash` (the project's sources, the same on a copy at another path): other
-  files warn at the join, another length or size is refused. Tests: `test_chapters.py`.
-- **The join's seam check compares each frame on Windows too.** On the Windows CI runner `render --join` stopped
-  at a random frame of the seam check with "could not compare frame 119 of mux.mp4: frame= 1 ... time=00:00:00.00". The PSNR
-  comparison gave ffmpeg's `psnr` the captured image at time 0 and the video's frame half a frame later (the seek
-  lands between frames), so the one frame `-frames:v 1` keeps went out uncompared, and the real comparison only ran
-  when the image's end of stream arrived, after the output had finished. Whether ffmpeg ran it before shutting down
-  was thread timing: it did on macOS and Linux and now and then did not on Windows (no PSNR line, exit 0). Both
-  inputs now start at time 0, so the first frame is the compared one on any OS, and the error quotes ffmpeg's own
-  message instead of its progress line and stream list (`settb=AVTB` also drops psnr's "not matching timebases" warning;
-  same values). Test: `test_chapters.py` (`test_frame_psnr_compares_the_frame_it_outputs` holds the image's end of
-  stream back 1.5 s, which fails the old graph on any OS, and checks the value; `test_ff_messages_drop_progress`).
+  one-chapter film is refused, and the receipt counts each piece's time once. Pieces carry `sources_hash` (the project's
+  sources, the same on a copy at another path): other files warn at the join, another length or size is refused. Tests:
+  `test_chapters.py`.
+- **The join's seam check compares each frame on Windows too.** On the Windows CI runner `render --join` stopped at a
+  random frame of the seam check with "could not compare frame 119 of mux.mp4: frame= 1 ... time=00:00:00.00". The PSNR
+  comparison gave ffmpeg's `psnr` the captured image at time 0 and the video's frame half a frame later (the seek lands
+  between frames), so the one frame `-frames:v 1` keeps went out uncompared, and the real comparison only ran when the
+  image's end of stream arrived, after the output had finished. Whether ffmpeg ran it before shutting down was thread
+  timing: it did on macOS and Linux and now and then did not on Windows (no PSNR line, exit 0). Both inputs now start at
+  time 0, so the first frame is the compared one on any OS, and the error quotes ffmpeg's own message instead of its
+  progress line and stream list (`settb=AVTB` also drops psnr's "not matching timebases" warning; same values). Test:
+  `test_chapters.py` (`test_frame_psnr_compares_the_frame_it_outputs` holds the image's end of stream back 1.5 s, which
+  fails the old graph on any OS, and checks the value; `test_ff_messages_drop_progress`).
 - **`test_signatures.py` checks reading time once per motion feel and template, not twelve times.** On the Windows
   nightly the file ran 868 s on its first night (6 Oct), then out of its 900 s on 7 and 8 Oct (680 s on 9 Oct); the
   Intel Mac reached 900 s on 9 Oct. It ran a full `showtime check` per look signature, twelve of them, on 4-thread
@@ -452,32 +593,32 @@ All notable changes to showtime. Each entry says what changed and why, so this f
   `test_no_cuts_skips_the_walk`.
 - **`review-findings` accepts `t=a-b s` ranges as a timestamp, and Polish items get ids.** A finding carrying a range
   such as `t=38.73-41.50s` was warned as citing no timestamp (the check only knew `t=3.00s`), and Polish bullets were
-  left out of the id scheme, so `showtime review-respond <job> --fixed r1-P1` only printed the list of valid ids
-  (issue #48). Ranges (`t=38.73-41.50s`, `t=38.73s-41.50s`, `t=38.73 - 41.50 s`) now count in every finding, and
-  Polish bullets are registered as `r1-P1 ...` beside `r1-B1` and `r1-S1`: they are listed by `review-respond`, can be
-  marked fixed or waived, and are counted by `review-findings`, but are never open, so they still never gate the
-  delivery (and stay out of the receipt's counts and lists and the next round's PREVIOUS list). The pairwise parser
-  `review-verdict` reads uses the same timestamp pattern, so a range-timestamped finding is no longer dropped there.
-  A Polish bullet without a timestamp now gets the "cites no timestamp" warning too, as CRITIC.md asks of each. Test: `test_review_mode.py`
+  left out of the id scheme, so `showtime review-respond <job> --fixed r1-P1` only printed the list of valid ids (issue
+  #48). Ranges (`t=38.73-41.50s`, `t=38.73s-41.50s`, `t=38.73 - 41.50 s`) now count in every finding, and Polish bullets
+  are registered as `r1-P1 ...` beside `r1-B1` and `r1-S1`: they are listed by `review-respond`, can be marked fixed or
+  waived, and are counted by `review-findings`, but are never open, so they still never gate the delivery (and stay out
+  of the receipt's counts and lists and the next round's PREVIOUS list). The pairwise parser `review-verdict` reads uses
+  the same timestamp pattern, so a range-timestamped finding is no longer dropped there. A Polish bullet without a
+  timestamp now gets the "cites no timestamp" warning too, as CRITIC.md asks of each. Test: `test_review_mode.py`
   `TestReviewFindings` `test_time_ranges_count_as_timestamps`, `TestFindingsGate`
   `test_polish_ids_register_and_never_gate`.
-- **Voice-led workflows run `voice script --fit S --estimate` before the first synthesis.** `--estimate` already
-  prints "cut about N words" and synthesizes nothing, but only `voice.md` mentioned it: the social-short, explainer
-  and other voice-led routes went straight to `--fit <seconds>`, so an agent with a slow voice (about 2.6 words/s)
-  ran a 1-4 minute fit three times, cutting words between runs, and ended at x1.12 (issue #45). The social-short,
-  explainer, repo-explainer, paper-explainer, data-story, localize and manim guides, the scriptwriter and voice
-  director briefs now say to estimate first and cut words until it fits, and SKILL.md pipeline step 2 names the estimate and then the real run. Test:
-  `test_skill_structure.py` `TestSkillMd` `test_fit_is_estimated_before_synthesis`.
+- **Voice-led workflows run `voice script --fit S --estimate` before the first synthesis.** `--estimate` already prints
+  "cut about N words" and synthesizes nothing, but only `voice.md` mentioned it: the social-short, explainer and other
+  voice-led routes went straight to `--fit <seconds>`, so an agent with a slow voice (about 2.6 words/s) ran a 1-4
+  minute fit three times, cutting words between runs, and ended at x1.12 (issue #45). The social-short, explainer,
+  repo-explainer, paper-explainer, data-story, localize and manim guides, the scriptwriter and voice director briefs now
+  say to estimate first and cut words until it fits, and SKILL.md pipeline step 2 names the estimate and then the real
+  run. Test: `test_skill_structure.py` `TestSkillMd` `test_fit_is_estimated_before_synthesis`.
 - **"This look repeats recent videos" names the property that matched, its distance and its threshold.** The warning
-  said which aspect repeated (palette, type pair ...) and listed the look's own values, but not what matched against
-  the earlier job or how close it was, so after changing colours by hand the warning stayed with no way to tell what
-  to change next (issue #47). Each repeat now carries a `why` (in `showtime check`, `history check` and `--json`): the
-  palette colours that matched with their distance and the threshold (`3 of 4 colours match (#a ~ #b 12 apart; threshold
-  60, needs 3)`), `fonts identical (Inter)`, the share of camera moves or transition kinds against its limit, the
-  scene-length spread against 6 %. A page wearing a look
-  signature matches on the signature id in its look comment, not on colours, and says so (changing colours does not
-  clear it; `showtime signature` picks another). The `why` names the job it was measured against. Test: `test_variety.py` `TestHistory`
-  `test_message_names_the_matched_property_distance_and_threshold`.
+  said which aspect repeated (palette, type pair ...) and listed the look's own values, but not what matched against the
+  earlier job or how close it was, so after changing colours by hand the warning stayed with no way to tell what to
+  change next (issue #47). Each repeat now carries a `why` (in `showtime check`, `history check` and `--json`): the
+  palette colours that matched with their distance and the threshold
+  (`3 of 4 colours match (#a ~ #b 12 apart; threshold 60, needs 3)`), `fonts identical (Inter)`, the share of camera
+  moves or transition kinds against its limit, the scene-length spread against 6 %. A page wearing a look signature
+  matches on the signature id in its look comment, not on colours, and says so (changing colours does not clear it;
+  `showtime signature` picks another). The `why` names the job it was measured against. Test: `test_variety.py`
+  `TestHistory` `test_message_names_the_matched_property_distance_and_threshold`.
 - **`render --size` checks the page it renders, and a timing error is not "the layout breaks".** The layout check that
   runs before a `--size` render started `check` without `--page`, so it ran on `index.html`: a page whose text runs
   off the frame at 9:16 rendered anyway while `index.html` was fine, a broken `index.html` stopped the render of a
@@ -501,13 +642,13 @@ All notable changes to showtime. Each entry says what changed and why, so this f
   limits); below 8 threads and with a GPU nothing changes. Test: `test_render_speed.py`
   `test_auto_workers_and_software_gl`.
 - **`edit render` keeps the sound in sync with the picture on showtime's own renders (issue #38).** A range cut from a
-  render made by showtime (`-bf 0`: its video edit list starts at 0, its audio's after the 1024-sample AAC priming) could
-  come out with its sound up to 1024 samples (21 ms) early: the input seek that cut each range is not sample-accurate
-  on this audio, and its error depends on where it lands (1024 samples at `"start": 0`, the usual case for span or
-  chapter files, which also left 21 ms of silence before every cut; 256, 512 or 1024 at some later starts, e.g. 2, 4
-  and 8 s). Each range's sound is now decoded from the file's start, with no input seek, and trimmed to the exact
-  sample; the video keeps its fast seek. Decoding the AAC of a 10-minute source takes about 1 s, so a range near its
-  end renders about 1 s slower. Cached segments are rebuilt once. Test: `test_footage.py` `EdlAudioSyncTest`.
+  render made by showtime (`-bf 0`: its video edit list starts at 0, its audio's after the 1024-sample AAC priming)
+  could come out with its sound up to 1024 samples (21 ms) early: the input seek that cut each range is not
+  sample-accurate on this audio, and its error depends on where it lands (1024 samples at `"start": 0`, the usual case
+  for span or chapter files, which also left 21 ms of silence before every cut; 256, 512 or 1024 at some later starts,
+  e.g. 2, 4 and 8 s). Each range's sound is now decoded from the file's start, with no input seek, and trimmed to the
+  exact sample; the video keeps its fast seek. Decoding the AAC of a 10-minute source takes about 1 s, so a range near
+  its end renders about 1 s slower. Cached segments are rebuilt once. Test: `test_footage.py` `EdlAudioSyncTest`.
 - **Extra local voice engines load by name, and doctor stops failing on Kokoro when you chose another engine.**
   The engine list was closed in three places (`engines.get()`, the `--engine` choices and `$SHOWTIME_VOICE`), and
   doctor failed on Kokoro's model files even after `setup --skip models` with another engine selected. An engine of
@@ -519,12 +660,12 @@ All notable changes to showtime. Each entry says what changed and why, so this f
   Kokoro) and lists each extra engine and whether it imports. `references/voice.md` has a "Bring your own voice
   engine" section: your engine, your network; showtime ships no network engine. Proposed and designed by @heavygee
   in issue #8, who also wrote a matching PR (#36). Test: `test_voice_engines.py`.
-- **The scriptwriter and the storyboard artist get more turns, and the director is told how to stay inside them.** A heavy
-  storyboard brief ran out of turns before it finished (issue #42). `scriptwriter` now has `maxTurns: 50` (was 30) and
-  `storyboard-artist` `maxTurns: 80` (was 50). `references/crew.md` §3 tells the director to split a heavy brief (the
-  board first, the animatic as a second task) and, when a member stops at its cap, to resume it with a follow-up
-  `SendMessage` instead of dispatching it again. Test: `test_skill_structure.py` checks that every crew agent
-  declares `maxTurns` between 20 and 100.
+- **The scriptwriter and the storyboard artist get more turns, and the director is told how to stay inside them.** A
+  heavy storyboard brief ran out of turns before it finished (issue #42). `scriptwriter` now has `maxTurns: 50` (was 30)
+  and `storyboard-artist` `maxTurns: 80` (was 50). `references/crew.md` §3 tells the director to split a heavy brief
+  (the board first, the animatic as a second task) and, when a member stops at its cap, to resume it with a follow-up
+  `SendMessage` instead of dispatching it again. Test: `test_skill_structure.py` checks that every crew agent declares
+  `maxTurns` between 20 and 100.
 - **A fix to a `--size` variant is spliced too.** `render --from/--to --job` spliced a fix into the job's last
   full render, but with `--size` it always wrote a span clip, so an audio-only fix to the 9:16 cut
   (`<job>/1080x1920.mp4`) took a full re-render (about 2.5 min instead of 43 s for the 16:9 final). With `--size` the
@@ -543,7 +684,8 @@ All notable changes to showtime. Each entry says what changed and why, so this f
 - **`voice script --fit` says up front when the narration cannot fit.** It used to synthesize every line, then
   re-synthesize them all at up to four speeds, and only then report how many words to cut (issue #28). Now the
   characters are counted at the voice's own rate before the first line, a script that is too long gets "cut about N
-  words" (and the rushed-speech warning) at once, and `--fit S --estimate` prints that estimate alone without making any audio.
+  words" (and the rushed-speech warning) at once, and `--fit S --estimate` prints that estimate alone without making any
+  audio.
 - **`voice_to_music_db` is no longer empty when the music is `ST.score`.** The score is rendered offline and
   combined after the mix, so a voice-over mix plus `ST.score` had no music bus and `mix.report.json` said
   `"voice_to_music_db": null` (qa's hearing facts read the same field), although the guides tell the reader to
@@ -559,15 +701,16 @@ All notable changes to showtime. Each entry says what changed and why, so this f
   working (a page with its own timer loop). `SHOWTIME_TIMEOUT=<seconds>` gives a render or check its caller's limit:
   past it the command ends with an error naming where each of its parts is. Tests: `test_pace.py`
   `TestFrameNeverComes`, `TestSlowPages`.
-- **`--disable-frame-rate-limit` stays on Linux only.** 0.4.1 shipped it in render's browsers on every OS. With it,
-  a renderer keeps spending CPU after the GPU process stops, so on macOS the guard above never saw a stopped GPU
-  process (measured on an Intel Mac with a GPU: the stall test fails with the flag and passes without), and it bought
-  about 2 % there, inside run-to-run spread, for about 22 % more CPU while rendering; it is the likely cause of the
-  stalls on the macOS CI runners, where this has not been re-run. On an 8-thread Linux machine without a GPU it is
-  about 10 % faster than without it (5 % faster than 0.4.1, which has the flag but not the guard) and the guard still ends a frame that never comes. `"render"` in
-  `scripts/lib/chrome-flags.json` is now per OS like `"gpu"` (`renderFlags()` still takes a plain list): on Linux only;
-  off on macOS and Windows, which is untested with the guard and goes back to its state before 0.4.1. Tests:
-  `test_pace.py` `test_no_frame_rate_limit_flag`, `test_render_speed.py` `test_auto_workers_and_software_gl`.
+- **`--disable-frame-rate-limit` stays on Linux only.** 0.4.1 shipped it in render's browsers on every OS. With it, a
+  renderer keeps spending CPU after the GPU process stops, so on macOS the guard above never saw a stopped GPU process
+  (measured on an Intel Mac with a GPU: the stall test fails with the flag and passes without), and it bought about 2 %
+  there, inside run-to-run spread, for about 22 % more CPU while rendering; it is the likely cause of the stalls on the
+  macOS CI runners, where this has not been re-run. On an 8-thread Linux machine without a GPU it is about 10 % faster
+  than without it (5 % faster than 0.4.1, which has the flag but not the guard) and the guard still ends a frame that
+  never comes. `"render"` in `scripts/lib/chrome-flags.json` is now per OS like `"gpu"` (`renderFlags()` still takes a
+  plain list): on Linux only; off on macOS and Windows, which is untested with the guard and goes back to its state
+  before 0.4.1. Tests: `test_pace.py` `test_no_frame_rate_limit_flag`, `test_render_speed.py`
+  `test_auto_workers_and_software_gl`.
 
 - **A WebGL canvas that loses its context no longer ships white.** On the Intel Mac CI runner some renders lost
   every WebGL context on the GPU, and each of those canvases was captured white with no word from `render`
@@ -595,8 +738,8 @@ All notable changes to showtime. Each entry says what changed and why, so this f
   after a silent scene but not directly after it, the line right after the silence lost the pin and the silence was
   counted twice: once by the voice holding the gap up to the pin and once as the silent scene's own length. The first
   pinned line after the silent scene now counts, even with unpinned lines between them, so the silent scene fills the
-  gap before the pin and keeps its length when the gap allows; render.md says so. Test: `test_storyboard.py` `TestSilentShots`
-  `test_a_later_pin_holds_the_silent_shot_once`, `test_two_lines_after_a_silent_shot_one_pinned`.
+  gap before the pin and keeps its length when the gap allows; render.md says so. Test: `test_storyboard.py`
+  `TestSilentShots` `test_a_later_pin_holds_the_silent_shot_once`, `test_two_lines_after_a_silent_shot_one_pinned`.
 - **The stable `showtime` command keeps the installed skill when two copies have the same version (issue #23).**
   On a tie the command used to follow whichever folder ran last, so running a second checkout or a scratch copy of the
   installed version re-pointed it for every agent and script sharing the home. Now an installed skill (a plugin, or a
@@ -664,12 +807,12 @@ All notable changes to showtime. Each entry says what changed and why, so this f
     number.
   - `showtime edit cards suggest` lists card moments in a transcript, locally; `edit check`, `edit view` and qa
     (`card_problem`) know cards, and `edit check` flags list items said after their card leaves.
-- **A word behind the speaker, cut out on the CPU.** `showtime footage cutout <clip> [--from A --to B] [-o out]`
-  cuts a person out with MODNet portrait matting (Apache-2.0, 26 MB, fetched on first use), smoothed over time and
-  reset at every cut, as VP9 with alpha (`--format prores` or `png`), a matte file and a contact sheet. About
-  1.3-1.8 min per minute of 1080p on a 64-core Linux machine with no GPU, about 5.7 min when held to 6 of its cores
-  (3.7 with `--size 384`). The EDL card `"type": "behind"` puts a big word between the background (`dim`, `blur`, `ground`, a colour
-  or an image) and the speaker; qa warns `behind_hidden` and `matte_flicker`.
+- **A word behind the speaker, cut out on the CPU.** `showtime footage cutout <clip> [--from A --to B] [-o out]` cuts a
+  person out with MODNet portrait matting (Apache-2.0, 26 MB, fetched on first use), smoothed over time and reset at
+  every cut, as VP9 with alpha (`--format prores` or `png`), a matte file and a contact sheet. About 1.3-1.8 min per
+  minute of 1080p on a 64-core Linux machine with no GPU, about 5.7 min when held to 6 of its cores (3.7 with
+  `--size 384`). The EDL card `"type": "behind"` puts a big word between the background (`dim`, `blur`, `ground`, a
+  colour or an image) and the speaker; qa warns `behind_hidden` and `matte_flicker`.
 - **A long recording to its best short clips.** `showtime edit moments <transcripts | folder | job>` ranks
   whole-sentence moments of `--min`..`--max` seconds by local signals (a hook in the first 3 s, a complete thought,
   speaker energy, laughter and applause, one topic; introductions and logistics rank lower) into `moments.json` with
@@ -689,27 +832,27 @@ All notable changes to showtime. Each entry says what changed and why, so this f
     fonts.gstatic.com; an offline `--refresh` keeps the fonts already copied (checked by sha256).
   - An artboard larger than the frame is no longer cropped, a cursor blink is not taken as the loop, and
     `adopt.json` keeps paths relative to the project.
-- **Seven looks in showtime's own WebGL, no GPU needed**: `fluted-glass`, `tilt-shift`, `liquid-metal`,
-  `mesh-gradient`, `god-rays`, `marble` and `metaballs`, each with presets built from the theme tokens, the same
-  frames with any worker count, and a designed fallback where WebGL is missing. At its default size each adds less
-  than 50 ms to a 1080p frame without a GPU (one browser on the 64-core machine; `references/components.md` section
-  7 has the table). A look holds a WebGL context only while its clip is on screen, so twenty looks on one page no
-  longer go blank, and on a GPU each look reads its frame back before the screenshot (no stale frames).
-  `showtime check` prints each look's estimated cost and warns `look_budget` (over 50 ms), `look_fallback`, `look_contexts`
-  (over 8 on screen at once, an error over 14) and `look_lost`. `examples/_looks`.
+- **Seven looks in showtime's own WebGL, no GPU needed**: `fluted-glass`, `tilt-shift`, `liquid-metal`, `mesh-gradient`,
+  `god-rays`, `marble` and `metaballs`, each with presets built from the theme tokens, the same frames with any worker
+  count, and a designed fallback where WebGL is missing. At its default size each adds less than 50 ms to a 1080p frame
+  without a GPU (one browser on the 64-core machine; `references/components.md` section 7 has the table). A look holds a
+  WebGL context only while its clip is on screen, so twenty looks on one page no longer go blank, and on a GPU each look
+  reads its frame back before the screenshot (no stale frames). `showtime check` prints each look's estimated cost and
+  warns `look_budget` (over 50 ms), `look_fallback`, `look_contexts` (over 8 on screen at once, an error over 14) and
+  `look_lost`. `examples/_looks`.
 - **Shutter blur on chosen elements.** `data-st-blur` (or `ST.blur(el, {pose})`) smears an element as a 180° shutter
   would, only on the frames it moves fast, and lands it sharp; options `shutter`, `samples`, `threshold`, `max`;
-  `F.motionBlur` for canvas films. About 8 ms more per blurred word per frame at 1080p without a GPU (one browser on the 64-core Linux machine). check warns
-  `blur_text`, `blur_slow`, `blur_container`, `blur_unsampled` and `blur_inline`. The showreel template's flash
-  words are now snaps under the blur. `examples/_blur`.
+  `F.motionBlur` for canvas films. About 8 ms more per blurred word per frame at 1080p without a GPU (one browser on the
+  64-core Linux machine). check warns `blur_text`, `blur_slow`, `blur_container`, `blur_unsampled` and `blur_inline`.
+  The showreel template's flash words are now snaps under the blur. `examples/_blur`.
 - **qa hears the mix as a phone speaker does, and the mixer is speaker-safe by default.** The first mix of the 0.4.1
-  showreel was almost inaudible on a phone: above 300 Hz it sat 13.6 LU under the full mix. `speaker_loudness`
-  measures the mix above 300 Hz and 1 kHz against the full mix: WARN over 10 LU, FAIL over 18 (posted films measure
-  0.7-8.2 LU; a soundtrack showtime did not mix, such as your own song or a footage edit's sound, stays a WARN). `showtime audio mix` (so also `render` of a showtime.json `"audio"` mix; not an `ST.score` bed or the
-  built-in fallback mixer) puts a 40 Hz high-pass on everything but the voice and, on a bass-heavy mix, a low shelf on
-  the bed; voice-led films change by 0.01 LU. `"master": {"speaker_safe": false}` or
-  `--no-speaker-safe` turns it off. The mix report gives each effect its speaker gap and notes a sub hit with
-  nothing in the mids (`sub_alone`).
+  showreel was almost inaudible on a phone: above 300 Hz it sat 13.6 LU under the full mix. `speaker_loudness` measures
+  the mix above 300 Hz and 1 kHz against the full mix: WARN over 10 LU, FAIL over 18 (posted films measure 0.7-8.2 LU; a
+  soundtrack showtime did not mix, such as your own song or a footage edit's sound, stays a WARN). `showtime audio mix`
+  (so also `render` of a showtime.json `"audio"` mix; not an `ST.score` bed or the built-in fallback mixer) puts a 40 Hz
+  high-pass on everything but the voice and, on a bass-heavy mix, a low shelf on the bed; voice-led films change by 0.01
+  LU. `"master": {"speaker_safe": false}` or `--no-speaker-safe` turns it off. The mix report gives each effect its
+  speaker gap and notes a sub hit with nothing in the mids (`sub_alone`).
 - **The voice-over is heard back.** `voice script` and `voice say` transcribe what they wrote with the local
   recognizer and compare it with the script sound by sound, so a name, acronym or number said wrong ("Open A I"
   heard as "OpenI") is a WARN with its fix; cached by each line's audio and recognizer. It runs when the local
@@ -753,12 +896,12 @@ All notable changes to showtime. Each entry says what changed and why, so this f
   recorded as 0 LUFS. The preview window opens Chrome with its device discovery (Cast) turned off. The test suite skips
   the site tests without the examples checkout. `check_release.py --mirror` checks every model and audio mirror
   asset, and a failed model download names the missing mirror file.
-- **Docs for people.** An FAQ (GPU, cost, agents, privacy, licences, disk, time, platforms, languages, hand edits,
-  the critic, questions, notes) and What's new, first in the site's Start group; ten task guides in `docs/guides/`
-  (a talking head with cards, Claude Design to MP4, a long recording to clips, a launch video from a repo, another
-  language, a PR video, an explainer that asks, going all out, notes and fixes, a slow machine), each with what to
-  say, what you get, measured times naming the machine and the limits, in their own sidebar group after Start. The README, the docs
-  maps, SKILL.md, SECURITY and PRIVACY catch up with 0.4.0 and 0.4.1. Site search finds hyphenated names
+- **Docs for people.** An FAQ (GPU, cost, agents, privacy, licences, disk, time, platforms, languages, hand edits, the
+  critic, questions, notes) and What's new, first in the site's Start group; ten task guides in `docs/guides/` (a
+  talking head with cards, Claude Design to MP4, a long recording to clips, a launch video from a repo, another
+  language, a PR video, an explainer that asks, going all out, notes and fixes, a slow machine), each with what to say,
+  what you get, measured times naming the machine and the limits, in their own sidebar group after Start. The README,
+  the docs maps, SKILL.md, SECURITY and PRIVACY catch up with 0.4.0 and 0.4.1. Site search finds hyphenated names
   (`pr-video`) and opens the matching section; pages get share tags and a canonical link, and the site has
   `sitemap.xml`, `robots.txt` and `llms.txt`.
 - **Examples for 0.4.0 and 0.4.1 (#18).** 23, a NASA interview dressed with cards and a word behind the speaker, at
@@ -781,12 +924,12 @@ All notable changes to showtime. Each entry says what changed and why, so this f
   - Posters, thumbnails, qa frames and snaps pulled into a JPEG convert the video's colours properly (a saturated
     poster was about 6 levels darker than its frame), and qa compares the poster with its exact frame.
   - A file that reads above the -1 dBTP ceiling at all after the AAC encode is re-encoded (a GitHub copy read -0.9).
-  - `pr-video` shows a description's list item by item ("+ N more" for the rest) instead of the opening paragraph
-    cut into frames; the showreel template's data shot fits 1:1 and 4:5; a mix track's `"ending": "song"` keeps the
-    song's own ending; a span render with `-o <own name>.mp4` and no `--job` writes that file and never splices into the job's final
-    (with `--job` the fix is spliced as before and `-o` is ignored); two renders
-    started in the same second no longer share a folder; a scene marked `data-stretch="spread"` spreads its beats
-    when it gets longer (the dom template's hero no longer holds still at `--duration 24`).
+  - `pr-video` shows a description's list item by item ("+ N more" for the rest) instead of the opening paragraph cut
+    into frames; the showreel template's data shot fits 1:1 and 4:5; a mix track's `"ending": "song"` keeps the song's
+    own ending; a span render with `-o <own name>.mp4` and no `--job` writes that file and never splices into the job's
+    final (with `--job` the fix is spliced as before and `-o` is ignored); two renders started in the same second no
+    longer share a folder; a scene marked `data-stretch="spread"` spreads its beats when it gets longer (the dom
+    template's hero no longer holds still at `--duration 24`).
   - Transcripts say where their language came from (`language_source`), Parakeet v3's language guess works again (it
     always said English), a soft first word is kept and a music intro is not transcribed.
   - `guide --find` takes several words unquoted; the templates' sample URL is a reserved `.example` name; the site
@@ -798,11 +941,12 @@ All notable changes to showtime. Each entry says what changed and why, so this f
 
 ## 0.4.0 (2026-10-05)
 
-- **Videos that stop and ask.** showtime.json `"questions"` lists stop-and-ask questions: `{id, at, prompt, choices,
-  answer, reply, think}`. `at` is seconds or a voice cue (the id of a narration line, `"ask"`, `"ask.start"`,
-  `"ask.end+0.4"`), read where the mix plays that line (a `vo-<id>` track of `retime --from-voice` or a track
-  playing the line's own file, else the vo.wav track's start), so a re-voice moves every question with its line; `retime -d` moves the ones given in seconds. Proven first in the
-  Socratic videos, where a separate page layer drove the exported player; now it is built in:
+- **Videos that stop and ask.** showtime.json `"questions"` lists stop-and-ask questions:
+  `{id, at, prompt, choices, answer, reply, think}`. `at` is seconds or a voice cue (the id of a narration line,
+  `"ask"`, `"ask.start"`, `"ask.end+0.4"`), read where the mix plays that line (a `vo-<id>` track of
+  `retime --from-voice` or a track playing the line's own file, else the vo.wav track's start), so a re-voice moves
+  every question with its line; `retime -d` moves the ones given in seconds. Proven first in the Socratic videos, where
+  a separate page layer drove the exported player; now it is built in:
   - `showtime export html` pauses on the question's own frame and asks it in a card (choices, A-C or 1-3, a right or
     wrong mark, the reply, Continue), then plays on from the end of the MP4's "pause and think" beat (`at + think`).
     Seeking past a question passes it, seeking back asks it again, a restart asks them all; a background tab still
@@ -1011,25 +1155,25 @@ All notable changes to showtime. Each entry says what changed and why, so this f
 - **New projects start in a look of their own: look signatures.** In the bake-off three different models made three
   near-identical dark-and-gold videos: the launch template's own look, unchanged; the look history only warned
   afterwards. Now `showtime new` dresses the page templates (dom, launch, short, data) in one of twelve curated look
-  signatures, seven dark and five light (data takes the light ones), each a palette (every text colour at the
-  contrast rules: ink 7:1, muted and accent text 4.8:1, the ink on the accent 4.5:1, the product window through the
-  brand kit's legibility rules), a type pair from the shipped fonts, a motion feel (the theme's motion tokens) and a
-  ground (how much key light, grid and vignette the template paints). The pick is seeded by the folder name
-  (`--look-seed`) and avoids the signatures of the last six projects created on the machine (`<history>/picks.json`,
-  local, off with the look history) and the palettes and display faces of the last five finished videos. `new`
-  prints the look and how to change it; `--look <id>` names one and `--look template` keeps the template's own. A
-  brand kit always wins (a kit found for the project stops the pick; `brand apply` replaces a signature), and so does
-  a job's style reference. `showtime signature` lists them and `showtime signature apply <project> <id|next|template>`
-  swaps one; the MCP `new_project` tool takes `look`. The page gets a `<style id="st-look">` block of theme tokens;
-  the four templates read three new ground tokens (`--ground-glow`, `--ground-grid`, `--ground-vignette`, 1 = as
-  before); where a template's glow sits under text (short, launch) a signature's glow is lowered, and at launch's
-  floor (its drifting key light is the end card's motion) muted and accent text are nudged instead, so every text
-  keeps 4.8:1. Light signatures get dark caption ink with an outline in the ground. Cobalt (the widest face) is not
-  offered on short. The short template's hook moved inside the vertical safe box with a margin (it sat on its edge;
-  other display faces crossed it) and its end card centres in the safe box. The look history records a page's signature, and two pages on one theme in different signatures no
-  longer count as a repeated theme. `references/color.md` section 9. `tests/test_signatures.py`: contrast of every
-  signature, the seeded rotation away from recent picks and finished looks, the brand kit and --look winning, the
-  command, and every signature passing `showtime check` (contrast, layout, phone size) on a sample project.
+  signatures, seven dark and five light (data takes the light ones), each a palette (every text colour at the contrast
+  rules: ink 7:1, muted and accent text 4.8:1, the ink on the accent 4.5:1, the product window through the brand kit's
+  legibility rules), a type pair from the shipped fonts, a motion feel (the theme's motion tokens) and a ground (how
+  much key light, grid and vignette the template paints). The pick is seeded by the folder name (`--look-seed`) and
+  avoids the signatures of the last six projects created on the machine (`<history>/picks.json`, local, off with the
+  look history) and the palettes and display faces of the last five finished videos. `new` prints the look and how to
+  change it; `--look <id>` names one and `--look template` keeps the template's own. A brand kit always wins (a kit
+  found for the project stops the pick; `brand apply` replaces a signature), and so does a job's style reference.
+  `showtime signature` lists them and `showtime signature apply <project> <id|next|template>` swaps one; the MCP
+  `new_project` tool takes `look`. The page gets a `<style id="st-look">` block of theme tokens; the four templates read
+  three new ground tokens (`--ground-glow`, `--ground-grid`, `--ground-vignette`, 1 = as before); where a template's
+  glow sits under text (short, launch) a signature's glow is lowered, and at launch's floor (its drifting key light is
+  the end card's motion) muted and accent text are nudged instead, so every text keeps 4.8:1. Light signatures get dark
+  caption ink with an outline in the ground. Cobalt (the widest face) is not offered on short. The short template's hook
+  moved inside the vertical safe box with a margin (it sat on its edge; other display faces crossed it) and its end card
+  centres in the safe box. The look history records a page's signature, and two pages on one theme in different
+  signatures no longer count as a repeated theme. `references/color.md` section 9. `tests/test_signatures.py`: contrast
+  of every signature, the seeded rotation away from recent picks and finished looks, the brand kit and --look winning,
+  the command, and every signature passing `showtime check` (contrast, layout, phone size) on a sample project.
 - **Go all out: the showreel tone.** In a blind vote on "make a 15-second motion graphics showreel ... go all out",
   plain Opus beat Opus with showtime: the winner had about 10 shots, a shader, particles and glitch type, while
   showtime's defaults pushed restraint and long reading holds. A showreel, hype reel, "go all out" or "show off" brief
@@ -1332,13 +1476,13 @@ Behaviour changes to know about (all deliberate, all security or correctness):
     `won't fix: <reason>` about them in `review/round-N/RESPONSE.md` (plain word matching). Quality mode: the
     review stays pending; lean mode: `showtime qa` prints a WARN. Later-round critics answer each earlier
     finding under `PREVIOUS` (`fixed:` / `not fixed:`).
-  - **Four new qa warnings** (`st/qa/floor.py`, up to 20 sampled frames at delivery size, WARN only):
-    `player_chrome` (a progress bar with control glyphs at both ends on a dark control overlay, in the same place on 2+ frames),
-    `soft_footage` (edge sharpness under 0.75 on most detailed parts of half the frames: re-record at 2x device
-    scale), `caption_boxes` (stacked caption boxes of different widths), `empty_borders` (a solid picture filling
-    under 70 % of the frame inside flat borders for over 30 % of the video). The footage-only ones skip projects
-    whose page plays no `<video>`. On the clip above, qa now warns on three of the four; the owner-approved
-    re-cut and every shipped example stay clean.
+  - **Four new qa warnings** (`st/qa/floor.py`, up to 20 sampled frames at delivery size, WARN only): `player_chrome` (a
+    progress bar with control glyphs at both ends on a dark control overlay, in the same place on 2+ frames),
+    `soft_footage` (edge sharpness under 0.75 on most detailed parts of half the frames: re-record at 2x device scale),
+    `caption_boxes` (stacked caption boxes of different widths), `empty_borders` (a solid picture filling under 70 % of
+    the frame inside flat borders for over 30 % of the video). The footage-only ones skip projects whose page plays no
+    `<video>`. On the clip above, qa now warns on three of the four; the owner-approved re-cut and every shipped example
+    stay clean.
 
 ## 0.3.1 (2026-09-30)
 
@@ -1380,15 +1524,18 @@ Behaviour changes to know about (all deliberate, all security or correctness):
   `showtime reference`, but its brief said to use your own colours (the run switched to greens), merged the reference's
   0.5 s word-per-beat cuts into one 3.7 s shot and called its colour-panel wipes `push`/`whip-pan`, gave no layout or
   sound build (the run chose small body text and an acoustic-folk bed), and `short_text` pushed the beat words to 1 s.
-  Now `showtime reference` keeps beat cuts separate, names colour-panel wipes (colour, direction, length), samples
-  the palette (ground, ink, accent, flat or not), measures alignment, margin and type sizes, and the sound's build
-  (kick on the beats, off-beat tick, last hit, silence at the end); the brief says to carry the style over (its
-  colours included, unless a brand kit or the user says otherwise) and never the content, and writes `style.css`.
+  Now `showtime reference` keeps beat cuts separate, names colour-panel wipes (colour, direction, length), samples the
+  palette (ground, ink, accent, flat or not), measures alignment, margin and type sizes, and the sound's build (kick on
+  the beats, off-beat tick, last hit, silence at the end); the brief says to carry the style over (its colours included,
+  unless a brand kit or the user says otherwise) and never the content, and writes `style.css`.
   `showtime new <template> --job <job>` links that file last and sets the background, so template and theme defaults
   yield (`--no-reference-style` skips it). The variety guard treats repeats that follow the job's style reference as
-  intended (a note, no alternatives). `showtime check` reads a word-per-beat run as one line (`beat_words` note)
-  when its words arrive no faster than 3 per second, and large text in the reference's own colour pair at 3:1 or more (WCAG large text) is a `low_contrast` note instead of an error when `reference-style.css` is linked. Type sizes are now measured from the ink of each line (cap heights; the t10 reference reads 385 / 200 / 85 / 65 / 50 px, the drawn sizes). Route: a router row in SKILL.md, the `reference` Essentials,
-  and a line in the launch and social-short workflows.
+  intended (a note, no alternatives). `showtime check` reads a word-per-beat run as one line (`beat_words` note) when
+  its words arrive no faster than 3 per second, and large text in the reference's own colour pair at 3:1 or more (WCAG
+  large text) is a `low_contrast` note instead of an error when `reference-style.css` is linked. Type sizes are now
+  measured from the ink of each line (cap heights; the t10 reference reads 385 / 200 / 85 / 65 / 50 px, the drawn
+  sizes). Route: a router row in SKILL.md, the `reference` Essentials, and a line in the launch and social-short
+  workflows.
 - **The reference as a spec, and `showtime reference diff`.** reference.md/reference.json now carry a spec in frames
   (every scene change and its kind, shot lengths, element moves with length and easing from the frame-difference
   curve, palette roles, layout and type sizes, tempo and every sound hit) with KEEP and CHANGE lists.
@@ -1449,40 +1596,42 @@ Behaviour changes to know about (all deliberate, all security or correctness):
   earlier rounds' cells and runs second runs as their own cells, and `round_report.py`, which adds per-run stream
   metrics (cost, tokens, calls, images in context, largest context, tool text, full renders, receipt), an isolation
   check for runs that touch another showtime folder, and the 0.3.0 release gates as PASS / FAIL / PENDING.
-- **Manim templates pass `manim check` and `qa`.** A fresh `manim new --template example` opened on 0.33 s of black and had
-  an 8 s still stretch (check: 2 errors, 4 warnings); it now passes check with 0 errors and 0 warnings in 16:9, 9:16, 1:1
-  and 4:5, and its voiced final passes qa with 0 fails and 0 warnings. The cause of the black opening was the kit:
-  `beat()` waited out the voice's lead-in before the scene had added anything, so `beat("hook"); add(hook)` still opened
-  on an empty frame; on an empty scene `beat()` now holds that lead-in on whatever is add()ed next. The example keeps its
-  story and colours with bigger motion on every word (each spoken number drops into the sum over a large running total,
-  copies of each term fly down and become its band of tiles, the four terms are boxed as braces read 4 by 4), and its
-  line ids are no longer spoken words (`tiling`, `closing`). The pattern templates open on their title at t=0;
-  `equation` uses a larger walkthrough (`equation_walkthrough(font_size=)`) and a slow camera push, `graph` fills the area
-  under the curve as it is traced (`graph_build(area=True)`), `refine` sits under its title. check's black-frame fix states
-  qa's rule (a frame is black only when nothing visible is on it). `tests/test_manim_templates.py`.
+- **Manim templates pass `manim check` and `qa`.** A fresh `manim new --template example` opened on 0.33 s of black and
+  had an 8 s still stretch (check: 2 errors, 4 warnings); it now passes check with 0 errors and 0 warnings in 16:9,
+  9:16, 1:1 and 4:5, and its voiced final passes qa with 0 fails and 0 warnings. The cause of the black opening was the
+  kit: `beat()` waited out the voice's lead-in before the scene had added anything, so `beat("hook"); add(hook)` still
+  opened on an empty frame; on an empty scene `beat()` now holds that lead-in on whatever is add()ed next. The example
+  keeps its story and colours with bigger motion on every word (each spoken number drops into the sum over a large
+  running total, copies of each term fly down and become its band of tiles, the four terms are boxed as braces read 4 by
+  4), and its line ids are no longer spoken words (`tiling`, `closing`). The pattern templates open on their title at
+  t=0; `equation` uses a larger walkthrough (`equation_walkthrough(font_size=)`) and a slow camera push, `graph` fills
+  the area under the curve as it is traced (`graph_build(area=True)`), `refine` sits under its title. check's
+  black-frame fix states qa's rule (a frame is black only when nothing visible is on it).
+  `tests/test_manim_templates.py`.
 
-- **`manim check` agrees with `qa`.** After its dry run, check renders the draft (the same 480p15 scenes `manim render` caches) and
-  runs qa's black and frozen-frame detectors on it with qa's thresholds. Manim's near-black ground with sparse content
-  (`black_segment`) and a small `Indicate` on an equation (`frozen`) are now reported before the full render, each with a fix
-  (`"light": true`, a bigger visible change); a hold the dry run already named is not repeated. `--no-draft` skips the pass.
-  `references/manim.md` points to section 11 for integration (it said 9).
-- **Receipts.** Every job ends with `receipt.md`, `receipt.json` (stable, schema 1) and one line in `share.txt`:
-  the request as typed, the assumptions, review rounds, full vs partial renders, the images showtime made for looking,
-  wall time from job start to final, and tokens and cost when the host's session log is named. Anything unknown says
-  "not reported by this agent"; nothing is estimated. `showtime receipt [job]` regenerates it; `qa` keeps it current,
-  `job note --stage deliver`, `deliver exports` and the MCP `receipt` tool finish it. Claude Code: the plugin's Stop hook
-  (or `--transcript FILE`) sums the current session's token counts (numbers only, never text) and prices them at
+- **`manim check` agrees with `qa`.** After its dry run, check renders the draft (the same 480p15 scenes `manim render`
+  caches) and runs qa's black and frozen-frame detectors on it with qa's thresholds. Manim's near-black ground with
+  sparse content (`black_segment`) and a small `Indicate` on an equation (`frozen`) are now reported before the full
+  render, each with a fix (`"light": true`, a bigger visible change); a hold the dry run already named is not repeated.
+  `--no-draft` skips the pass. `references/manim.md` points to section 11 for integration (it said 9).
+- **Receipts.** Every job ends with `receipt.md`, `receipt.json` (stable, schema 1) and one line in `share.txt`: the
+  request as typed, the assumptions, review rounds, full vs partial renders, the images showtime made for looking, wall
+  time from job start to final, and tokens and cost when the host's session log is named. Anything unknown says "not
+  reported by this agent"; nothing is estimated. `showtime receipt [job]` regenerates it; `qa` keeps it current,
+  `job note --stage deliver`, `deliver exports` and the MCP `receipt` tool finish it. Claude Code: the plugin's Stop
+  hook (or `--transcript FILE`) sums the current session's token counts (numbers only, never text) and prices them at
   dated API list prices, labelled API-equivalent; Codex gives tokens only. `job init --request` keeps the user's words
   verbatim, and partial renders (`render --from/--to`) are now recorded in the ledger. Format: `references/receipt.md`.
-- **Phone check.** The audience complaint about agent-made video (text moves too fast to read and is too small on a phone) is now one
-  named check. `showtime check` ends with `phone check: PASS` or `FAIL - <items with timestamps>` and writes a `phone` block to
-  `report.json`; `showtime qa` prints the same line, quoting that report (PARTIAL when there is none) and adding the caption
-  sidecar's line length and reading speed. It joins what already existed: reading time (`short_text`, now per language: 17
-  characters/s and 3 words/s, Japanese 4, Chinese 9, Korean 12 characters/s, in `runtime/thresholds.json`), type size (`tiny_text`, now
-  in points at a 390 pt wide phone, with a minimum per aspect: 16:9 5 pt, 1:1 10, 4:5 11, 9:16 15; canvas text and captions are judged
-  too, and small text is judged over its whole life, not only the sample frames) and the platform UI zones (`safe_zone`, `edge_margin`,
-  `control_strip`). New qa rules `phone_size`, `phone_reading`, `phone_zone` (WARN) and `phone_unverified` (INFO). Numbers, sources and
-  the calibration on the shipped examples: `references/qa.md`, "Phone check".
+- **Phone check.** The audience complaint about agent-made video (text moves too fast to read and is too small on a
+  phone) is now one named check. `showtime check` ends with `phone check: PASS` or `FAIL - <items with timestamps>` and
+  writes a `phone` block to `report.json`; `showtime qa` prints the same line, quoting that report (PARTIAL when there
+  is none) and adding the caption sidecar's line length and reading speed. It joins what already existed: reading time
+  (`short_text`, now per language: 17 characters/s and 3 words/s, Japanese 4, Chinese 9, Korean 12 characters/s, in
+  `runtime/thresholds.json`), type size (`tiny_text`, now in points at a 390 pt wide phone, with a minimum per aspect:
+  16:9 5 pt, 1:1 10, 4:5 11, 9:16 15; canvas text and captions are judged too, and small text is judged over its whole
+  life, not only the sample frames) and the platform UI zones (`safe_zone`, `edge_margin`, `control_strip`). New qa
+  rules `phone_size`, `phone_reading`, `phone_zone` (WARN) and `phone_unverified` (INFO). Numbers, sources and the
+  calibration on the shipped examples: `references/qa.md`, "Phone check".
 - **Pairwise review.** A model reviewer's absolute score is noisy; its preference between two versions is
   steadier, and only when it survives swapping the order. `showtime review-pack <job> --against best` (or
   `round-N`, or an older file) pairs the latest render with the best so far as a blind X/Y (random; the key
@@ -1494,9 +1643,9 @@ Behaviour changes to know about (all deliberate, all security or correctness):
   `pairwise_summary.json` adds `both_orders`: the arm that won a pair with either arm shown first.
 ### Lean mode: looks out of the main context, check before render, brief output
 
-Measured in the 0.2.0 benchmark streams: showtime jobs cost 1.4-4.4x plain Opus on five of six tasks, largely because every
-image opened (2000 px sheets, 1080p stills) and every long tool output stays in the agent's context and is paid for
-on each later call, and runs took more calls (51 vs 13 on the launch task). Nothing was removed; the full output and
+Measured in the 0.2.0 benchmark streams: showtime jobs cost 1.4-4.4x plain Opus on five of six tasks, largely because
+every image opened (2000 px sheets, 1080p stills) and every long tool output stays in the agent's context and is paid
+for on each later call, and runs took more calls (51 vs 13 on the launch task). Nothing was removed; the full output and
 the full studio are one flag or one sentence away.
 
 - **`showtime look <project | video | job>`**: one composite of the key frames (the opening frame, each scene's
@@ -1554,7 +1703,15 @@ the full studio are one flag or one sentence away.
   share.txt (render keeps it), and `showtime qa` fails a render that copies the reference (`reference_copy`:
   sampled-frame SSIM and difference hashes plus cut-rhythm similarity; thresholds in
   `references/reference.md`).
-- **`showtime adopt <folder | page | script>`**: a video someone already wrote as a function of time gets showtime's checks, sound, captions, qa, HTML export and review without a rewrite. It detects the contract (an HTML page with `seek`/`__seek`/`render`/`draw(t)`/`setTime(t)`, a page animated only by CSS, Web Animations or requestAnimationFrame on the virtual clock, a Python frame function returning Pillow/numpy/bytes, or a Python script whose own main writes the video) from the page, its local scripts and the render driver next to it, copies the folder (the originals are never changed), and writes a normal project around it. It then checks determinism (each sampled frame captured twice, in two orders) and runs `showtime check`. Every problem is printed as what/why/fix (`needs_setup`, `no_duration`, `outside_ref`, ...). Python runs in a separate process on the copy, with sockets to other machines refused and a time limit. `--refresh` re-adopts after the original changes. `references/adopt.md`.
+- **`showtime adopt <folder | page | script>`**: a video someone already wrote as a function of time gets showtime's
+  checks, sound, captions, qa, HTML export and review without a rewrite. It detects the contract (an HTML page with
+  `seek`/`__seek`/`render`/`draw(t)`/`setTime(t)`, a page animated only by CSS, Web Animations or requestAnimationFrame
+  on the virtual clock, a Python frame function returning Pillow/numpy/bytes, or a Python script whose own main writes
+  the video) from the page, its local scripts and the render driver next to it, copies the folder (the originals are
+  never changed), and writes a normal project around it. It then checks determinism (each sampled frame captured twice,
+  in two orders) and runs `showtime check`. Every problem is printed as what/why/fix (`needs_setup`, `no_duration`,
+  `outside_ref`, ...). Python runs in a separate process on the copy, with sockets to other machines refused and a time
+  limit. `--refresh` re-adopts after the original changes. `references/adopt.md`.
 - **Brand first for launches.** `showtime brand capture <repo|url> --job <job>` captures the product before the
   storyboard in one step: the palette with roles (the rendered site's ground, ink and accent win over the repo's
   CSS), fonts, logo, the wordmark as the site sets it, the code-block look, the product's copy verbatim with
@@ -1609,13 +1766,13 @@ the full studio are one flag or one sentence away.
 
 ## 0.2.0: every coding agent, a lighter first run, a real music catalog
 
-showtime is now a local video studio for your coding agent, not only for Claude Code: describe a video, your
-agent directs, your machine renders. The same repository installs in Claude Code, Codex, Cursor, Devin and OpenCode
-(each made a real test video) and is packaged for Copilot, Gemini CLI, Antigravity, Cline, Kilo Code, Kiro, Zed, Goose,
-Amp, Factory Droid and Qwen Code. The first run fell from about 3 GB (0.1's own `setup --estimate`: 1.3 GB of downloads plus 1.7 GB of
-packages) to about 770 MB on Linux x64 (`setup --plan`; about 560 to 610 MB on macOS and Windows); nothing was
-removed, the rest is fetched the first time a video needs it. Music now comes from a catalog of 249 produced tracks with the credit written for
-you, and Apple Silicon, Linux arm64 and Windows on Arm run end to end in CI.
+showtime is now a local video studio for your coding agent, not only for Claude Code: describe a video, your agent
+directs, your machine renders. The same repository installs in Claude Code, Codex, Cursor, Devin and OpenCode (each made
+a real test video) and is packaged for Copilot, Gemini CLI, Antigravity, Cline, Kilo Code, Kiro, Zed, Goose, Amp,
+Factory Droid and Qwen Code. The first run fell from about 3 GB (0.1's own `setup --estimate`: 1.3 GB of downloads plus
+1.7 GB of packages) to about 770 MB on Linux x64 (`setup --plan`; about 560 to 610 MB on macOS and Windows); nothing was
+removed, the rest is fetched the first time a video needs it. Music now comes from a catalog of 249 produced tracks with
+the credit written for you, and Apple Silicon, Linux arm64 and Windows on Arm run end to end in CI.
 
 Highlights (details in the entries below):
 
@@ -1953,12 +2110,12 @@ Highlights (details in the entries below):
 
 ### Added: a companion site, a visual crew, and diagrams that explain
 
-- `site/`: a static companion site built by `python3 site/build.py` (landing page with the hero film,
-  a gallery that plays every example with filters by use case, one page per example with its HTML
-  video embedded, the crew, and every guide in `references/` as a page with a sidebar and search).
-  No framework, no trackers, fonts served from the site. The gallery previews each example on hover
-  with a silent 4-second clip cut at build time (`site/content/previews.json`). `.github/workflows/pages.yml` builds it and
-  downloads the example videos from the media release at deploy time, since they are not in git.
+- `site/`: a static companion site built by `python3 site/build.py` (landing page with the hero film, a gallery that
+  plays every example with filters by use case, one page per example with its HTML video embedded, the crew, and every
+  guide in `references/` as a page with a sidebar and search). No framework, no trackers, fonts served from the site.
+  The gallery previews each example on hover with a silent 4-second clip cut at build time
+  (`site/content/previews.json`). `.github/workflows/pages.yml` builds it and downloads the example videos from the
+  media release at deploy time, since they are not in git.
 - README: the crew as an illustrated cast of ten (all optional, said so on the card) and a diagram of
   who hands what to whom; diagrams for the pipeline, what runs where, studio mode, the anatomy of an
   HTML video and the output formats, each in light and dark and in a narrow layout for phones; the

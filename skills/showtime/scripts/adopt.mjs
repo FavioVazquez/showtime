@@ -1106,7 +1106,9 @@ async function runCheck(dest) {
   const sev = (x) => x.severity || x.level;
   return {
     exit: r.code, errors: items.filter((x) => sev(x) === 'error').length, warnings: items.filter((x) => sev(x) === 'warning').length,
-    report: j.report || path.join(dest, 'work', 'check', 'report.json'), sheet: j.sheet || path.join(dest, 'work', 'check', 'sheet.jpg'),
+    // a check that stopped (its report says why in `error`) wrote no report or sheet: name none
+    report: j.report || (j.error ? undefined : path.join(dest, 'work', 'check', 'report.json')),
+    sheet: j.sheet || (j.error ? undefined : path.join(dest, 'work', 'check', 'sheet.jpg')),
     // one line per code (a typed terminal line is hundreds of short_text notes): count + the first one
     top: groupFindings(items.filter((x) => sev(x) === 'error' || sev(x) === 'warning')).slice(0, 6),
   };

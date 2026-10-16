@@ -2,7 +2,7 @@
 
 Task guides for people. Each one says what to tell your coding agent, the commands it runs, the files you get,
 how long it took on a named machine, the phrases that change the result, the honest limits, and an example to
-look at. The references in `skills/showtime/references/` are written for your agent; these are written for you.
+look at. A few guides are tutorials: one real run as numbered steps, a screenshot at each and a short clip at the top, then the same closing sections. The references in `skills/showtime/references/` are written for your agent; these are written for you.
 
 | Guide | When you want |
 |---|---|
@@ -16,6 +16,7 @@ look at. The references in `skills/showtime/references/` are written for your ag
 | [Make a short film of what your agent did](session-recap.md) | a 30-60 s recap of a Claude Code session for a PR, a standup or a post, from allow-listed facts only |
 | [Turn a failing test into a bug-report video](bug-report-video.md) | a failing Playwright test as a narrated video and a summary to paste into the issue |
 | [Make an X-ray of a real thing](xray.md) | a clip of a machine or an instrument with its inside drawn moving on the exact frames its sound says, its music as a score, tab or drum sheet, and a receipt that proves it |
+| [Studio: from concepts to the final film](studio-concepts-to-final.md) | open the studio board, compare concepts, leave notes, approve a storyboard and see the final, one real run in eight steps |
 | [Make a living diagram, and a live figure](living-diagram.md) | how something works, as a figure that builds itself, and a live figure people hover, step through and tune |
 | [Make an explainer that stops and asks](explainer-that-asks.md) | questions the web version stops on, links to a moment or a stretch, link previews |
 | [Go all out: a showreel](go-all-out.md) | a hype reel with flash words, a shutter blur on snaps, and WebGL looks |

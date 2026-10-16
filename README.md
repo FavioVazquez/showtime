@@ -1710,7 +1710,7 @@ language, a CPU limit) and the render progress monitor.
   <img alt="The documentation map: eighteen workflows (launch video, explainer, tutorial, social short, data story, footage edit, trailer, slideshow, changelog video, music video, voice-over only, localize, repo explainer, paper explainer, repro, diagram, recap, x-ray), then five acts and a finale of guides, from onboarding to qa and review." src="assets/readme/diagrams/docs-map-light.svg" width="100%">
 </picture></p>
 
-For people: [fifteen task guides](docs/guides/README.md) (what to say to your agent, what it runs, what you get, how
+For people: [sixteen task guides](docs/guides/README.md) (what to say to your agent, what it runs, what you get, how
 long it takes), [What's new](docs/whats-new.md) (each release in one sentence a feature) and the [FAQ](docs/faq.md)
 (GPUs, cost, agents, privacy, licences, disk, time, platforms, languages).
 

@@ -257,8 +257,11 @@ p{margin:0}
 .prose h2:hover .anchor,.prose h3:hover .anchor,.prose .anchor:focus{opacity:1}
 .prose table{display:block;overflow-x:auto;border-collapse:collapse;font-size:.92rem;line-height:1.5;margin:1.6em 0;max-width:100%}
 .prose th,.prose td{text-align:left;vertical-align:top;padding:10px 20px 10px 0;border-bottom:1px solid var(--line)}
-.prose th{font-weight:600;color:var(--ink);border-bottom-color:var(--line-2);white-space:nowrap}
-.prose td code{white-space:nowrap}
+.prose th{font-weight:600;color:var(--ink);border-bottom-color:var(--line-2)}
+.prose td code .nb{white-space:nowrap}   /* a --flag never breaks after its dashes */
+.prose td code{overflow-wrap:break-word}   /* wraps at spaces; a long unbroken token is the only thing that may push the table wider */
+.prose a.url{overflow-wrap:anywhere}
+.prose li,.prose p{overflow-wrap:break-word}   /* a credit's file name or bare URL longer than the screen breaks instead of scrolling the page */
 .prose td pre{white-space:pre-wrap;font-size:.72rem;padding:10px 12px;margin:10px 0 8px}
 .prose td pre code{white-space:inherit}
 /* the docs map's Overture (three steps, one with the install block): one step under another on a phone */
@@ -306,7 +309,7 @@ p{margin:0}
 
 footer.site{border-top:1px solid var(--line);padding:40px 0 56px;color:var(--muted);font-size:.88rem}
 footer.site .wrap{display:flex;flex-wrap:wrap;gap:12px 32px;align-items:baseline;justify-content:space-between;max-width:1360px}
-footer.site nav{display:flex;gap:20px}
+footer.site nav{display:flex;flex-wrap:wrap;gap:8px 20px}
 footer.site a{color:var(--muted);text-decoration:none}
 footer.site a:hover{color:var(--ink)}
 footer.site .word{font-family:var(--serif);font-weight:900;color:var(--ink);font-size:1.05rem;font-variation-settings:"opsz" 144}

@@ -208,6 +208,76 @@ class OneVersion(unittest.TestCase):
         self.assertEqual(build.latest_release(limit=1, text=notes, version="0.4.1"), ("0.4.1", "One; and more."))
         self.assertEqual(build.latest_release(text="# nothing\n", version="0.4.1"), ("0.4.1", "See what changed."))
 
+    def test_footer_nav_wraps_on_a_phone(self):
+        # the public build adds the examples-repo link to the footer nav; without flex-wrap the row grew 3 px past a
+        # 375 px screen (a sideways scroll on every page). The row must be allowed to wrap.
+        css = (REPO / "site" / "static" / "style.css").read_text(encoding="utf-8")
+        rule = re.search(r"footer\.site nav\{([^}]*)\}", css)
+        self.assertIsNotNone(rule)
+        self.assertIn("flex-wrap:wrap", rule.group(1))
+
+    def test_table_cells_wrap_at_spaces(self):
+        # a long command in a reference table (studio Commands) must wrap in its cell: with nowrap the table grew past
+        # its column (920 px in 704), the first column took 758 px and the rows stood 150 px tall
+        css = (REPO / "site" / "static" / "style.css").read_text(encoding="utf-8")
+        for sel in (r"\.prose th", r"\.prose td code"):
+            rule = re.search(sel + r"\{([^}]*)\}", css)
+            self.assertIsNotNone(rule, sel)
+            self.assertNotIn("nowrap", rule.group(1), sel)
+        # break at spaces first; a mid-word break is only for the one token that is longer than the cell
+        self.assertIn("overflow-wrap:break-word", re.search(r"\.prose td code\{([^}]*)\}", css).group(1))
+
+    def test_address_links_may_break_anywhere(self):
+        # sources and credits print their URLs as link text; those links wrap, links with words do not change
+        css = (REPO / "site" / "static" / "style.css").read_text(encoding="utf-8")
+        self.assertIn("overflow-wrap:anywhere", re.search(r"\.prose a\.url\{([^}]*)\}", css).group(1))
+        self.assertIn("overflow-wrap:break-word", re.search(r"\.prose li,\.prose p\{([^}]*)\}", css).group(1))   # bare URLs and file names in credits
+        url = "https://www.eia.gov/totalenergy/data/browser/index.php?tbl=T07.02A"
+        out = build.mark_url_links('<li><a href="%s">%s</a> and <a href="%s">the table</a> <a class="x" href="%s">%s</a></li>'
+                                   % (url, url, url, url, url))
+        self.assertEqual(out.count('class="url"'), 1)
+        self.assertIn('<a class="url" href="%s">%s</a>' % (url, url), out)
+        self.assertIn('<a href="%s">the table</a>' % url, out)
+        self.assertIn('<a class="x" href="%s">' % url, out)
+
+    def test_render_md_marks_address_links_and_keeps_flags_whole(self):
+        # through the real renderer, not the helpers: deleting the calls in render_md must fail here
+        site = build.Site(Path(tempfile.mkdtemp(prefix="st-md-")), [], "o/r", None, "main")
+        md = ("# T\n\nSource: <https://www.eia.gov/totalenergy/data/browser/index.php?tbl=T07.02A> and "
+              "[the table](https://www.eia.gov/totalenergy/).\n\n| Command | Use |\n|---|---|\n"
+              "| `showtime check --strict -x file` | checks |\n")
+        html, _t, _h = site.render_md(md, build.GUIDES / "x.md", "docs/guides/x.html")
+        self.assertEqual(html.count('class="url"'), 1)
+        self.assertIn('>the table</a>', html)
+        self.assertIn('<span class="nb">--strict</span>', html)
+        self.assertIn('<span class="nb">-x</span>', html)
+        self.assertIn("showtime check --strict -x file", re.sub(r"<[^>]+>", "", html))
+        self.assertNotIn("nb", build.keep_flags_whole("<p><code>--a</code></p>"))   # only inside table cells
+
+    def test_tutorials_have_a_picture_for_every_step(self):
+        # a tutorial is a walk through one run: every numbered step has a picture with real alt text, no file is
+        # missing, the clip at the top stays small, and nothing on the page names a private folder
+        guides = [p for p in sorted((REPO / "docs" / "guides").glob("*.md")) if "<!-- tutorial:" in p.read_text(encoding="utf-8")]
+        self.assertTrue(guides)
+        for guide in guides:
+            text = guide.read_text(encoding="utf-8")
+            pics = re.findall(r"!\[([^\]]*)\]\(([^)]+)\)", text)
+            self.assertGreaterEqual(len(pics), 10, guide.name)
+            for alt, src in pics:
+                self.assertGreater(len(alt), 20, src)
+                self.assertTrue((guide.parent / src).is_file(), src)
+            clip = [src for _a, src in pics if src.endswith("clip.webp")]
+            self.assertEqual(len(clip), 1, guide.name)
+            self.assertLess((guide.parent / clip[0]).stat().st_size, 3 * 1024 * 1024)
+            for marker in ("/Users/", "/home/", "C:\\Users\\", "~/Projects"):
+                self.assertNotIn(marker, text, guide.name)
+            sections = re.split(r"^## ", text, flags=re.M)[1:]
+            steps = [sec for sec in sections if re.match(r"\d+\. ", sec)]
+            self.assertGreaterEqual(len(steps), 5, guide.name)
+            for sec in steps:
+                self.assertRegex(sec, r"!\[[^\]]{20,}\]\(", "%s: step '%s' has no picture" % (guide.name, sec.splitlines()[0]))
+            self.assertIn("(%s)" % guide.name, (guide.parent / "README.md").read_text(encoding="utf-8") if guide.name != "first-video.md" else "(first-video.md)")
+
     def test_landing_anchors_are_of_open_sections(self):
         # a heading is linked to the section it is in, never to one that closed before it
         out = Path(tempfile.mkdtemp(prefix="st-anchor-"))
@@ -601,9 +671,19 @@ class Guides(unittest.TestCase):
         for p in self.guides():
             text = p.read_text(encoding="utf-8")
             n = len(text.rstrip("\n").splitlines())
-            self.assertTrue(50 <= n <= 90, "%s: %d lines (50-90)" % (p.name, n))
             heads = re.findall(r"^## (.+)$", text, re.M)
-            self.assertEqual([h for h in heads if h in GUIDE_SECTIONS], GUIDE_SECTIONS, p.name)
+            if "<!-- tutorial:" in text:
+                # a tutorial is a walk through one real run: numbered steps with a picture each, then the same closing sections
+                self.assertTrue(60 <= n <= 160, "%s: %d lines (60-160)" % (p.name, n))
+                steps = [h for h in heads if re.match(r"\d+\. ", h)]
+                self.assertGreaterEqual(len(steps), 5, p.name)
+                self.assertEqual([int(h.split(".")[0]) for h in steps], list(range(1, len(steps) + 1)), p.name)
+                self.assertEqual([h for h in heads if h in GUIDE_SECTIONS[3:6] or h == "Say this"],
+                                 ["Say this"] + GUIDE_SECTIONS[3:6], p.name)
+                self.assertGreaterEqual(len(re.findall(r"^!\[[^\]]{20,}\]\(", text, re.M)), len(steps), p.name)
+            else:
+                self.assertTrue(50 <= n <= 90, "%s: %d lines (50-90)" % (p.name, n))
+                self.assertEqual([h for h in heads if h in GUIDE_SECTIONS], GUIDE_SECTIONS, p.name)
             self.assertRegex(text, r"(example|examples)/|<!-- example: \d\d -->", p.name)
 
     @unittest.skipUnless(HAVE_EXAMPLES, NO_EXAMPLES)

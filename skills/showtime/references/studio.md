@@ -7,7 +7,7 @@ before asking the first studio question. The board format is in `boards.md`.
 Quick mode stays the default: one request in, a video out. Studio is opt-in. In studio you **talk
 about facts and goals, and show anything about look, sound or timing** as a board: a local page with
 lettered options, one recommendation, and buttons the user clicks. Chat stays the source of truth;
-the board is a faster way to answer.
+the board is a faster way to answer. For people: [see it step by step](https://faviovazquez.github.io/showtime/docs/guides/studio-concepts-to-final.html), one real run with a screenshot of each step.
 
 ## Essentials
 

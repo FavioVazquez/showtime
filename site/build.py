@@ -493,7 +493,25 @@ class Site:
         body = re.sub(r"<blockquote>\s*<p>\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*",
                       lambda m: '<blockquote class="alert"><p class="alert-title">%s</p><p>' % m.group(1).title(), body)
         body = self.rewrite(body, src, page)
+        body = mark_url_links(body)
+        body = keep_flags_whole(body)
         return body, title, heads
+
+
+def mark_url_links(body: str) -> str:
+    """A link whose text looks like an address (a source or a credit) gets class="url", so it may break anywhere and
+    never widens the page; links with words as their text keep wrapping at spaces, and a link that already has a
+    class attribute is left alone."""
+    return re.sub(r'<a(?![^>]*\sclass=) ([^>]*href="https?://[^"]*"[^>]*)>(https?://[^<]*)</a>', r'<a class="url" \1>\2</a>', body)
+
+
+def keep_flags_whole(body: str) -> str:
+    """In a table cell, a command-line flag (--check, -x) is wrapped in a nowrap span so a narrow column breaks the
+    line before it, never after its dashes; the copied text does not change."""
+    flag = re.compile(r'(?<![\w-])(--?[A-Za-z0-9][\w-]*)')
+    code = re.compile(r'<code>([^<]*)</code>')
+    cell = re.compile(r'<td\b[^>]*>.*?</td>', re.S)
+    return cell.sub(lambda c: code.sub(lambda m: '<code>%s</code>' % flag.sub(r'<span class="nb">\1</span>', m.group(1)), c.group(0)), body)
 
 
 # ----------------------------------------------------------------------------------------------- the shell

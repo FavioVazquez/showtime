@@ -46,6 +46,7 @@ Written for people rather than for your agent:
 | Page | Read it when |
 |---|---|
 | [Your first video](guides/first-video.md) | you are new: a 5-second test video and what each step does |
+| [Studio, step by step](guides/studio-concepts-to-final.md) | you want options first: one real run from concepts to the final film, a screenshot at each step |
 | [Task guides](guides/README.md) | you want a recipe: what to say, what your agent runs, what you get, how long it takes |
 | [What's new](whats-new.md) | you want each release's new features, one sentence each |
 | [Questions people ask](faq.md) | you want short answers: GPU, cost, agents, privacy, licences, disk, time, platforms, languages |

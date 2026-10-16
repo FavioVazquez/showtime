@@ -1779,6 +1779,7 @@ HARNESS_SRC = SITE / "content" / "harness.html"   # the page's body; its first l
 HARNESS_MEDIA = "examples/_harness"               # loops, posters, the 0.4.3 film and the link-preview card
 HARNESS_TITLE = "Many hands, one yes: a guide to harness engineering"
 ARTICLE_URL = re.compile(r"\A<!--\s*ARTICLE_URL=(\S+)\s*-->\n")
+ARTICLE2_URL = re.compile(r"\A<!--\s*ARTICLE2_URL=(\S*)\s*-->\n")
 
 
 def build_harness(site: Site) -> None:
@@ -1790,8 +1791,24 @@ def build_harness(site: Site) -> None:
     m = ARTICLE_URL.match(text)
     if not m:
         sys.exit("site/build.py: %s must start with <!-- ARTICLE_URL=https://... -->" % HARNESS_SRC.relative_to(REPO))
-    body = re.sub(r"\A\s*<!--.*?-->\s*", "", text[m.end():], count=1, flags=re.S)   # the note for editors
+    rest = text[m.end():]
+    m2 = ARTICLE2_URL.match(rest)   # optional: the edition 2 article; empty until it is live
+    if m2:
+        rest = rest[m2.end():]
+    url2 = m2.group(1) if m2 else ""
+    body = re.sub(r"\A\s*<!--.*?-->\s*", "", rest, count=1, flags=re.S)   # the note for editors
     body = body.replace("{{ARTICLE_URL}}", esc(m.group(1)))
+    first = '<a href="%s">Many hands, one yes</a>' % esc(m.group(1))
+    body = body.replace("{{ARTICLE2_LINK}}", "The articles: %s · <a href=\"%s\">Harness engineering: 6 practices</a>" % (first, esc(url2))
+                        if url2 else "The article: %s" % first)
+
+    def optional(mo: "re.Match[str]") -> str:   # <!--IF-MEDIA a.mp4 a.jpg-->with<!--ELSE-->without<!--END-MEDIA-->
+        have = all(src_path("%s/%s" % (HARNESS_MEDIA, n)).is_file() for n in mo.group(1).split())
+        return mo.group(2) if have else mo.group(3)
+    body = re.sub(r"<!--IF-MEDIA ([^>]+?)-->(.*?)<!--ELSE-->(.*?)<!--END-MEDIA-->", optional, body, flags=re.S)
+    # the edition strip's counts come from the sections' own data-ed marks, never typed by hand
+    body = body.replace("{{ED_NEW}}", str(len(re.findall(r'<section\b[^>]*\bdata-ed="new"', body))))
+    body = body.replace("{{ED_UPD}}", str(len(re.findall(r'<section\b[^>]*\bdata-ed="updated"', body))))
 
     def media(mo: "re.Match[str]") -> str:
         src = src_path("%s/%s" % (HARNESS_MEDIA, mo.group(2)))

@@ -1,15 +1,26 @@
 <!-- ARTICLE_URL=https://x.com/FavioVaz/status/2109701469251223884 -->
+<!-- ARTICLE2_URL= -->
 <!-- The harness manual (public edition), served at harness/ by site/build.py (build_harness). ARTICLE_URL above is
-     where section 14's "Favio on X" link goes: set it to the article's address once it is live. Styles:
+     where section 14's "Favio on X" link goes: set it to the article's address once it is live. ARTICLE2_URL is the
+     edition 2 article; leave it empty until that article is live, and the strip shows only the edition 1 link.
+     Sections carry data-ed="new" or "updated" for edition 2; build.py counts them into the edition strip
+     (ED_NEW, ED_UPD). An IF-MEDIA / ELSE / END-MEDIA comment block keeps its first part only when every file it
+     names is in examples/_harness (the edition 2 film). Styles:
      static/harness.css (scoped to .harness); script: static/harness.js. media/NAME is examples/_harness/NAME. -->
 <div class="harness"><div class="wrap">
 
 <!-- 00 HERO -->
-<section class="hero" aria-labelledby="h-hero">
+<section class="hero" aria-labelledby="h-hero" data-ed="updated">
+  <div class="ed-strip" aria-label="Edition">
+    <div class="ed-id"><b>Edition 2</b><span>16 Oct 2026</span><i>Six practices</i></div>
+    <div class="ed-cnt"><span class="num">{{ED_NEW}}</span> new, <span class="num">{{ED_UPD}}</span> updated since edition 1</div>
+    <button type="button" class="ed-sw" id="edSwitch" role="switch" aria-checked="false" hidden><span class="knob" aria-hidden="true"></span>What changed since edition 1</button>
+    <div class="ed-links">{{ARTICLE2_LINK}}</div>
+  </div>
   <p class="origin">From the harness behind showtime: <a href="https://github.com/FavioVazquez/showtime">github.com/FavioVazquez/showtime</a></p>
-  <div class="eyebrow"><b>Operating manual</b> · an agent studio, as of 11 Oct 2026</div>
+  <div class="eyebrow"><b>Operating manual</b> · an agent studio, edition 2, as of 16 Oct 2026</div>
   <h1 id="h-hero">Many hands,<br><span class="y">one yes.</span></h1>
-  <p class="lede"><strong>showtime</strong> is an open-source video studio for coding agents: “Your agent directs. Your machine renders.” It is built by one person, Favio Vázquez, and a crew of agents. This is the crew’s operating manual: who does what, on which model and machine, and how a task becomes a merged PR or a film. This public edition is a snapshot as of 11 Oct 2026; private names are left out and paths are generalized.</p>
+  <p class="lede"><strong>showtime</strong> is an open-source video studio for coding agents: “Your agent directs. Your machine renders.” It is built by one person, Favio Vázquez, and a crew of agents. This is the crew’s operating manual: who does what, on which model and machine, and how a task becomes a merged PR or a film. Edition 1 was a snapshot as of 11 Oct 2026; edition 2 adds what changed through the 0.4.6 release on 16 Oct. Private names are left out and paths are generalized.</p>
 
   <div class="topo" id="topoWrap">
     <div class="topo-stage" id="topoStage">
@@ -25,16 +36,19 @@
     <aside class="topo-panel" id="topoPanel" aria-label="Details"></aside><div class="sr" id="topoLive" aria-live="polite"></div>
   </div>
   <div class="stats">
-    <div><b>16</b><span>PRs merged into the private working repo on 9 Oct by ~12:35, each through Favio’s gate</span></div>
-    <div><b>13</b><span>jobs run on one Devin cloud machine on 9 Oct</span></div>
-    <div><b>5</b><span>model tiers routed by task: Haiku, Sonnet, Opus, Fable, Jev</span></div>
+    <div><b>49</b><span>PRs merged into the private working repo from the first article (12 Oct) to the 0.4.6 release (16 Oct), each through Favio’s gate</span></div>
+    <div><b>4</b><span>releases in those four days: 0.4.3 and 0.4.4 on 13 Oct, 0.4.5 on 15 Oct, 0.4.6 on 16 Oct</span></div>
+    <div><b>1+7</b><span>a director session and seven lane sessions, each with its own state file, today</span></div>
     <div><b><em>1</em></b><span>person says yes to every merge, spend and public word</span></div>
   </div>
 
   <nav class="index" aria-label="Contents">
+    <a href="#ledger"><span>E2</span>Six practices</a>
     <a href="#finder"><span>01</span>Situation finder</a>
     <a href="#releases"><span>02</span>Releases</a>
     <a href="#day"><span>03</span>A day in the harness</a>
+    <a href="#compaction"><span>03b</span>What a compaction keeps</a>
+    <a href="#lanes"><span>03c</span>One session became many</a>
     <a href="#routing"><span>04</span>Model routing</a>
     <a href="#venues"><span>05</span>Where work runs</a>
     <a href="#shipping"><span>06</span>Shipping code</a>
@@ -48,6 +62,28 @@
     <a href="#next"><span>14</span>Next: living diagrams</a>
   </nav>
   <noscript><p class="note">The diagrams, the finder, the day replay and the other interactive parts of this manual need JavaScript; the text around them reads without it.</p></noscript>
+</section>
+
+<!-- E2 PRACTICES (edition 2) -->
+<section class="sec" id="ledger" aria-labelledby="h-ledger" data-ed="new">
+  <div class="sec-head">
+    <div><div class="sec-no">E2 · Six practices, new in edition 2</div><h2 id="h-ledger">Six practices that catch what your agents miss</h2></div>
+    <p>Edition 1 wrote down a rule: Favio must never be the one who notices. By 15 Oct he had noticed four times, and the crew had noticed two more misses itself. Each miss became one of the practices below. Each card gives the rule and how to set it up in your own setup; turn it over for the miss that taught it, what it cost and what it became: a <span class="tag amber">check</span> is enforced by code, a <span class="tag dim">rule</span> is written down.</p>
+  </div>
+<!--IF-MEDIA harness-v2-hero.mp4 harness-v2-hero.jpg-->
+  <figure class="e2-film"><video src="media/harness-v2-hero.mp4" poster="media/harness-v2-hero.jpg" width="1920" height="1080" controls playsinline preload="none" aria-label="The six practices in one short film: each miss ticks off one practice on a checklist. Every frame is drawn."></video><figcaption>The six practices in one short film. Every frame is drawn for it; none comes from a real film. Music: “Newer Wave” by Kevin MacLeod (incompetech.com), licensed under <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>.</figcaption></figure>
+<!--ELSE--><!--END-MEDIA-->
+  <div class="ledger" id="ledgerCards">
+    <ol class="fallback" id="ledgerData">
+      <li data-d="15 Oct" data-k="check rule" data-l="showtime check|the practices"><b class="t">A review counts only for the version it judged.</b> <span class="r">Tie every verdict to the exact version it saw, and review again after any change.</span> Set it up: <ol class="s"><li>Store every verdict with the id of what it judged: a commit hash, a render’s name, a file hash.</li><li>Make the ship or merge step refuse a verdict whose id is not the current one.</li><li>After any change, run the checks again, then a review that compares the new version with the judged one.</li></ol> The miss that taught it: <b class="m">A label over a label.</b> <span class="w">Two labels sat on top of each other at 0:46 of a film. The critic’s last round had judged an earlier render; the fixes for its findings moved a label, and no round judged the render that went out.</span> Noticed by <span class="who">Favio</span>. What it cost: <span class="c">Six more renders across both aspects before a fixed copy went out, and a new critic round.</span> What it became: <span class="b">showtime check looks for text over text across the whole timeline, in 0.4.6. And a critic’s verdict counts only for the render it judged.</span></li>
+      <li data-d="15 Oct" data-k="rule" data-l="the practices"><b class="t">Read the failing log before any re-run.</b> <span class="r">Name the cause of a failure, and whether it can happen again, before anyone presses re-run.</span> Set it up: <ol class="s"><li>On a failed check, read the failing test’s log and its code first.</li><li>Write down the cause and whether it can repeat.</li><li>Re-run only for a cause that cannot repeat, and say so.</li><li>A failure that will repeat and has nothing to do with the change goes to a person as a decision, with its cause.</li></ol> The miss that taught it: <b class="m">A re-run that waited for nothing.</b> <span class="w">A CI job failed on a public pull request and was re-run before anyone read its log. The log had the cause: an icon lookup waited 38.5 s against a 30 s limit, so it would fail again.</span> Noticed by <span class="who">Favio</span>. What it cost: <span class="c">15.6 minutes of CI on a failure the log already explained.</span> What it became: <span class="b">A written rule for every session. The fix, which suggests from the local index before any fetch, merged the same day.</span></li>
+      <li data-d="15 Oct" data-k="rule" data-l="the practices"><b class="t">Estimate in agent time, from your own measured runs.</b> <span class="r">Base every estimate on runs you have measured, and name the slow part.</span> Set it up: <ol class="s"><li>Log the start and end of every agent task.</li><li>Make estimates quote those runs: a decided tool change with tests takes a minute or two.</li><li>Name the slow part by its measured length, such as a render or a test suite, and don’t pad the total.</li></ol> The miss that taught it: <b class="m">An estimate in human time.</b> <span class="w">A decided change to one of our tools, with 11 tests, came with an estimate of 20 to 30 minutes. It took 81 seconds.</span> Noticed by <span class="who">Favio</span>. What it cost: <span class="c">An estimate off by 15 to 22 times, and the waiting planned around it.</span> What it became: <span class="b">A written rule: estimates come from our own measured runs, and the slow part gets named.</span></li>
+      <li data-d="15 Oct" data-k="check rule" data-l="showtime 0.4.6|the practices"><b class="t">Every output format is its own deliverable.</b> <span class="r">Each format of the same work (an aspect ratio, a platform, a language) gets its own checks, its own review and a full look from start to end.</span> Set it up: <ol class="s"><li>List every output format as its own item.</li><li>Check text, and also drawn shapes and progress markers against the twin.</li><li>Give each its own review, and scrub a contact sheet of the whole thing at one frame per second.</li></ol> The miss that taught it: <b class="m">A playhead that froze.</b> <span class="w">In a film’s portrait cut the sound strip ran off its edge and the playhead froze from 14.4 s. The cause was a showtime bug: the strip ignored where the clip starts, in both aspects.</span> Noticed by <span class="who">Favio</span>. What it cost: <span class="c">A film already sent as final went back for a full re-render, and a finished work session reopened.</span> What it became: <span class="b">A showtime fix and its test, in 0.4.6. And each aspect is its own film, with its own critic round, its own checks and a contact sheet scrubbed end to end.</span></li>
+      <li data-d="13 to 15 Oct" data-k="check" data-l="the start-up hook"><b class="t">Give each session a state file, under the start-up limit.</b> <span class="r">Start every session with a short rules card plus its own state, under the start-up hook’s limit, and resume it after a compaction.</span> Set it up: <ol class="s"><li>Find your start-up hook’s output limit (ours: 10,000 characters; above it only the first 2,000 arrive).</li><li>Print a short rules card plus the session’s own state file, under a cap the script enforces, and point to the full rules.</li><li>Keep one state file per line of work, updated at every milestone.</li><li>Log each compaction and whether its summary names the state file; message the session to resume.</li></ol> The miss that taught it: <b class="m">A start-up note over the limit.</b> <span class="w">The hook that runs at each compaction printed the practices, then the session’s own state. It grew past the 10,000-character limit, and only the first 2,000 characters arrived, so the state went first.</span> Noticed by <span class="who">the crew</span>. What it cost: <span class="c">The director’s own state, lost on 2 of its 9 compactions under the old hook (13 to 15 Oct; both on 15 Oct).</span> What it became: <span class="b">The hook prints a short rules card and the session’s own state file, under 9,000 characters. Since the new hook, up to the 0.4.6 release, 43 of the 44 compaction summaries across all sessions named their state file.</span></li>
+      <li data-d="15 Oct" data-k="rule" data-l="the practices"><b class="t">Wake reviewers on every new version.</b> <span class="r">Whoever pushes a new version messages each reviewer directly, and checks that the message started work.</span> Set it up: <ol class="s"><li>Whoever opens or updates a pull request messages each reviewer.</li><li>Scripts send by session id and check the reply: did a turn start, or is the message queued?</li><li>Keep the timer as a backup.</li></ol> The miss that taught it: <b class="m">A reviewer that slept.</b> <span class="w">The reviewer session reads every pull request, and its verdict is part of the merge gate. Its timer fires only while the session is awake, so it missed one.</span> Noticed by <span class="who">the director</span>. What it cost: <span class="c">A review waited until a message woke the reviewer.</span> What it became: <span class="b">A written rule: every session that opens a pull request or pushes a new head messages the reviewer directly.</span></li>
+    </ol>
+  </div>
+  <p class="note e2-sum" id="ledgerSum">Three of the six became code. The other three are written rules, which hold only while every session reads them; in edition 1, 22 of 41 rules had code behind them.</p>
 </section>
 
 <!-- 01 FINDER -->
@@ -67,24 +103,24 @@
 </section>
 
 <!-- 01 RELEASES -->
-<section class="sec" id="releases" aria-labelledby="h-rel">
+<section class="sec" id="releases" aria-labelledby="h-rel" data-ed="updated">
   <div class="sec-head">
-    <div><div class="sec-no">02 · Releases</div><h2 id="h-rel">Fourteen days, 0.1.0 to 0.4.2</h2></div>
-    <p>Diamonds sit on true dates. 0.3.0 made quality the default because Favio’s blind vote said so: lean 0.3.0 beat 0.2.0 on 4 of 6 and plain Opus on 7 of 8. An AI judge preferred 0.2.0’s polish, and the human’s vote decided.</p>
+    <div><div class="sec-no">02 · Releases</div><h2 id="h-rel">Nineteen days, 0.1.0 to 0.4.6</h2></div>
+    <p>Diamonds sit on true dates. 0.3.0 made quality the default because Favio’s blind vote said so: lean 0.3.0 beat 0.2.0 on 4 of 6 and plain Opus on 7 of 8. An AI judge preferred 0.2.0’s polish, and the human’s vote decided. Dates are in UTC: the CHANGELOG dates 0.4.5 on 14 Oct, local time, and here it sits on 15 Oct.</p>
   </div>
   <div class="tl" id="timeline"></div>
 </section>
 
 <!-- 02 DAY -->
-<section class="sec" id="day" aria-labelledby="h-day">
+<section class="sec" id="day" aria-labelledby="h-day" data-ed="updated">
   <div class="sec-head">
     <div><div class="sec-no">03 · A day in the harness</div><h2 id="h-day">Scroll the clock through one day</h2></div>
-    <p>Each lane is a hand on the work: the owner’s gates, the main session, the sub-agents by model, Devin cloud, the creative session. Pick a day (9 Oct, or the release day from 10 Oct to 11 Oct), scroll, and the clock walks its log in order; every event lights up as it happens. Times are the log’s own. A “~” means the log gave the time as approximate; a hollow dot means the log kept the order but no time, so the clock shows the window instead of guessing. In this public edition, events that touch private work are generalized and a few are left out.</p>
+    <p>Each lane is a hand on the work: the owner’s gates, the main session, the sub-agents by model, Devin cloud, the creative session. Pick a day (9 Oct, the release day from 10 Oct to 11 Oct, or 15 Oct from edition 2), scroll, and the clock walks its log in order; every event lights up as it happens. Times are the log’s own. A “~” means the log gave the time as approximate; a hollow dot means the log kept the order but no time, so the clock shows the window instead of guessing. In this public edition, events that touch private work are generalized and a few are left out. The 15 Oct day is built differently: only merges, compactions, checks, reviews and releases are kept, every lane has a generic name, and its times are UTC.</p>
   </div>
   <div class="rp" id="rp">
     <div class="rp-sticky" id="rpSticky">
       <div class="rp-head">
-        <div class="rp-pick" role="group" aria-label="Day"><button type="button" class="rp-day" aria-pressed="true">Fri 9 Oct</button><button type="button" class="rp-day" aria-pressed="false">Sun 11 Oct · release</button><span class="rp-src">from the day log</span></div>
+        <div class="rp-pick" role="group" aria-label="Day"><button type="button" class="rp-day" aria-pressed="true">Fri 9 Oct</button><button type="button" class="rp-day" aria-pressed="false">Sun 11 Oct · release</button><button type="button" class="rp-day" aria-pressed="false">Thu 15 Oct · UTC</button><span class="rp-src">from the day log</span></div>
         <div class="rp-clock" aria-live="off"><span class="c" id="rpClock">--:--</span><small id="rpClockS"></small></div>
         <p class="rp-title" id="rpTitle"></p>
       </div>
@@ -105,8 +141,60 @@
   <details class="rp-list" id="rpList"><summary>Every event of this day, as a list</summary><div class="tblw"><table><thead><tr><th>Time</th><th>Lane</th><th>What</th><th>Gate</th></tr></thead><tbody id="rpRows"></tbody></table></div></details>
 </section>
 
+<!-- 03b COMPACTION (edition 2) -->
+<section class="sec" id="compaction" aria-labelledby="h-cmp" data-ed="new">
+  <div class="sec-head">
+    <div><div class="sec-no">03b · What a compaction keeps</div><h2 id="h-cmp">The end went first</h2></div>
+    <p>The crew caught this one. A hook runs when a session starts, resumes or compacts, and prints what the session must know. Ours printed the practices, then the session’s newest resume block. As the practices grew, the output passed the hook limit, and only a preview of its beginning reached the session, so the session’s own state, printed last, was the first thing lost. Press the buttons to see each hook arrive.</p>
+  </div>
+  <div class="cmp" id="cmp">
+    <div class="cmp-bar" role="group" aria-label="Which hook">
+      <button class="btn" type="button" data-s="old" aria-pressed="true">Old hook</button>
+      <button class="btn" type="button" data-s="new" aria-pressed="false">New hook</button>
+      <button class="btn" type="button" data-s="after" aria-pressed="false">After the compaction</button>
+    </div>
+    <div class="cmp-stage" id="cmpStage">
+      <p class="fallback">Old hook: 12,957 characters written; over the limit only a preview of the first 2,000 arrived, so the state block, printed last, was lost first. New hook: a short rules card and the session’s own state file, under the line, arrive whole. After a compaction the session sits idle until a message wakes it.</p>
+    </div>
+    <div class="cmp-read" id="cmpRead" aria-live="polite"></div>
+  </div>
+  <p class="note cmp-cap">The hook limit is 10,000 characters; above it the output is saved to a file and the session gets a preview of up to the first 2,000. At one compaction on 15 Oct the old hook would have printed 12,957. From the director’s transcript: of its 9 compactions under the old hook (13 to 15 Oct), 7 arrived whole and 2, both on 15 Oct, arrived as the 2,000-character preview. The new hook stays under 9,000 and its first line says to read the full practices. Segment widths in the old bar are approximate.</p>
+  <div class="subh">The compaction log · the first five after the change, 15 Oct (UTC)</div>
+  <ol class="clog" aria-label="Five compactions on 15 Oct: summary size and whether it named its state file">
+    <li><span class="t num">11:56</span><span class="b" aria-hidden="true"><i style="width:93.03%"></i></span><span class="v num">18,606</span><span class="y">named its state file</span></li>
+    <li><span class="t num">11:56</span><span class="b" aria-hidden="true"><i style="width:84.5%"></i></span><span class="v num">16,900</span><span class="y">named its state file</span></li>
+    <li><span class="t num">11:56</span><span class="b" aria-hidden="true"><i style="width:90.86%"></i></span><span class="v num">18,172</span><span class="y">named its state file</span></li>
+    <li><span class="t num">12:00</span><span class="b" aria-hidden="true"><i style="width:78.61%"></i></span><span class="v num">15,721</span><span class="y">named its state file</span></li>
+    <li><span class="t num">12:05</span><span class="b" aria-hidden="true"><i style="width:90.41%"></i></span><span class="v num">18,082</span><span class="y">named its state file</span></li>
+  </ol>
+  <p class="note">Summary size in characters, on a scale from 0 to 20,000. Each compaction writes two rows into the same SQL layer as the rest of the logs. All five were started by hand, and every summary named the session’s state file.</p>
+</section>
+
+<!-- 03c LANES (edition 2) -->
+<section class="sec" id="lanes" aria-labelledby="h-lanes" data-ed="new">
+  <div class="sec-head">
+    <div><div class="sec-no">03c · One session became many</div><h2 id="h-lanes">A director and seven lanes</h2></div>
+    <p>Until this week one long session, the director, did almost everything. From 8 Oct until the work split into lanes on 15 Oct it was compacted 19 times, and before at least 12 of those it wrote a resume block into its state file. Now each line of work runs in its own session, started from a card Favio clicks, with its own state file. Sessions talk by message; the director keeps the one list of what is open, merges, and talks to Favio. Select a lane to see the shape of its state file.</p>
+  </div>
+  <div class="lns" id="lns">
+    <div class="lns-stage">
+      <div class="topo-bar" role="group" aria-label="Show the studio">
+        <button class="btn" type="button" data-v="one" aria-pressed="false">One session</button>
+        <button class="btn" type="button" data-v="many" aria-pressed="true">Many sessions</button>
+        <span class="sp"></span>
+        <button class="btn" type="button" id="lnsPlay" aria-pressed="false">Play</button>
+      </div>
+      <svg id="lnsSvg" role="group" aria-label="The director session and its lanes. Each lane is a button that shows its state file."></svg>
+      <div class="ticker" aria-live="off"><span class="k" id="lnsK">seven lanes today; two not named</span><span id="lnsT"></span></div>
+    </div>
+    <aside class="topo-panel" id="lnsPanel" aria-live="polite">
+      <p class="fallback">Lanes today: release code, reviews, films, an experiment and this article, plus two not named here. Each keeps a state file with its working folder, its session, when it was updated, what it is doing now, and what it promised.</p>
+    </aside>
+  </div>
+</section>
+
 <!-- 03 ROUTING -->
-<section class="sec" id="routing" aria-labelledby="h-rt">
+<section class="sec" id="routing" aria-labelledby="h-rt" data-ed="updated">
   <div class="sec-head">
     <div><div class="sec-no">04 · Model routing</div><h2 id="h-rt">Patch the task to its model</h2></div>
     <p>Every sub-agent gets a model picked for its task. All five patches are shown; choose a task to trace its cable. Examples marked <span class="tag amber">on record</span> are what the log attributes to that tier; <span class="tag dim">kind of job</span> marks the work the tier owns, where the log names no single run.</p>
@@ -117,10 +205,11 @@
     <div class="sw-col" id="swModels"></div>
   </div>
   <div class="sw-read" id="swRead" aria-live="polite"></div>
+  <p class="ed-note"><b>Edition 2</b> Every agent now gets an effort level as well as a model: low for agents that only collect, medium for decided, mechanical work, high for design, debugging and reviews. Reviews at decision points still go in a log with whether they changed a decision: from 12 Oct to the 0.4.6 release it has 103 rows, 61 marked yes, 41 ungraded and 1 marked no. The crew grades those rows itself, so 61 is an upper bound.</p>
 </section>
 
 <!-- 04 VENUES -->
-<section class="sec" id="venues" aria-labelledby="h-ven">
+<section class="sec" id="venues" aria-labelledby="h-ven" data-ed="updated">
   <div class="sec-head">
     <div><div class="sec-no">05 · Where work runs</div><h2 id="h-ven">One 20-second render, three machines</h2></div>
     <p>Phase 0, 8 Oct: one 20-second showreel rendered on each venue. The bars rest at their measured times; replay the race to watch them at 1 s of screen per 30 s of render.</p>
@@ -147,6 +236,7 @@
   </div>
   <div class="subh">The 13 jobs, as the log lists them (the data-toy work counts as two)</div>
   <div class="jobs" id="jobs"></div>
+  <p class="ed-note"><b>Edition 2</b> The build machine runs tests only, started and stopped for each run. Renders stay on the Mac, one at a time.</p>
 </section>
 
 <!-- 05 SHIPPING -->
@@ -166,7 +256,7 @@
 </section>
 
 <!-- 06 QUALITY -->
-<section class="sec" id="quality" aria-labelledby="h-q">
+<section class="sec" id="quality" aria-labelledby="h-q" data-ed="updated">
   <div class="sec-head">
     <div><div class="sec-no">07 · Quality instruments</div><h2 id="h-q">Small charts, honest scales</h2></div>
     <p>Each instrument answers one question. Scales start at zero; counts are drawn as counts. The last row measures the harness itself.</p>
@@ -292,6 +382,72 @@
       </div>
     </div>
   </div>
+
+  <div class="subh" id="verdict">Edition 2 · the verdict was for an earlier cut</div>
+  <div class="vc-intro">
+    <p>The film with the label at 0:46 had passed a critic. The critic’s last round judged an earlier render, final-7, which had no overlap, and said post it. The crew then fixed what that round had found, and the fixes moved a label. No round judged final-10, the render that went out. The director checked its contact sheet and passed it too.</p>
+    <p>Pick a render and scrub its synthetic film. Under the scrubber, the page runs the same test showtime’s check runs: each text box goes through its transform, and two boxes that overlap by more than a few pixels both ways are a hit. It is the same test, not the same code, and it runs only at the time you scrub to. Sweep runs it every 0.1 s; the check steps every 0.1 to 0.25 s, by the film’s length.</p>
+  </div>
+  <div class="vc" id="vc">
+    <p class="fallback">Renders final-7 to final-10 of one film. The critic’s last round judged final-7 and said post it; it had no overlap. Fixes for that round’s findings went into later renders, and final-10 went out without a critic round. The text-over-text check, run on final-10, reports an overlap from 0:45.5 to 0:47.2. The check is in showtime from 0.4.6.</p>
+  </div>
+  <p class="vc-fact" id="vcFact"><span><b>final-7</b> judged, no overlap</span><span><b>final-10</b> never judged, overlap 0:45.5 to 0:47.2</span><span>in <code>showtime check</code> from 0.4.6</span></p>
+  <p class="note">The film here is drawn for this page; it only stands in for the real one. On the real film the check reports 0:45.50 to 0:47.23, and across 43 projects and 10 templates laid out in portrait it raised no false alarm.</p>
+
+  <div class="subh">Edition 2 · four days, measured</div>
+  <div class="ttm" id="ttm">
+    <div class="panel">
+      <div class="panel-h">Time to merge · every PR, 9 to 16 Oct<span class="sp"></span><button class="btn" type="button" id="ttmCmp" aria-pressed="true">First four days</button></div>
+      <div class="panel-b">
+        <div class="ttm-plot" id="ttmPlot" tabindex="0" role="group" aria-label="Time to merge for every merged PR: hours open against the time it merged, dot area by added lines. Use the left and right arrow keys to step through the PRs." aria-describedby="ttmNote">
+          <p class="fallback">From the first article (12 Oct, 17:43 UTC) to the 0.4.6 release (16 Oct, 15:15 UTC), 49 PRs merged, with a median of 1.6 hours open (p90 7.8 h) and a median of 158 added lines. In the repo’s first four days, 50 PRs merged with a median of 3.0 hours and 91 added lines.</p>
+        </div>
+        <div class="ttm-read" id="ttmRead" aria-live="polite"></div>
+        <p class="note" id="ttmNote">Bigger PRs stay open longer. Split by size, PRs still merged faster than in the repo’s first four days: 3.3 h against 5.2 h at 200 or more added lines (19 PRs against 15), 0.8 h against 2.5 h under 200 (30 against 35). The groups are small, so read it as a direction. The PRs are in the private working repo, so they are shown by merge time only. Hours are on a log scale with a floor at one minute, and dot area grows with added lines, capped at 4,000.</p>
+        <details class="rp-list"><summary>Every PR, as a table</summary><div class="tblw"><table><thead><tr><th>Merged (UTC)</th><th>Hours open</th><th>Added lines</th></tr></thead><tbody id="ttmRows"></tbody></table></div></details>
+      </div>
+    </div>
+    <div class="meas">
+      <div class="panel">
+        <div class="panel-h">Favio’s gate · at least 181 asks, 12 to 16 Oct</div>
+        <div class="panel-b">
+          <div class="waffle" id="waffle" role="img" aria-label="181 asks: 137 yes as proposed, 40 changed, 0 no, 4 with no answer"></div>
+          <div class="wkey" aria-hidden="true"><span><i class="y"></i>137 yes as proposed</span><span><i class="c"></i>40 changed</span><span><i class="n"></i>4 no answer</span><span>0 no</span></div>
+          <ul class="facts">
+            <li><b>35 of 42</b><span>multiple-choice asks from 12 to 15 Oct that carried a recommended option were answered with it. The crew briefs well, or Favio, when busy, clicks the first button; this data can’t tell which.</span></li>
+            <li><b>11 of 53</b><span>design asks came back changed (21%), against 38 of 92 in edition 1 (41%).</span></li>
+            <li><b>1.9 min</b><span>median answer, against 3.6 min in edition 1.</span></li>
+          </ul>
+          <p class="note" style="margin:0">Counted from our log of asks, which is built from the chat, so read every number as a floor; the multiple-choice line comes from one pass over the chat, 12 to 15 Oct.</p>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-h">The cloud reviewer · first pass, edition 1 and 2</div>
+        <div class="panel-b">
+          <p class="q">Share of findings fixed on the same PR</p>
+          <div class="rv" role="list">
+            <div class="rvr" role="listitem"><span>blockers</span><span class="bt"><i class="e1" style="width:100%"></i><i style="width:100%"></i></span><span class="v">11 of 11</span></div>
+            <div class="rvr" role="listitem"><span>should-fix</span><span class="bt"><i class="e1" style="width:96.5%"></i><i style="width:88.5%"></i></span><span class="v">54 of 61</span></div>
+            <div class="rvr" role="listitem"><span>nits</span><span class="bt"><i class="e1" style="width:70.7%"></i><i style="width:36.8%"></i></span><span class="v">71 of 193</span></div>
+            <div class="rvr" role="listitem"><span>overall</span><span class="bt"><i class="e1" style="width:78%"></i><i style="width:51.3%"></i></span><span class="v">51%</span></div>
+          </div>
+          <div class="wkey" aria-hidden="true"><span><i class="e1"></i>edition 1</span><span><i class="y"></i>edition 2, one PR excluded</span></div>
+          <p class="note" style="margin:0">Edition 1: blockers 7 of 7, should-fix 55 of 57, nits 111 of 157, no false alarm. Edition 2, to the 0.4.6 release: three false alarms. Overall pools the three rows: 173 of 221 in edition 1, 136 of 265 now, where the 6 nits whose outcome is unknown count as not fixed. Same rule both times: a finding counts only if it was fixed on the same PR. Read from the review prose, to within a few points.</p>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-h">The reviewer session · reads every PR</div>
+        <div class="panel-b">
+          <ul class="facts">
+            <li><b>242</b><span>first-pass findings on 46 PRs, to the 0.4.6 release.</span></li>
+            <li><b>60%</b><span>of them led to a change; for 40 the outcome is unknown.</span></li>
+            <li><b>13</b><span>verdict rounds on one PR by 15 Oct, the most for any.</span></li>
+          </ul>
+          <p class="note" style="margin:0">Its verdict is part of the merge gate. Since 15 Oct every lane messages it on each new head.</p>
+        </div>
+      </div>
+    </div>
+  </div>
 </section>
 
 <!-- 07 CASE: STALL -->
@@ -349,10 +505,10 @@
 </section>
 
 <!-- 12 LESSONS -->
-<section class="sec" id="lessons" aria-labelledby="h-les">
+<section class="sec" id="lessons" aria-labelledby="h-les" data-ed="updated">
   <div class="sec-head">
     <div><div class="sec-no">11 · Scars wall</div><h2 id="h-les">Every rule has a scar</h2></div>
-    <p>Each rule the crew follows sits beside the incident that wrote it: what happened, what it cost, the rule now, and where the rule lives, so the next session finds it. Only incidents the logs and memory record are here; private names and paths are generalized.</p>
+    <p>Each rule the crew follows sits beside the incident that wrote it: what happened, what it cost, the rule now, and where the rule lives, so the next session finds it. Only incidents the logs and memory record are here; private names and paths are generalized. Edition 2’s six ledger rows are here too, behind their own filter, with four more misses from 16 Oct.</p>
   </div>
   <div class="scar-top">
     <div class="scar-count"><b id="scarN">0</b><span>incidents on record, each with the rule it left behind</span></div>
@@ -472,7 +628,7 @@ done</code></pre>
   </div>
 </section>
 
-<section class="sec" id="next" aria-labelledby="h-next">
+<section class="sec" id="next" aria-labelledby="h-next" data-ed="updated">
   <div class="sec-head">
     <div><div class="sec-no">14 · Next</div><h2 id="h-next">New in 0.4.3: living diagrams</h2></div>
   </div>
@@ -488,12 +644,22 @@ done</code></pre>
       </ul>
     </div>
   </div>
+  <div class="subh">Edition 2 · in 0.4.6</div>
+  <ul class="nx46">
+    <li><span class="tag green">in 0.4.6</span><p>Text over text: <code>showtime check</code> steps through the whole timeline, every 0.1 to 0.25 s by the film’s length, and reports any two pieces of text that overlap, on the page or on any canvas.</p></li>
+    <li><span class="tag green">in 0.4.6</span><p>The sound strip fix and its test: the strip placed its ticks by film time and ignored where the clip starts.</p></li>
+    <li><span class="tag green">in 0.4.6</span><p>Text drawn outside the area a phone app leaves free: <code>check</code> now compares every text a page draws on its own canvas with that area, at every step. Before, 33, 29 and 13 pieces of text in three portrait films passed.</p></li>
+    <li><span class="tag green">in 0.4.6</span><p>A page that stops answering: <code>check</code> now ends with an error that names the late step, instead of waiting a minute for each step.</p></li>
+    <li><span class="tag dim">not a check yet</span><p>Lines drawn under text: 10 pieces of text in one film.</p></li>
+  </ul>
+  <p class="note">Both gaps were found the same day by the session that built the overlap check; the first is a check in 0.4.6, the second is not one yet. If the pattern holds, the next miss will be on something the crew has not made before.</p>
 </section>
 
 
 
 <div class="colophon">
-  <span><b>The showtime harness · public edition.</b> Compiled from the crew’s logs and notes, as of 11 Oct 2026.</span>
+  <span><b>The showtime harness · public edition.</b> Compiled from the crew’s logs and notes, as of 16 Oct 2026.</span>
+  <span class="eds">Editions: 1 · 11 Oct 2026 · Many hands, one yes. 2 · 16 Oct 2026 · Six practices.</span>
   <span>showtime is open source: <a href="https://github.com/FavioVazquez/showtime">github.com/FavioVazquez/showtime</a></span>
 </div>
 </div></div>

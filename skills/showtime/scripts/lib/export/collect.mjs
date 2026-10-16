@@ -41,6 +41,15 @@ function abs(spec, fromPath) {
 }
 
 /** Rewrite relative/root import specifiers and import.meta.url to absolute virtual URLs. -> {text, deps} */
+/**
+ * The page's own <style> blocks, each replaced by fn(m, attrs, text), never one inside an inline <script> or an HTML
+ * comment: a script's "<style>@font-face { src: url(...) }" string is code and stays byte for byte.
+ */
+export function replaceOwnStyles(html, fn) {
+  return html.replace(/<!--[\s\S]*?-->|<script\b[^>]*>[\s\S]*?<\/script\s*>|<style\b([^>]*)>([\s\S]*?)<\/style>/gi,
+    (m, attrs, text) => (attrs === undefined ? m : fn(m, attrs, text)));
+}
+
 export function rewriteJs(text, filePath) {
   const deps = new Set();
   const fix = (spec) => {

@@ -614,6 +614,11 @@ def card_facts(rec: Dict[str, Any]) -> List[str]:
     xr = rec.get("xray")
     if xr and xr.get("line"):
         out.append("X-ray: %s%s" % (xr["line"], "" if xr.get("status") == "PASS" else " (%s)" % xr.get("status", "").lower()))
+        if xr.get("derived"):
+            out.append("X-ray sound: a rendering (%s); the audio check compares the film with it, not with the original data"
+                       % xr["derived"])
+        elif xr.get("events_from"):
+            out.append("X-ray events: from %s, not measured from the sound" % xr["events_from"])
         if xr.get("credit"):
             out.append("Clip credit: %s" % xr["credit"])
     mode = (rec.get("review_mode") or {}).get("mode")

@@ -868,6 +868,33 @@ class LatestRenderTest(unittest.TestCase):
         self.assertIn("no edit render found", cp.stderr)
         self.assertNotIn("Traceback", cp.stderr)
 
+    def test_trim_refuses_another_spelling_of_the_input(self):
+        """`footage trim -o` naming the input under another spelling is refused and the clip kept (cli_footage's
+        samefile guard): a hard link, and a case variant on a case-insensitive disk (macOS, Windows by default). A
+        spelling this file system does not have is a skipped subtest with its reason (some container mounts refuse
+        hard links; a case-sensitive disk has no case variant)."""
+        root = self.tmp / "trim-same"
+        root.mkdir()
+        clip = root / "clip.mp4"
+        ffrun(["-f", "lavfi", "-i", "testsrc2=s=160x90:r=30:d=1", "-c:v", "libx264", "-preset", "veryfast",
+               "-pix_fmt", "yuv420p", clip])
+        size = clip.stat().st_size
+        link, no_link = root / "same-file.mp4", None
+        try:
+            os.link(clip, link)
+        except (OSError, NotImplementedError, AttributeError) as e:
+            no_link = "no hard links on this file system (%s)" % e
+        case = clip.with_name(clip.name.upper())
+        for kind, other, why_not in (("hard link", link, no_link),
+                                     ("case variant", case, None if case.exists() else "the disk is case-sensitive")):
+            with self.subTest(kind):
+                if why_not:
+                    self.skipTest(why_not)
+                cp = self.run_st("footage", "trim", clip, "-o", other, "--overwrite", check=False)
+                self.assertEqual(cp.returncode, 1, cp.stderr)
+                self.assertIn("the input clip itself", cp.stderr)
+                self.assertEqual(clip.stat().st_size, size)
+
     def test_trim_and_scene_ranges(self):
         """05/06/10: `footage trim` cuts a range (frame-accurate) and makes seek-friendly proxies (--width,
         short GOP, --webm) without raw ffmpeg; `footage scenes --every` takes --from/--to and a file -o."""
@@ -895,13 +922,7 @@ class LatestRenderTest(unittest.TestCase):
         cp = self.run_st("footage", "trim", clip, "-o", clip, "--overwrite", check=False)
         self.assertEqual(cp.returncode, 1, cp.stderr)
         self.assertIn("the input clip itself", cp.stderr)
-        link = root / "same-file.mp4"                    # another spelling of the input (a hard link; a case variant on a
-        os.link(clip, link)                              # case-insensitive disk): refused, the clip is not overwritten
-        size = Path(clip).stat().st_size
-        cp = self.run_st("footage", "trim", clip, "-o", link, "--overwrite", check=False)
-        self.assertEqual(cp.returncode, 1, cp.stderr)
-        self.assertIn("the input clip itself", cp.stderr)
-        self.assertEqual(Path(clip).stat().st_size, size)
+        # another spelling of the input (a hard link, a case variant): test_trim_refuses_another_spelling_of_the_input
         r = json.loads(self.run_st("footage", "trim", clip, "--webm", "--no-audio", "--to", "1", "-o", root / "cut.webm",
                                    "--overwrite", "--json").stdout)
         self.assertEqual(Path(r["output"]), root / "cut.webm")

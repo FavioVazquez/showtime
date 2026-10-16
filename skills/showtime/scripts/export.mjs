@@ -3,10 +3,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { startServer } from './server.mjs';
-import { parseCli, runMain, resolveProject, jobDir, freshPath, info, warn, c, fmtBytes, fmtDuration, parseTime, UserError } from './lib/cli.mjs';
+import { parseCli, runMain, resolveProject, jobDir, freshPath, info, warn, c, fmtBytes, fmtDuration, parseTime, UserError, runPyCli } from './lib/cli.mjs';
 import { resolveFF } from './lib/ff.mjs';
 import { audioInputs } from './lib/audio.mjs';
-import { resolveJobDir } from './lib/studio/paths.mjs';
+import { resolveJobDir, enclosingJob } from './lib/studio/paths.mjs';
 import { probeProject } from './lib/export/probe.mjs';
 import { collectFiles, isMedia, isText, isJs, isCss, pruneFontFamilies, preferWoff2 } from './lib/export/collect.mjs';
 import { minifyJs, minifyCss, pruneParts } from './lib/export/minify.mjs';
@@ -42,7 +42,8 @@ const SPEC = {
     'outside) is written next to the export. --no-questions exports a plain player.',
     'The file makes no network request. Default output: ./showtime-out/<title>-<timestamp>/<title>.html',
     'A job (folder or name, as qa takes it) exports its project/ folder into the job folder;',
-    '`<job> --folder out` writes the folder version to ./out/.',
+    '`<job> --folder out` writes the folder version to ./out/. A project inside a job, or the command run from',
+    'inside one, writes into that job too (a live page or figure is noted in its job.json).',
     '',
     'Audio: auto = the procedural score played live (streamed from the first second, tiny file) when',
     'that is all the sound, otherwise',
@@ -126,6 +127,25 @@ const SPEC = {
 };
 
 const MB = 1000 * 1000;   // decimal MB, like fmtBytes and platform limits
+
+/** The job folder (one with a job.json) holding p, within 4 levels up and never past showtime-out/; else null. */
+function ledgerJob(p) {
+  const j = enclosingJob(p);
+  return j && fs.existsSync(path.join(j, 'job.json')) ? j : null;
+}
+
+/** True when the project folder dir is inside job, or is the project its job.json or render.json names. */
+export function jobHolds(job, dir) {
+  const real = (q) => { try { return fs.realpathSync(q); } catch { return path.resolve(q); } };
+  const d = real(dir), j = real(job), rel = path.relative(j, d);
+  if (rel === '' || (rel.split(path.sep)[0] !== '..' && !path.isAbsolute(rel))) return true;
+  for (const f of ['job.json', 'render.json']) {
+    let p = null;
+    try { p = JSON.parse(fs.readFileSync(path.join(j, f), 'utf8')).project; } catch { /* no such file */ }
+    if (typeof p === 'string' && p && real(path.resolve(j, p)) === d) return true;
+  }
+  return false;
+}
 
 /**
  * A job argument -> { job, project } (its project/ folder), or null for a project folder or page. A job without
@@ -252,12 +272,25 @@ async function main() {
     }
     if (out !== want) addWarn(`${want} exists; writing ${path.basename(out)} instead (exports never overwrite)`);
   } else {
-    const dir = a.job ? resolveJobDir(a.job) : (fromJob && !a['out-dir'] ? fromJob.job : jobDir(proj.slug, a['out-dir']));
+    // a project inside a job, or the command run from inside the job of the project being exported: the export goes
+    // into that job (it used to make a new showtime-out/<title>-<time>/ folder nested in it); run from another
+    // project's job, the page goes where it always did
+    const cwdJob = !a.job && !fromJob && !a['out-dir'] ? enclosingJob(process.cwd()) : null;
+    const inJob = !a.job && !fromJob && !a['out-dir']
+      ? (enclosingJob(proj.dir) || (cwdJob && jobHolds(cwdJob, proj.dir) ? cwdJob : null)) : null;
+    const dir = a.job ? resolveJobDir(a.job) : (fromJob && !a['out-dir'] ? fromJob.job : (inJob || jobDir(proj.slug, a['out-dir'])));
     if (!dir || !fs.existsSync(dir)) throw new UserError(`no job named "${a.job}"`, 'list jobs with `showtime job list`');
     out = freshPath(path.join(dir, folder ? `${proj.slug}-html` : `${proj.slug}${liveSuffix}.html`));
   }
-  if (xrayLive) return exportXrayLive({ a, proj, out, title, target, maxMb, warnings, addWarn, T0 });
-  if (a.interactive) return exportFigure({ a, proj, out, title, target, maxMb, warnings, addWarn, T0 });
+  // an export written into a job is noted in its job.json (the live page or figure is not a final: an event)
+  const job = ledgerJob(out);
+  const noteExport = job ? async (kind) => {
+    const r = await runPyCli(['job', 'note', job, '--event', `export html --interactive ${path.relative(job, out)} (${kind})`], { timeout: 120000 });
+    if (r.code !== 0) addWarn(`could not record the export in ${path.join(job, 'job.json')}: ${(r.stderr || '').trim().split('\n').pop()}`);
+    return r.code === 0 ? job : null;
+  } : null;
+  if (xrayLive) return exportXrayLive({ a, proj, out, title, target, maxMb, warnings, addWarn, T0, noteExport });
+  if (a.interactive) return exportFigure({ a, proj, out, title, target, maxMb, warnings, addWarn, T0, noteExport });
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'showtime-export-'));
 
   const server = await startServer({ root: proj.dir, port: 0 });
@@ -556,7 +589,7 @@ function sizeError(total, maxMb, files, poster, audioPack, { mode, html, scoreOn
 runMain(main);
 
 /** --interactive: the live figure, one offline file (scripts/lib/export/figure.mjs). */
-function exportFigure({ a, proj, out, title, target, maxMb, warnings, addWarn, T0 }) {
+async function exportFigure({ a, proj, out, title, target, maxMb, warnings, addWarn, T0, noteExport }) {
   // a project still named after the template (or nothing) takes its scene's title: the page's <title> and og:title
   const info = sceneInfo(proj.dir);
   if (!a.title && info.title && (!title || title === TEMPLATE_TITLE || genericTitle(title) || title === proj.slug)) title = info.title;
@@ -569,7 +602,8 @@ function exportFigure({ a, proj, out, title, target, maxMb, warnings, addWarn, T
   }
   fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, r.html);
-  const report = { output: out, interactive: true, page: r.page, bytes: r.bytes, mb: +(r.bytes / MB).toFixed(2), max_mb: maxMb, title, target,
+  const job = noteExport ? await noteExport('the live figure') : null;
+  const report = { output: out, interactive: true, ...(job ? { job } : {}), page: r.page, bytes: r.bytes, mb: +(r.bytes / MB).toFixed(2), max_mb: maxMb, title, target,
     files: r.files.length, fonts_dropped: r.fontsDropped, largest: r.files.slice().sort((x, y) => y.bytes - x.bytes).slice(0, 6), warnings, seconds: +((Date.now() - T0) / 1000).toFixed(1) };
   if (a.json) process.stdout.write(JSON.stringify(report, null, 2) + '\n');
   else {

@@ -722,6 +722,370 @@ Film.start({ look: 'paper', fonts: ['650 1em "Inter Variable"'], scenes: functio
         self.assertFalse(any("Faint side note" in m for c, _, m in msgs if c == "low_contrast"), msgs)
         self.assertTrue(any(c == "dimmed_text" for c, _, _ in msgs), msgs)
 
+    def test_13c_check_canvas_text_over_text_between_samples(self):
+        """Canvas text drawn over other text is reported even when the scene paints it with the canvas's own fillText
+        (not F.text) and only between the sampled frames: two raw labels collide from 3.0 to 3.4 s (a canvas chart
+        label over a faint note), and a faint F.text (alpha .35) sits under a red one from 4.5 s. Labels apart, a shadow pass
+        of the same string, text layered on purpose (F.layer, {layer: true}, ST.layer around raw calls), decor drawn raw
+        inside F.decor and a crossfade (both texts' opacity moving) are not reported."""
+        proj = self.tmp / "filmtextover"
+        write(proj / "showtime.json", json.dumps({"width": 1280, "height": 720, "fps": 30, "duration": 6}))
+        write(proj / "index.html", """<!doctype html><html><head><link rel="stylesheet" href="/_lib/@fontsource-variable/inter/index.css">
+<script src="/_st/stage.js"></script><script src="/_st/film.js"></script></head><body><script>
+Film.start({ look: 'dark', design: [1280, 720], fonts: ['600 1em "Inter Variable"'], scenes: function (T, g, F) {
+  g.save(); g.textBaseline = 'middle'; g.font = '600 34px "Inter Variable"'; g.fillStyle = '#ff5a4f';
+  g.fillText('BELOW THRESHOLD: NO RESULT', 640, 300);
+  if (T >= 3.0 && T < 3.4) { g.font = '500 26px "Inter Variable"'; g.fillStyle = 'rgba(143,211,255,.7)'; g.fillText('FAINT: A SECOND MEASUREMENT,', 640, 296); }
+  g.restore();
+  if (T >= 4.5) { F.text('Peak strain', 100, 520, { size: 48, weight: 700, color: '#ff5a4f' }); F.text('faint caption below', 110, 512, { size: 40, alpha: 0.35, color: '#ffffff' }); }
+  F.text('Left label', 100, 150, { size: 40 }); F.text('Right label', 900, 150, { size: 40 });
+  g.save(); g.font = '700 44px "Inter Variable"'; g.fillStyle = 'rgba(0,0,0,.6)'; g.fillText('Shadowed', 103, 653); g.fillStyle = '#ffffff'; g.fillText('Shadowed', 100, 650); g.restore();
+  F.layer(function () { F.text('DRAFT', 880, 610, { size: 90, weight: 800, color: '#ff3030' }); });
+  F.text('Final figures', 890, 590, { size: 40 });
+  F.text('Stamp', 300, 430, { size: 60, weight: 800, color: '#ff3030', layer: true }); F.text('Under stamp', 305, 422, { size: 40 });
+  g.save(); g.font = '700 44px "Inter Variable"'; g.fillStyle = '#ffffff';
+  ST.layer(function () { g.fillText('Raw stamp', 620, 430); }); g.fillText('Raw under', 625, 424);
+  F.decor(function () { g.fillText('UI detail', 950, 430); }); g.restore(); F.text('Over UI', 955, 425, { size: 30 });
+  g.save(); g.font = '600 30px "Inter Variable"'; g.fillStyle = '#8fd3ff'; g.textBaseline = 'middle'; g.fillText('Under the callout', 350, 660); g.restore();
+  F.callout(700, 600, 520, 660, 'Click here', { p: 1, size: 30 });   // its card hides the raw label drawn before it
+  if (T >= 1.0 && T < 2.0) { F.text('Fading out', 100, 370, { size: 40, alpha: 2 - T }); F.text('Fading in', 105, 365, { size: 40, alpha: T - 1 }); }
+} });
+</script></body></html>""")
+        rep = json.loads(showtime("check", proj, "--json", "--no-determinism", "--samples", "2", check=False).stdout)
+        ov = [f for f in rep["findings"] if f["code"] == "text_overlap"]
+        raw = [f for f in ov if "BELOW THRESHOLD: NO RESULT" in f["message"] and "FAINT: A SECOND MEASUREMENT" in f["message"]]
+        self.assertEqual(len(raw), 1, ov)
+        self.assertEqual(raw[0]["severity"], "warning")
+        self.assertIn("from 0:03", raw[0]["message"])
+        self.assertAlmostEqual(raw[0]["t"], 3.0, delta=0.11)
+        faint = [f for f in ov if "Peak strain" in f["message"] and "faint caption below" in f["message"]]
+        self.assertEqual(len(faint), 1, ov)
+        self.assertIn("from 0:04", faint[0]["message"])
+        for word in ("Left label", "Right label", "Shadowed", "DRAFT", "Final figures", "Stamp", "Raw stamp", "UI detail", "Under the callout"):
+            self.assertFalse([f for f in ov if word in f["message"]], (word, ov))
+        # a crossfade is not a collision on the timeline grid (the samples' older canvas rule can still catch one
+        # mid-fade at a sample time)
+        self.assertFalse([f for f in ov if "Fading" in f["message"] and f.get("grid")], ov)
+
+    def test_13d_check_dom_text_over_canvas_text(self):
+        """A DOM paragraph over a canvas label is text over text too (chart labels under a vertical video's
+        paragraphs): reported from when it starts. So is a canvas counter under a fixed heading, once (its value changes
+        every frame), two labels with the same words, still or moving, each on its own, and a sticker tilted 2 degrees
+        over a heading. A caption on its own opaque plate hides the canvas
+        text under it, rows of kinetic type turned -8 degrees are judged on their letters, not their axis-aligned boxes,
+        DOM text at 8% colour alpha is not readable, and a space drawn on its own is not a text: none of those is
+        reported."""
+        proj = self.tmp / "domovercanvas"
+        write(proj / "showtime.json", json.dumps({"width": 1280, "height": 720, "fps": 30, "duration": 4}))
+        write(proj / "index.html", """<!doctype html><html><head><link rel="stylesheet" href="/_lib/@fontsource-variable/inter/index.css">
+<style>.ov{position:fixed;z-index:5;margin:0;font:500 30px/1.2 "Inter Variable";color:#fff;white-space:nowrap}
+#pill{left:700px;top:560px;padding:10px 18px;background:#111;border-radius:10px}
+.row{left:-40px;width:1400px;font:800 64px/1 "Inter Variable";transform:rotate(-8deg);transform-origin:0 0}</style>
+<script src="/_st/stage.js"></script><script src="/_st/film.js"></script></head><body>
+<p class="ov" style="left:100px;top:280px">Two lines will become one.</p>
+<div class="ov" id="pill" data-caption>Captions sit on a plate</div>
+<p class="ov row" style="top:170px">TYPE IN MOTION TYPE IN MOTION</p>
+<p class="ov row" style="top:230px;left:560px;width:700px">REEL 2026 REEL</p>
+<p class="ov" style="left:300px;top:420px;font-size:40px">RESULTS TWENTY SIX</p>
+<p class="ov" style="left:420px;top:428px;font-size:30px;color:#ff0;transform:rotate(2deg)">STICKER!</p>
+<p class="ov" style="left:900px;top:300px;color:rgba(255,255,255,.08)">Nearly invisible</p>
+<p class="ov" style="left:900px;top:400px">Fixed heading</p>
+<p class="ov" style="left:100px;top:540px">Counter band heading</p>
+<p class="ov" style="left:100px;top:345px">Station band heading over both</p>
+<p class="ov" style="left:700px;top:632px">Orbit band heading over the labels</p>
+<p class="ov" style="left:900px;top:480px;background:linear-gradient(90deg,#f0f,#0ff);-webkit-background-clip:text;background-clip:text;color:transparent">Gradient title</p>
+<script>
+Film.start({ look: 'dark', design: [1280, 720], fonts: ['600 1em "Inter Variable"'], scenes: function (T, g, F) {
+  g.save(); g.textBaseline = 'middle'; g.font = '600 30px "Inter Variable"'; g.fillStyle = '#8fd3ff';
+  if (T >= 2.0) g.fillText('SERIES B', 140, 300);
+  g.fillText('Keep it under 15 minutes', 560, 575);   // its left part outside the pill, the rest under it
+  g.fillText('   ', 160, 640); g.fillText('Solo label', 140, 650);
+  g.fillText('UNDER FAINT', 905, 318); g.fillText('Under gradient', 905, 498);
+  g.fillText('TICK ' + Math.floor(T * 30), 110, 558);   // a labelled counter
+  g.save(); g.globalAlpha = 0.95 - T * 0.1; g.fillText('STATION 1', 110, 363); g.restore();   // same words, two places,
+  g.fillText('STATION 2', 400, 363);                                                           // one fading
+  g.fillText('ORBIT 1', 710 + 220 * (T % 2), 650); g.fillText('ORBIT 2', 1150 - 220 * (T % 2), 650);   // moving 22 px a step
+  g.font = '700 40px "Inter Variable"'; g.fillText(String(Math.floor(T * 30)), 905, 420);   // a counter, new every frame
+  g.restore();
+} });
+</script></body></html>""")
+        rep = json.loads(showtime("check", proj, "--json", "--no-determinism", "--samples", "2", check=False).stdout)
+        ov = [f for f in rep["findings"] if f["code"] == "text_overlap"]
+        para = [f for f in ov if "Two lines" in f["message"] and "SERIES B" in f["message"]]
+        self.assertEqual(len(para), 1, ov)
+        self.assertEqual(para[0]["source"], "dom+canvas")
+        self.assertIn("overlaps canvas text", para[0]["message"])
+        self.assertAlmostEqual(para[0]["t"], 2.0, delta=0.11)
+        # a sticker tilted 2 degrees is judged by its box (rows at -8 degrees are not); a counter is one text
+        self.assertTrue([f for f in ov if "STICKER!" in f["message"] and "RESULTS TWENTY SIX" in f["message"]], ov)
+        # gradient text (background-clip: text, color transparent) reads at full strength
+        self.assertTrue([f for f in ov if "Gradient title" in f["message"] and "Under gradient" in f["message"]], ov)
+        counter = [f for f in ov if "Fixed heading" in f["message"]]
+        self.assertEqual(len(counter), 1, ov)
+        self.assertEqual(len([f for f in ov if "Counter band heading" in f["message"]]), 1, ov)
+        # labels with the same words in two places are two texts: the still one under the band is reported
+        self.assertEqual(len([f for f in ov if "Station band" in f["message"] and "STATION 2" in f["message"]]), 1, ov)
+        # and each is followed as it moves (a new 16 px cell every step): both moving labels under the band are reported
+        for lab in ("ORBIT 1", "ORBIT 2"):
+            self.assertEqual(len([f for f in ov if "Orbit band" in f["message"] and lab in f["message"]]), 1, (lab, ov))
+        for word in ("Captions sit", "Keep it under", "TYPE IN MOTION", "REEL 2026", "Solo label", '""', "UNDER FAINT", "Nearly invisible"):
+            self.assertFalse([f for f in ov if word in f["message"]], (word, ov))
+
+    def test_13e_check_canvas_text_hidden_or_wiped_is_not_on_screen(self):
+        """On a plain canvas page (no film API), canvas text counts only while it is painted and visible: a label the
+        page stops drawing after a reset (`canvas.width = w`, redrawn on every seek), a label under an opaque card or
+        image painted above the canvas, a label under an opaque tooltip box drawn after it, and an odometer digit
+        clipped away are not on screen, so text over where they were is no collision. A DOM text over a visible canvas
+        label, a pulsing label over a still one and a badge (not a caption) half over a label are."""
+        proj = self.tmp / "canvaswiped"
+        write(proj / "showtime.json", json.dumps({"width": 960, "height": 540, "fps": 30, "duration": 4}))
+        write(proj / "index.html", """<!doctype html><html><head><link rel="stylesheet" href="/_lib/@fontsource-variable/inter/index.css">
+<style>body{margin:0;background:#0b0d12;font-family:"Inter Variable"}#cv,#cv2{position:fixed;left:0;top:0;width:960px;height:540px}
+.ov{position:fixed;z-index:3;margin:0;font:600 24px/1.2 "Inter Variable";color:#fff;white-space:nowrap}
+#card{position:fixed;left:0;top:200px;width:300px;height:160px;background:#000;z-index:2}
+#pic{position:fixed;left:660px;top:200px;width:280px;height:80px;z-index:2}
+#badge{left:760px;top:490px;padding:2px 8px;background:#e33;border-radius:6px;font-size:20px}</style>
+<script src="/_st/stage.js"></script></head><body>
+<canvas id="cv" width="960" height="540"></canvas><canvas id="cv2" width="960" height="540"></canvas><div id="card"></div>
+<img id="pic" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==">
+<p class="ov" id="late" style="left:330px;top:42px">Late heading</p>
+<p class="ov" style="left:30px;top:232px">End card line</p>
+<p class="ov" style="left:330px;top:232px">Real collision</p>
+<p class="ov" style="left:670px;top:222px">On the image</p>
+<p class="ov" id="badge">NEW</p>
+<p class="ov" style="left:30px;top:470px">Over the kept label</p>
+<p class="ov" style="left:360px;top:134px">Over the gap</p>
+<p class="ov" style="left:140px;top:104px">Hole watcher</p>
+<script>
+var c2 = document.getElementById('cv2'), g = document.getElementById('cv').getContext('2d'), g2 = c2.getContext('2d');
+var late = document.getElementById('late');
+ST.onSeek(function (t) {
+  c2.width = 960;   // this canvas is reset on every seek and draws no text from 2 s on
+  g2.fillStyle = '#ffd38f'; g2.font = '600 24px "Inter Variable"'; g2.textBaseline = 'middle';
+  if (t < 2) g2.fillText('Gone after 2 s', 340, 58);
+  late.style.opacity = t >= 2 ? '1' : '0';
+  g.clearRect(0, 0, 960, 540);
+  g.fillStyle = '#8fd3ff'; g.font = '600 24px "Inter Variable"'; g.textBaseline = 'middle';
+  g.fillText('Axis label', 40, 60);
+  g.fillText('Under the card', 40, 250);
+  g.fillText('Bare label', 340, 250);
+  g.fillText('Under the image', 675, 240);
+  g.fillText('Axis under tooltip', 670, 60);
+  g.fillStyle = '#222'; g.fillRect(660, 40, 280, 40);   // an opaque tooltip box over the axis label
+  g.fillStyle = '#ffffff'; g.fillText('Tooltip: 42 units', 670, 62);
+  g.fillStyle = '#8fd3ff'; g.fillText('Under the pill', 670, 140);
+  g.fillStyle = '#333'; g.beginPath(); g.roundRect(660, 120, 280, 40, 12); g.fill();   // a pill drawn as a path
+  g.fillStyle = '#ffffff'; g.fillText('Pill: 7 items', 672, 142);
+  g.fillStyle = '#8fd3ff'; g.fillText('Between the bars', 360, 150);
+  g.fillStyle = '#8fd3ff'; g.fillText('Under the stray pill', 340, 300);
+  g.fillStyle = '#333'; g.beginPath(); g.roundRect(330, 285, 280, 30, 8); g.moveTo(900, 500); g.fill();   // a moveTo paints nothing
+  g.fillStyle = '#ffffff'; g.fillText('Stray: 3 items', 342, 302);
+  g.fillStyle = '#8fd3ff'; g.fillText('HOLE', 150, 120);
+  g.fillStyle = '#333'; g.beginPath(); g.rect(30, 100, 200, 40); g.rect(130, 100, 200, 40); g.fill('evenodd');   // 130-230 unpainted
+  g.fillStyle = '#8fd3ff'; g.fillText('Under the moved box', 340, 345);
+  g.save(); g.fillStyle = '#333'; g.beginPath(); g.rect(330, 330, 280, 30); g.setTransform(1, 0, 0, 1, 0, -200); g.fill(); g.restore();
+  g.fillStyle = '#ffffff'; g.fillText('Moved: 9 items', 342, 347);   // the rect was painted where the path was built
+  g.fillStyle = '#333'; g.beginPath(); g.rect(330, 130, 20, 40); g.rect(600, 130, 20, 40); g.fill();   // two bars, one path
+  g.save(); g.beginPath(); g.rect(660, 330, 120, 40); g.clip();   // an odometer: the next digit waits below, clipped
+  g.font = '700 40px "Inter Variable"'; g.fillText('7', 670, 350); g.fillText('8', 670, 400); g.restore();
+  g.fillStyle = '#8fd3ff'; g.font = '600 24px "Inter Variable"'; g.fillText('COUNT LABEL', 662, 400);
+  g.fillText('Still label', 676, 456);
+  // the pulsing label blinks between grid steps (0.1 s apart here)
+  g.save(); g.globalAlpha = Math.round(t * 10) % 2 ? 0.6 : 1; g.fillStyle = '#ffffff'; g.fillText('Pulsing label', 670, 460); g.restore();
+  g.fillText('Partly under the badge', 700, 505);
+  g.fillText('Kept outside the clip', 40, 485);
+  g.save(); g.beginPath(); g.rect(0, 0, 8, 8); g.clip(); g.clearRect(0, 0, 960, 540); g.restore();   // clears 8 px only
+  g.font = '600 8px "Inter Variable"';
+  for (var i = 0; i < 305; i++) g.fillText('.', 10 + (i % 61) * 10, 384 + Math.floor(i / 61) * 12);   // past the cap
+});
+</script></body></html>""")
+        rep = json.loads(showtime("check", proj, "--json", "--no-determinism", "--samples", "2", check=False).stdout)
+        ov = [f for f in rep["findings"] if f["code"] == "text_overlap"]
+        for a, b in (("Real collision", "Bare label"), ("Pulsing label", "Still label"), ("NEW", "Partly under the badge"),
+                     ("Over the kept label", "Kept outside the clip"), ("Over the gap", "Between the bars"), ("Hole watcher", "HOLE")):
+            hit = [f for f in ov if a in f["message"] and b in f["message"]]
+            self.assertEqual(len(hit), 1, (a, b, ov))
+        self.assertEqual([f for f in ov if "Real collision" in f["message"]][0]["source"], "dom+canvas")
+        for word in ("Gone after", "Under the card", "End card line", "Late heading", "Axis label", "Under the image",
+                     "On the image", "Axis under tooltip", "COUNT LABEL", "Under the pill", "Under the stray pill",
+                     "Under the moved box"):
+            self.assertFalse([f for f in ov if word in f["message"]], (word, ov))
+        # more texts than check compares: said once, as a note
+        cap = [f for f in ov if f.get("dropped")]
+        self.assertEqual(len(cap), 1, ov)
+        self.assertEqual(cap[0]["severity"], "info")
+        self.assertIn("not checked for text over text", cap[0]["message"])
+
+    def test_13e2_check_canvas_fills_that_leave_text_visible_hide_nothing(self):
+        """A canvas fill hides the text under it only when it surely paints over it: not a box with a NaN side (it paints
+        nothing; before, it dropped every text on the canvas), nor one inside a clip an overflowing transform made NaN, not a path with a curve in it (here a circle cut out of a
+        box), not a translucent fill (a path or a fillRect), not two boxes that wind opposite ways (they cancel), and a gradient title
+        (background-clip: text) does not hide the DOM text under it. Each label stays, so the DOM text over it is a
+        collision."""
+        proj = self.tmp / "canvasnocover"
+        write(proj / "showtime.json", json.dumps({"width": 960, "height": 540, "fps": 30, "duration": 3}))
+        write(proj / "index.html", """<!doctype html><html><head><link rel="stylesheet" href="/_lib/@fontsource-variable/inter/index.css">
+<style>body{margin:0;background:#0b0d12;font-family:"Inter Variable"}#cv{position:fixed;left:0;top:0;width:960px;height:540px}
+.ov{position:fixed;z-index:3;margin:0;font:600 24px/1.2 "Inter Variable";color:#fff;white-space:nowrap}
+#title{z-index:4;font-size:30px;background:#0b0d12 linear-gradient(90deg,#f0f,#0ff);-webkit-background-clip:text;background-clip:text;color:transparent}</style>
+<script src="/_st/stage.js"></script></head><body>
+<canvas id="cv" width="960" height="540"></canvas>
+<p class="ov" style="left:30px;top:48px">NaN watcher</p>
+<p class="ov" style="left:500px;top:48px">Clip watcher</p>
+<p class="ov" style="left:150px;top:148px">Peek watcher</p>
+<p class="ov" style="left:30px;top:248px">Over the glass</p>
+<p class="ov" style="left:500px;top:248px">Over the tint</p>
+<p class="ov" style="left:30px;top:348px">Cancel watcher</p>
+<p class="ov" style="left:30px;top:448px">Plain under the title</p>
+<p class="ov" id="title" style="left:24px;top:440px">Gradient heading</p>
+<script>
+var g = document.getElementById('cv').getContext('2d');
+ST.onSeek(function (t) {
+  g.clearRect(0, 0, 960, 540);
+  g.font = '600 24px "Inter Variable"'; g.textBaseline = 'middle';
+  g.fillStyle = '#8fd3ff'; g.fillText('Behind the NaN', 40, 60);
+  g.fillStyle = '#333'; g.fillRect(NaN, 0, 10, 10); g.beginPath(); g.rect(30, NaN, 300, 40); g.fill();
+  g.fillStyle = '#8fd3ff'; g.fillText('Behind the big clip', 510, 60);
+  // a clip whose box overflows: rotated and scaled, its far corner is Infinity - Infinity (NaN) in frame pixels
+  g.save(); g.rotate(Math.PI / 4); g.scale(1e30, 1e30); g.beginPath(); g.rect(0, 0, 1e300, 1e300); g.clip();
+  g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = '#333'; g.fillRect(900, 500, 20, 20); g.restore();
+  g.fillStyle = '#8fd3ff'; g.fillText('Peek', 152, 160);   // seen through the hole the circle cuts out of the rectangle
+  g.fillStyle = '#333'; g.beginPath(); g.rect(30, 140, 300, 40); g.moveTo(220, 160); g.arc(180, 160, 40, 0, 2 * Math.PI, true); g.fill();
+  g.fillStyle = '#8fd3ff'; g.fillText('Under the glass', 40, 260);
+  g.fillStyle = 'rgba(0, 0, 0, 0.5)'; g.beginPath(); g.roundRect(30, 240, 300, 40, 8); g.fill();
+  g.fillStyle = '#8fd3ff'; g.fillText('Under the tint', 510, 260);
+  g.fillStyle = 'rgba(0, 0, 0, 0.5)'; g.fillRect(500, 240, 300, 40);   // a translucent fillRect
+  g.fillStyle = '#8fd3ff'; g.fillText('Cancelled box', 40, 360);
+  g.fillStyle = '#333'; g.beginPath(); g.rect(30, 340, 300, 40); g.rect(330, 340, -300, 40); g.fill();   // nonzero: 0
+  g.fillStyle = '#8fd3ff'; g.fillText('Gradient witness', 40, 460);
+});
+</script></body></html>""")
+        rep = json.loads(showtime("check", proj, "--json", "--no-determinism", "--samples", "2", check=False).stdout)
+        ov = [f for f in rep["findings"] if f["code"] == "text_overlap"]
+        for a, b in (("NaN watcher", "Behind the NaN"), ("Clip watcher", "Behind the big clip"), ("Peek watcher", "Peek"), ("Over the glass", "Under the glass"), ("Over the tint", "Under the tint"),
+                     ("Cancel watcher", "Cancelled box"), ("Plain under the title", "Gradient witness")):
+            hit = [f for f in ov if a in f["message"] and "\"%s\"" % b in f["message"]]
+            self.assertEqual(len(hit), 1, (a, b, ov))
+
+    def test_13f_check_canvas_text_outside_the_vertical_safe_box(self):
+        """In a vertical frame, canvas text drawn by the page itself (not the film API) outside the safe box feed UI
+        leaves free is reported from check's whole-timeline grid, once per text with its span: a label held under the
+        bottom rail and a counter past the right rail ("Year n", one text while its number changes); two labels with the
+        same words ("Gate 1", "Gate 2") held below the safe box are two texts, one finding each, and a counter beside a
+        label with its words ("Level n" past the right rail, "Level 5" above the safe box until it goes) is still one
+        text. A label sliding in through the margin, one parked mostly off the frame, small UI detail and text inside
+        the safe box are not; in a film, F.text outside the safe box is one finding (the sample rule's, also with a
+        double space in it), and raw text inside F.decor is UI detail."""
+        proj = self.tmp / "canvassafe"
+        write(proj / "showtime.json", json.dumps({"width": 540, "height": 960, "fps": 30, "duration": 3}))
+        write(proj / "index.html", """<!doctype html><html><head><link rel="stylesheet" href="/_lib/@fontsource-variable/inter/index.css">
+<style>body{margin:0;background:#0b0d12}#cv{position:fixed;left:0;top:0;width:540px;height:960px}</style>
+<script src="/_st/stage.js"></script></head><body><canvas id="cv" width="540" height="960"></canvas>
+<script>
+var g = document.getElementById('cv').getContext('2d');
+ST.onSeek(function (t) {
+  g.clearRect(0, 0, 540, 960);
+  g.fillStyle = '#ffffff'; g.font = '600 24px "Inter Variable"'; g.textBaseline = 'middle'; g.textAlign = 'left';
+  g.fillText('Inside the safe box', 60, 400);
+  g.fillText('Held below the safe box', 60, 800);   // the safe box ends at y 720 here (1440 of 1920)
+  g.fillText('Gate 1', 60, 860); g.fillText('Gate 2', 300, 860);   // same words: each its own text
+  g.fillText('Sliding in', Math.min(60, -150 + t * 600), 300);   // through the left margin in a third of a second
+  g.fillText('Parked off the frame', -200, 500);   // mostly past the left edge (a camera move left it there)
+  g.textAlign = 'right'; g.fillText('Year ' + (1990 + Math.floor(t * 10)), 530, 200);   // past x 458
+  g.fillText('Level ' + (10 + Math.floor(t * 10)), 530, 600);   // a counter past x 458, its number changing every step
+  g.textAlign = 'left'; if (t < 1.5) g.fillText('Level 5', 60, 60);   // a still label with its words above the safe box, gone halfway
+  g.textAlign = 'left'; g.font = '600 8px "Inter Variable"'; g.fillText('tiny axis note', 4, 940);
+});
+</script></body></html>""")
+        rep = json.loads(showtime("check", proj, "--json", "--no-determinism", "--samples", "2", check=False).stdout)
+        sz = [f for f in rep["findings"] if f["code"] == "safe_zone"]
+        self.assertEqual(len([f for f in sz if f.get("text") == "Held below the safe box"]), 1, sz)
+        held = [f for f in sz if f.get("text") == "Held below the safe box"][0]
+        self.assertTrue(held.get("grid"), held)
+        self.assertEqual(held["severity"], "warning")
+        self.assertIn("bottom at y", held["message"])
+        self.assertLess(held["t"], 0.3, held)
+        year = [f for f in sz if f.get("text", "").startswith("Year")]
+        self.assertEqual(len(year), 1, sz)
+        self.assertLess(year[0]["t"], 0.5, year)            # one text from its first steps, while the number changes
+        self.assertGreater(year[0]["until"] - year[0]["t"], 2, year)
+        for word in ("Gate 1", "Gate 2", "Level 5"):
+            self.assertEqual(len([f for f in sz if f.get("text") == word]), 1, (word, sz))
+        level = [f for f in sz if f.get("text", "").startswith("Level") and f.get("text") != "Level 5"]
+        self.assertEqual(len(level), 1, sz)                 # not split per value by its same-words sibling
+        self.assertGreater(level[0]["until"] - level[0]["t"], 2, level)
+        for word in ("Inside the safe box", "Sliding in", "tiny axis note", "Parked off the frame"):
+            self.assertFalse([f for f in sz if word in f["message"]], (word, sz))
+        # the phone check counts it (its zone part)
+        self.assertTrue(any("Held below the safe box" in (i.get("message") or "") for i in rep["phone"]["items"]), rep["phone"])
+        # a film: F.text outside the safe box is reported once (the sample rule's finding, not again from the grid); raw
+        # canvas text drawn inside F.decor is UI detail
+        film = self.tmp / "filmsafe"
+        write(film / "showtime.json", json.dumps({"width": 540, "height": 960, "fps": 30, "duration": 3}))
+        write(film / "index.html", """<!doctype html><html><head><link rel="stylesheet" href="/_lib/@fontsource-variable/inter/index.css">
+<script src="/_st/stage.js"></script><script src="/_st/film.js"></script></head><body><script>
+Film.start({ look: 'dark', design: [540, 960], fonts: ['600 1em "Inter Variable"'], scenes: function (T, g, F) {
+  F.text('Film label low', 60, 820, { size: 26 });
+  F.text('Spaced  label  low', 300, 900, { size: 26 });
+  g.save(); g.font = '600 26px "Inter Variable"'; g.fillStyle = '#ffffff';
+  F.decor(function () { g.fillText('UI detail low', 60, 880); }); g.restore();
+  F.text('Film label inside', 60, 400, { size: 26 });
+} });
+</script></body></html>""")
+        rep = json.loads(showtime("check", film, "--json", "--no-determinism", "--samples", "2", check=False).stdout)
+        sz = [f for f in rep["findings"] if f["code"] == "safe_zone"]
+        self.assertEqual(len([f for f in sz if "Film label low" in f["message"]]), 1, sz)
+        self.assertEqual(len([f for f in sz if "Spaced" in f["message"]]), 1, sz)   # one key for both rules
+        for word in ("UI detail low", "Film label inside"):
+            self.assertFalse([f for f in sz if word in f["message"]], (word, sz))
+
+    def test_13g_check_raw_canvas_text_size_on_the_timeline(self):
+        """Canvas text a page draws itself (raw fillText, no film API) is measured for size on check's whole-timeline grid,
+        as DOM and F.text are: a tiny held label is one tiny_text warning, a counter in one place is one text, a readable
+        or faint label or one mostly off the frame is not reported. In a film, an F.text is measured once (not again as
+        the raw draw under it) and raw text inside F.decor is UI detail."""
+        import re
+        raw = self.tmp / "rawtiny"
+        write(raw / "showtime.json", json.dumps({"width": 960, "height": 540, "fps": 30, "duration": 3}))
+        write(raw / "index.html", """<!doctype html><html><head><link rel="stylesheet" href="/_lib/@fontsource-variable/inter/index.css">
+<style>body{margin:0;background:#0b0d12}#cv{position:fixed;left:0;top:0;width:960px;height:540px}</style>
+<script src="/_st/stage.js"></script></head><body><canvas id="cv" width="960" height="540"></canvas>
+<script>
+var g = document.getElementById('cv').getContext('2d');
+ST.onSeek(function (t) {
+  g.clearRect(0, 0, 960, 540); g.textBaseline = 'middle'; g.fillStyle = '#e8edf5';
+  g.font = '600 6px "Inter Variable"'; g.fillText('tiny raw caption', 40, 60);
+  g.font = '600 30px "Inter Variable"'; g.fillText('Readable raw label', 40, 160);
+  g.font = '600 7px "Inter Variable"'; g.fillText(String(100 + Math.floor(t * 10)), 40, 260);   // a counter
+  g.save(); g.globalAlpha = 0.3; g.font = '600 6px "Inter Variable"'; g.fillText('faint raw note', 40, 360); g.restore();
+  g.font = '600 6px "Inter Variable"'; g.fillText('mostly off the frame', 950, 460);
+});
+</script></body></html>""")
+        rep = json.loads(showtime("check", raw, "--json", "--no-determinism", "--samples", "2", check=False).stdout)
+        tiny = [f for f in rep["findings"] if f["code"] == "tiny_text" and f["severity"] == "warning"]
+        hit = [f for f in tiny if "tiny raw caption" in f["message"]]
+        self.assertEqual(len(hit), 1, tiny)
+        self.assertEqual(hit[0].get("source"), "canvas")
+        self.assertEqual(len([f for f in tiny if re.search(r'"1\d\d"', f["message"])]), 1, tiny)
+        for word in ("Readable raw label", "faint raw note", "mostly off the frame"):
+            self.assertFalse([f for f in tiny if word in f["message"]], (word, tiny))
+        film = self.tmp / "filmtiny"
+        write(film / "showtime.json", json.dumps({"width": 960, "height": 540, "fps": 30, "duration": 3}))
+        write(film / "index.html", """<!doctype html><html><head><link rel="stylesheet" href="/_lib/@fontsource-variable/inter/index.css">
+<script src="/_st/stage.js"></script><script src="/_st/film.js"></script></head><body><script>
+Film.start({ look: 'dark', design: [960, 540], fonts: ['600 1em "Inter Variable"'], scenes: function (T, g, F) {
+  F.text('film tiny note', 40, 60, { size: 6 });
+  F.text('Film readable', 40, 160, { size: 30 });
+  g.save(); g.font = '600 6px "Inter Variable"'; g.fillStyle = '#ffffff';
+  F.decor(function () { g.fillText('decor tiny detail', 40, 260); }); g.restore();
+} });
+</script></body></html>""")
+        rep = json.loads(showtime("check", film, "--json", "--no-determinism", "--samples", "2", check=False).stdout)
+        tiny = [f for f in rep["findings"] if f["code"] == "tiny_text" and f["severity"] == "warning"]
+        self.assertEqual(len([f for f in tiny if "film tiny note" in f["message"]]), 1, tiny)
+        for word in ("Film readable", "decor tiny detail"):
+            self.assertFalse([f for f in tiny if word in f["message"]], (word, tiny))
+
     def test_14_check_judges_settled_frame_after_transition(self):
         """Text sliding through the vertical safe zone during a push transition is a note naming the
         transition; the settled frame after it is sampled and passes."""

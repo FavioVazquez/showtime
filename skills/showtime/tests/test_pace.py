@@ -152,7 +152,8 @@ console.log(JSON.stringify({ factor: pace.factor, summary: S.paceSummary([{ pace
 
     # The guard's fake-browser runs (node only). Every wait is derived from stagehost's own SHOT_IDLE_MS under the test
     # scale: idle = SHOT_IDLE_MS x scale (each read of the browser's work may take that long too), a browser that
-    # answers nothing is stuck once it has said nothing for 2 x idle, and the work is read every POLL_MS.
+    # answers nothing is stuck once it has said nothing for 2 x idle, and each read starts POLL_MS after the previous
+    # one ended (not every POLL_MS): reads a browser never answers end (POLL_MS + idle) apart.
     GUARD_JS = """
 const S = await import(%s);
 const never = () => new Promise(() => {});
@@ -220,14 +221,16 @@ out.silent.noWork = cache.noWork === true;
         silent browser, not the cap (the cap check came first: a busy machine's late tick, a cap set low, or a size
         read that used most of a shot's shared budget then got the less helpful reason). The browser does not
         answer; each unanswered read takes the idle time, so the reads end about (poll + idle) apart and the silence
-        is known at the third. The cap falls between the second and the third (at 2.6 x (poll + idle)): it is
-        reached on the tick that finds the silence, with 0.6 x (poll + idle) to spare for late timers before the
-        second. Idle 6 s here (scale 0.2): 3.6 s to spare, over three times the late timers that ended the old cap
-        test on a loaded Windows runner (at least about 1 s)."""
+        is known at the third. The cap falls between the second and the third (at 2.9 x (poll + idle)): it is
+        reached on the tick that finds the silence, which never comes before poll + 3 x idle (timers do not fire
+        early; 2.9 x (poll + idle) is below that while poll < idle / 19), and the late timers before the second tick may add up to 0.9 x (poll + idle) before that tick meets the
+        cap without the silence (the case would then end on the cap). Idle 6 s here (scale 0.2): 5.4 s to spare, over
+        five times the late timers that ended the old cap test on a loaded Windows runner (at least about 1 s); it was
+        3.6 s at 2.6 x."""
         scale = 0.2
         idle = shot_idle_ms() * scale
         step = self.POLL_MS + idle
-        cap_ms = int(2.6 * step)
+        cap_ms = int(2.9 * step)
         r = self.guard(scale, cap_ms, """
 const b = fake(never), cache = {};
 out.both = await run(b, never(), cache);
@@ -323,32 +326,38 @@ process.exit(0);
         self.assertGreater(paced["pace"]["frame_ms"], 50, paced)
         self.assertGreater(paced["factor"], 1, paced)
 
+    # The open-deadline tests' page waits longer than the page-open deadline allows, on any machine. The deadline is
+    # OPEN_S here (5 min on a real machine), and the page's own load gets 3/5 of it (stagehost PAGE_LOAD_MS): at 3 s
+    # that was 1.8 s, and under a 6-core Mac's 6 busy loops 5 of 15 checks failed their load ("page.goto: Timeout
+    # 1800ms exceeded", check's ready_failed) instead of reaching the deadline. At 10 s the load gets 6 s. The page
+    # waits SLOW_OPEN_MS, past one try's deadline even at the pace ceiling (x5: 50 s), so it is never ready in time.
+    # The page's own cap on an ST.waitFor gate (stage.js ready(): pacedRace(..., 60000, 'ST.waitFor: ...'), 60 s x the
+    # page's pace) is past that deadline too, so the open deadline always ends the try first.
+    OPEN_S = 10
+    SLOW_OPEN_MS = 120000
+
     def test_first_page_open_deadline(self):
         """render's first page has the workers' page-open deadline (5 min; SHOWTIME_TEST_OPEN_TIMEOUT shortens
         it): a browser that never answers while it opens the page is given up, the page tried once more in a new
         browser, and then the render fails with the deadline instead of waiting with none (the first page and
         the WebGL probe had no deadline of their own)."""
-        proj = self.tmp / "slowopen"
-        write(proj / "showtime.json", json.dumps({"width": 320, "height": 180, "fps": 10, "duration": 0.5, "background": "#202830"}))
-        write(proj / "index.html", HEAD + "</head><body><script>"
-              "ST.waitFor(new Promise((r) => setTimeout(r, 20000)), 'slow open');\n"
-              "ST.onSeek(() => {});</script></body></html>")
+        proj = self.slow_open_project("slowopen")
         cp = showtime("render", proj, "-o", self.tmp / "slowopen.mp4", "--no-check", "--workers", "1",
-                      env=dict(ENV, SHOWTIME_TEST_OPEN_TIMEOUT="3"), timeout=300)
+                      env=dict(ENV, SHOWTIME_TEST_OPEN_TIMEOUT=str(self.OPEN_S)), timeout=300)
         self.assertNotEqual(cp.returncode, 0, cp.stdout[-1500:])
         self.assertIn("trying once more in a new browser", cp.stderr)
         self.assertEqual(cp.stderr.count("trying once more"), 1, cp.stderr[-2000:])
         # the deadline is x the page's pace (a busy runner's frames raise it while the page waits)
         self.assertRegex(cp.stderr, r"timed out after \d+s( \(x[\d.]+ for this page's pace\))?: opening the page")
-        # names the step (on a fast machine the page's own 20 s wait; a slow one may still be setting the tab up)
+        # names the step (on a fast machine the page's own wait; a slow one may still be setting the tab up)
         self.assertRegex(cp.stderr, STUCK_AT)
 
     def slow_open_project(self, name):
         proj = self.tmp / name
         write(proj / "showtime.json", json.dumps({"width": 320, "height": 180, "fps": 10, "duration": 0.5, "background": "#202830"}))
         write(proj / "index.html", HEAD + "</head><body><script>"
-              "ST.waitFor(new Promise((r) => setTimeout(r, 20000)), 'slow open');\n"
-              "ST.onSeek(() => {});</script></body></html>")
+              "ST.waitFor(new Promise((r) => setTimeout(r, %d)), 'slow open');\n"
+              "ST.onSeek(() => {});</script></body></html>" % self.SLOW_OPEN_MS)
         return proj
 
     def test_check_open_deadline(self):
@@ -357,11 +366,11 @@ process.exit(0);
         macOS CI runner's check outlived its caller's 5 minutes)."""
         proj = self.slow_open_project("slowcheck")
         cp = showtime("check", proj, "--json", "--no-determinism", "--no-timeline", "--no-history", "--samples", "2",
-                      env=dict(ENV, SHOWTIME_TEST_OPEN_TIMEOUT="3"), timeout=300)
+                      env=dict(ENV, SHOWTIME_TEST_OPEN_TIMEOUT=str(self.OPEN_S)), timeout=300)
         self.assertNotEqual(cp.returncode, 0, cp.stdout[-1500:])
         self.assertEqual(cp.stderr.count("trying once more in a new browser"), 1, cp.stderr[-2000:])
         self.assertIn("the browser stopped answering", cp.stderr)
-        # names the step (on a fast machine the page's own 20 s wait; a slow one may still be setting the tab up)
+        # names the step (on a fast machine the page's own wait; a slow one may still be setting the tab up)
         self.assertRegex(cp.stderr, STUCK_AT)
         self.assertIn("in a new browser too", cp.stderr)
 
@@ -404,8 +413,9 @@ process.exit(0);
         rep = json.loads(cp.stdout)
         soft = [f for f in rep["findings"] if f["code"] in ("cut_probe_failed", "determinism_incomplete")]
         self.assertTrue(soft, [(f["code"], f["message"][:120]) for f in rep["findings"]])
+        self.assertIn("cut_probe_failed", {f["code"] for f in soft}, soft)   # the cut walk's second page hangs too
         for f in soft:
-            self.assertIn(f["severity"], ("info", "warning"), f)
+            self.assertEqual(f["severity"], "warning", f)   # never info: a skipped cut walk or determinism load is not ok
             self.assertIn("could not open", f["message"])
         self.assertNotIn("the browser stopped answering", cp.stderr)
 
@@ -415,7 +425,7 @@ process.exit(0);
         page opens, check gives it up at the deadline, kills it and finishes in a new browser; stopped after the
         image lab page opened, the watchdog ends check with an error naming its last step. Each returns in under 120 s
         (about 25 s on a quiet Mac) and leaves no stopped browser of its own behind.
-        The open deadline is 20 s here, not 3 s: a stopped browser never answers, so any deadline finds it and a
+        The open deadline is 20 s here (OPEN_S elsewhere): a stopped browser never answers, so any deadline finds it and a
         longer one only costs that wait; the healthy browser that replaces it must open its page inside the same
         deadline, and on a busy macOS CI runner a fresh browser took over 3 s just to create its context and tab
         (the 0.4.2 release PR). The page's own load gets 3/5 of it (PAGE_LOAD_MS: 1.8 s at 3 s, 12 s here), and the
@@ -473,9 +483,11 @@ class TestSizeReadWaitsForTheFrame(unittest.TestCase):
     shrinks what the guard allows the browser to answer it (SystemInfo.getProcessInfo): one read may take the idle
     time (SHOT_IDLE_MS x scale) and a browser silent for twice that is stuck. At 0.05 that was 1.5 s and 3 s, and on
     a loaded Windows runner two late answers ended a busy read as "the browser did not say what it was doing"
-    (nightly 14 Oct); on a real machine they are 15 s and 60 s. At 0.25 they are 7.5 s and 15 s: reads every 5 s
-    start at 5 s, so the browser cannot be found silent before about 27 s, after the page lets go. The stopped page
-    keeps 0.05 (it fails in seconds: the idle window is 1.5 s)."""
+    (nightly 14 Oct); on a real machine they are 15 s and 60 s. At 0.25 they are 7.5 s and 15 s: the first read
+    starts at 5 s and an unanswered one ends 7.5 s later, the next starts 5 s after that, so unanswered reads end at
+    12.5, 25 and 37.5 s, and the silence (every read for 15 s unanswered) is found at 37.5 s at the earliest, well
+    after the page lets go (about 20 s: 15 s plus the 5 s margin, at pace 1). The stopped page keeps 0.05 (it fails
+    in seconds: the idle window is 1.5 s)."""
 
     OLD_READ_MS = 60000   # the read's flat deadline before guardShot (x the page's pace)
     BUSY_MARGIN_MS = 5000   # the page is held this long past the old deadline
@@ -498,12 +510,15 @@ class TestSizeReadWaitsForTheFrame(unittest.TestCase):
     def run_shot(self, stop, scale):
         # the main thread is held right after the seek returns (a task queued by a call that returns at once, not
         # onSeek, which would hold the seek itself and raise the page's pace), then a clipped screenshot is taken;
-        # it is held past the old deadline at the pace the page measured (the pace does not change after the seek)
+        # it is held past the old deadline at the pace the page measured (the pace does not change after the seek).
+        # Software GL (gpu off), as on the runner without a GPU of #14: what is tested is the read waiting out a busy
+        # main thread, and a macos-14 runner's virtual GPU once stalled the screenshot right after the hold ("did no
+        # work for 10 s", public showtime#78), which this test does not cover (TestFrameNeverComes does)
         code = """
 const S = await import(%s);
 const { startServer } = await import(%s);
 const server = await startServer({ root: %s, port: 0 });
-const b = await S.openBrowser({});
+const b = await S.openBrowser({ gpu: 'off' });
 const stop = %s;
 let out, extra = {}, stopped = [];
 try {

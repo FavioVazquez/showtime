@@ -435,6 +435,7 @@ MAX_FILM_SECONDS = 24 * 3600              # no data-only film (no --source) is l
 MAX_LINES = 2 * 100000                    # every line read of a CSV (blank and comment lines too) counts against this
 MAX_VALUES = 64 * 100000                  # commas in a JSON file (a bound on every value in it) before it is parsed
 MAX_CONTAINERS = 8 * 100000               # "{" and "[" in a JSON file (each is a dict or list in memory) before it is parsed
+MAX_KEYS = 16 * 100000                    # ":" in a JSON file (a bound on every object key in it) before it is parsed
 MAX_DIGITS = 1000                         # a run of digits longer than this is not a number a film can hold
 MAX_DEPTH = 32                            # JSON nesting an event may carry
 MAX_FRAME = 10 ** 9                       # a film time past this many frames is a mistake in the time map, not a film
@@ -549,6 +550,12 @@ def _json_rows(path: Path, text: str) -> Tuple[List[Dict[str, Any]], List[str]]:
     # refused before it is parsed, while a legitimate file (100,000 events, each with arrays of numbers) is not
     if text.count("{") + text.count("[") > MAX_CONTAINERS:
         raise ShowtimeError("%s holds too many lists or objects (over %d)" % (path.name, MAX_CONTAINERS), hint="keep the peaks, not every sample")
+    # ... and object keys: ONE object with millions of keys passes both counts above (a 42 MB file of 3.5 million keys
+    # took about 930 MB to parse, about 266 bytes a key; this bound keeps it near 400 MB). Colons inside strings count
+    # too (times like 12:30:01, URLs), so it is an upper bound like the commas: 16 per event at the most events
+    if text.count(":") > MAX_KEYS:
+        raise ShowtimeError("%s holds too many object keys (over %d colons, counting those inside strings)" % (path.name, MAX_KEYS),
+                            hint="keep the peaks, not every sample; at most %d events" % MAX_EVENTS)
     if re.search(r"\d{%d,}" % MAX_DIGITS, text):                # before json.loads: older Pythons parse a huge integer in quadratic time
         raise ShowtimeError("%s %s" % (path.name, BIG), hint="remove or fix that value")
 
@@ -685,6 +692,23 @@ def build_import(events_file: Any, *, time_map: Optional[Dict[str, float]] = Non
         if v is None:
             raise ShowtimeError("%s, event %d: the time %r is not a number" % (path.name, n, r.get(tcol)))
         times.append(v)
+    # the strength cells are checked before the source is read (a long recording is decoded only for a good file)
+    blank_cell = lambda raw: raw is None or str(raw).strip() == ""      # noqa: E731
+    sv: Optional[List[float]] = None
+    if strength:
+        sv = []
+        for n, r in enumerate(rows, start=1):
+            raw = r.get(strength)
+            v = _num(raw)
+            if v is None and not blank_cell(raw):
+                raise ShowtimeError("%s, event %d: the %s value %r is not a number" % (path.name, n, strength, raw))
+            sv.append(abs(v) if v is not None else 0.0)
+    elif "strength" in cols:                # a column named strength sizes the events without the flag: numbers only too
+        for n, r in enumerate(rows, start=1):
+            raw = r.get("strength")
+            if _num(raw) is None and not blank_cell(raw):
+                raise ShowtimeError("%s, event %d: the strength value %r is not a number" % (path.name, n, raw),
+                                    hint="a column named strength sizes the events (0 to 1); make it a number, or rename it")
     src: Dict[str, Any]
     x = np.zeros(0, dtype=np.float32)
     if source is not None:
@@ -699,19 +723,8 @@ def build_import(events_file: Any, *, time_map: Optional[Dict[str, float]] = Non
                "duration": round(float(duration), 3) if duration else None, "width": 0, "height": 0}
     sfps = float(src["fps"])
     end = float(src["duration"]) if src.get("duration") else None
-    sv: Optional[List[float]] = None
-    if strength:
-        sv = []
-        for n, r in enumerate(rows, start=1):
-            raw = r.get(strength)
-            v = _num(raw)
-            if v is None and raw is not None and str(raw).strip() != "":
-                raise ShowtimeError("%s, event %d: the %s value %r is not a number" % (path.name, n, strength, raw))
-            sv.append(abs(v) if v is not None else 0.0)
-        blank = sum(1 for r in rows if r.get(strength) is None or str(r.get(strength)).strip() == "")
-        if blank:
-            warn("%d event(s) have no %s value: drawn at strength 0" % (blank, strength))
     top = max(sv or [0.0]) or 1.0
+    blank = 0                               # events kept with no --strength value (a dropped row is not counted)
     order = sorted(range(len(rows)), key=lambda k: times[k])
     events: List[Dict[str, Any]] = []
     dropped: List[Dict[str, Any]] = []
@@ -733,6 +746,7 @@ def build_import(events_file: Any, *, time_map: Optional[Dict[str, float]] = Non
             continue
         if sv is not None:
             st = round(sv[k] / top, 3)
+            blank += 1 if blank_cell(r.get(strength)) else 0
         else:
             own = _num(r.get("strength"))
             st = round(min(1.0, max(0.0, own)), 3) if own is not None else 1.0
@@ -754,6 +768,8 @@ def build_import(events_file: Any, *, time_map: Optional[Dict[str, float]] = Non
                 c = c + "_data"
             e[c] = val
         events.append(e)
+    if blank and events:
+        warn("%d event(s) have no %s value: drawn at strength 0" % (blank, strength))
     if not events:
         raise ShowtimeError("none of the %d events of %s lands inside the film" % (len(rows), path.name),
                             hint="check --time-map: film t = (t_data - t0) x slow must be 0 or more%s" % (
@@ -983,20 +999,48 @@ def track_frames(frames: Sequence[np.ndarray], ref: int, region: np.ndarray, mas
 
 # ------------------------------------------------------------------ verify
 
-def _read_marker_levels(video: Path, width: int, height: int) -> np.ndarray:
+def marker_crop(width: int, height: int, scale: float = 1.0) -> Tuple[int, int, int, int]:
+    """(w, h, x, y) of the patch to read for the marker on a film `scale` times the page's size: the whole 6x6 square
+    at 1, else its inside (a scaled-down square is blurred at its edges and lands between pixels)."""
+    if abs(scale - 1.0) < 1e-3:
+        return MARKER_SIZE, MARKER_SIZE, width - MARKER_INSET, height - MARKER_INSET
+    size = MARKER_SIZE * scale
+    half = max(1, int(math.floor(size / 2.0 - 0.75)))
+    cx, cy = width - (MARKER_INSET - MARKER_SIZE / 2.0) * scale, height - (MARKER_INSET - MARKER_SIZE / 2.0) * scale
+    x, y = int(math.floor(cx - half + 0.5)), int(math.floor(cy - half + 0.5))
+    return 2 * half, 2 * half, max(0, x), max(0, y)
+
+
+def _read_marker_levels(video: Path, width: int, height: int, scale: float = 1.0) -> np.ndarray:
     """Mean gray of the marker patch on every frame of the film (one value per frame)."""
     import subprocess
-    x, y = width - MARKER_INSET, height - MARKER_INSET
+    cw, ch, x, y = marker_crop(width, height, scale)
     args = [ff.ffmpeg_path(), "-hide_banner", "-nostdin", "-loglevel", "error", "-i", str(video), "-an",
-            "-vf", "crop=%d:%d:%d:%d,format=gray" % (MARKER_SIZE, MARKER_SIZE, x, y),
+            "-vf", "crop=%d:%d:%d:%d,format=gray" % (cw, ch, x, y),
             "-f", "rawvideo", "-pix_fmt", "gray", "-"]
     cp = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if cp.returncode != 0:
         raise ShowtimeError("ffmpeg could not read the film %s: %s" % (video.name, cp.stderr.decode("utf-8", "replace")[-300:]))
     px = np.frombuffer(cp.stdout, dtype=np.uint8)
-    per = MARKER_SIZE * MARKER_SIZE
+    per = cw * ch
     px = px[: (len(px) // per) * per].reshape(-1, per)
     return px.mean(axis=1) if len(px) else np.zeros(0)
+
+
+def film_scale(job: Path, width: int, height: int) -> float:
+    """How many times the page's size the film is: a --preview (fit to 720p) or --scale render of the project whose
+    showtime.json sets width x height. 1 when the project is not found or the film has another shape (--size)."""
+    doc = project_doc(job)
+    try:
+        pw, ph = float(doc.get("width") or 0), float(doc.get("height") or 0)
+    except (TypeError, ValueError):
+        return 1.0
+    if pw <= 0 or ph <= 0 or width <= 0 or height <= 0:
+        return 1.0
+    sx, sy = width / pw, height / ph
+    if abs(sx - sy) > 0.02 * max(sx, sy):        # another aspect: the page was laid out at the film's own size
+        return 1.0
+    return sx if abs(sx - 1.0) > 0.01 else 1.0
 
 
 def match_markers(expected: Sequence[int], on: Sequence[int], slack: int = MARKER_SLACK) -> Dict[str, Any]:
@@ -1142,9 +1186,9 @@ def smoothness_of_profiles(prof: np.ndarray, max_shift: int = 40) -> Dict[str, A
             "stall_frames": stalls[:50], "jump_frames": jumps[:50]}
 
 
-def project_config(job: Path) -> Dict[str, Any]:
-    """The "xray" block of the job's project showtime.json ({"marker", "offset_frames", "band": [y0, y1]}):
-    <job>/project/showtime.json first, then any */showtime.json under the job. {} when there is none."""
+def project_doc(job: Path) -> Dict[str, Any]:
+    """The job's project showtime.json that has an "xray" block: <job>/project/showtime.json first, then any
+    */showtime.json under the job. {} when there is none."""
     job = Path(job)
     cands = [job / "project" / "showtime.json"]
     try:
@@ -1155,10 +1199,15 @@ def project_config(job: Path) -> Dict[str, Any]:
     for p in cands:
         if p.is_file():
             d = read_json(p, {})
-            x = d.get("xray") if isinstance(d, dict) else None
-            if isinstance(x, dict):
-                return x
+            if isinstance(d, dict) and isinstance(d.get("xray"), dict):
+                return d
     return {}
+
+
+def project_config(job: Path) -> Dict[str, Any]:
+    """The "xray" block of the job's project showtime.json ({"marker", "offset_frames", "band": [y0, y1]}), {} when
+    there is none."""
+    return project_doc(job).get("xray") or {}
 
 
 def find_film(job: Path) -> Optional[Path]:
@@ -1221,9 +1270,15 @@ def verify(job: Any, video: Optional[Any] = None, source: Optional[Any] = None, 
     pr = ff.probe(film)
     W, H = int(pr["width"]), int(pr["height"])
     ffps = float(pr.get("fps") or 0)
-    levels = _read_marker_levels(film, W, H)
-    nfr = len(levels)
+    scale = film_scale(job, W, H)
+    levels = _read_marker_levels(film, W, H, scale)
     on = [int(i) for i in np.where(levels > 128)[0]]
+    if scale != 1.0 and not (on and len(on) < len(levels)):   # not found at the page's scale: read it as drawn on the film
+        lv1 = _read_marker_levels(film, W, H)
+        on1 = [int(i) for i in np.where(lv1 > 128)[0]]
+        if on1 and len(on1) < len(lv1):
+            scale, levels, on = 1.0, lv1, on1
+    nfr = len(levels)
     if skip is None:                       # --skip, else the project's "xray".skip: events that are not the object's
         sk = cfg.get("skip")
         skip = list(sk) if isinstance(sk, (list, tuple)) else []
@@ -1248,8 +1303,12 @@ def verify(job: Any, video: Optional[Any] = None, source: Optional[Any] = None, 
         "events": len(inside), "on_frame": len(m["exact"]), "missing": m["missing"], "extra": m["extra"],
         "audio_lag_ms": None, "marker": marker, "off_by": m["near"], "max_offset": m["max_offset"],
         "outside_film": len(expected) - len(inside), "skipped": len(skipset), "film": film.name, "film_frames": nfr}
+    if scale != 1.0:
+        res["marker_scale"] = round(scale, 4)
     findings: List[Tuple[str, str, str]] = []
     notes: List[str] = []
+    if scale != 1.0:
+        notes.append("the film is %.3g times the page's size (a --preview or --scale render): the marker was read there" % scale)
     if bad_skip:
         notes.append("WARN: skip entries ignored (not an event index of xray.json): %s" % ", ".join(bad_skip))
     if len(set(inside)) < len(inside):
@@ -1278,6 +1337,24 @@ def verify(job: Any, video: Optional[Any] = None, source: Optional[Any] = None, 
         except (TypeError, ValueError):
             band = None
     res["offset_frames"] = int(offset_frames)
+    # what the film's sound is: the audio check compares the film with the source sound, which says the sync of the
+    # events only when they were measured from that sound (analyze). A rendering of data ("xray".derived) or events
+    # imported from data (xray import) are said in the receipt instead of "the original".
+    derived = cfg.get("derived")
+    derived = " ".join(derived.split())[:200] if isinstance(derived, str) else ""
+    det = doc.get("detector") if isinstance(doc.get("detector"), dict) else {}
+    if derived:
+        res["derived"] = derived
+        notes.append("the clip's sound is a rendering (%s): the audio check compares the film with that rendering, not "
+                     "with the original data" % derived)
+    if det.get("engine") == "data":
+        inp = det.get("input") if isinstance(det.get("input"), dict) else {}
+        inp = " ".join(inp["file"].split())[:120] if isinstance(inp.get("file"), str) and inp["file"].strip() else "a data file"
+        res["events_from"] = "data: %s" % inp
+        if not derived:
+            notes.append("the events come from data (%s, xray import), not from the sound: the audio check says the film "
+                         "plays its source sound in time, not that the sound matches the data; say what the sound is "
+                         "with \"xray\": {\"derived\": \"...\"}" % inp)
     if band:
         res["smoothness"] = smoothness(film, band)
     if not marker:
@@ -1287,7 +1364,7 @@ def verify(job: Any, video: Optional[Any] = None, source: Optional[Any] = None, 
             findings.append(("FAIL", "xray_sync", "%d missing marker frame(s) %s, %d extra %s" % (
                 len(m["missing"]), m["missing"][:6], len(m["extra"]), m["extra"][:6])))
         if res["audio_lag_ms"] is not None and abs(res["audio_lag_ms"]) > LAG_LIMIT_MS:
-            findings.append(("FAIL", "xray_sync", "the film's audio is %.1f ms from the original (limit %g ms)" % (res["audio_lag_ms"], LAG_LIMIT_MS)))
+            findings.append(("FAIL", "xray_sync", "the film's audio is %.1f ms from %s (limit %g ms)" % (res["audio_lag_ms"], _sound_word(res), LAG_LIMIT_MS)))
         if audio_unmatched:
             findings.append(("WARN", "xray_audio", "the film's sound could not be matched to the clip's"))
         if m["near"]:
@@ -1304,18 +1381,24 @@ def verify(job: Any, video: Optional[Any] = None, source: Optional[Any] = None, 
     return res
 
 
+def _sound_word(res: Dict[str, Any]) -> str:
+    """What the film's sound was compared with: a rendering of data, the source sound of imported events, or the original."""
+    return "the rendered sound" if res.get("derived") else "the source sound" if res.get("events_from") else "the original"
+
+
 def end_card_line(res: Dict[str, Any]) -> str:
     """The one line for an end card."""
     if not res.get("marker"):
-        return "%d events measured from the clip (sync not verified: no marker in the film)" % res.get("events", 0)
+        return "%d events %s (sync not verified: no marker in the film)" % (
+            res.get("events", 0), "from data" if res.get("events_from") else "measured from the clip")
     lag = res.get("audio_lag_ms")
-    tail = "audio %s ms from the original" % ("%.0f" % abs(lag) if abs(lag) >= 10 else "%.1f" % abs(lag)) if lag is not None \
+    tail = "audio %s ms from %s" % ("%.0f" % abs(lag) if abs(lag) >= 10 else "%.1f" % abs(lag), _sound_word(res)) if lag is not None \
         else "audio not compared"
     return "%d of %d events on their frame · %s" % (res["on_frame"], res["events"], tail)
 
 
 RECEIPT_KEYS = ("events", "on_frame", "missing", "extra", "audio_lag_ms", "marker", "off_by", "max_offset", "outside_film", "skipped",
-                "film", "smoothness", "status", "line", "notes")
+                "film", "smoothness", "status", "line", "notes", "derived", "events_from", "marker_scale")
 
 
 def receipt_section(job: Path) -> Optional[Dict[str, Any]]:

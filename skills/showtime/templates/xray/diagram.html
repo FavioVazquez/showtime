@@ -194,7 +194,7 @@
     el('receipt').textContent = cfg.receipt || (n + ' ' + nouns[1] + ' measured from the clip’s sound');
     el('end-drawn').textContent = [cfg.drawn || 'Inside view: a generic manual typewriter, drawn, not this exact machine.', cfg.credit || ''].join(' ').trim();
     var mk = el('xmark'); mk.style.left = (W - 10) + 'px'; mk.style.top = (H - 10) + 'px';
-    S = { W: W, H: H, fps: fps, ev: ev, text: text, portrait: portrait, lay: lay, dur: (src.duration || cue('endcard', 9.4)), n: n };
+    S = { W: W, H: H, fps: fps, off: off, ev: ev, text: text, portrait: portrait, lay: lay, dur: (src.duration || Math.max(0.1, cue('endcard', 9.4) - off / fps)), n: n };
     // the scene
     var ctx = { events: ev, fps: fps, cue: window.CUE || {}, portrait: portrait, region: lay.region, safe: lay.safe, clip: lay.clip,
                 avoid: portrait ? '.xd-none' : null, theme: Diagram.themes[theme] };
@@ -210,13 +210,15 @@
     var hot = cs.getPropertyValue('--xd-hot').trim() || '#FF6A3D', ink = cs.getPropertyValue('--ld-ink').trim() || '#EEF2F8', dim = cs.getPropertyValue('--xd-dim').trim();
     g.clearRect(0, 0, w, h);
     g.fillStyle = dim; g.fillRect(0, h / 2 - 1, w, 2);
+    // the recording's clock (it starts at film frame "xray".offset_frames), not the film's
+    var at = function (fr) { return Math.max(0, Math.min(1, ((fr - S.off) / S.fps) / S.dur)); };
     S.ev.forEach(function (e) {
-      var x = Math.round((e.frame / S.fps) / S.dur * (w - 4)) + 2, hh = Math.max(8, (0.3 + 0.7 * (e.strength || 0.5)) * (h - 6)), on = e.frame <= f;
+      var x = Math.round(at(e.frame) * (w - 4)) + 2, hh = Math.max(8, (0.3 + 0.7 * (e.strength || 0.5)) * (h - 6)), on = e.frame <= f;
       g.globalAlpha = e.kind === 'skip' ? (on ? 0.55 : 0.25) : (on ? 1 : 0.32);
       g.fillStyle = e.kind === 'skip' ? ink : hot; g.fillRect(x - 2, (h - hh) / 2, 4, hh);
     });
     g.globalAlpha = 1; g.fillStyle = ink;
-    g.fillRect(Math.round(Math.min(1, (f / S.fps) / S.dur) * (w - 4)) + 1, 0, 2, h);
+    g.fillRect(Math.round(at(f) * (w - 4)) + 1, 0, 2, h);
   }
 
   function frame(t, fr) {

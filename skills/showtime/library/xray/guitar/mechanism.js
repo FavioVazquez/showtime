@@ -2,7 +2,7 @@
    Design space: 1000 x 350 units (the 9:16 panel under a 4:3 clip, about 0.95 px per unit): chord names on top,
    a six-line tab (string 1, high e, on top) with the right-hand fingers (p i m a) under it, and a fretboard
    diagram below in the same orientation, nut on the left, frets 0-12 at their real spacing.
-   The tab scrolls left past a fixed playhead on the smooth tempo map (k.beat of the frame's time, never a jump).
+   The tab scrolls left past a fixed playhead on the smooth tempo map (k.beat of k.rt, the recording's time: never a jump).
    Each event is a pluck: its notes (notes.json guitar[]: string, fret, finger) are written at the playhead, red on
    the event's frame; on the fretboard the fretted dots light while they sound and the plucked string vibrates
    from the fret to the bridge, ringing down over about a second.
@@ -29,7 +29,7 @@
       var ev = evOf[i];
       notes.push({ i: i, t: n.t, end: n.end || n.t + 0.5, conf: n.confidence || 0, beat: q[i] ? q[i].beat : k.beat(n.t),
                    string: gd.string, fret: gd.fret, finger: gd.finger || '', ev: ev,
-                   show: ev != null ? k.ev[ev].frame : Math.floor(n.t * k.fps + 1e-9) });
+                   show: ev != null ? k.ev[ev].frame : k.frameAt(n.t) });
     });
     var cols = {};                                 // one column per beat; one note per string (the surer one)
     notes.forEach(function (n) {
@@ -55,6 +55,8 @@
     g.fillStyle = col; g.textAlign = align || 'left'; g.textBaseline = 'alphabetic'; g.globalAlpha *= (k.labelAlpha == null ? 1 : k.labelAlpha);
     g.fillText(s, x, y); g.restore();
   }
+  // a caption: in the 9:16 panel the page sets it in its caption row at the label size (k.caption), else drawn here
+  function cap(k, s, x, y, px, col, align) { if (k.caption) k.caption(s, align === 'right' ? 'right' : 'left', col); else text(k, s, x, y, px, col, align); }
   function strY(s) { return TY + (s - 1) * TS; }
   function boardY(s) { return FY + (s - 1) * FS; }
 
@@ -74,7 +76,7 @@
     draw: function (k) {
       if (k.view === 'inplace') return;
       if (!M) build(k);
-      var g = k.g, C = k.C, f = k.f, now = f / k.fps, bNow = k.beat(now), pxb = M.pxb;
+      var g = k.g, C = k.C, f = k.f, now = k.rt, bNow = k.beat(now), pxb = M.pxb;
       var o = k.pr(0, 0);
       g.save(); g.translate(o[0], o[1]); g.scale(k.scale, k.scale); g.shadowBlur = 0;
       var X = function (b) { return PLAY + (b - bNow) * pxb; };
@@ -88,7 +90,8 @@
       // the six strings of the tab, their names, and the bracket
       for (var s = 1; s <= 6; s++) line(g, HX - 8, strY(s), W, strY(s), C.l(.5), 1.3);
       line(g, HX - 8, strY(1), HX - 8, strY(6), C.l(.7), 2);
-      for (s = 1; s <= 6; s++) text(k, NAMES[s - 1], 14, strY(s) + 9, 26, C.muted, 'left', 600);
+      // (9:16 panel: the names are labels in the page's column, where they can be read; see the end)
+      if (!k.caption) for (s = 1; s <= 6; s++) text(k, NAMES[s - 1], 14, strY(s) + 9, 26, C.muted, 'left', 600);
       // the playhead (every pluck flashes it), under the numbers
       var ph = k.hot ? k.s : 0;
       g.save(); if (ph > 0.05) { g.shadowColor = C.hot; g.shadowBlur = 16 * ph; }
@@ -180,9 +183,11 @@
       }
       // words: the key and tempo heard
       var info = [M.key ? String(M.key).toUpperCase() : null, M.has ? Math.round(M.bpm) + ' BPM' : null].filter(Boolean).join(' · ');
-      if (info) text(k, info, 0, 22, 28, C.muted, 'left');
-      text(k, 'p i m a: right hand', PLAY + 8, 22, 28, C.muted, 'right');
+      if (info) cap(k, info, 0, 22, 28, C.muted, 'left');
+      // the fingers' key; in the 9:16 panel only when a finger is drawn (its caption row has no room to spare)
+      if (!k.caption || M.notes.some(function (n) { return n.finger; })) cap(k, 'p i m a: right hand', PLAY + 8, 22, 28, C.muted, 'right');
       g.restore();
+      if (k.caption) for (var si = 1; si <= 6; si++) k.label(NAMES[si - 1], [HX - 8, strY(si)], 0, 0, false, { keepCase: true });
     }
   });
 })();

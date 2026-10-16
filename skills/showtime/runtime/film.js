@@ -916,6 +916,8 @@
     var r = outRect(x, y, w, h, g), c = { kind: kind, text: String(text || '').slice(0, 60), x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.w), h: Math.round(r.h), z: S.drawSeq = (S.drawSeq || 0) + 1 };
     if (extra) for (var k in extra) c[k] = extra[k];
     S.covers.push(c);
+    var ct = stageText();   // the card hides raw canvas text drawn before it, as it hides F.text
+    if (ct && ct.cover) ct.cover(g, x, y, w, h);
   }
   // Every F.text call of the current frame, in output CSS pixels, for QA tools (Film.frameInfo()).
   function recordText(str, x, y, w, o, g) {
@@ -923,7 +925,7 @@
     var x0 = al === 'center' ? x - w / 2 : (al === 'right' || al === 'end') ? x - w : x;
     var y0 = bl === 'middle' ? y - size * 0.5 : bl === 'top' || bl === 'hanging' ? y : bl === 'bottom' ? y - size : y - size * 0.78;
     var r = outRect(x0, y0, w, size, g), m = r.m;
-    S.texts.push({
+    var rec = {
       text: str.slice(0, 120), x: Math.round(r.x), y: Math.round(r.y),
       w: Math.round(r.w), h: Math.round(r.h), z: S.drawSeq = (S.drawSeq || 0) + 1,
       size: +(size * (m ? Math.hypot(m.a, m.b) / S.dpr : 1)).toFixed(1), font: g.font,
@@ -931,8 +933,23 @@
       cam: +(S.camZoom || 1).toFixed(3),
       decor: !!(o.decor || S.decor > 0),
       flash: !!o.flash,   // a flash word: texture in the showreel tone (scripts/lib/showreel.mjs)
-    });
+      layer: !!(o.layer || S.layer > 0),   // layered on purpose over other text: not an overlap
+    };
+    glyphBox(rec, g, str, x, y);
+    S.texts.push(rec);
   }
+  /** The painted glyphs' box (measureText's actual bounds through the transform) as gx/gy/gw/gh: what overlaps. */
+  function glyphBox(rec, g, str, x, y) {
+    var mt = g.measureText(str), l = mt.actualBoundingBoxLeft, rt = mt.actualBoundingBoxRight;
+    var asc = mt.actualBoundingBoxAscent, desc = mt.actualBoundingBoxDescent;
+    if (!(isFinite(l) && isFinite(rt) && isFinite(asc) && isFinite(desc)) || l + rt <= 0 || asc + desc <= 0) return false;
+    var b = outRect(x - l, y - asc, l + rt, asc + desc, g);
+    rec.gx = Math.round(b.x); rec.gy = Math.round(b.y); rec.gw = Math.round(b.w); rec.gh = Math.round(b.h);
+    return true;
+  }
+  // the stage runtime records every page canvas's fillText/strokeText for check (stage.js canvasText); F.text records
+  // its own text here with more detail, so its calls are marked skip there. F.layer / F.decor tag raw calls too.
+  function stageText() { return root.__stCanvasTextFlags || null; }
 
   /**
    * Mark what `draw` paints as UI-mockup detail (the canvas twin of the DOM's data-st-decor): tiny
@@ -941,8 +958,22 @@
    * decor. One text: F.text(str, x, y, {decor: true}). Returns what `draw` returns.
    */
   F.decor = function (draw) {
+    var ct = stageText();
     S.decor = (S.decor || 0) + 1;
-    try { return draw(); } finally { S.decor -= 1; }
+    if (ct) ct.decor++;
+    try { return draw(); } finally { S.decor -= 1; if (ct) ct.decor--; }
+  };
+
+  /**
+   * Mark what `draw` paints as text layered over other text on purpose (a word stamped over a struck-out one, a
+   * label printed over a ghost of itself): `showtime check` does not report it as text over text. One text:
+   * F.text(str, x, y, {layer: true}). Raw ctx.fillText calls inside `draw` are covered too. Returns what `draw` returns.
+   */
+  F.layer = function (draw) {
+    var ct = stageText();
+    S.layer = (S.layer || 0) + 1;
+    if (ct) ct.layer++;
+    try { return draw(); } finally { S.layer -= 1; if (ct) ct.layer--; }
   };
 
   /**
@@ -974,7 +1005,9 @@
       g.lineJoin = 'round';
     }
     applyShadow(o.shadow);
-    rawText(str, x, y, o, tr);
+    var ct = stageText();
+    if (ct) ct.skip++;
+    try { rawText(str, x, y, o, tr); } finally { if (ct) ct.skip--; }
     var w = g.measureText(str).width;
     if (S.texts && S.texts.length < 400) recordText(str, x, y, w, o, g);
     g.restore();

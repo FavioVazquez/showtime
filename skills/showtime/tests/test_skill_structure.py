@@ -26,6 +26,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 TESTS_DIR = Path(__file__).resolve().parent
@@ -106,9 +107,8 @@ class TestRepoHygiene(unittest.TestCase):
         self.assertRegex(text, r"(?m)^\*\s+-text\s*$")
         for line in text.splitlines():
             self.assertEqual(cr.checkout_rewrites(line), [], line)
-        import subprocess
-        tracked = subprocess.run(["git", "ls-files", "-z"], cwd=str(REPO), stdout=subprocess.PIPE, check=True).stdout.decode("utf-8").split("\0")
-        tracked = [t for t in tracked if t and (REPO / t).is_file()]
+        # the shipped files (git's list, or a walk of the folder where there is no .git: a tarball on another machine)
+        tracked = [cr.rel(p) for p in cr.shipped_files()]
         shims = [t for t in tracked if t.lower().endswith((".cmd", ".bat", ".ps1"))]
         posix = [t for t in tracked if t.endswith(".sh") or t == "skills/showtime/bin/showtime"]
         self.assertTrue(shims and posix)
@@ -120,13 +120,40 @@ class TestRepoHygiene(unittest.TestCase):
 
     def test_checkout_rewrite_check_and_mutants(self):
         import shutil
+        import subprocess
         import tempfile
         for line in ("*.cmd text eol=crlf", "* text=auto eol=lf", "*.a filter=lfs diff=lfs merge=lfs", "*.b ident",
                      "*.c working-tree-encoding=UTF-16", "d export-ignore", "e export-subst", "*.f eol=lf", "*.g text=auto",
                      "*.i crlf", "*.j -crlf", "*.k crlf=input", "*.l !text", "*.m text", "*.n !crlf", "a#b text eol=lf"):
             self.assertNotEqual(cr.checkout_rewrites(line), [], line)
-        for line in ("* -text", "*.png binary", "# *.cmd text eol=crlf", "", "*.h -text  # eol=lf", "a#b -text", "*.png binary # text"):
+        for line in ("* -text", "*.png binary", "# *.cmd text eol=crlf", "", "*.h -text  # eol=lf", "a#b -text", "*.png binary # text",
+                     "*.cmd text eol=crlf # git ignores this line whole"):
             self.assertEqual(cr.checkout_rewrites(line), [], line)
+        for line in ('"a b" text eol=crlf', '"a b" text'):     # a quoted pattern with a space is still checked
+            self.assertNotEqual(cr.checkout_rewrites(line), [], line)
+        GA_CASES = (("* -text # note", "#"), ("* -text #note", "#note"), ("*.x text bad$name", "bad$name"), ("* -text", None),
+                    ("a#b -text", None), ("* -text x=#y !eol a.b_c-d", None), ("# * -text # x", None), ("", None),
+                    ('"a b" text', None), ('"a b" text eol=crlf', None), ('"a\\"b c" -text', None), ("* --text", "--text"),
+                    ("* -", "-"), ("* !-x", "!-x"), ("* -text\xa0x", "-text\xa0x"), ("*\t-text", None), ("[attr]bin -text -diff", None))
+        for line, bad in GA_CASES:
+            self.assertEqual(cr.git_ignored_attr(line), bad, line)
+        git = shutil.which("git")
+        if git:   # the same verdicts from git itself: it names the token it refuses and leaves the line's attributes unset
+            g = Path(tempfile.mkdtemp(prefix="st-ga-git-"))
+            try:
+                subprocess.run([git, "init", "-q", str(g)], check=True)
+                for line, _bad in GA_CASES:
+                    if not line or line.startswith("#"):
+                        continue
+                    (g / ".gitattributes").write_text(line + "\n", encoding="utf-8")
+                    cp = subprocess.run([git, "check-attr", "text", "--", "a.cmd"], cwd=str(g), stdout=subprocess.PIPE,
+                                        stderr=subprocess.PIPE, encoding="utf-8", env=dict(os.environ, LC_ALL="C", LANGUAGE=""))
+                    refused = "is not a valid attribute name" in cp.stderr
+                    self.assertEqual(refused, cr.git_ignored_attr(line) is not None, (line, cp.stdout, cp.stderr))
+                    if refused:
+                        self.assertIn("text: unspecified", cp.stdout, line)
+            finally:
+                shutil.rmtree(str(g), ignore_errors=True)
         d = Path(tempfile.mkdtemp(prefix="st-ga-"))
         real = cr.REPO
         try:
@@ -156,9 +183,12 @@ class TestRepoHygiene(unittest.TestCase):
             (d / "run.sh").write_bytes(b"#!/bin/sh\r\n")
             self.assertTrue(any("CR bytes" in m for m in errors()), errors())
             (d / "run.sh").write_bytes(files["run.sh"])
-            # mutants 4-5: no `* -text` in the root, and a nested .gitattributes
+            # mutants 4-5: no `* -text` in the root (or one git ignores: a comment after it), and a nested .gitattributes
             (d / ".gitattributes").write_text("*.png binary\n", encoding="utf-8")
             self.assertTrue(any("needs a `* -text`" in m for m in errors()), errors())
+            (d / ".gitattributes").write_text("* -text # stored byte-exact\n", encoding="utf-8")
+            self.assertTrue(any("needs a `* -text`" in m for m in errors()), errors())
+            self.assertTrue(any("git ignores this whole line" in m for m in errors()), errors())
             (d / ".gitattributes").write_text("* -text\n", encoding="utf-8")
             (d / "sub").mkdir()
             (d / "sub" / ".gitattributes").write_text("*.x text\n", encoding="utf-8")
@@ -357,6 +387,120 @@ class TestCheckersBite(unittest.TestCase):
         finally:
             shutil.rmtree(str(d), ignore_errors=True)
 
+    def test_routing_reads_its_own_guide_and_reports_once(self):
+        # a route-<topic> case must read references/workflows/<topic>.md (not any guide that exists); a pattern that is
+        # not a regex is one error, not two; a workflow guide needs its line in references/index.md
+        import shutil
+        import tempfile
+        d = Path(tempfile.mkdtemp(prefix="st-route2-"))
+        try:
+            skill, evals = d / "skill", d / "benchmarks"
+            (skill / "references" / "workflows").mkdir(parents=True)
+            for t in ("alpha", "beta", "gamma"):
+                (skill / "references" / "workflows" / (t + ".md")).write_text("# x\n", encoding="utf-8")
+            (skill / "references" / "index.md").write_text("- workflows/alpha.md\n- workflows/beta.md\n- workflows/gamma.md.bak\n",
+                                                           encoding="utf-8")         # gamma.md.bak is not gamma.md
+
+            def case(name, pattern):
+                g = evals / "routing-eval" / name / "graders"
+                g.mkdir(parents=True)
+                (g.parent / "prompt.md").write_text("---\nruns: 3\n---\n\nMake a video.\n", encoding="utf-8")
+                (g / "reads-the-guide.md").write_text("---\ntype: tool_used\ntool: Read\ninput_match: '%s'\n---\n"
+                                                      % pattern, encoding="utf-8")
+                (g / "names-the-first-command.md").write_text("---\ntype: regex\ntarget: last_message\n"
+                                                              "pattern: 'x'\n---\n", encoding="utf-8")
+            case("route-alpha", r"workflows/alpha\.md")
+            case("route-beta", r"workflows/alpha\.md")           # copied from route-alpha: names a guide, not its own
+            case("route-gamma", r"workflows/(gamma\.md")         # not a regex
+            case("route-delta", r"workflows/gamma\.md")          # no workflows/delta.md: any guide that exists will do
+            f = cr.Findings()
+            cr.check_routing(f, evals=evals, skill=skill, legacy=set())
+            errs = sorted(i["message"] for i in f.errors())
+            self.assertEqual(len(errs), 4, fmt(f.items))
+            self.assertIn("route-gamma: the Read pattern", errs[0])            # once: no "has no Read grader" too
+            self.assertIn("route-beta does not read its own guide references/workflows/beta.md "
+                          "(its pattern matches references/workflows/alpha.md)", errs[1])
+            self.assertIn("beta.md has no routing eval case", errs[2])          # so nothing reads beta.md
+            self.assertIn("gamma.md has no line in references/index.md", errs[3])
+        finally:
+            shutil.rmtree(str(d), ignore_errors=True)
+
+    def test_changelog_rule(self):
+        import tempfile
+        d = Path(tempfile.mkdtemp(prefix="st-changelog-"))
+        try:
+            log = d / "CHANGELOG.md"
+            log.write_text("# Changelog\n\n## 9.9.9 (unreleased)\n\n"
+                           "- **Fixed: a widget.** It now turns\n  the right way.\n"
+                           "- **New: a gadget.** It hums.\n"
+                           "- **Fixed: a widget.** It now turns the\n  right   way.\n"      # the same bullet, rewrapped
+                           "- **Fixed: a widget:** it also stops.\n"                       # same lead, other text
+                           "- " + "long " * 30 + "\n\n"
+                           "## 9.9.8 (2000-01-01)\n\n- **New: a gadget.** It hums.\n- **New: a gadget.** It hums.\n",
+                           encoding="utf-8")
+            f = cr.Findings()
+            cr.check_changelog(f, log)
+            self.assertEqual([(i["message"], i["where"].rsplit(":", 1)[1]) for i in f.errors()],
+                             [("this bullet repeats the one at line 5 (keep one)", "8")], fmt(f.items))
+            warns = sorted((i["where"].rsplit(":", 1)[1], i["message"]) for i in f.items if i["level"] == "warning")
+            self.assertEqual([w[0] for w in warns], ["10", "11"], fmt(f.items))
+            self.assertIn("lead repeats the one at line 5", warns[0][1])
+            self.assertIn("line of 152 characters", warns[1][1])
+            # released sections are history: their repeats are not this check's business; no unreleased section, no finding
+            log.write_text("## 9.9.8 (2000-01-01)\n\n- a\n- a\n", encoding="utf-8")
+            f = cr.Findings()
+            cr.check_changelog(f, log)
+            self.assertEqual(f.items, [])
+            self.assertIn("changelog", cr.default_checks())
+            self.assertEqual(cr.run_checks(only=["changelog"]).items, [], "the real CHANGELOG passes, warnings included")
+        finally:
+            import shutil
+            shutil.rmtree(str(d), ignore_errors=True)
+
+    def test_windows_names_rule(self):
+        import tempfile
+        d = Path(tempfile.mkdtemp(prefix="st-winnames-"))
+        try:
+            tests = d / "skills" / "showtime" / "tests"
+            tests.mkdir(parents=True)
+            dev = "n" + "ul"                                   # built here so this file names no such file itself
+            py = tests / "test_x.py"
+            py.write_text("# a comment may say %s.csv\nA = '%s.csv'\nB = 'data/%s.json'\nC = 'Aux.Txt'\n"
+                          "D = 'null.csv'\nE = 'console.log'\nF = '%s'\ndef t():\n    \"\"\"docstring %s.csv\"\"\"\n"
+                          "G = f'{d}/%s.txt'\n"
+                          % (dev, dev, dev.upper(), dev, dev, dev), encoding="utf-8")
+            js = tests / "x.mjs"
+            js.write_text("// %s.csv in a comment\nconst a = `com1.txt`, b = 'lpt9.log';\n" % dev, encoding="utf-8")
+            other = d / "scripts" / "y.py"                   # not a test: its strings are not file names it writes
+            other.parent.mkdir()
+            other.write_text("A = '%s.csv'\n" % dev, encoding="utf-8")
+            bad = d / "examples" / ("C" + "ON.md")
+            bad.parent.mkdir()
+            bad.write_text("x\n", encoding="utf-8")
+            with mock.patch.object(cr, "REPO", d):
+                f = cr.Findings()
+                cr.check_windows_names(f, [py, js, other, bad])
+            got = sorted(i["where"] for i in f.errors())
+            self.assertEqual(got, ["examples/C" + "ON.md", "skills/showtime/tests/test_x.py:10", "skills/showtime/tests/test_x.py:2",
+                                   "skills/showtime/tests/test_x.py:3", "skills/showtime/tests/test_x.py:4",
+                                   "skills/showtime/tests/x.mjs:2", "skills/showtime/tests/x.mjs:2"], fmt(f.items))
+            # an f-string before Python 3.12 is one STRING token literal_eval refuses: its text is scanned without quotes
+            self.assertEqual(cr._unquoted("f'{d}/x.txt'"), "{d}/x.txt")                      # noqa: SLF001
+            self.assertEqual(cr._unquoted('rf"""a\\b.txt"""'), "a\\b.txt")              # noqa: SLF001
+            # with the directory check running too, the tracked path is left to it (one report), the test names stay
+            with mock.patch.object(cr, "REPO", d):
+                f = cr.Findings()
+                cr.check_windows_names(f, [py, bad], paths=False)
+            self.assertEqual(sorted(i["where"] for i in f.errors()), ["skills/showtime/tests/test_x.py:10",
+                             "skills/showtime/tests/test_x.py:2", "skills/showtime/tests/test_x.py:3",
+                             "skills/showtime/tests/test_x.py:4"], fmt(f.items))
+            self.assertTrue(all(i["check"] == "windows" for i in f.items))
+            self.assertIn("windows", cr.default_checks())
+            self.assertEqual(cr.run_checks(only=["windows"]).errors(), [], "the real repository passes")
+        finally:
+            import shutil
+            shutil.rmtree(str(d), ignore_errors=True)
+
     def test_banned_and_path_rules(self):
         import codecs
         import tempfile
@@ -387,12 +531,84 @@ class TestCheckersBite(unittest.TestCase):
             tail.write_text("x = 1\n%s main\n" % mark(">"), encoding="utf-8")
             heading = d / "ok.md"
             heading.write_text("Title\n%s\n\ntext\n" % mark("="), encoding="utf-8")
+            # no label on the markers (the old rule missed them), in a CRLF file, and alone in a .py file; and a
+            # labelled conflict with CRLF line ends: the check reads files as on disk, so its "=======\r" line is matched
+            # by the pattern itself, not thanks to a newline translation (written as bytes: no translation here either)
+            crlf = d / "crlf.md"
+            crlf.write_bytes(("x\r\n%s HEAD\r\nours\r\n%s\r\ntheirs\r\n%s main\r\n" % (mark("<"), mark("="), mark(">"))).encode())
+            bare = d / "bare.txt"
+            bare.write_bytes(("a\r\n%s\r\nours\r\n%s\r\ntheirs\r\n%s\r\n" % (mark("<"), mark("="), mark(">"))).encode())
+            nolabel = d / "nolabel.py"
+            nolabel.write_text("x = 1\n%s\ny = 2\n" % mark("<"), encoding="utf-8")
             f = cr.Findings()
-            cr.check_conflict_markers(f, [bad, tail, heading])
+            cr.check_conflict_markers(f, [bad, tail, heading, bare, nolabel, crlf])
             where = sorted((Path(i["where"].rsplit(":", 1)[0]).name, i["where"].rsplit(":", 1)[1]) for i in f.errors())
-            self.assertEqual([i["check"] for i in f.errors()], ["conflicts"] * 4, fmt(f.items))
-            self.assertEqual(where, [("merged.md", "2"), ("merged.md", "4"), ("merged.md", "6"), ("tail.py", "2")])
+            self.assertEqual([i["check"] for i in f.errors()], ["conflicts"] * 11, fmt(f.items))
+            self.assertEqual(where, [("bare.txt", "2"), ("bare.txt", "4"), ("bare.txt", "6"), ("crlf.md", "2"),
+                                     ("crlf.md", "4"), ("crlf.md", "6"), ("merged.md", "2"), ("merged.md", "4"),
+                                     ("merged.md", "6"), ("nolabel.py", "2"), ("tail.py", "2")])
+            self.assertTrue(all(not i["message"].endswith("\r") for i in f.errors()), fmt(f.items))
             self.assertIn("conflicts", cr.default_checks())
+        finally:
+            import shutil
+            shutil.rmtree(str(d), ignore_errors=True)
+
+    def test_secret_shaped_literals_are_errors(self):
+        """A credential-shaped literal in any shipped text file (a .diff or .jsonl fixture too) is an error, fake or
+        not: a mirror's push protection refuses the commit. Built from pieces at run time, the same value passes."""
+        import tempfile
+        d = Path(tempfile.mkdtemp(prefix="st-secrets-"))
+        try:
+            # one of each SECRET_SHAPES entry, in its order (all built here from pieces)
+            shapes = ["-----BEGIN RSA PRIVATE " + "KEY-----",
+                      "Bearer eyJhbGciOiJIUzI1NiJ9" + ".eyJzdWIiOiIxMjM0NSJ9.abcdefghijklmno",
+                      "DATABASE_URL=postgres://admin:" + "s3cret@db.internal/app",
+                      "token = 'gh" + "p_" + "a1B2" * 9 + "'",
+                      "pat = github" + "_pat_" + "A1b2C3d4E5" * 7,
+                      "AKIA" + "Z7Q2R4T6Y8U0W1E3",
+                      "STRIPE=sk" + "_live_" + "0a1B2c3D4e5F6g7H8i9J0k1L",
+                      "SLACK=xo" + "xb-" + "1234567890-abcdefghij",
+                      "maps key AI" + "za" + "SyA1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q",
+                      "sk-ant-" + "api03-abcdefghijklmnopqrstuvwxyz0123456789",
+                      "OPENAI=sk-" + "proj-" + "abcdefghijklmnopqrstuvwxyz012345",
+                      "-----BEGIN PGP PRIVATE " + "KEY BLOCK-----",
+                      "REDIS_URL=redis://:" + "s3cretpw@cache:6379",
+                      "STRIPE_TEST=sk" + "_test_" + "0a1B2c3D4e5F6g7H8i9J0k1L",
+                      "HOOK=wh" + "sec_" + "0a1B2c3D4e5F6g7H8i9J0k1L2m",
+                      "APP=xa" + "pp-" + "1-A0B1C2D3E4-1234567890-abcdef",
+                      "CLIENT=GOC" + "SPX-" + "a1B2c3D4e5F6g7H8i9J0k1L2m3N4",
+                      "NPM=np" + "m_" + "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8",
+                      "GL=glp" + "at-" + "a1B2c3D4e5F6g7H8i9J0",
+                      "SENDGRID=S" + "G." + "a1B2c3D4e5F6g7H8i9J0k1" + "." + "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0u1V2w",
+                      # one line per alternative inside a label, so a pattern that can never fire fails here too
+                      "OAUTH=ya" + "29." + "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8",
+                      "PYPI=py" + "pi-AgE" + "IcHlwaS5vcmcCJDA1YjNjZTQ5LTA0MjUtNDk3Yi04ZmFmLTI4NDNlYTMyNmRiZQ",
+                      "HF=h" + "f_" + "aBcdEfGhIjKlMnOpQrStUvWxYz12345678",
+                      "SHOP=shp" + "at_" + "0123456789abcdef0123456789abcdef",
+                      "DO=do" + "p_v1_" + "0123456789abcdef" * 4,
+                      "SQUARE=sq0" + "idp-" + "a1B2c3D4e5F6g7H8i9J0k1",
+                      "TWILIO=A" + "C" + "0123456789abcdef0123456789abcdef"]
+            bad = d / "fixture.diff"
+            bad.write_text("".join("+%s\n" % s for s in shapes), encoding="utf-8")
+            ok = d / "test_ok.py"
+            ok.write_text('KEY = "AKIA" + "IOSFODNN7EXAMPLE"\nAWS = "AKIA' + 'IOSFODNN7EXAMPLE"\n'
+                          'URL = "postgres://" + user + ":" + pw + "@db/app"\nMAX_TOKENS = 4096\n'
+                          '# docs: postgres://user:password@localhost/db, mysql://app:<password>@db/app, '
+                          'redis://:${REDIS_PASSWORD}@cache:6379, redis://:****@cache\n', encoding="utf-8")
+            blob = d / "blob.bin"
+            blob.write_bytes(b"\0" + shapes[0].encode())
+            f = cr.Findings()
+            cr.check_secrets(f, [bad, ok, blob])
+            where = [(Path(i["where"].rsplit(":", 1)[0]).name, int(i["where"].rsplit(":", 1)[1])) for i in f.errors()]
+            self.assertEqual(where, [("fixture.diff", n) for n in range(1, len(shapes) + 1)], fmt(f.items))
+            self.assertEqual({i["check"] for i in f.errors()}, {"secrets"})
+            labels = {i["message"].split(" literal:")[0] for i in f.errors()}
+            self.assertEqual(labels, {label for label, _rx in cr.SECRET_SHAPES})   # every shape is planted
+            self.assertIn("secrets", cr.default_checks())
+            # run_checks runs it (on the shipped files)
+            with mock.patch.object(cr, "shipped_files", lambda: [bad, ok]):
+                got = cr.run_checks(only=["secrets"])
+            self.assertEqual(len(got.errors()), len(shapes), fmt(got.items))
         finally:
             import shutil
             shutil.rmtree(str(d), ignore_errors=True)

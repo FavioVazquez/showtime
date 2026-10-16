@@ -124,6 +124,13 @@ PAGES["crop.html"] = page(
     'A small fridge running backwards, all winter long</p></section>',
     {"width": 1920, "height": 1080, "fps": 30, "duration": 2})
 PAGES["index.html"] = PAGES["square.html"]
+# the stage's URL query: a page script that set Object.prototype.st must not make the stage read st=embed (the query
+# is a map with no prototype), and a malformed escape (%) must not stop the runtime
+QUERY_HEAD = '<!doctype html><html><head><meta charset="utf-8">'
+PAGES["inherit.html"] = (QUERY_HEAD + '<script>Object.prototype.st = "embed";</script><script src="/_st/stage.js"></script>'
+                         '</head><body><p>inherit</p></body></html>')
+PAGES["badquery.html"] = (QUERY_HEAD + '<script>window.__errs = []; addEventListener("error", (e) => __errs.push(String(e.message)));'
+                          '</script><script src="/_st/stage.js"></script></head><body><p>q</p></body></html>')
 
 PROBE = r"""
 import path from 'node:path';
@@ -198,6 +205,17 @@ try {
   const fs = await import('node:fs');
   fs.writeFileSync(path.join(dir, 'crop-frame.png'), await s.shot({ format: 'png' }));
   await s.close();
+  // the query: an inherited st does not count (the page opened on its own goes to the player), a bad escape is skipped
+  const qctx = await newCaptureContext(b.browser, { css: { width: 320, height: 200 }, dpr: 1 });
+  let qp = await qctx.newPage();
+  await qp.goto(server.url + '/inherit.html');
+  await qp.waitForURL(/\/_st\/preview/, { timeout: 15000 }).catch(() => {});
+  R.inheritUrl = new URL(qp.url()).pathname;
+  qp = await qctx.newPage();
+  await qp.goto(server.url + '/badquery.html?x=%&__proto__=polluted&st=raw');
+  R.badQuery = await qp.evaluate(() => ({ st: typeof window.ST, errs: window.__errs, polluted: ({}).polluted === undefined ? null : 'yes',
+                                          path: location.pathname }));
+  await qctx.close();
   R.redact = [redactUrl('http://127.0.0.1:4000/board/?k=s3cret&view=1#c2'), redactUrl('https://me:pw@example.com/a?token=x')];
 } finally { await b.browser.close(); await server.close(); }
 console.log(JSON.stringify(R));
@@ -252,6 +270,13 @@ class RuntimeFixes(unittest.TestCase):
         self.assertEqual(self.R["chart"]["rows"], 3)
         self.assertEqual(self.R["chart"]["vals"], 0)
         self.assertEqual(self.R["chart"]["cu"], "13,7")
+
+    def test_query_has_no_prototype_and_bad_escapes_are_skipped(self):
+        # an inherited Object.prototype.st is not st=embed: the page opened on its own goes to the player
+        self.assertEqual(self.R["inheritUrl"], "/_st/preview")
+        # ?x=% (a malformed escape) is skipped: the runtime still loads (st=raw keeps the page), nothing polluted
+        self.assertEqual(self.R["badQuery"], {"st": "object", "errs": [], "polluted": None, "path": "/badquery.html"},
+                         self.R["badQuery"])
 
     def test_late_defined_component_mounts(self):
         L = self.R["late"]

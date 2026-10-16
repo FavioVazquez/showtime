@@ -82,8 +82,11 @@ function drawTutorial(T, g, F) {
     g.fillStyle = '#07080b';
     g.fillRect(0, 0, F.W, F.H);
     g.restore();
-    F.reveal('Three steps. That’s it.', F.W / 2, F.H / 2 + 20, F.seg(T, CUE.outro + 0.1, CUE.outro + 0.9), {
-      size: 96, weight: 800, align: 'center', tracking: -0.02,
+    // the line sits over the dimmed app on purpose: layered text, not a collision
+    F.layer(function () {
+      F.reveal('Three steps. That’s it.', F.W / 2, F.H / 2 + 20, F.seg(T, CUE.outro + 0.1, CUE.outro + 0.9), {
+        size: 96, weight: 800, align: 'center', tracking: -0.02,
+      });
     });
   }
 }

@@ -31,16 +31,16 @@ receipt that proves it.
 | Section | Lines |
 |---|---|
 | Inputs | 45-63 |
-| Steps | 65-94 |
-| Drawing the inside | 96-113 |
-| Verify | 115-124 |
-| Live page | 126-163 |
-| Honesty | 165-176 |
-| See-through | 178-192 |
-| Mechanism library | 194-203 |
-| Credits | 205-209 |
-| Pitfalls | 211-219 |
-| Read next | 221-225 |
+| Steps | 65-96 |
+| Drawing the inside | 98-116 |
+| Verify | 118-128 |
+| Live page | 130-167 |
+| Honesty | 169-180 |
+| See-through | 182-196 |
+| Mechanism library | 198-216 |
+| Credits | 218-222 |
+| Pitfalls | 224-232 |
+| Read next | 234-238 |
 
 ## Inputs
 
@@ -85,7 +85,9 @@ receipt that proves it.
    see-through outline, reference-frame pixels; default the tracked region), `panel: true` (16:9 see-through
    with the schematic beside the clip), `theme` (`dark` radiograph or `light` blueprint: `new xray --theme`),
    `credit` (the clip's credit line; `own: true` for the user's own clip), `receipt`, `measured` (one sentence: how
-   the events were measured; the end card and the live page say it).
+   the events were measured; the end card and the live page say it), `derived` (what the clip's sound is when it
+   is a rendering of data, "the signal slowed 100x on a 400 Hz carrier": verify then says the audio is compared with
+   that rendering, not with the original data).
 5. A library mechanism: place it and check (`showtime check`, `showtime look`, `showtime snap --at` an event's
    time: the struck part must sit on the real one). An object the library lacks: copy the closest
    `mechanism.js` and redraw `draw(k)` (§ Drawing the inside).
@@ -108,7 +110,8 @@ receipt that proves it.
 - Compare frames, never seconds: `xray.json` gives each event a `frame`; the template adds the film's offset.
 - Counters and readouts come from the same events (keystrokes so far, rate, returns). Never a number the clip
   did not give.
-- Phone sizes: labels 28 px and up, counters 80 px and up, on 1080x1920.
+- Phone sizes on 1080x1920: text 43 px and up (check's floor), counters 64 px (84 px before 0.4.6, and still at 4:5), all
+  inside the reels box.
 - Scrolling bands (a score, a tab, a timeline) follow a smoothed time-to-position curve, never a jump to the
   latest event: verify reports stalls and jumps.
 
@@ -118,7 +121,8 @@ receipt that proves it.
   frames. Do not cover it or move it.
 - `showtime xray verify <job>` reads that corner on every frame of the final film and compares the white
   frames with the events, then cross-correlates the film's audio with the clip's. It prints a line like
-  "18 of 18 events on their frame · audio 0.0 ms from the original" and writes it into the job receipt.
+  "18 of 18 events on their frame · audio 0.0 ms from the original" and writes it into the job receipt. It reads a
+  `--preview` or `--scale` render too (the marker at the film's scale), so sync can be checked before the final.
 - Missing or extra events, or audio more than 20 ms off: qa FAILs. Fix the page (an event drawn on the wrong
   frame, a trimmed clip without its offset), not the receipt.
 - No marker (a page you wrote yourself): qa WARNs "unverified". Say so on delivery.
@@ -199,6 +203,15 @@ receipt that proves it.
 - The kit `draw(k)` gets: `k.seg/ell/poly/path/dot/label` in design units, `k.env(i)` (0..1, 1 on event i's
   frame), `k.cur`/`k.s`/`k.hot` (the event acting now), `k.ch` (its character from `text`), `k.ev[i].notes`
   (its pitches from notes.json), `k.n` (events so far), `k.since(i)` (frames), `k.view` (panel or inplace).
+  notes.json times and its tempo map are seconds of the recording: compare them with `k.rt` (this frame's time on
+  the recording) and place one with `k.frameAt(t)` (its film frame), never `k.f / k.fps`, which is early by
+  `"xray".offset_frames`. `k.beat(k.rt)` is the beat now on the tempo map.
+- Words in the drawing: a part's name is `k.label(text, at, dx, dy, on)` (capitals; `{keepCase: true}` as a 6th
+  argument keeps the case, as the guitar's strings e and E); a caption (key, tempo, bar) is `k.caption(text, 'left' or
+  'right', ink)` when `k.caption` is set (the 9:16 panel: a row over the drawing, at the label size), else your own
+  text. At 9:16 the page puts the labels in one or two columns beside the drawing and never over it, so text drawn
+  at a fixed size inside the drawing is what a phone may not read; there `k.reels` is true, and a short name (the
+  switch's "spring") leaves the drawing more width.
 - A new object: start from the closest entry, verify it on a real clip, then add it with its README and the
   receipt line: the library grows with every verified X-ray.
 

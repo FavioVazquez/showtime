@@ -308,7 +308,7 @@ FIGURE_DRIVER = r"""
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-const [SKILL, ECON, HEAT, ENTER] = process.argv.slice(2);
+const [SKILL, ECON, HEAT, ENTER, SPACE] = process.argv.slice(2);
 const imp = (p) => import(pathToFileURL(path.join(SKILL, 'scripts', p)).href);
 const { startServer, injectStage } = await imp('server.mjs');
 const { openBrowser, openStage } = await imp('lib/stagehost.mjs');
@@ -318,7 +318,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 // happens") wait a short bounded time after the state that would have made something happen
 const until = (page, fn, arg) => page.waitForFunction(fn, arg, { timeout: 30000, polling: 50 });
 const out = { errors: [] };
-const srv = await startServer({ root: ECON }), heat = await startServer({ root: HEAT }), ent = await startServer({ root: ENTER });
+const srv = await startServer({ root: ECON }), heat = await startServer({ root: HEAT }), ent = await startServer({ root: ENTER }), spc = await startServer({ root: SPACE });
 const open = async (url, opts = {}, tourAfter = 60000) => {
   const ctx = await browser.newContext(Object.assign({ viewport: { width: 1440, height: 900 } }, opts));
   await ctx.addInitScript((ms) => { window.SHOWTIME_TEST_TOUR_AFTER = ms; }, tourAfter);
@@ -405,7 +405,9 @@ try {
   { const { ctx, page } = await open(ent.url + '/figure.html#step=gate&permission=allow', { reducedMotion: 'reduce' });
     const board = () => page.evaluate(() => [...document.querySelectorAll('.fg-ld [data-ld-tag]')].filter((g) => g.getAttribute('visibility') === 'visible')
       .map((g) => [...g.querySelectorAll('text')].filter((t) => t.getAttribute('visibility') === 'visible').map((t) => t.textContent).join('')));
-    await until(page, () => Figure.current.S.step === 2);
+    // the step changes before the frame draws its tags: wait for the board itself (a slow runner read it empty)
+    await until(page, () => Figure.current.S.step === 2 && [...document.querySelectorAll('.fg-ld [data-ld-tag]')].some((g) =>
+      g.getAttribute('visibility') === 'visible' && [...g.querySelectorAll('text')].some((t) => t.getAttribute('visibility') === 'visible')));
     out.enterAllow0 = { board: await board(), text: await page.evaluate(() => document.querySelector('.fg-step .t').textContent) };
     const shows = (t) => until(page, (x) => [...document.querySelectorAll('.fg-ld [data-ld-tag]')].some((g) => g.getAttribute('visibility') === 'visible'
       && [...g.querySelectorAll('text')].some((e) => e.getAttribute('visibility') === 'visible' && e.textContent === x)), t);
@@ -415,6 +417,23 @@ try {
     await page.keyboard.press('d'); await shows('you said no');
     out.enterButtonsAfter = await page.evaluate(() => [...document.querySelectorAll('.fg-keybtns button')].length);
     out.enterNo = { board: await board(), text: await page.evaluate(() => document.querySelector('.fg-step .t').textContent) };
+    await ctx.close(); }
+  // the same scene with Space and Enter as its keys: a focused summary, slider, button or link keeps its own Space and
+  // Enter (they press it), so the scene's key does not fire from there; from the page it does
+  { const { ctx, page } = await open(spc.url + '/figure.html');
+    await page.evaluate(() => { Figure.current.setKnob('permission', 'ask'); Figure.current.enter(2); });
+    out.spaceOnControls = await page.evaluate(() => {
+      const res = [String(Figure.current.state.answer)];
+      for (const html of ['<details><summary>Narration</summary>x</details>', '<div role="slider" tabindex="0"></div>', '<button type="button">b</button>', '<a href="#x">a</a>']) {
+        const w = document.createElement('div'); w.innerHTML = html; document.querySelector('.fg').appendChild(w);
+        const t = w.firstChild.firstChild && w.firstChild.firstChild.nodeType === 1 ? w.firstChild.firstChild : w.firstChild;
+        for (const key of [' ', 'Enter']) { t.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })); res.push(String(Figure.current.state.answer)); }
+        w.remove();
+      }
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true }));
+      res.push(String(Figure.current.state.answer));
+      return res;
+    });
     await ctx.close(); }
   { const { ctx, page } = await open(heat.url + '/figure.html'); out.walkHeat = await page.evaluate(() => Figure.current.walk()); out.heatTitle = await page.evaluate(() => document.title); await ctx.close(); }
   // 6. the film of the tour: the same t from different frames, and the tour's values on the board
@@ -430,7 +449,7 @@ try {
       .map((g) => [...g.querySelectorAll('text')].filter((t) => t.getAttribute('visibility') === 'visible').map((t) => t.textContent).join('')));
     await sess.close(); }
   out.inject = { live: injectStage('<html data-st-live><head></head></html>').includes('stage.js'), film: injectStage('<html><head></head></html>').includes('stage.js') };
-} finally { await browser.close(); await srv.close?.(); await heat.close?.(); await ent.close?.(); }
+} finally { await browser.close(); await srv.close?.(); await heat.close?.(); await ent.close?.(); await spc.close?.(); }
 console.log(JSON.stringify(out));
 process.exit(0);
 """
@@ -450,7 +469,14 @@ class TestFigure(unittest.TestCase):
         heat, enter = TMP / "heat", TMP / "enter"
         showtime("new", "diagram", heat, "--theme", "white")
         showtime("new", "diagram", enter, "--example", "enter", "--theme", "white")
-        cls.r = run_driver(FIGURE_DRIVER, econ_project(), heat, enter)
+        # the same scene answered with Space and Enter instead of A and D
+        space = TMP / "space-keys"
+        showtime("new", "diagram", space, "--example", "enter", "--theme", "white")
+        js = (space / "scene.js").read_text(encoding="utf-8")
+        assert js.count("a: { label: 'Allow'") == 1 and js.count("d: { label: 'Deny'") == 1, "the Enter example's keys moved"
+        (space / "scene.js").write_text(js.replace("a: { label: 'Allow'", "' ': { label: 'Allow'")
+                                        .replace("d: { label: 'Deny'", "enter: { label: 'Deny'"), encoding="utf-8")
+        cls.r = run_driver(FIGURE_DRIVER, econ_project(), heat, enter, space)
 
     def test_no_page_errors_and_no_stage(self):
         self.assertEqual(self.r["errors"], [])
@@ -526,6 +552,15 @@ class TestFigure(unittest.TestCase):
         self.assertEqual(set(p["labels"]), {"none"}, "labels leave the drawing on a phone")
         self.assertTrue(p["chips"], "the board's words are chips under the figure")
         self.assertTrue(all(bg for _, bg in p["chips"]), "each chip in its tag's colour: %s" % p["chips"])
+
+    def test_a_focused_control_keeps_space_and_enter(self):
+        # a scene whose keys are Space and Enter: on a focused summary, slider, button or link they press it, and the
+        # scene's key does not fire too; from the page, Space is the scene's key (letters on a focused knob still reach
+        # the scene: the Enter example's D after a click on its setting, test_enter_settings_and_answers_agree)
+        on = self.r["spaceOnControls"]
+        self.assertNotEqual(on[0], "yes")
+        self.assertEqual(set(on[:-1]), {on[0]}, on)
+        self.assertEqual(on[-1], "yes", "from the page, Space is the scene's key")
 
     def test_walk_finds_nothing_on_the_examples(self):
         w = self.r["walk"]

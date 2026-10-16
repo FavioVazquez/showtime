@@ -28,6 +28,9 @@ function of T**. The same `T` must always give the same pixels, whatever frame w
 - Never put arrows, `⌘`, `✓` or other symbols in text: draw them with `F.glyph` (`F.keycap`/`F.keyCombo`
   do it for you) (§5)
 - Mark UI-mockup detail with `F.decor(() => ...)` or `{decor: true}`, never anything the viewer must read (§5)
+- Text layered over other text on purpose (a stamp over a struck word): `F.layer(() => ...)` or `{layer: true}`;
+  other text whose letters overlap a visible text for a moment, with `F.text` or the canvas's own `g.fillText`, is
+  a `text_overlap` warning (§5)
 - Fonts are files, never system fonts: link the Fontsource CSS from `/_lib/` and list the weights in
   `Film.start({fonts})`. Declare images in `Film.start({images})` or `F.image()` at setup, not in
   `scenes()` (§9)
@@ -50,18 +53,18 @@ function of T**. The same `T` must always give the same pixels, whatever frame w
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| 1. Minimal film | 66-90 |
-| 2. Film.start(options) | 92-117 |
-| 3. Time: progress, windows, keyframes | 119-165 |
-| 4. Scenes and transitions | 167-191 |
-| 5. Text | 193-233 |
-| 6. Shapes, UI pieces and diagrams | 235-263 |
-| 7. Particles, charts, frames and images | 265-292 |
-| 8. Camera and tutorials | 294-382 |
-| 9. Fonts, images and cross-platform rules | 384-396 |
-| 10. Looks and file size | 398-415 |
-| 11. The pure-function-of-T rules (and the pitfalls they prevent) | 417-440 |
-| 12. Recipes | 442-527 |
+| 1. Minimal film | 69-93 |
+| 2. Film.start(options) | 95-120 |
+| 3. Time: progress, windows, keyframes | 122-168 |
+| 4. Scenes and transitions | 170-194 |
+| 5. Text | 196-245 |
+| 6. Shapes, UI pieces and diagrams | 247-275 |
+| 7. Particles, charts, frames and images | 277-304 |
+| 8. Camera and tutorials | 306-394 |
+| 9. Fonts, images and cross-platform rules | 396-408 |
+| 10. Looks and file size | 410-427 |
+| 11. The pure-function-of-T rules (and the pitfalls they prevent) | 429-452 |
+| 12. Recipes | 454-539 |
 
 ## 1. Minimal film
 
@@ -198,8 +201,10 @@ Serif), `mono` (JetBrains Mono). You can also pass any CSS family string.
 ```js
 F.text(str, x, y, {size, weight, family, italic, color, alpha, align: 'left'|'center'|'right',
   baseline: 'alphabetic'|'middle'|'top', tracking: -0.02 /* em */, maxWidth /* shrink to fit */,
-  stroke, strokeWidth, shadow: {blur, x, y, color} | true, decor /* UI-mockup detail */})   // -> width
+  stroke, strokeWidth, shadow: {blur, x, y, color} | true, decor /* UI-mockup detail */,
+  layer /* over other text on purpose */})   // -> width
 F.decor(() => { /* draw a mock app window: its small labels are detail, not copy */ })
+F.layer(() => { /* a word stamped over a struck-out one: text over text on purpose */ })
 F.measure(str, opts) ; F.fit(str, maxWidth, opts) /* -> size */ ; F.wrap(str, maxWidth, opts) /* -> lines */
 F.paragraph(str, x, y, {width, lineHeight: 1.35, ...text opts})     // -> {lines, height}
 F.reveal(str, x, y, p, {by: 'line'|'word'|'char', effect: 'rise'|'fade'|'blur'|'scale'|'slide',
@@ -218,6 +223,13 @@ line; per-character reveals suit only 1-2 word hero titles. Minimum sizes at 108
 not copy. Draw it inside `F.decor(() => ...)` or pass `{decor: true}` to one `F.text` call, and
 `showtime check` reports its size, contrast and overlaps as notes instead of warnings (the canvas twin of the
 DOM's `data-st-decor`). Headlines, captions, numbers and anything the viewer must read are never decor.
+**Text over text:** `showtime check` reads every word drawn on the film canvas, `F.text` and the canvas's own
+`g.fillText`/`g.strokeText` alike, and DOM text over the canvas, at every step of its timeline (not only the
+sampled frames), and reports two texts whose letters overlap for two steps or more as `text_overlap`, with both
+strings and when it starts. The
+same string drawn twice (a shadow or outline pass), decor, and text under a card are not overlaps. Text layered
+over other text on purpose (a stamp over a struck word, a label over a ghost of itself): draw it inside
+`F.layer(() => ...)` or pass `{layer: true}` to one `F.text` call.
 In the showreel tone, `{flash: true}` marks a flash word (1-3 words of texture that may leave before its reading
 time; the DOM's `data-st-flash`; `pacing.md` §1).
 

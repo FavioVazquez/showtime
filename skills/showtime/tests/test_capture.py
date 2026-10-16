@@ -615,7 +615,12 @@ class T3Assets(unittest.TestCase):
         self.assertEqual(r["license"], "ISC")
         cp = showtime("assets", "icon", "lucide", "rockt", check=False)
         self.assertNotEqual(cp.returncode, 0)
-        self.assertIn("rocket", cp.stderr)   # suggestion
+        with self.subTest("a misspelled name gets a suggestion"):
+            # the suggestion comes from the set's listing before any fetch; only when the listing cannot be read either
+            # (a CI runner's network, public showtime#78) does the command end with the network error
+            if "network error" in cp.stderr:
+                self.skipTest("the icon CDN did not answer: %s" % cp.stderr.strip().splitlines()[-2:])
+            self.assertIn("rocket", cp.stderr)
 
     def test_assets_sheet(self):
         """Contact sheet of a photo folder: EXIF rotation, date, near-duplicates, low-res, clips, paging."""

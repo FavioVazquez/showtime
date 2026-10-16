@@ -17,7 +17,10 @@ changes." (Erik Pålsson / Sounds of Changes, CC BY 3.0: keep the credit if you 
 - `cue.js`: the beats (the scan, the labels, the end card); set `endcard` to the clip's length.
 - `xray.js`: the runtime (layout, drawing kit, the sync marker in the bottom-right corner: never cover it).
 
-9:16 puts the clip on top and the inside below it (in place as well when tracked), all text inside the reels
-safe box; 16:9 with a track draws in place over the whole frame (`"panel": true` keeps the schematic beside it);
+9:16 puts the clip on top, the inside below it (in place as well when tracked) and the sound strip over the
+counters, all inside the reels safe box (the drawing too: the platform's buttons sit right of x 916) and at
+the phone floor (43 px at 1920), the part labels in a column left of the drawing (two, left and right, when one
+can't hold them) and never over it, the mechanism's captions in a row above; 16:9 with a track draws
+in place over the whole frame (`"panel": true` keeps the schematic beside it);
 16:9 without one puts the inside beside the clip. Library: typewriter, musicbox, switch (and the music entries).
 The guide: `references/workflows/xray.md` (`showtime guide xray`).

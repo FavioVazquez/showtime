@@ -80,10 +80,11 @@
       if (!this._box || this._frame) return this._frame || null;
       var src = this.getAttribute('src');
       if (!src) return null;
-      // a relative, http(s) or file address only (a post opened from disk loads its film): anything else
-      // (javascript:, data:, vbscript:) leaves the poster
+      // a relative or http(s) address only, and a file one only from a page opened from disk (a post read offline
+      // loads its film; a web page could never load it): anything else (javascript:, data:, vbscript:) leaves the poster
       var url; try { url = new URL(src, location.href); } catch (e) { return null; }
-      if (url.protocol !== 'http:' && url.protocol !== 'https:' && url.protocol !== 'file:') return null;
+      var fromDisk = location.protocol === 'file:';
+      if (url.protocol !== 'http:' && url.protocol !== 'https:' && !(url.protocol === 'file:' && fromDisk)) return null;
       var hit = parseInt(this.getAttribute('hit'), 10);
       var f = D.createElement('iframe');
       f.className = 'stx-frame';

@@ -67,13 +67,13 @@
     X.mech.draw = function (k) {
       if (!events && k.ev) events = evCopy(k.ev);
       var label0 = k.label, mine = [], g = k.g;
-      k.label = function (text, at, dx, dy, on) {
+      k.label = function (text, at, dx, dy, on, opts) {
         var nm = String(text), isHot = !!hot && nm.toLowerCase() === hot, la = k.labelAlpha, rect = null;
         if (partNames.indexOf(nm) < 0) partNames.push(nm);
         if (hot && !isHot) k.labelAlpha = (la == null ? 1 : la) * 0.35;
         var own = Object.prototype.hasOwnProperty.call(g, 'fillRect'), fr = g.fillRect;
         g.fillRect = function (x, y, w, h) { if (!rect) rect = { x: x, y: y, w: w, h: h }; return fr.apply(g, arguments); };
-        try { return label0.call(this, text, at, dx, dy, on || isHot); } finally {
+        try { return label0.call(this, text, at, dx, dy, on || isHot, opts); } finally {
           if (own) g.fillRect = fr; else delete g.fillRect;
           var shown = (la == null ? 1 : la) * (k.alpha == null ? 1 : k.alpha);
           k.labelAlpha = la;

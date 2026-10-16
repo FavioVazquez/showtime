@@ -317,6 +317,9 @@ async function main() {
     const contrastWorst = new Map(); // lid -> finding data
     const unmeasured = new Set();
     const layoutSeen = new Set();
+    // text-over-text pairs already reported (by their strings): the dense timeline reports each pair once
+    const overlapSeen = new Set();
+    const pairKey = (a, b) => [String(a).replace(/\s+/g, ' ').trim(), String(b).replace(/\s+/g, ' ').trim()].sort().join('\u0000');
     const fontChecked = new Set();
     const platformFonts = new Map(); // family -> {custom, glyphs, sample}
     let pageFamilies = null;          // @font-face families the page has loaded (lowercase), read once
@@ -447,7 +450,7 @@ async function main() {
           const bx = { x: 64 * W / 1080, y: 220 * H / 1920, r: (1080 - 164) * W / 1080, b: (1920 - 480) * H / 1920 };
           if ((r.x < bx.x - 2 || r.y < bx.y - 2 || r.x + r.w > bx.r + 2 || r.y + r.h > bx.b + 2) && !layoutSeen.has(key('safe'))) {
             layoutSeen.add(key('safe'));
-            add(dsev('warning'), 'safe_zone', `canvas text "${snip(tx.text)}" is outside the vertical safe zone at ${fmtTime(st)} (${edgesOutside(r, bx)}; app UI covers it)${dnote}`, { t: st, rect: rnd(r), source: 'canvas', text: snip(tx.text, 24),
+            add(dsev('warning'), 'safe_zone', `canvas text "${snip(tx.text)}" is outside the vertical safe zone at ${fmtTime(st)} (${edgesOutside(r, bx)}; app UI covers it)${dnote}`, { t: st, rect: rnd(r), source: 'canvas', text: snip(String(tx.text).replace(/\s+/g, ' ').trim(), 24),
               fix: `keep text inside x ${Math.round(bx.x)}-${Math.round(bx.r)}, y ${Math.round(bx.y)}-${Math.round(bx.b)}` });
           }
         } else if (inside > 0.99) {
@@ -481,6 +484,7 @@ async function main() {
         for (let j = i + 1; j < items.length && j < 120; j++) {
           const A = items[i].rect, B = items[j].rect;
           if (items[i].text === items[j].text) continue; // outline/shadow passes of the same string
+          if (items[i].layer || items[j].layer) continue; // layered over other text on purpose ({layer: true}, F.layer)
           if (!items[i].readable || !items[j].readable) continue; // small UI text behind a headline is layering, not a collision
           const ox = Math.min(A.x + A.w, B.x + B.w) - Math.max(A.x, B.x), oy = Math.min(A.y + A.h, B.y + B.h) - Math.max(A.y, B.y);
           if (ox <= 1 || oy <= 1) continue;
@@ -488,6 +492,7 @@ async function main() {
           const k = `canvas:ov:${[items[i].key, items[j].key].sort().join('~')}`;
           if (frac > 0.25 && !layoutSeen.has(k)) {
             layoutSeen.add(k);
+            overlapSeen.add(pairKey(items[i].text, items[j].text));
             add('warning', 'text_overlap', `canvas text "${snip(items[i].text, 30)}" overlaps "${snip(items[j].text, 30)}" (${Math.round(frac * 100)}%) at ${fmtTime(st)}`, { t: st, source: 'canvas',
               fix: 'move one of them, or make sure they are not on screen at the same time' });
           }
@@ -668,6 +673,7 @@ async function main() {
         if (layoutSeen.has(k)) continue;
         layoutSeen.add(k);
         const A = byBid.get(x), B = byBid.get(y);
+        overlapSeen.add(pairKey(A.text, B.text));
         // a chart still growing or morphing (data-st-moving: hbar rows gliding past each other): a note
         const mv = A.moving || B.moving ? MOVING_NOTE : '';
         (mv ? (sev, code, msg, extra) => add('info', code, msg + mv, extra) : (sev, code, msg, extra) => addD(A.decor || B.decor ? { decor: true } : null, sev, code, msg, extra))('warning', 'text_overlap', `"${snip(A.text, 30)}" overlaps "${snip(B.text, 30)}" (${Math.round(frac * 100)}% of the smaller text's glyphs${px ? `, ${px}px deep` : ''}) at ${fmtTime(st)}`, { t: st, selector: `${A.sel} | ${B.sel}`, overlap_px: px,
@@ -1018,6 +1024,38 @@ async function main() {
       const activeClips = []; // per sample: clips ([data-start]) showing
       const textShown = [];   // per sample: any readable text (DOM or canvas)
       // the phone check's size part over the whole timeline: per readable text, its on-screen size at every step
+      // text over text on the grid, not only at the samples: pair -> { a, b, source, first, last, step, run, best, frac,
+      // px, op, done, again }. A step counts toward a run when neither text's opacity moved since the step before (a
+      // collision holds still; a crossfade's texts are fading in and out) or both stayed at 0.5 or more and the one that
+      // moved turned back (a blinking label over a still one), so `best` >= 1 means two settled steps in a row. The first such stretch is the one reported;
+      // `again` says the pair met again later.
+      const ovRuns = new Map();
+      const sbox = { x: 64 * W / 1080, y: 220 * H / 1920, r: (1080 - 164) * W / 1080, b: (1920 - 480) * H / 1920 };
+      const sbRuns = new Map();   // canvas text outside the vertical safe box: id -> { text, start, first, last, total, worst, rect }
+      const wordTracks = new Map();   // labelled numbers on the last step, by words: [{ id, text, x, y }] (trackWords)
+      const ovDropped = { n: 0, t: 0 };   // texts past the pairing cap on the worst step (not checked for overlap)
+      const notePair = (source, a, b, frac, px, gt, si, aa, ba, id) => {
+        // DOM pairs by element (a counter that changes value is one text), canvas pairs by their strings
+        const key = id || pairKey(a, b);
+        const r = ovRuns.get(key) || { a, b, source, first: null, last: gt, step: -2, run: 0, best: 0, frac: 0, px: 0, op: null };
+        if (r.done) { if (r.step !== si - 1) r.again = true; r.step = si; return; }
+        if (r.best >= 1 && r.step !== si - 1) { r.done = true; r.again = true; r.step = si; return; }   // a later meeting
+        // held: both still, or both at 0.5 or more with each one that moved having turned back since the step before
+        // (a blink or a pulse; a fade in, a fade out or a crossfade keeps going one way)
+        const da = r.op ? aa - r.op[0] : 0, db = r.op ? ba - r.op[1] : 0;
+        const turned = (d, prev) => Math.abs(d) <= 0.05 || (prev !== undefined && Math.abs(prev) > 0.05 && Math.sign(prev) !== Math.sign(d));
+        const held = r.op && ((Math.abs(da) <= 0.05 && Math.abs(db) <= 0.05) ||
+          (Math.min(r.op[0], r.op[1], aa, ba) >= 0.5 && r.d && r.step === si - 1 && turned(da, r.d[0]) && turned(db, r.d[1])));
+        const settled = r.step === si - 1 && held;
+        r.run = settled ? r.run + 1 : 0;
+        if (settled && r.first === null) r.first = r.prevT;
+        if (r.run > r.best) r.best = r.run;
+        if (frac > r.frac) { r.frac = frac; r.px = px; }
+        r.d = r.step === si - 1 ? [da, db] : null;
+        r.step = si; r.last = gt; r.prevT = gt; r.op = [aa, ba];
+        if (!settled || r.run === 1) { r.a = a; r.b = b; }   // the strings as they read when the overlap settled
+        ovRuns.set(key, r);
+      };
       const sizeRuns = new Map(); // key -> { text, source, caption, sel, obs: [[t, px]] }
       const sizeSeen = (key, text, px, gt, extra) => {
         if (!(px > 0)) return;
@@ -1032,7 +1070,18 @@ async function main() {
         activeClips.push(await sess.page.evaluate(() => document.querySelectorAll('[data-start][data-active]').length));
         await auditCaptionZone(gt);
         let anyText = false;
-        const snap = await sess.page.evaluate(textSnapshot, { width: W, height: H, full: false });
+        const snap = await sess.page.evaluate(textSnapshot, { width: W, height: H, full: false, overlaps: true });
+        const si = okGrid.length - 1;
+        // canvas text on this step: the stage's records of every page canvas (raw fillText/strokeText), plus the film
+        // API's F.text records below; all in frame pixels
+        const stepTexts = (await sess.page.evaluate(() => (window.__stCanvasText ? window.__stCanvasText() : [])).catch(() => []))
+          .filter((t) => t.x < W && t.y < H && t.x + t.w > 0 && t.y + t.h > 0);   // off the frame: not on screen
+        const bidText = new Map(snap.blocks.map((b) => [b.bid, b]));
+        for (const [x, y, frac, px] of snap.overlaps || []) {
+          const A = bidText.get(x), B = bidText.get(y);
+          if (!A || !B || A.decor || B.decor || A.moving || B.moving || A.text === B.text || inTx(gt)) continue;
+          notePair('dom', A.text, B.text, frac, px, gt, si, A.opacity, B.opacity, `dom:${[x, y].sort().join('~')}`);
+        }
         for (const blk of snap.blocks) {
           if (!blocksById.has(blk.bid)) blocksById.set(blk.bid, blk);
           const on = blk.opacity >= 0.5 && blk.onCanvas >= 0.6;
@@ -1045,10 +1094,27 @@ async function main() {
           if (last && gt - last[1] <= stepS * 1.5) last[1] = gt; else runs.push([gt, gt]);
           vis.set(blk.bid, runs);
         }
+        const filmNow = new Set();   // the film API's texts on this step, measured below
         if (isFilm) {
           const fi = await filmInfo();
           auditCovers(fi, gt);
           const kx = fi && fi.width ? W / fi.width : 1, ky = fi && fi.height ? H / fi.height : 1;
+          {
+            // text under a card drawn after it (a callout, the step band, a caption plate) is not on screen
+            const cards = ((fi && fi.covers) || []).filter((c) => c.kind !== 'dim');
+            const hidden = (tx, r) => cards.some((c) => {
+              if (!(tx.z < c.z)) return false;
+              const cx = c.x * kx, cy = c.y * ky, cw = c.w * kx, ch = c.h * ky;
+              const ox = Math.min(r.x + r.w, cx + cw) - Math.max(r.x, cx), oy = Math.min(r.y + r.h, cy + ch) - Math.max(r.y, cy);
+              return ox > 0 && oy > 0 && (ox * oy) / (r.w * r.h) >= 0.5;
+            });
+            for (const tx of (fi && fi.texts) || []) {
+              const r = { x: tx.x * kx, y: tx.y * ky, w: tx.w * kx, h: tx.h * ky };
+              if (hidden(tx, r) || r.x >= W || r.y >= H || r.x + r.w <= 0 || r.y + r.h <= 0) continue;
+              const g = tx.gw > 0 ? [tx.gx * kx, tx.gy * ky, tx.gw * kx, tx.gh * ky] : [r.x, r.y, r.w, r.h];
+              stepTexts.push({ ...tx, x: r.x, y: r.y, w: r.w, h: r.h, gx: g[0], gy: g[1], gw: g[2], gh: g[3], size: (tx.size || 0) * ky });
+            }
+          }
           const now = new Set();
           // text painted on an F.caption plate is the voice's words, read along with it (like DOM data-caption)
           const plates = ((fi && fi.covers) || []).filter((c) => c.kind === 'caption');
@@ -1060,7 +1126,7 @@ async function main() {
             if (r.w * r.h <= 0 || (ix * iy) / (r.w * r.h) < 0.6) continue;
             const k = String(tx.text).replace(/\s+/g, ' ').trim();
             if (!k || now.has(k)) continue;
-            now.add(k);
+            now.add(k); filmNow.add(k);
             anyText = true;
             if (tx.decor) cdecor.add(k);
             if (tx.flash) cflash.add(k);
@@ -1073,7 +1139,93 @@ async function main() {
             cvis.set(k, runs);
           }
         }
+        // each canvas text's identity across steps: a labelled counter by its words, followed from step to step (see
+        // trackWords) so a sibling with the same words ("Level 9" beside "Level n") does not split it per value
+        const stepIds = new Map(trackWords(wordTracks, stepTexts.filter((tx) => tx && tx.text && !tx.dom).map((tx) => {
+          const text = String(tx.text).replace(/\s+/g, ' ').trim(), r = tx.gw > 0 ? { x: tx.gx, y: tx.gy } : tx;
+          const id = textIdOf(tx, text, r);
+          return { tx, text, x: r.x, y: r.y, id: id[0] === 't' ? `t${tx.canvas || ''}:${text}` : id };
+        })).map((it) => [it.tx, it.id]));
+        // raw canvas text (the stage's records of fillText/strokeText on any page canvas) is measured for size too, by that
+        // identity; a text the film API measured above is not counted twice
+        if (!inTx(gt)) {
+          for (const tx of stepTexts) {
+            if (!tx || !tx.raw || !tx.text || tx.decor || (tx.alpha ?? 1) * colorAlpha(tx.color) < 0.5) continue;
+            const k = String(tx.text).replace(/\s+/g, ' ').trim();
+            if (!k || filmNow.has(k) || !(tx.w > 0 && tx.h > 0)) continue;
+            const ix = Math.max(0, Math.min(tx.x + tx.w, W) - Math.max(tx.x, 0)), iy = Math.max(0, Math.min(tx.y + tx.h, H) - Math.max(tx.y, 0));
+            if ((ix * iy) / (tx.w * tx.h) < 0.6) continue;
+            sizeSeen(`canvas:${stepIds.get(tx)}`, k, tx.size || 0, gt, { source: 'canvas', caption: false });
+          }
+        }
+        // the vertical safe box between the samples too: canvas text (any page canvas, F.text) that feed UI covers.
+        // Per text (its identity from trackWords, above): counted when it sits outside two steps in a row without
+        // moving, or for 1 s in all (a label sliding in through the margin is neither)
+        if (H > W && !inTx(gt)) {
+          for (const tx of stepTexts) {
+            if (!tx || !tx.text || tx.decor || (tx.alpha ?? 1) * colorAlpha(tx.color) < 0.5 || (tx.size || 0) < Math.min(W, H) * 0.022) continue;
+            const g = tx.gw > 0 ? { x: tx.gx, y: tx.gy, w: tx.gw, h: tx.gh } : { x: tx.x, y: tx.y, w: tx.w, h: tx.h };
+            const text = String(tx.text).replace(/\s+/g, ' ').trim();
+            if (!text || g.w <= 1 || g.h <= 1) continue;
+            const ix = Math.max(0, Math.min(g.x + g.w, W) - Math.max(g.x, 0)), iy = Math.max(0, Math.min(g.y + g.h, H) - Math.max(g.y, 0));
+            if ((ix * iy) / (g.w * g.h) < 0.5) continue;   // mostly off the frame: on its way in or out
+            const past = Math.max(sbox.x - g.x, sbox.y - g.y, g.x + g.w - sbox.r, g.y + g.h - sbox.b);
+            if (!(past > 2)) continue;
+            const id = stepIds.get(tx), r = sbRuns.get(id) || { text, start: gt, first: null, last: gt, si: -2, at: null, total: 0, worst: 0 };
+            if (r.si === si - 1 && Math.abs(r.at.x - g.x) + Math.abs(r.at.y - g.y) <= 2 && r.first === null) r.first = r.lastT;
+            r.total += stepS;
+            if (past > r.worst) { r.worst = past; r.rect = { ...g }; r.text = text; }
+            r.si = si; r.at = g; r.last = gt; r.lastT = gt;
+            sbRuns.set(id, r);
+          }
+        }
+        if (!inTx(gt)) {   // mid-transition the two scenes overlap on purpose, as for DOM pairs
+          const cp = canvasTextPairs(stepTexts, [1, 1], Math.min(W, H) * 0.022, null);
+          if (cp.dropped > ovDropped.n) Object.assign(ovDropped, { n: cp.dropped, t: gt });
+          for (const p of cp) notePair('canvas', p.a, p.b, p.frac, p.px, gt, si, p.aa, p.ba, `cv:${[p.ai, p.bi].sort().join('~')}`);
+        }
+        // DOM text over canvas text (a paragraph over a chart's labels): the DOM blocks' painted glyphs against the
+        // canvas records. A DOM text on its own opaque plate (a caption pill) hides the canvas text under it.
+        if (stepTexts.length && !inTx(gt)) {
+          // a caption on its own plate hides what is under it; other badges over canvas text are reported
+          const domTexts = snap.blocks.filter((b) => !b.decor && !b.moving && !b.rotated && !(b.plate && b.caption) && b.onCanvas > 0 && b.irect && b.irect.w > 1)
+            .map((b) => ({ text: b.text, dom: b.bid, alpha: b.opacity * (b.colorAlpha ?? 1), size: b.fontSize * (b.scale || 1), gx: b.irect.x, gy: b.irect.y, gw: b.irect.w, gh: b.irect.h }));
+          const mp = canvasTextPairs([...domTexts, ...stepTexts], [1, 1], Math.min(W, H) * 0.022, null, true);
+          if (mp.dropped > ovDropped.n) Object.assign(ovDropped, { n: mp.dropped, t: gt });
+          for (const p of mp) {
+            const [d, c] = p.ad ? [p.a, p.b] : [p.b, p.a];
+            notePair('dom+canvas', d, c, p.frac, p.px, gt, si, p.ad ? p.aa : p.ba, p.ad ? p.ba : p.aa, `mix:${p.ad || p.bd}~${p.ad ? p.bi : p.ai}`);
+          }
+        }
         textShown.push(anyText);
+      }
+      // text over text between the samples: a pair on two grid steps in a row or more (a crossfade's single frame is
+      // not a collision), once per pair, with when it starts and how long it lasts
+      for (const [key, r] of ovRuns) {
+        const tk = pairKey(r.a, r.b);
+        if (r.best < 1 || overlapSeen.has(key) || overlapSeen.has(tk)) continue;
+        overlapSeen.add(key);
+        overlapSeen.add(tk);
+        const span = (r.last - r.first >= stepS * 1.5 ? ` from ${fmtTime(r.first)} to ${fmtTime(r.last)}` : ` at ${fmtTime(r.first)}`) + (r.again ? ', and again later' : '');
+        add('warning', 'text_overlap', `${r.source === 'canvas' ? 'canvas text' : 'text'} "${snip(r.a, 30)}" overlaps ${r.source === 'dom+canvas' ? 'canvas text ' : ''}"${snip(r.b, 30)}" (${Math.round(r.frac * 100)}% of the smaller text's glyphs, ${r.px}px deep)${span}`,
+          { t: r.first, source: r.source, grid: true, overlap_px: r.px, texts: [r.a, r.b], until: r.last,
+            fix: `move one of them by at least ${r.px + 4}px, or make sure they are not on screen at the same time; text layered on purpose: {layer: true} (F.text) or F.layer(() => ...)` });
+      }
+      for (const r of sbRuns.values()) {
+        if (r.first === null && r.total < 1 - 1e-6) continue;
+        const t0 = r.first ?? r.start, snipped = snip(r.text, 24);
+        // already reported at a sample time (the same words): one finding per text
+        if (findings.some((f) => f.code === 'safe_zone' && f.source === 'canvas' && f.text === snipped)) continue;
+        // a text that went back inside in between says so: its time outside in all, not one long stretch
+        const gaps = r.total < r.last - r.start - stepS * 1.5;
+        const span = r.last - t0 >= stepS * 1.5 ? `${gaps ? 'at times ' : ''}from ${fmtTime(t0)} to ${fmtTime(r.last)}${gaps ? ` (${(r.total).toFixed(1)} s in all)` : ''}` : `at ${fmtTime(t0)}`;
+        add('warning', 'safe_zone', `canvas text "${snip(r.text)}" is outside the vertical safe zone ${span} (${edgesOutside(r.rect, sbox)}; app UI covers it)`,
+          { t: t0, until: r.last, grid: true, rect: rnd(r.rect), source: 'canvas', text: snipped, past_px: Math.round(r.worst),
+            fix: `keep text inside x ${Math.round(sbox.x)}-${Math.round(sbox.r)}, y ${Math.round(sbox.y)}-${Math.round(sbox.b)}` });
+      }
+      if (ovDropped.n > 0) {
+        add('info', 'text_overlap', `${ovDropped.n} texts on screen at ${fmtTime(ovDropped.t)} were past the ${PAIR_CAP} compared per kind and not checked for text over text`,
+          { t: ovDropped.t, grid: true, dropped: ovDropped.n, fix: 'mark UI-mockup detail as decor (fewer texts to compare), or check that part by eye' });
       }
       // size: judged on the median size over the text's life (an entrance that starts small is not a small text)
       for (const [key, r] of sizeRuns) {
@@ -1405,7 +1557,8 @@ async function main() {
       }
     } catch (e) {
       if (e && e.browserStuck) throw e;
-      add('info', 'webgpu_probe_failed', `the WebGPU probe did not run: ${String(e.message || e).split('\n')[0]}`);
+      // a warning, like cut_probe_failed: a probe that did not run is never a clean check
+      add('warning', 'webgpu_probe_failed', `the WebGPU probe did not run: ${String(e.message || e).split('\n')[0]}`);
     }
     // WebGL looks (fluted-glass, tilt-shift, liquid-metal, mesh-gradient, god-rays, marble, metaballs;
     // runtime/effects/gl.js): each one records its size, its passes and what they cost per frame without a GPU
@@ -1487,7 +1640,8 @@ async function main() {
         }
       } catch (e) {
         if (e && e.browserStuck) throw e;
-        add('info', 'cut_probe_failed', `the first frames after the cuts were not probed: ${String(e.message || e).split('\n')[0]}`);
+        // a warning, not info: a cut walk that did not run must never read as a clean check (--strict fails on it)
+        add('warning', 'cut_probe_failed', `the first frames after the cuts were not probed: ${String(e.message || e).split('\n')[0]}`);
       } finally { if (sess2) { await closeSoon(sess2.close()); sess2 = null; } }
       report.timings.cuts = Date.now() - t;
     }
@@ -1782,6 +1936,105 @@ function firstFamily(font) {
 }
 
 /** Canvas fillStyle ('#rrggbb', '#rgb', 'rgb(a)(...)') -> [r,g,b] or null (gradients/patterns). */
+/** The alpha in a CSS colour string (rgba(), hsla(), #rrggbbaa, #rgba), else 1. */
+function colorAlpha(s) {
+  if (typeof s !== 'string') return 1;
+  const v = s.trim().toLowerCase();
+  let m = /^#([0-9a-f]{4}|[0-9a-f]{8})$/.exec(v);
+  if (m) return parseInt(m[1].length === 4 ? m[1][3] + m[1][3] : m[1].slice(6), 16) / 255;
+  m = /^(?:rgba|hsla)\([^)]*[,/]\s*([\d.]+)(%?)\s*\)$/.exec(v) || /^(?:rgb|hsl)\([^)]*\/\s*([\d.]+)(%?)\s*\)$/.exec(v);
+  if (m) return Math.max(0, Math.min(1, m[2] ? +m[1] / 100 : +m[1]));
+  return 1;
+}
+
+/**
+ * Text drawn over other text on one canvas frame (film texts, F.text and raw fillText/strokeText alike): pairs
+ * whose painted glyph boxes overlap by more than OVERLAP_FRAC of the smaller one, both visible (effective alpha:
+ * globalAlpha x the colour's own alpha, >= 0.15) and at least one solid (>= 0.5) and readable (>= minPx). Not a
+ * collision: the same string twice (shadow or outline passes), decor, {layer: true} / F.layer, text a card hides.
+ * texts: Film.frameInfo().texts or the stage's canvas records; k: [kx, ky] to frame pixels; hidden(tx, rect) -> true
+ * when a card covers it. mixed: the texts include DOM blocks (dom: their bid) and only DOM-over-canvas pairs count.
+ */
+const OVERLAP_FRAC = 0.15, PAIR_CAP = 300, NUMERIC = /^[-+–−]?[\d\s.,:%$€£×x/]*\d[\d\s.,:%$€£×x/]*$/;
+/** A text's identity across grid steps: a DOM block by element; a number (a counter that changes every frame) by where
+ * it sits; a labelled number ("Frame 12", "TICK 175") by its canvas and its words with the digits blanked, moving or
+ * not (see splitSharedWords); any other text by its string. `r`: its box in frame pixels. */
+function textIdOf(tx, text, r) {
+  return tx.dom ? `d${tx.dom}` : NUMERIC.test(text) ? `n${tx.canvas || ''}@${Math.round(r.x / 16)},${Math.round(r.y / 16)}`
+    : /\d/.test(text) ? `m${tx.canvas || ''}:${text.replace(/\d+(?:[.,]\d+)*/g, '#')}` : `t${text}`;
+}
+/** A labelled number is one text by its words alone (a counter, moving or not) only while it is the one text with those
+ * words on its canvas in this step; two labels with the same words ("ORBIT 1", "ORBIT 2") are each their own string,
+ * so each is followed as it moves. `items`: one step's {id, text}; their ids are changed in place. */
+function splitSharedWords(items) {
+  const byWords = new Map();
+  for (const it of items) if (it.id[0] === 'm') byWords.set(it.id, (byWords.get(it.id) || new Set()).add(it.text));
+  for (const it of items) if (it.id[0] === 'm' && byWords.get(it.id).size > 1) it.id = `t${it.text}`;
+  return items;
+}
+/** Labelled numbers followed across grid steps (the safe box and size rules). Texts with the same words on one canvas
+ * ("Level 3", "Level 9") are matched to the last step's texts with those words: the same string first (a label that
+ * moves), then the nearest (a counter whose number changes); a lone one keeps the words' id, as in splitSharedWords,
+ * and each other one gets its own. `tracks`: words id -> last step's list, updated in place; `items`: {id, text, x, y}. */
+function trackWords(tracks, items) {
+  const groups = new Map();
+  for (const it of items) if (it.id[0] === 'm') (groups.get(it.id) || groups.set(it.id, []).get(it.id)).push(it);
+  for (const [words, now] of groups) {
+    const prev = (tracks.get(words) || []).slice(), used = new Set(), out = [], rest = [], fresh = [];
+    const take = (it, i) => { it.id = prev[i].id; used.add(it.id); prev.splice(i, 1); out.push(it); };
+    for (const it of now) { const i = prev.findIndex((p) => p.text === it.text); if (i >= 0) take(it, i); else rest.push(it); }
+    for (const it of rest) {
+      let bi = -1, bd = Infinity;
+      prev.forEach((p, i) => { const d = Math.hypot(p.x - it.x, p.y - it.y); if (d < bd) { bd = d; bi = i; } });
+      if (bi >= 0) take(it, bi); else fresh.push(it);
+    }
+    fresh.sort((a, b) => a.y - b.y || a.x - b.x);
+    let n = 0;
+    for (const it of fresh) {
+      if (used.has(words)) { while (used.has(`${words}#${++n}`)); it.id = `${words}#${n}`; } else it.id = words;
+      used.add(it.id); out.push(it);
+    }
+    tracks.set(words, out.map((it) => ({ id: it.id, text: it.text, x: it.x, y: it.y })));
+  }
+  for (const words of [...tracks.keys()]) if (!groups.has(words)) tracks.delete(words);
+  return items;
+}
+function canvasTextPairs(texts, k, minPx, hidden, mixed) {
+  const items = [];
+  for (const tx of texts || []) {
+    if (!tx || !tx.text || tx.decor || tx.layer) continue;
+    const alpha = (tx.alpha ?? 1) * colorAlpha(tx.color);
+    if (alpha < 0.15) continue;
+    const g = tx.gw > 0 ? { x: tx.gx, y: tx.gy, w: tx.gw, h: tx.gh } : { x: tx.x, y: tx.y, w: tx.w, h: tx.h };
+    const r = { x: g.x * k[0], y: g.y * k[1], w: g.w * k[0], h: g.h * k[1] };
+    if (r.w <= 1 || r.h <= 1 || (hidden && hidden(tx, r))) continue;
+    const text = String(tx.text).replace(/\s+/g, ' ').trim();
+    if (!text) continue;   // a space drawn on its own paints nothing
+    items.push({ text, r, alpha, readable: (tx.size || 0) * k[1] >= minPx, dom: tx.dom || null, id: textIdOf(tx, text, r) });
+  }
+  splitSharedWords(items);
+  const out = [];
+  const pair = (A, B) => {
+    if (A.text === B.text) return;
+    if (Math.max(A.alpha, B.alpha) < 0.5 || !(A.readable || B.readable)) return;
+    const ox = Math.min(A.r.x + A.r.w, B.r.x + B.r.w) - Math.max(A.r.x, B.r.x), oy = Math.min(A.r.y + A.r.h, B.r.y + B.r.h) - Math.max(A.r.y, B.r.y);
+    if (ox <= 1 || oy <= 1) return;
+    const frac = (ox * oy) / Math.min(A.r.w * A.r.h, B.r.w * B.r.h);
+    if (frac > OVERLAP_FRAC) out.push({ a: A.text, b: B.text, frac, px: Math.round(Math.min(ox, oy)), aa: A.alpha, ba: B.alpha, ad: A.dom, bd: B.dom, ai: A.id, bi: B.id });
+  };
+  // at most PAIR_CAP texts a side are compared (DOM and canvas each when mixed); out.dropped counts the rest
+  if (mixed) {
+    const dom = items.filter((x) => x.dom), cv = items.filter((x) => !x.dom);
+    out.dropped = Math.max(0, dom.length - PAIR_CAP) + Math.max(0, cv.length - PAIR_CAP);
+    for (const A of dom.slice(0, PAIR_CAP)) for (const B of cv.slice(0, PAIR_CAP)) pair(A, B);
+  } else {
+    out.dropped = Math.max(0, items.length - PAIR_CAP);
+    const some = items.slice(0, PAIR_CAP);
+    for (let i = 0; i < some.length; i++) for (let j = i + 1; j < some.length; j++) pair(some[i], some[j]);
+  }
+  return out;
+}
+
 function parseColor(s) {
   if (typeof s !== 'string') return null;
   const v = s.trim().toLowerCase();

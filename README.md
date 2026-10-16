@@ -107,6 +107,17 @@ languages or what leaves your machine: the [FAQ](docs/faq.md). Something went wr
 > quality (the default) has a critic review every finished video; lean skips the critic unless the video is going
 > to be published. Say **"no crew"** to keep the whole job in one session.
 
+**What's new in 0.4.6** (the list is [below](#new-in-046), and [What's new](docs/whats-new.md) has a short
+paragraph for each):
+
+- **`check` reads the text a page draws on its own canvas.** Text outside the phone's safe box, text too small to read
+  and text over other text are found between its samples and on any canvas, not only the film API's.
+- **X-ray on a phone and in sync.** At 9:16 the sound strip and the part labels sit where a phone shows them, a new
+  16:9 project passes its own check, and with `"xray".offset_frames` the strip and the piano, drums and guitar follow
+  the recording's clock.
+- **Fixes.** `export html --interactive` packs a page's own fonts, `xray verify` reads the marker on a draft render,
+  installed files match the repository byte for byte, and `setup --home` brings its own ffmpeg.
+
 **What's new in 0.4.5** (the list is [below](#new-in-045), and [What's new](docs/whats-new.md) has a short
 paragraph for each):
 
@@ -388,8 +399,8 @@ setup:
 is the same server from npm ([@faviovazquez/showtime-mcp](https://www.npmjs.com/package/@faviovazquez/showtime-mcp),
 also listed in the [MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.FavioVazquez/showtime)
 as `io.github.FavioVazquez/showtime` and on [Smithery](https://smithery.ai/servers/favio-vazquezp/showtime)), and
-[`showtime-0.4.5.mcpb`](https://github.com/FavioVazquez/showtime/releases/download/v0.4.5/showtime-0.4.5.mcpb) from
-the v0.4.5 release opens in Claude Desktop with a double click. Setup still runs once on your machine: the
+[`showtime-0.4.6.mcpb`](https://github.com/FavioVazquez/showtime/releases/download/v0.4.6/showtime-0.4.6.mcpb) from
+the v0.4.6 release opens in Claude Desktop with a double click. Setup still runs once on your machine: the
 models and tools never travel inside a package. Long tools answer with a task id after about 20 seconds when a
 client stops calls early; the `status` tool reports progress and the result. Besides the tools that mirror the commands,
 `guide` reads a reference by the piece and `receipt` writes a job's receipt (tokens and cost are "not reported by this
@@ -963,6 +974,49 @@ scene files written for it. `showtime manim check` also renders a draft and runs
 detectors on it, so a near-black scene or a barely visible change is reported before the full render.
 
 </details>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/readme/divider-dark.svg">
+  <img alt="" src="assets/readme/divider-light.svg" width="100%">
+</picture>
+
+## New in 0.4.6
+
+[What's new](docs/whats-new.md) has a short paragraph for each.
+
+**`check`**
+
+- **Canvas text outside the safe box.** At 9:16, every step of the dense timeline compares each text a page draws on
+  its own canvas with the safe box (x 64-916, y 220-1440 at 1080x1920): one `safe_zone` warning per text, with its span.
+- **Canvas text size.** Raw `fillText`/`strokeText` now feeds the `tiny_text` rule and the phone check, as DOM text and
+  `F.text` already did.
+- **Text over text.** Every text a canvas paints and the DOM's are compared on the whole timeline: a pair that overlaps
+  on two steps in a row is a `text_overlap` warning with when it starts and ends. Text layered on purpose can say so
+  (`F.text(..., {layer: true})`, `F.layer`, `ST.layer`).
+- **A probe that did not run is a warning** (`cut_probe_failed`, `webgpu_probe_failed`), so such a check never reads as
+  clean and `check --strict` fails on it.
+
+**X-ray**
+
+- **9:16.** The sound strip sits above the counters inside the safe box, and the part labels are 44 px in a column at
+  the safe box's edge, with the drawing between the columns. The 9:16 layout change leaves 16:9, 4:5 and 1:1 as
+  they were. A project made with 0.4.5 keeps its copy of the template; `showtime new xray` gets the new layout.
+- **16:9.** A new project passes its own check, and the strip's label is 26 px and fits a long mechanism word.
+- **`"xray".offset_frames`.** The sound strip, `track_until` and the piano, drums and guitar follow the recording's
+  clock (`k.rt`, `k.frameAt(t)` in the drawing kit).
+- **`xray verify`** reads the sync marker on a `--preview` or `--scale` render; the receipt says what "the original" is
+  for a film made from a rendering of data.
+- **`export html --interactive`** packs a page's own fonts, and `export html` run from inside a job writes into that job
+  ([xray](skills/showtime/references/workflows/xray.md)).
+
+**Fixes**
+
+- **Files as installed.** The repository stores every file exactly as it is installed (`.gitattributes` `* -text`,
+  Windows launchers with CRLF), checked by `scripts/check_release.py`.
+- **`setup --home X`** installs ffmpeg into X when a default install exists.
+- **Living diagrams.** Space or Enter on a focused control no longer also fires the scene's key.
+- **The embed element** takes a `file:` address only on a page opened from disk.
+- **`showtime assets icon`** suggests the right name at once for a misspelled one.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/readme/divider-dark.svg">

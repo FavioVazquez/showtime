@@ -1087,6 +1087,15 @@ class Installer:
         miss_rec = [f for f in RECOMMENDED_FILTERS if f not in filters] + [e for e in RECOMMENDED_ENCODERS if e not in encoders]
         return not miss_req, miss_req, miss_rec, v
 
+    def other_homes(self) -> List[Path]:
+        """Other showtime installs whose bin folder may be on PATH: the default ~/.showtime and the home the launcher
+        started with (SHOWTIME_HOME before --home replaced it), when they are not this one."""
+        out: List[Path] = []
+        for h in (plat.user_home() / ".showtime", Path(os.path.expanduser(_HOME_BEFORE)) if _HOME_BEFORE else None):
+            if h is not None and not _same_dir(h, self.home) and not any(_same_dir(h, o) for o in out):
+                out.append(h)
+        return out
+
     def step_ffmpeg(self) -> Tuple[str, str]:
         mode = self.args.ffmpeg
         bindir = self.home / "bin"
@@ -1099,7 +1108,13 @@ class Installer:
                     v, bindir, ("; missing optional: " + ", ".join(rec)) if rec else "")
         if mode in ("auto", "system"):
             from st.ff import _system_candidates
+            others = [h / "bin" for h in self.other_homes()]
             for cand in _system_candidates("ffmpeg"):
+                if any(_same_dir(Path(cand).parent, b) for b in others):
+                    # `setup --home X` runs with the default home's bin first on PATH: its ffmpeg is another install's,
+                    # not the system's, and X would have none once that install goes (or outside the launcher's PATH)
+                    say("  ffmpeg %s belongs to another showtime install: not used, %s gets its own" % (cand, self.home))
+                    continue
                 ok, req, rec, v = self._ff_check(cand)
                 probe = Path(cand).with_name(plat.exe("ffprobe"))
                 good_enough = ok and not [r for r in rec if r in ("zscale", "arnndn")] and probe.is_file()
@@ -2101,7 +2116,16 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     return a
 
 
+_HOME_BEFORE: Optional[str] = None   # SHOWTIME_HOME as setup found it (the launcher's home), before --home
+
+
+def _same_dir(a: Path, b: Path) -> bool:
+    return os.path.normcase(os.path.realpath(str(a))) == os.path.normcase(os.path.realpath(str(b)))
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
+    global _HOME_BEFORE
+    _HOME_BEFORE = os.environ.get("SHOWTIME_HOME") or None
     args = parse_args(argv)
     man = load_manifest()
     home = Path(os.path.expanduser(args.home or os.environ.get("SHOWTIME_HOME") or "~/.showtime"))

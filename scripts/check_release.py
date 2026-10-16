@@ -23,7 +23,9 @@ Checks:
   routing     every workflow guide (references/workflows/*.md) is the guide some eval case must read: a
               `Read` grader in benchmarks/routing-eval/ or benchmarks/plugin-eval/ whose pattern matches its
               path (one routing case per new feature; ROUTING_LEGACY lists the guides older than the rule),
-              and every routing case's guide exists. Skipped where there is no benchmarks/routing-eval/
+              every routing case's guide exists (route-<topic> reads references/workflows/<topic>.md when
+              there is one), and every workflow guide has its line in references/index.md. Skipped where
+              there is no benchmarks/routing-eval/
   links       every relative link / `references/...` path in SKILL.md and references/ exists; no links
               to documentation that moved (MOVED_URLS, e.g. the old Codex docs address)
   commands    every `showtime <cmd> [sub]` named in SKILL.md, references/ and agents/ exists in the CLI
@@ -39,6 +41,13 @@ Checks:
   paths       no machine-specific paths (a developer's home folder, temp folders) in shipped files
   names       no names of outside projects this repo must not mention (list kept encoded below)
   conflicts   a merge-conflict marker line (<<<<<<< , =======, >>>>>>> ) left in a tracked text file
+  changelog   CHANGELOG.md's unreleased section has no bullet twice; warnings for two bullets with the same
+              bold lead and for lines over 120 characters
+  windows     no tracked path with a name Windows refuses (CON, PRN, AUX, NUL, COM1-9, LPT1-9 with any
+              extension; reserved characters), and no test that writes a file by such a name (nul.csv)
+  secrets     no credential-shaped literal (private key block, JSON web token, database URL with a password,
+              GitHub/AWS/Stripe/Slack/Google/sk-/registry/service keys) in any shipped non-binary file, fake ones included: a
+              mirror's push protection refuses the commit. Tests build them at run time from pieces
   terms       words CONTEXT.md says to avoid (warning only)
   media       committed videos under 20 MB, no render work folders, and large example media (over
               10 MB, every .mov) listed in examples/MEDIA.json and ignored by git: they ship as release
@@ -529,23 +538,35 @@ def check_routing(f: Findings, evals: Optional[Path] = None, skill: Optional[Pat
     if not (evals / ROUTING_EVAL).is_dir():
         return
     pats = []
+    broken = set()                              # cases with a pattern that is not a regex: reported once, for that
     for case, pat, where in read_patterns(evals):
         try:
             pats.append((case, re.compile(pat), where))
         except re.error as e:
+            broken.add(case)
             f.add("routing", "error", "%s: the Read pattern %r is not a regex (%s)" % (case, pat, e), rel(where))
     refs = sorted(p.relative_to(skill).as_posix() for p in (skill / "references").rglob("*.md"))
     for case_dir in sorted(p for p in (evals / ROUTING_EVAL).iterdir() if (p / "prompt.md").is_file()):
         mine = [rx for c, rx, _ in pats if c == case_dir.name]
+        # route-<topic> with a workflow guide of that name must read that guide: a pattern copied from another case
+        # (it names some guide that exists) would otherwise grade the wrong route
+        topic = case_dir.name[len("route-"):] if case_dir.name.startswith("route-") else ""
+        own = "references/workflows/%s.md" % topic
         if not mine:
-            f.add("routing", "error", "routing case %s has no Read grader naming the guide it must read"
-                  % case_dir.name, rel(case_dir))
+            if case_dir.name not in broken:
+                f.add("routing", "error", "routing case %s has no Read grader naming the guide it must read"
+                      % case_dir.name, rel(case_dir))
         elif not any(rx.search(r) for rx in mine for r in refs):
             f.add("routing", "error", "routing case %s reads a guide that does not exist (no reference matches %s)"
                   % (case_dir.name, " or ".join(rx.pattern for rx in mine)), rel(case_dir))
+        elif topic and (skill / own).is_file() and not any(rx.search(own) for rx in mine):
+            f.add("routing", "error", "routing case %s does not read its own guide %s (its pattern matches %s)"
+                  % (case_dir.name, own, ", ".join(r for r in refs if any(rx.search(r) for rx in mine))), rel(case_dir))
         if not (case_dir / "graders" / "names-the-first-command.md").is_file():
             f.add("routing", "error", "routing case %s has no names-the-first-command grader" % case_dir.name,
                   rel(case_dir))
+    index_md = skill / "references" / "index.md"
+    index = read(index_md) if index_md.is_file() else None
     for wf in sorted((skill / "references" / "workflows").glob("*.md")):
         topic, path = wf.stem, "references/workflows/" + wf.name
         covered = any(rx.search(path) for _, rx, _ in pats)
@@ -554,6 +575,9 @@ def check_routing(f: Findings, evals: Optional[Path] = None, skill: Optional[Pat
                   "(one case per feature, see its README)" % (wf.name, ROUTING_EVAL, topic), rel(wf))
         elif covered and topic in legacy:
             f.add("routing", "warning", "%s now has a routing case: take it off ROUTING_LEGACY" % topic, rel(wf))
+        if index is not None and not re.search(r"workflows/%s(?![\w.-])" % re.escape(wf.name), index):
+            f.add("routing", "error", "workflow guide %s has no line in references/index.md: add it to its family there"
+                  % wf.name, rel(wf))
 
 
 # ---------------------------------------------------------------------------
@@ -841,8 +865,117 @@ def check_paths_and_names(f: Findings, files: Sequence[Path]) -> None:
                 f.add("names", "error", "file name mentions a banned project", rel(p))
 
 
-_CONFLICT_OPEN = re.compile(r"^(?:<<<<<<<|>>>>>>>) ", re.M)
-_CONFLICT_MID = re.compile(r"^=======$", re.M)
+CHANGELOG_WIDTH = 120
+
+
+def check_changelog(f: Findings, path: Optional[Path] = None) -> None:
+    """The unreleased section of CHANGELOG.md: no bullet twice (two PRs that each carried the same bullet, or a merge
+    that kept both sides), no top-level bullet whose bold lead repeats another's (warning: often an edited copy), and
+    lines within CHANGELOG_WIDTH characters (warning)."""
+    path = path or REPO / "CHANGELOG.md"
+    if not path.is_file():
+        return
+    lines = read(path).splitlines()
+    start = next((i for i, ln in enumerate(lines) if re.match(r"## \S+ \(unreleased\)\s*$", ln)), None)
+    if start is None:
+        return
+    end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
+    bullets: List[Tuple[int, str]] = []                    # (1-based line, text with its continuation lines)
+    for i in range(start + 1, end):
+        ln = lines[i]
+        if len(ln) > CHANGELOG_WIDTH:
+            f.add("changelog", "warning", "line of %d characters in the unreleased section (wrap at %d)"
+                  % (len(ln), CHANGELOG_WIDTH), "%s:%d" % (rel(path), i + 1))
+        if ln.startswith("- "):
+            bullets.append((i + 1, ln[2:]))
+        elif bullets and ln.startswith("  ") and ln.strip():
+            bullets[-1] = (bullets[-1][0], bullets[-1][1] + " " + ln.strip())
+        elif not ln.strip() or ln.startswith("#"):
+            bullets.append((0, ""))                         # a blank line or heading ends a bullet
+    seen: Dict[str, int] = {}
+    leads: Dict[str, int] = {}
+    for at, text in bullets:
+        if not at:
+            continue
+        key = " ".join(text.split())
+        if key in seen:
+            f.add("changelog", "error", "this bullet repeats the one at line %d (keep one)" % seen[key],
+                  "%s:%d" % (rel(path), at))
+            continue
+        seen[key] = at
+        m = re.match(r"\*\*(.+?)\*\*", key)
+        lead = m.group(1).strip().rstrip(".:").lower() if m else ""
+        if lead and lead in leads:
+            f.add("changelog", "warning", "this bullet's lead repeats the one at line %d: one change, two entries?"
+                  % leads[lead], "%s:%d" % (rel(path), at))
+        elif lead:
+            leads[lead] = at
+
+
+# Windows refuses these names with any extension (nul.csv is the device NUL), so a checkout or a test that writes one
+# fails there only: 0.4.5 lost two release CI rounds to a test fixture named nul.csv
+_WIN_FIXTURE = re.compile(r"(?:^|[/\\])(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.[A-Za-z0-9]+)+$", re.I)
+TEST_SOURCES = ("skills/showtime/tests/", "tests/")
+
+
+def _unquoted(literal: str) -> str:
+    """A string literal's text without its prefix and quotes (f'{d}/x.txt' -> {d}/x.txt), for what literal_eval refuses."""
+    return re.sub(r"""^[A-Za-z]*('{3}|"{3}|'|")|('{3}|"{3}|'|")$""", "", literal)
+
+
+def _test_strings(p: Path) -> List[Tuple[int, str]]:
+    """(line, value) of the string literals in a test file: Python by its tokenizer (comments are not strings; an
+    f-string's literal parts count), JavaScript by quoted strings outside // comments. Prose in a string or docstring
+    passes the rule because the reserved name must end the string, after its start, a / or a \\."""
+    text = read(p)
+    out: List[Tuple[int, str]] = []
+    if p.suffix == ".py":
+        import io
+        import tokenize
+        try:
+            fmid = getattr(tokenize, "FSTRING_MIDDLE", None)            # Python 3.12+: an f-string's literal parts
+            for tok in tokenize.generate_tokens(io.StringIO(text).readline):
+                if tok.type == tokenize.STRING:
+                    try:
+                        val = ast.literal_eval(tok.string)
+                    except (ValueError, SyntaxError):              # an f-string before 3.12: its text, quotes off
+                        val = _unquoted(tok.string)
+                    if isinstance(val, str):
+                        out.append((tok.start[0], val))
+                elif fmid is not None and tok.type == fmid:
+                    out.append((tok.start[0], tok.string))
+        except (tokenize.TokenError, IndentationError, SyntaxError):
+            pass
+        return out
+    for i, ln in enumerate(text.splitlines(), 1):
+        code = re.sub(r"(^|\s)//.*$", "", ln)
+        out.extend((i, m.group(2)) for m in re.finditer(r"(['\"`])([^'\"`\n]*)\1", code))
+    return out
+
+
+def check_windows_names(f: Findings, files: Sequence[Path], paths: bool = True) -> None:
+    """No tracked path with a Windows-reserved name (CON, PRN, AUX, NUL, COM1-9, LPT1-9, with or without an extension)
+    or a character Windows refuses, and no file name a test builds from a string literal with a reserved stem.
+    paths=False leaves the tracked paths to the directory check when it runs too (one report per file)."""
+    for p in files:
+        r = rel(p)
+        for part in (r.split("/") if paths else []):
+            if part.lower().split(".", 1)[0] in WIN_RESERVED or any(c in WIN_BAD_CHARS for c in part) \
+                    or part.endswith((".", " ")):
+                f.add("windows", "error", "name %r cannot be checked out on Windows" % part, r)
+        if r.startswith(TEST_SOURCES) and p.suffix in (".py", ".mjs", ".js"):
+            for line, val in _test_strings(p):
+                m = _WIN_FIXTURE.search(val.strip())
+                if m:
+                    f.add("windows", "error", "a test names the file %r: %s is a device on Windows, so writing it "
+                          "fails there (pick another name)" % (val.strip(), m.group(1).upper()), "%s:%d" % (r, line))
+
+
+# git writes "<<<<<<< ours" and ">>>>>>> theirs", but a marker with no label (a hand-made or tool-made conflict) is one
+# too. The check reads files as they are on disk (newline=""), so a CRLF file's marker lines end with \r: matched here
+# rather than relying on read()'s newline translation.
+_CONFLICT_OPEN = re.compile(r"^(?:<<<<<<<|>>>>>>>)(?: |\r?$)", re.M)
+_CONFLICT_MID = re.compile(r"^=======\r?$", re.M)
 
 
 def check_conflict_markers(f: Findings, files: Sequence[Path]) -> None:
@@ -851,7 +984,8 @@ def check_conflict_markers(f: Findings, files: Sequence[Path]) -> None:
     for p in files:
         if not is_text(p):
             continue
-        text = read(p)
+        with open(str(p), encoding="utf-8", errors="replace", newline="") as fh:   # as on disk: CRLF stays \r\n
+            text = fh.read()
         if "<<<<<<<" not in text and ">>>>>>>" not in text:
             continue
         opens = list(_CONFLICT_OPEN.finditer(text))
@@ -859,6 +993,44 @@ def check_conflict_markers(f: Findings, files: Sequence[Path]) -> None:
             continue
         for m in opens + list(_CONFLICT_MID.finditer(text)):
             f.add("conflicts", "error", "merge-conflict marker left in the file: %s" % m.group(0).strip(), "%s:%d" % (rel(p), _line(text, m.start())))
+
+
+# Credential shapes a mirror's push protection refuses. Tests that need one (the redactors, pr-video's masking) build it
+# at run time from pieces, so no shipped line holds it whole. AWS's documented example key (…EXAMPLE) is a known
+# placeholder and stays allowed. Some patterns are assembled from pieces so this file does not match itself.
+SECRET_SHAPES = [
+    ("a private key block", re.compile("-----BEGIN (?:[A-Z0-9]+ )*PRIVATE " + r"KEY(?: BLOCK)?-----")),
+    ("a JSON web token", re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}")),
+    # a placeholder password (user:password@, :<password>@, :${PW}@, :****@) is documentation, not a credential; the
+    # user may be empty (redis://:pw@host)
+    ("a database URL with a password", re.compile(r"\b(?:postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|rediss?|amqps?|"
+                                                  r"mssql|sqlserver)://[^\s:/@'\"]*:(?!(?:password|passwd|pass|pw|secret|"
+                                                  r"changeme|example|x+|\*+|<[^>@]*>|\$\{?\w+\}?|\{\w+\})@)[^\s@/'\"]+@")),
+    ("a GitHub token", re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{60,})")),
+    ("an AWS access key", re.compile(r"\b(?:AKIA|ASIA)(?![0-9A-Z]{9}EXAMPLE\b)[0-9A-Z]{16}\b")),
+    ("a Stripe key", re.compile(r"\b(?:[sr]k_" + r"(?:live|test)_[0-9A-Za-z]{20,}|whsec_[0-9A-Za-z]{24,})")),
+    ("a Slack token", re.compile(r"\b(?:xox[abposr]-[0-9A-Za-z-]{10,}|xapp-[0-9A-Za-z-]{20,})")),
+    ("a Google key", re.compile(r"\b(?:AIza[0-9A-Za-z_-]{35}\b|GOCSPX-[0-9A-Za-z_-]{28}|ya29\.[0-9A-Za-z_-]{30,})")),
+    ("an API key (sk-...)", re.compile(r"\bsk-(?:ant-|proj-)?[A-Za-z0-9_-]{32,}")),
+    ("a package registry token", re.compile(r"\b(?:npm_[A-Za-z0-9]{36}|pypi-AgE[A-Za-z0-9_-]{50,}|glpat-[A-Za-z0-9_-]{20}|"
+                                           r"hf_[A-Za-z0-9]{34})\b")),
+    ("a service API token", re.compile(r"\b(?:SG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}|shp(?:at|ss|ca|pa)_[a-fA-F0-9]{32}|"
+                                      r"do[opr]_v1_[a-f0-9]{64}|sq0[a-z]{3}-[A-Za-z0-9_-]{22,}|AC[a-f0-9]{32}\b)")),
+]
+
+
+def check_secrets(f: Findings, files: Sequence[Path]) -> None:
+    """No credential-shaped literal in a shipped file (fake ones too: a mirror's push protection cannot tell, and
+    refuses the commit). Every file that is not binary is read, whatever its extension (fixtures are .diff, .jsonl) and
+    size."""
+    for p in files:
+        if is_binary(p):
+            continue
+        for i, line in enumerate(read(p).splitlines(), 1):
+            for label, rx in SECRET_SHAPES:
+                if rx.search(line):
+                    f.add("secrets", "error", "%s literal: build it at run time from pieces (\"gh\" + \"p_\" + ...)"
+                          % label, "%s:%d" % (rel(p), i))
 
 
 def avoid_terms() -> Dict[str, str]:
@@ -949,13 +1121,42 @@ _REWRITING_ATTRS = re.compile(r"^(?:-?filter\b.*|filter=.*|ident|-ident|working-
                               r"!?crlf(?:=.*)?|-crlf(?:=.*)?|export-ignore|-export-ignore|export-subst|-export-subst)$")
 
 
+# git's attribute names: letters, digits, - . _ and not starting with - (after an optional - or ! prefix), then =value
+_ATTR_TOKEN = re.compile(r"^[-!]?[._A-Za-z0-9][-._A-Za-z0-9]*(?:=.*)?$")
+_ATTR_BLANK = re.compile(r"[ \t\r\n]+")   # the only separators git knows (not \xa0, \v ...)
+
+
+def attr_fields(line: str) -> Optional[Tuple[str, List[str]]]:
+    """(pattern, attributes) of a .gitattributes line the way git reads it, or None for a blank or comment line. A
+    pattern in double quotes runs to its closing quote (it may hold spaces: `"a b" text`)."""
+    s = line.lstrip(" \t\r\n")
+    if not s or s.startswith("#"):
+        return None
+    m = re.match(r'"(?:[^"\\]|\\.)*"', s) if s.startswith('"') else re.match(r"[^ \t\r\n]*", s)
+    if not m:                                   # an unclosed quote: no pattern git can read, no attributes
+        return s, []
+    return m.group(0), [a for a in _ATTR_BLANK.split(s[m.end():]) if a]
+
+
+def git_ignored_attr(line: str) -> Optional[str]:
+    """The attribute token that makes git ignore this whole .gitattributes line, or None. A line holding any name git
+    refuses is skipped whole; .gitattributes has comments only on lines of their own, so `* -text # note` is such a
+    line (`#` is not a valid attribute name) and sets nothing (git check-attr: unspecified)."""
+    fields = attr_fields(line)
+    if not fields:
+        return None
+    return next((a for a in fields[1] if not _ATTR_TOKEN.match(a)), None)
+
+
 def checkout_rewrites(line: str) -> List[str]:
     """The attributes on one .gitattributes line that change files at checkout (or archive): filter (LFS), ident,
     working-tree-encoding, eol, text (set, auto, unspecified or re-enabled after `* -text`; only `-text` and `binary`
-    leave bytes alone), the legacy crlf, export-ignore/-subst. A `#` starts a comment only at the line start or after
-    whitespace."""
-    parts = re.split(r"(?:^|\s)#", line, 1)[0].split()
-    return [a for a in parts[1:] if _REWRITING_ATTRS.match(a) and a != "-text"] if len(parts) > 1 else []
+    leave bytes alone), the legacy crlf, export-ignore/-subst. A comment line, or a line git ignores whole
+    (git_ignored_attr), rewrites nothing."""
+    fields = attr_fields(line)
+    if not fields or git_ignored_attr(line):
+        return []
+    return [a for a in fields[1] if _REWRITING_ATTRS.match(a) and a != "-text"]
 
 
 def check_checkout_bytes(f: Findings, files: Sequence[Path]) -> None:
@@ -963,12 +1164,17 @@ def check_checkout_bytes(f: Findings, files: Sequence[Path]) -> None:
     `* -text`, the Windows shims carry CRLF in their bytes and the POSIX scripts carry no CR."""
     ga = REPO / ".gitattributes"
     attr_files = [ga] + [p for p in files if p.name == ".gitattributes" and p != ga]
-    if not ga.is_file() or not re.search(r"(?m)^\*[ \t]+-text[ \t]*(?:[ \t]#.*)?$", read(ga)):
+    # `* -text` alone on its line: with anything after it that is not an attribute (a `# note`), git ignores the line
+    if not ga.is_file() or not re.search(r"(?m)^\*[ \t]+-text[ \t]*$", read(ga)):
         f.add("directory", "error", "the root .gitattributes needs a `* -text` line (store files byte-exact)", ".gitattributes")
     for g in attr_files:
         if not g.is_file():
             continue
         for i, line in enumerate(read(g).splitlines(), 1):
+            bad_name = git_ignored_attr(line)
+            if bad_name:
+                f.add("directory", "error", "git ignores this whole line (%r is not an attribute name; .gitattributes has no "
+                      "comments after a pattern): %s" % (bad_name, line.strip()), "%s:%d" % (rel(g), i))
             for bad in checkout_rewrites(line):
                 f.add("directory", "error", "%s rewrites files at checkout (store them byte-exact): %s" % (bad, line.strip()), "%s:%d" % (rel(g), i))
     for p in files:
@@ -1121,7 +1327,8 @@ def check_mirror(f: Findings, assets: Optional[List[Tuple[str, str, Optional[int
 
 
 def default_checks() -> List[str]:
-    default = ["versions", "skill", "routing", "links", "commands", "agents", "guides", "paths", "names", "conflicts", "terms", "media"]
+    default = ["versions", "skill", "routing", "links", "commands", "agents", "guides", "paths", "names", "conflicts", "secrets",
+               "terms", "media", "changelog", "windows"]
     if not (REPO / "examples").is_dir():
         default.append("directory")   # the plugin repository (the examples have their own)
     return default
@@ -1150,6 +1357,12 @@ def run_checks(fix: bool = False, set_version: Optional[str] = None,
         check_paths_and_names(f, shipped_files())
     if "conflicts" in want:
         check_conflict_markers(f, shipped_files())
+    if "changelog" in want:
+        check_changelog(f)
+    if "windows" in want:
+        check_windows_names(f, shipped_files(), paths="directory" not in want)
+    if "secrets" in want:
+        check_secrets(f, shipped_files())
     if "terms" in want:
         check_terms(f)
     if "media" in want:
@@ -1261,8 +1474,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                         "  python scripts/check_release.py --check --only commands,links")
     ap.add_argument("--check", action="store_true", help="report only; never modify files")
     ap.add_argument("--set-version", metavar="X.Y.Z", help="bump every version field to X.Y.Z")
-    ap.add_argument("--only", help="comma list: versions,skill,routing,links,commands,agents,guides,paths,names,conflicts,terms,media,"
-                                   "directory,mirror")
+    ap.add_argument("--only", help="comma list: versions,skill,routing,links,commands,agents,guides,paths,names,conflicts,secrets,terms,"
+                                   "media,changelog,windows,directory,mirror")
     ap.add_argument("--mirror", action="store_true", help="also HEAD every model and audio mirror asset on its release "
                                                           "(network; run before a release)")
     ap.add_argument("--json", action="store_true", help="print findings as JSON")

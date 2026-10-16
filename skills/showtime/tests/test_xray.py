@@ -83,6 +83,18 @@ def make_film(path: Path, audio: Path, flashes, seconds=5.0, delay_ms=0.0, marke
     return path
 
 
+def make_scaled_film(path: Path, audio: Path, flashes, page_w: int, page_h: int, seconds=5.0) -> Path:
+    """A page_w x page_h page with the 6x6 marker at (page_w - 10, page_h - 10) on the given frames, scaled down to
+    the 320x180 film the way a --preview render is (bicubic, a draft encode)."""
+    enable = "+".join("eq(n,%d)" % f for f in flashes)
+    vf = "drawbox=x=%d:y=%d:w=6:h=6:color=white:t=fill:enable='%s',scale=%d:%d,format=yuv420p" % (
+        page_w - 10, page_h - 10, enable, W, H)
+    ff.run_ffmpeg(["-f", "lavfi", "-i", "color=c=0x101418:s=%dx%d:r=%d:d=%g" % (page_w, page_h, FPS, seconds), "-i", str(audio),
+                   "-vf", vf, "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+                   "-c:a", "pcm_s16le", "-shortest", str(path)])
+    return path
+
+
 def within(a, b, tol):
     return abs(a - b) <= tol
 
@@ -434,6 +446,35 @@ class Verify(unittest.TestCase):
         self.assertEqual(r2["status"], "FAIL")
         self.assertEqual(xray.project_config(self.tmp / "nowhere"), {})
 
+    def test_a_preview_render_is_read_at_the_films_scale(self):
+        # --preview fits the film to 720p: a 1080p page's 6x6 marker is 4x4 there, 6.7 px from the corner, and blurred
+        for page in ((480, 270), (640, 360)):                     # x 2/3 (1080p -> 720p) and x 1/2
+            j = self.job("scaled-%d" % page[0])
+            (j / "project").mkdir()
+            write_json(j / "project" / "showtime.json", {"width": page[0], "height": page[1], "xray": {"marker": True}})
+            film = make_scaled_film(j / "preview.mkv", self.wav, self.frames, *page)
+            r = xray.verify(j, film)
+            self.assertTrue(r["marker"], r)
+            self.assertEqual((r["on_frame"], r["missing"], r["extra"], r["status"]), (6, [], [], "PASS"), r)
+            self.assertAlmostEqual(r["marker_scale"], W / page[0], places=3)
+            self.assertTrue(any("times the page's size" in n for n in r["notes"]), r["notes"])
+        # a film the page was laid out for at its own size (another shape, --size) is read at the corner as drawn
+        j = self.job("othershape")
+        (j / "project").mkdir()
+        write_json(j / "project" / "showtime.json", {"width": 1080, "height": 1920, "xray": {"marker": True}})
+        r = xray.verify(j, make_film(j / "final.mkv", self.wav, self.frames))
+        self.assertEqual((r["on_frame"], r["status"]), (6, "PASS"), r)
+        self.assertNotIn("marker_scale", r)
+
+    def test_marker_crop_stays_inside_the_scaled_square(self):
+        self.assertEqual(xray.marker_crop(1920, 1080), (6, 6, 1910, 1070))      # the page's own size: the whole square
+        for s in (2 / 3.0, 0.5, 2.0, 0.75):
+            w, h, x, y = xray.marker_crop(1280, 720, s)
+            x0, x1 = 1280 - 10 * s, 1280 - 4 * s                                 # the scaled square's left and right edges
+            self.assertGreaterEqual(w, 2)
+            self.assertTrue(x0 <= x and x + w <= x1 + 1e-9, (s, x, w, x0, x1))
+            self.assertTrue(720 - 10 * s <= y and y + h <= 720 - 4 * s + 1e-9, (s, y, h))
+
     def test_skipped_events_carry_no_marker(self):
         j = self.job("skip")
         (j / "project").mkdir()
@@ -526,6 +567,55 @@ class Verify(unittest.TestCase):
         self.assertTrue(any("ms from the original" in f["message"] for f in r["findings"]), r["findings"])
         film2 = make_film(j / "final2.mkv", self.wav, self.frames, delay_ms=12)
         self.assertTrue(within(xray.verify(j, film2)["audio_lag_ms"], 12.0, 1.5))
+
+    def test_a_derived_sound_is_said_in_the_line_and_the_receipt(self):
+        from st.job import receipt
+        # the clip's sound is a rendering of data: the audio check passes against it, so the receipt says what it is
+        j = self.job("derived")
+        (j / "project").mkdir()
+        write_json(j / "project" / "showtime.json", {"xray": {"marker": True, "credit": "Synthetic clicks, CC0.",
+                                                              "derived": "the signal  slowed 100x on a 400 Hz carrier"}})
+        r = xray.verify(j, make_film(j / "final.mkv", self.wav, self.frames))
+        self.assertEqual(r["status"], "PASS", r)
+        self.assertEqual(r["derived"], "the signal slowed 100x on a 400 Hz carrier")
+        self.assertTrue(r["line"].endswith("ms from the rendered sound"), r["line"])
+        self.assertNotIn("original", r["line"])
+        self.assertTrue(any("not with the original data" in n for n in r["notes"]), r["notes"])
+        late = xray.verify(j, make_film(j / "late.mkv", self.wav, self.frames, delay_ms=40))     # off: said the same way
+        self.assertTrue(any("ms from the rendered sound (limit" in f["message"] for f in late["findings"]), late["findings"])
+        xray.verify(j, make_film(j / "final.mkv", self.wav, self.frames))
+        facts = receipt.card_facts({"xray": xray.receipt_section(j)})
+        self.assertIn("X-ray sound: a rendering (the signal slowed 100x on a 400 Hz carrier); the audio check compares "
+                      "the film with it, not with the original data", facts)
+        # events imported from data (xray import): not measured from the sound, so not "from the original" either
+        j2 = self.job("imported")
+        doc = json.loads((j2 / "xray" / "xray.json").read_text(encoding="utf-8"))
+        doc["detector"] = {"engine": "data", "min_gap": None, "sensitivity": None, "from": 0.0, "to": None, "note": "n",
+                           "time_map": {"slow": 1.0, "t0": 0.0}, "input": {"file": "peaks.csv", "sha256": "0" * 64,
+                                                                           "column": "t", "rows": 6}}
+        write_json(j2 / "xray" / "xray.json", doc)
+        r2 = xray.verify(j2, make_film(j2 / "final.mkv", self.wav, self.frames))
+        self.assertEqual((r2["status"], r2["events_from"]), ("PASS", "data: peaks.csv"), r2)
+        self.assertNotIn("derived", r2)
+        self.assertTrue(r2["line"].endswith("ms from the source sound"), r2["line"])
+        self.assertTrue(any("not from the sound" in n for n in r2["notes"]), r2["notes"])
+        self.assertIn("X-ray events: from data: peaks.csv, not measured from the sound",
+                      receipt.card_facts({"xray": xray.receipt_section(j2)}))
+        nomark = xray.verify(j2, make_film(j2 / "plain.mkv", self.wav, [], marker=False))
+        self.assertEqual(nomark["line"], "6 events from data (sync not verified: no marker in the film)")
+        # a hand-edited detector that is not an object, or an input file name that is not a short string, is no crash
+        for det in ("data", {"engine": "data", "input": "peaks.csv"}, {"engine": "data", "input": {"file": "x\n" * 400}}):
+            doc["detector"] = det
+            write_json(j2 / "xray" / "xray.json", doc)
+            r4 = xray.verify(j2, make_film(j2 / "final.mkv", self.wav, self.frames))
+            self.assertEqual(r4["status"], "PASS", r4)
+            self.assertLessEqual(len(r4.get("events_from", "")), 130, r4.get("events_from"))
+        # a clip measured from its own sound keeps "from the original" and no extra receipt line
+        j3 = self.job("measured")
+        r3 = xray.verify(j3, make_film(j3 / "final.mkv", self.wav, self.frames))
+        self.assertTrue(r3["line"].endswith("ms from the original"), r3["line"])
+        self.assertFalse(any(f.startswith("X-ray sound") or f.startswith("X-ray events")
+                             for f in receipt.card_facts({"xray": xray.receipt_section(j3)})))
 
     def test_events_beyond_the_film_are_not_counted(self):
         j = self.job("short", self.frames + [900])
@@ -992,6 +1082,39 @@ class Import(unittest.TestCase):
     def test_a_strength_cell_that_is_not_a_number_is_refused(self):
         self._refused([self._csv("sg.csv", "t,h\n1,5\n2,loud\n3,7\n"), "--strength", "h"], "event 2: the h value 'loud' is not a number", "sg")
 
+    def test_an_implicit_strength_column_takes_numbers_only(self):
+        # a column named strength sizes the events without --strength: a word there was drawn at 1.0, silently
+        self._refused([self._csv("isg.csv", "t,strength\n1,0.5\n2,loud\n3,0.7\n")],
+                      "event 2: the strength value 'loud' is not a number", "isg")
+        doc = xray.import_events(self._csv("isg2.csv", "t,strength\n1,0.5\n2,\n3,7\n"), self.tmp / "isg2")
+        self.assertEqual([e["strength"] for e in doc["events"]], [0.5, 1.0, 1.0])       # blank: the default, clamped to 1
+
+    def test_a_bad_strength_cell_is_refused_before_the_source_is_read(self):
+        from st.audio import wav
+        calls = []
+        real = wav.load
+        wav.load = lambda *a, **k: calls.append(a) or real(*a, **k)
+        try:
+            for name, text, flag in (("bs.csv", "t,h\n1,5\n2,loud\n", ["--strength", "h"]), ("bs2.csv", "t,strength\n1,x\n", [])):
+                with self.assertRaises(ShowtimeError) as cm:
+                    xray.build_import(self._csv(name, text), source=self.wav, strength=flag[1] if flag else None)
+                self.assertIn("is not a number", str(cm.exception))
+            self.assertEqual(calls, [], "the recording was decoded before the bad cell was refused")
+            xray.build_import(self._csv("bs3.csv", "t,h\n1,5\n"), source=self.wav, strength="h")
+            self.assertEqual(len(calls), 1, "a good file still reads its source")
+        finally:
+            wav.load = real
+
+    def test_the_blank_count_leaves_out_dropped_rows(self):
+        j = self.tmp / "sg-drop"
+        # rows 1 and 2 are blank; row 1 falls before film time 0 (t0 = 1) and is dropped: one event has no value
+        cp = st("xray", "import", self._csv("sg3.csv", "t,h\n0.5,\n2,\n3,4\n"), "--strength", "h", "--time-map", "1,1",
+                "--job", j, check=False)
+        self.assertEqual(cp.returncode, 0, cp.stderr)
+        self.assertIn("1 event(s) have no h value: drawn at strength 0", cp.stderr)
+        doc = json.loads((j / "xray" / "xray.json").read_text())
+        self.assertEqual(([e["strength"] for e in doc["events"]], len(doc["dropped"])), ([0.0, 1.0], 1))
+
     def test_a_blank_strength_cell_is_zero_with_a_warning(self):
         j = self.tmp / "sg-blank"
         cp = st("xray", "import", self._csv("sg2.csv", "t,h\n1,5\n2,\n3, \n4,10\n"), "--strength", "h", "--job", j, check=False)
@@ -1014,7 +1137,9 @@ class Import(unittest.TestCase):
         flat = " ".join(out.split())
         self.assertIn("WAV", flat)
         self.assertIn("no picture", flat)
-        self.assertNotIn("the video you filmed\n", out)
+        self.assertIn("the video you filmed (with its sound), or a WAV or other recording with no picture", flat)
+        self.assertIn("the 30 fps grid", flat)                     # a recording with no picture has no frames of its own
+        self.assertNotIn("floor(t * fps) of the clip", flat)
 
     def test_time_map_keeps_an_omitted_part(self):
         self.assertEqual(xray.parse_time_map(",5"), {"slow": 1.0, "t0": 5.0})
@@ -1170,6 +1295,23 @@ class ReaderLimits(unittest.TestCase):
         # a legitimate file: the most events, each with an array of numbers, is read
         rows = ",".join('{"t":%d.5,"spectrum":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]}' % k for k in range(xray.MAX_EVENTS))
         self.assertEqual(len(xray.read_event_rows(self.f("spectra.json", "[" + rows + "]"))[0]), xray.MAX_EVENTS)
+
+    def test_one_wide_object_is_refused_before_it_is_parsed(self):
+        """One object with more keys than MAX_KEYS (a single container, fewer commas than MAX_VALUES) is refused before
+        json parses it; the most events with 8 colons each (keys, times, URLs) stay well under the bound."""
+        from unittest import mock
+        # room for 16 colons an event at the most events (keys plus times and URLs inside strings: a realistic event
+        # with a timestamp, a URL, a label and a note has about 8)
+        self.assertGreaterEqual(xray.MAX_KEYS, 16 * xray.MAX_EVENTS)
+        self.assertLess(xray.MAX_KEYS, xray.MAX_VALUES)
+        wide = self.f("wide.json", "{" + ",".join('"k%d":0' % k for k in range(xray.MAX_KEYS + 1)) + "}")
+        with mock.patch.object(xray.json, "loads", side_effect=AssertionError("parsed")):
+            self.refused(wide, "too many object keys")
+        # the most events, each with a timestamp, a URL, a label and a note (8 colons an event), are read
+        row = '{"t":%d.5,"at":"2026-10-15T12:30:01","url":"https://data.example/run/7","label":"peak","note":"x"}'
+        text = "[" + ",".join(row % k for k in range(xray.MAX_EVENTS)) + "]"
+        self.assertEqual(text.count(":"), 8 * xray.MAX_EVENTS)
+        self.assertEqual(len(xray.read_event_rows(self.f("realistic.json", text))[0]), xray.MAX_EVENTS)
 
     def test_a_huge_integer_is_refused_before_json_parses_it(self):
         from unittest import mock

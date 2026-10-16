@@ -7,7 +7,7 @@ fixed playhead, and an 88-key keyboard (A0 to C8, middle C marked).
   frame (stems, flags, a beam once the second eighth of a pair is heard, dots, ledger lines, accidentals outside
   the key), and their keys go down and light while they sound. Every strike also flashes the playhead, so a
   strike with no pitch heard still shows.
-- The staff scrolls on the smooth tempo map (`k.beat` of the frame's time), never by jumping to the last note;
+- The staff scrolls on the smooth tempo map (`k.beat` of `k.rt`, the frame's time on the recording), never by jumping to the last note;
   notes sit on their quantized beat (eighths of that map).
 - Which notes: from `notes.json` (`showtime xray notes <clip> --job <job> --instrument piano`). Hands: the bass
   voice on the bass staff, the melody on the treble staff, other notes with the nearer of the two. Spelling

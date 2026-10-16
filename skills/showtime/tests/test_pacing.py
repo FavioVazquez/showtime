@@ -51,6 +51,17 @@ def showtime(*args, check=True, timeout=600):
     return cp
 
 
+def check_json(p, *args):
+    """`showtime check <p> --json`, run once more when the machine's network changed during the first run: Chrome then
+    aborts the page's loads, even from 127.0.0.1, with net::ERR_NETWORK_CHANGED (a CI runner's network event: one
+    macos-15-intel nightly in 21, 15 Oct). Only that error earns the second run, and the second run is the report:
+    any other failed load, or the same error twice, still fails the test."""
+    rep = json.loads(showtime("check", p, "--json", *args, check=False).stdout)
+    if any(f["code"] == "request_failed" and "net::ERR_NETWORK_CHANGED" in f["message"] for f in rep["findings"]):
+        rep = json.loads(showtime("check", p, "--json", *args, check=False).stdout)
+    return rep
+
+
 HEAD = """<!doctype html><html lang="en"><head><meta charset="utf-8"><title>pacing</title>
 <script src="/_st/stage.js"></script><link rel="stylesheet" href="/_st/themes/editorial.css">
 <script type="module" src="/_st/components/index.js"></script>
@@ -193,8 +204,7 @@ class PacingChecks(unittest.TestCase):
             p.mkdir()
             (p / "showtime.json").write_text(json.dumps(dict({"width": 1920, "height": 1080, "fps": 30, "duration": dur}, **extra)), encoding="utf-8")
             (p / "index.html").write_text(HEAD.replace("@BODY@", body), encoding="utf-8")
-            cp = showtime("check", p, "--json", "--no-determinism", check=False)
-            cls.rep[name] = json.loads(cp.stdout)
+            cls.rep[name] = check_json(p, "--no-determinism")
 
     @classmethod
     def tearDownClass(cls):
@@ -239,7 +249,7 @@ class PacingChecks(unittest.TestCase):
         html = (p / "index.html").read_text(encoding="utf-8")
         self.assertIn('data-dur="10.88"', html)
         self.assertIn('data-st="typewriter" data-at="5.36"', html)
-        rep = json.loads(showtime("check", p, "--json", "--no-determinism", check=False).stdout)
+        rep = check_json(p, "--no-determinism")
         bad = [(f["code"], f["message"][:100]) for f in rep["findings"] if f["severity"] in ("error", "warning")]
         self.assertEqual(bad, [])
 

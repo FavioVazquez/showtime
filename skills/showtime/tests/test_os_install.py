@@ -305,6 +305,47 @@ class TestOldFfmpeg(Tmp):
         self.assertEqual(rows["ffmpeg version"]["status"], "warn")
         self.assertIn("showtime setup --ffmpeg static", rows["ffmpeg version"]["hint"])
 
+    def test_other_installs_ffmpeg_is_not_the_system_one(self):
+        """`setup --home X` with a default install present: the launcher puts ~/.showtime/bin first on PATH, and its
+        ffmpeg was taken as "the system ffmpeg", so X got none of its own (and none at all where that folder is not on
+        PATH). Another showtime home's bin (the default one, or the launcher's SHOWTIME_HOME) is never the system."""
+        su = setup_mod()
+        default, ws, sysdir = self.tmp / "user", self.tmp / "proj" / ".showtime", self.tmp / "usr-bin"
+        exes = {}
+        for name, d in (("default", default / ".showtime" / "bin"), ("ws", ws / "bin"), ("system", sysdir)):
+            d.mkdir(parents=True)
+            for n in ("ffmpeg", "ffprobe"):
+                (d / n).write_text("#!/bin/sh\nexit 0\n")
+                (d / n).chmod(0o755)
+            exes[name] = str(d / "ffmpeg")
+
+        def step(home, cands, before=None):
+            inst = su.Installer(su.parse_args(["--home", str(home), "--ffmpeg", "system"]))
+            err = io.StringIO()
+            with mock.patch.object(su, "_HOME_BEFORE", before), \
+                    mock.patch.object(su.plat, "user_home", lambda: default), \
+                    mock.patch.object(su.Installer, "_ff_check", lambda self, exe, timeout=30: (True, [], [], "9.0.2")), \
+                    mock.patch("st.ff._system_candidates", lambda name: list(cands)), redirect_stdout(err), \
+                    redirect_stderr(err):
+                status, detail = inst.step_ffmpeg()
+                homes = inst.other_homes()
+            return status, detail, (inst.state.data.get("ffmpeg") or {}).get("path"), homes, err.getvalue()
+
+        x = self.tmp / "X"
+        status, detail, used, homes, said = step(x, [exes["default"], exes["system"]])
+        self.assertEqual((status, used), ("ok", exes["system"]), detail)
+        self.assertEqual(homes, [default / ".showtime"])
+        self.assertIn("belongs to another showtime install", said)
+        # only the other install's: no system ffmpeg (auto would download X's own)
+        status, detail, used, _h, _s = step(x, [exes["default"]])
+        self.assertEqual(status, "fail", detail)
+        # the launcher's own home (a project's .showtime) is another install too
+        status, detail, used, homes, _s = step(x, [exes["ws"], exes["system"]], before=str(ws))
+        self.assertEqual((status, used), ("ok", exes["system"]), detail)
+        self.assertEqual(homes, [default / ".showtime", ws])
+        # setup for the default home itself: no other home to skip
+        self.assertEqual(step(default / ".showtime", [exes["system"]], before=str(default / ".showtime"))[3], [])
+
 
 # ------------------------------------------------------------------ 5. a failed loudness reading is not 0 LUFS
 

@@ -18,7 +18,7 @@ import { skillDir, nodeModulesDir } from '../deps.mjs';
 import { UserError, c, fmtBytes } from '../cli.mjs';
 import { showCard, openHint } from '../delight.mjs';
 import { figureFile, FIGURE_CSP } from './figure.mjs';
-import { addCodePoints, pruneFontFaces } from './collect.mjs';
+import { addCodePoints, pruneFontFaces, replaceOwnStyles } from './collect.mjs';
 import { minifyJs, minifyCss } from './minify.mjs';
 import { notices, stageForExport, showtimeVersion, safeJson } from './build.mjs';
 import { fitFootage } from './fit.mjs';
@@ -194,6 +194,14 @@ export function packXrayLive(o) {
     styles.push({ text: r.text, url: r.url });
     return k;
   });
+  // the page's own <style> blocks that name a file (a project's @font-face url("fonts/x.woff2"), a background image):
+  // their files are packed like a stylesheet's, relative to the page (the policy allows only data: fonts and images)
+  html = replaceOwnStyles(html, (m, attrs, text) => {
+    if (!/url\(/i.test(text)) return m;
+    const k = `\u0000C${styles.length}\u0000`;
+    styles.push({ text, url: base, attrs });
+    return k;
+  });
 
   // ---- the live page's own parts
   const pre = liveFile('pre.js'), liveJs = liveFile('live.js'), liveCss = liveFile('live.css');
@@ -220,6 +228,7 @@ export function packXrayLive(o) {
   addCodePoints(used, html.replace(/<[^>]+>/g, ' '));
   scripts.forEach((s) => addCodePoints(used, s.text));
   addCodePoints(used, liveJs);
+  styles.forEach((st) => { if (st.attrs !== undefined) addCodePoints(used, st.text); });   // the page's own <style> text (content: "...")
   Object.values(data).forEach((t) => addCodePoints(used, t));   // showtime.json, xray.json, notes.json (note names: ♯ ♭)
   let fontsDropped = 0;
   const cssOut = styles.map((st) => {
@@ -239,7 +248,7 @@ export function packXrayLive(o) {
   const cfgTag = `<script type="application/json" id="xl-cfg">${safeJson({ data, live })}</script>`;
   const jsOut = scripts.map((s) => (s.stage ? `${cfgTag}\n<script>\n${js(pre)}\n</script>\n<script>\n${js(s.text)}\n</script>` : `<script>\n${js(s.text)}\n</script>`));
   html = html.replace(/\u0000S(\d+)\u0000/g, (m, i) => jsOut[+i]);
-  html = html.replace(/\u0000C(\d+)\u0000/g, (m, i) => `<style>\n${cssOut[+i].replace(/<\/style/gi, '<\\/style')}\n</style>`);
+  html = html.replace(/\u0000C(\d+)\u0000/g, (m, i) => `<style${styles[+i].attrs || ''}>\n${cssOut[+i].replace(/<\/style/gi, '<\\/style')}\n</style>`);
 
   // ---- head: charset, the notice, the policy, the title and the link-preview words
   const title = live.title;
@@ -278,7 +287,7 @@ export function packXrayLive(o) {
 }
 
 /** The command: pack, fit the clip under --max-mb when it is the reason, write, report. */
-export async function exportXrayLive({ a, proj, out, title, target, maxMb, warnings, addWarn, T0 }) {
+export async function exportXrayLive({ a, proj, out, title, target, maxMb, warnings, addWarn, T0, noteExport }) {
   const quiet = !!a.quiet;
   const say = (m) => { if (!quiet) console.error(c.dim(m)); };
   const p = packXrayLive({ projectDir: proj.dir, config: proj.config || {}, title, prompt: a.prompt, page: a.page, allFonts: !!a['all-fonts'],
@@ -316,7 +325,8 @@ export async function exportXrayLive({ a, proj, out, title, target, maxMb, warni
   if (refit.length) addWarn(`the clip was re-encoded for this export only (${refit.map((r) => `${r.kbps} kb/s`).join(', ')}) to stay under ${maxMb} MB; the project's files are unchanged`);
   fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, html);
-  const report = { output: out, interactive: true, kind: 'xray-live', layout: p.live.layout, tracked: p.live.tracked, page: p.page, bytes,
+  const job = noteExport ? await noteExport('the X-ray live page') : null;
+  const report = { output: out, interactive: true, kind: 'xray-live', ...(job ? { job } : {}), layout: p.live.layout, tracked: p.live.tracked, page: p.page, bytes,
     mb: +(bytes / MB).toFixed(2), max_mb: maxMb, title: p.live.title, target, files: p.files.length, fonts_dropped: p.fontsDropped,
     media: [...p.media].map(([u, m]) => ({ path: u, bytes: m.bytes.length })), footage_refit: refit, made: { prompt: p.live.made.prompt, commands: p.live.made.commands, guessed: p.live.made.guessed, own: p.live.made.own, unknown_mechanisms: unknown },
     largest: p.files.slice().sort((x, y) => y.bytes - x.bytes).slice(0, 6), warnings, seconds: +((Date.now() - T0) / 1000).toFixed(1) };

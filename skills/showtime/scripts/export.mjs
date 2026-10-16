@@ -136,13 +136,25 @@ function ledgerJob(p) {
 
 /** True when the project folder dir is inside job, or is the project its job.json or render.json names. */
 export function jobHolds(job, dir) {
-  const real = (q) => { try { return fs.realpathSync(q); } catch { return path.resolve(q); } };
+  // one folder however it is written: the native realpath gives Windows' long names (not 8.3 short ones) and the case
+  // on disk, which the JS one keeps as typed; the device and inode decide when the two strings still differ
+  const real = (q) => {
+    for (const rp of [fs.realpathSync.native, fs.realpathSync]) { try { return rp(q); } catch { /* the next one */ } }
+    return path.resolve(q);
+  };
+  const same = (a, b) => {
+    if (a === b) return true;
+    try {
+      const x = fs.statSync(a, { bigint: true }), y = fs.statSync(b, { bigint: true });
+      return x.ino !== 0n && x.ino === y.ino && x.dev === y.dev;
+    } catch { return false; }
+  };
   const d = real(dir), j = real(job), rel = path.relative(j, d);
   if (rel === '' || (rel.split(path.sep)[0] !== '..' && !path.isAbsolute(rel))) return true;
   for (const f of ['job.json', 'render.json']) {
     let p = null;
     try { p = JSON.parse(fs.readFileSync(path.join(j, f), 'utf8')).project; } catch { /* no such file */ }
-    if (typeof p === 'string' && p && real(path.resolve(j, p)) === d) return true;
+    if (typeof p === 'string' && p && same(real(path.resolve(j, p)), d)) return true;
   }
   return false;
 }

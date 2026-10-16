@@ -256,6 +256,26 @@ class TestCli(unittest.TestCase):
         hist = [h["event"] for h in json.loads((job / "job.json").read_text(encoding="utf-8"))["history"]]
         self.assertEqual(len([h for h in hist if h.startswith("export html --interactive ")]), 1, hist)
 
+    def test_from_a_job_its_project_written_another_way_goes_in(self):
+        # #72 on Windows: job.json holds the project's long path while the argument can be its 8.3 short form (a temp
+        # folder under a short home name) or another letter case; it is still the job's own project, so the page goes in
+        base = TMP / "jobs72c"
+        base.mkdir(exist_ok=True)
+        own = TMP / "Own72c"
+        showtime("new", "xray", own)
+        variant = own.with_name(own.name.lower())
+        if not variant.exists():
+            self.skipTest("a case-sensitive file system: no other spelling of the same folder")
+        job = Path(json.loads(showtime("job", "init", "live72c", "--base", base, "--project", own, "--no-check",
+                                       "--json").stdout)["job"])
+        cp = subprocess.run([sys.executable, str(LAUNCHER), "export", "html", str(variant), "--interactive", "--json"],
+                            env=ENV, cwd=str(job), stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8",
+                            errors="replace", timeout=300)
+        self.assertEqual(cp.returncode, 0, cp.stderr[-2000:])
+        rep = json.loads(cp.stdout)
+        self.assertEqual(Path(rep["output"]).parent.resolve(), job.resolve(), rep["output"])
+        self.assertEqual(Path(rep["job"]).resolve(), job.resolve())
+
     def test_diagram_layout(self):
         _, out, rep = sample("diagram")
         self.assertEqual(rep["layout"], "diagram")

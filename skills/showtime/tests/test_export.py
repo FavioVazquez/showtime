@@ -1485,6 +1485,47 @@ SHARE_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8"><scri
 """
 
 
+OWN_STYLES_DRIVER = r"""
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+const { replaceOwnStyles } = await import(pathToFileURL(path.join(process.argv[2], 'scripts', 'lib', 'export', 'collect.mjs')).href);
+const pages = JSON.parse(process.argv[3]);
+console.log(JSON.stringify(pages.map((h) => replaceOwnStyles(h, (m, attrs, text) => '<style' + attrs + '>PACKED</style>'))));
+"""
+
+
+class OwnStylesTest(unittest.TestCase):
+    """The HTML export packs only the page's own <style> blocks: never one inside a script or a comment, however
+    the script or comment ends (browsers end a script at "</script" plus anything up to ">", a comment at "--!>")."""
+
+    OWN = '<style>b{}</style>'
+
+    def packed(self, cases):
+        with tempfile.TemporaryDirectory(prefix="st-own-styles-") as tmp:
+            drv = Path(tmp) / "own.mjs"
+            drv.write_text(OWN_STYLES_DRIVER, encoding="utf-8")
+            node = shutil.which("node", path=ENV.get("PATH")) or "node"
+            cp = subprocess.run([node, str(drv), str(SKILL), json.dumps(cases)], env=ENV, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, encoding="utf-8", errors="replace", timeout=60)
+        self.assertEqual(cp.returncode, 0, cp.stderr[-2000:])
+        for page, got in zip(cases, json.loads(cp.stdout)):
+            # the script or comment stays byte for byte and the page's own style after it is packed
+            self.assertEqual(got, page.replace(self.OWN, '<style>PACKED</style>'), page)
+
+    def test_a_script_ended_with_more_after_its_name(self):
+        js = '<script>var s = "<style>a{}</style>";'
+        self.packed([js + '</script foo="1">' + self.OWN, js + '</script\t\n bar>' + self.OWN,
+                     js + '</SCRIPT >' + self.OWN, js + '</script/>' + self.OWN, js + '</script>' + self.OWN])
+
+    def test_a_longer_tag_name_does_not_end_a_script(self):
+        # "</script-x>" and "</scriptx>" are other tags inside the script's text: the script runs on to its "</script>"
+        js = '<script>var s = "<style>a{}</style>";'
+        self.packed([js + end + ' var t = "<style>z{}</style>";</script>' + self.OWN for end in ('</script-x>', '</scriptx>')])
+
+    def test_a_comment_ended_with_a_bang(self):
+        self.packed(['<!-- <style>c{}</style> --!>' + self.OWN, '<!-- <style>c{}</style> -->' + self.OWN])
+
+
 @needs_listen
 class ExportFilesTest(unittest.TestCase):
     """Every file the page needs is packed or the export stops; sound files only data names stay out;

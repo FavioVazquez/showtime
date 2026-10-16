@@ -94,11 +94,13 @@ it.
   figure packed the files of linked stylesheets only; a project's own `@font-face` in the page's `<style>`
   (`url("fonts/x.woff2")`) stayed a file the page's policy (`font-src data:`) blocks, so the text fell back to another
   font. Files named in the page's own `<style>` blocks are packed like a stylesheet's (only from inside the project),
-  and one that is missing stops the export with its name. An inline `<script>` is never rewritten.
+  and one that is missing stops the export with its name. An inline `<script>` or an HTML comment is never rewritten,
+  however it ends: a script at `</script` with more before its `>`, a comment at `--!>`, as browsers end them.
 - **Fixed: `export html` from inside a job writes into the job** (#72). On a project inside a job, or run from the job
   folder of the project being exported (its `job.json` names it), it made a new `showtime-out/<title>-<time>/`
   folder nested in the job; the export now goes into that job, and a live page or figure is noted in its `job.json`.
-  Another project exported from a job folder goes where it always did.
+  Another project exported from a job folder goes where it always did. The job's own project counts however its path
+  is written: a Windows short (8.3) name or another letter case.
 - **Fixed: a new 16:9 X-ray project passes its own check** (#68). The brand, the tag and the counters sit 96 px (5%)
   from the left edge, the counters above the player controls' strip, their labels and the end card's small print are
   26 px, and the red letter on the paper card and the end card's number use a red that reads at 4.5:1 on both themes

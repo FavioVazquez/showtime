@@ -6,7 +6,8 @@ Start here if you have never used showtime. Ask for a 5-second test video: your 
 the video on your computer, checks it and has it reviewed. You learn that the install works, and you see every step a
 bigger video goes through. This guide follows one real run, with a screenshot of each step.
 
-![The whole run in 23 seconds: the terminal as the job is made, the check and the first look, the first render and its qa warning, the fixed render, the finished 5-second video, the review sheet and the receipt.](../../assets/readme/tutorials/first-video/clip.webp)
+<!-- video: examples/_tutorials/first-video/clip.mp4 -->
+[![The whole run in 18 seconds, one step at a time: the terminal as the job is made, the check and the first look, the first render and its qa warning, the fixed render, the finished 5-second video, the review sheet, the findings answered and the receipt.](https://github.com/FavioVazquez/showtime-examples/raw/main/examples/_tutorials/first-video/clip.jpg)](https://faviovazquez.github.io/showtime/docs/guides/first-video.html)
 
 ## Say this
 
@@ -137,7 +138,9 @@ top and were not timed. More numbers: [render § Speed](../../skills/showtime/re
   a video needs them, with their size shown first. The test video downloads nothing more.
 - The qa output in steps 3 and 4 was printed again on the saved files for the screenshots, after the silent-film line
   was in `showtime.json`, so it shows the still-hold warning only. The findings in step 7 are shortened from the
-  critic's reply. Something failed? Ask your agent to run `showtime doctor`, then see [Troubleshooting](../troubleshooting.md).
+  critic's reply. The look image and the review sheet were made again at twice their size for this page: the look
+  from the finished project (the glow's drift is the only change), the sheet from the same six frames of
+  `final-3.mp4`. Something failed? Ask your agent to run `showtime doctor`, then see [Troubleshooting](../troubleshooting.md).
 
 ## The example
 

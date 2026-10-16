@@ -469,6 +469,22 @@ class Site:
         out = re.sub(r'(<(?:img|source)\b[^>]*?(?:src|srcset)="[^"]*-(?:light|dark)\.svg")', r'\1 data-themed', out)
         return out
 
+    def guide_videos(self, body: str, page: str) -> str:
+        """A guide's film: `<!-- video: examples/....mp4 -->` over a linked poster picture (on GitHub the poster
+        links to the site page). Here the pair becomes a <video> with that poster; without the film in this build
+        the poster stays, linked to the film's own address."""
+        def video(m: "re.Match[str]") -> str:
+            local, fallback = self.media(m.group(1), m.group(1).split("/")[1])
+            poster, alt = m.group(3), m.group(4)
+            if not local:
+                return '<p><a href="%s"><img src="%s" alt="%s"></a></p>' % (esc(fallback or m.group(2)), poster, alt)
+            src = esc(rel(page, local))   # a browser that plays no video shows a link to the file instead
+            return ('<figure class="guide-video"><video controls muted loop playsinline preload="metadata" poster="%s" '
+                    'aria-label="%s"><source src="%s" type="video/mp4"><a href="%s">Watch the film (MP4)</a></video></figure>'
+                    % (poster, alt, src, src))
+        return re.sub(r'<!-- video: (examples/[^ ]+\.mp4) -->\s*<p><a href="([^"]*)"><img src="([^"]*)" alt="([^"]*)"\s*/?></a></p>',
+                      video, body)
+
     def render_md(self, text: str, src: Path, page: str, drop_h1: bool = False) -> Tuple[str, str, List[Tuple[str, str, int]]]:
         """Markdown -> (html, title, headings[(text, id, level)])."""
         env: dict = {}
@@ -493,6 +509,7 @@ class Site:
         body = re.sub(r"<blockquote>\s*<p>\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*",
                       lambda m: '<blockquote class="alert"><p class="alert-title">%s</p><p>' % m.group(1).title(), body)
         body = self.rewrite(body, src, page)
+        body = self.guide_videos(body, page)
         body = mark_url_links(body)
         body = keep_flags_whole(body)
         return body, title, heads

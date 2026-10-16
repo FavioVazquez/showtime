@@ -7,7 +7,8 @@ storyboard, and only then does the film get built. This guide walks through one 
 screenshot of each step. The video is a 20-second trailer for Tidepool, a fictional notes app that ships with showtime
 as sample material.
 
-![The whole run in 22 seconds: the board with four concepts, a wipe between two of them, a pick and a comment, the storyboard, the approval and the finished trailer.](../../assets/readme/tutorials/studio/clip.webp)
+<!-- video: examples/_tutorials/studio/clip.mp4 -->
+[![The whole run in 18 seconds, one step at a time: the terminal as the board is built, the board with four concepts, a wipe between two of them, a comment, your agent's answer, the storyboard, the approval, then the first and last seconds of the finished trailer.](https://github.com/FavioVazquez/showtime-examples/raw/main/examples/_tutorials/studio/clip.jpg)](https://faviovazquez.github.io/showtime/docs/guides/studio-concepts-to-final.html)
 
 ## Say this
 
@@ -38,7 +39,7 @@ One concept is marked **Recommended**, with the reason.
 
 The **Compare** tab puts any two concepts on one frame. Drag across it to wipe from one to the other.
 
-![The Compare tab: a frame split down the middle, C1 Low tide on the left with its wave line and C2 Macro on the right with the words "Sync: local only".](../../assets/readme/tutorials/studio/03-compare.webp)
+![The Compare tab: one frame split by the wipe line, C1 Low tide on the left with its wave line and the words "Q4 planning draft", and C3 Keystrokes on the right with the app's command palette.](../../assets/readme/tutorials/studio/03-compare.webp)
 
 ## 4. Pick, like and comment
 
@@ -66,7 +67,7 @@ Round 2 is the storyboard of the concept you picked: every shot with its time ra
 how it moves. The thumbnails are rendered from the draft project at those moments. Open the **Storyboard** tab, and
 use **Note** under a shot to say what to change.
 
-![The Storyboard tab: shot cards C2.1 to C2.5, with a sixth cut off at the right edge, each with a thumbnail, a time range such as 0:00.0 to 0:02.5, what is on screen and a Note button.](../../assets/readme/tutorials/studio/07-storyboard.webp)
+![The Storyboard tab: the first three shot cards, C2.1 to C2.3, each with a thumbnail, a time range such as 0:00.0 to 0:02.5, what is on screen, how it moves and a Note button.](../../assets/readme/tutorials/studio/07-storyboard.webp)
 
 ![A comment box on shot C2.1: Hold the first shot a beat longer.](../../assets/readme/tutorials/studio/08-shot-note.webp)
 
@@ -121,6 +122,7 @@ Your agent's writing of the concepts and your own time on the board come on top 
 - Music beds and voice samples also go on the board; this run skipped them to stay short.
 - To keep the run short, the project that was rendered in step 8 is the finished project of example 09, copied to a plain
   folder; the storyboard thumbnails and the final film come from it. The clicks on the board were made with a headless
-  browser, the way a reviewer would make them.
+  browser, the way a reviewer would make them. The board pictures were captured again later from the same job at a
+  higher resolution, with the board and its feedback put back to each round as it was.
 - The commands behind each step: [Studio mode](../../skills/showtime/references/studio.md); the board file:
   [Board format](../../skills/showtime/references/boards.md).

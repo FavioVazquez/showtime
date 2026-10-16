@@ -2,7 +2,7 @@
 
 Task guides for people. Each one says what to tell your coding agent, the commands it runs, the files you get,
 how long it took on a named machine, the phrases that change the result, the honest limits, and an example to
-look at. A few guides are tutorials: one real run as numbered steps, a screenshot at each and a short clip at the top, then the same closing sections. The references in `skills/showtime/references/` are written for your agent; these are written for you.
+look at. A few guides are tutorials: one real run as numbered steps, a screenshot at each and a short silent film of the whole run at the top (made with showtime), then the same closing sections. The references in `skills/showtime/references/` are written for your agent; these are written for you.
 
 | Guide | When you want |
 |---|---|

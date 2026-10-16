@@ -28,6 +28,33 @@ TESTS_DIR = Path(__file__).resolve().parent
 REPO = TESTS_DIR.parents[2]
 BUILD = REPO / "site" / "build.py"
 
+
+def image_size(p: Path) -> "tuple[int, int]":
+    """(width, height) of a WebP, JPEG or PNG file, read from its header (no imaging library needed)."""
+    b = p.read_bytes()
+    if b[:4] == b"RIFF" and b[8:12] == b"WEBP":
+        kind = b[12:16]
+        if kind == b"VP8X":
+            return 1 + int.from_bytes(b[24:27], "little"), 1 + int.from_bytes(b[27:30], "little")
+        if kind == b"VP8L":
+            bits = int.from_bytes(b[21:25], "little")
+            return 1 + (bits & 0x3FFF), 1 + ((bits >> 14) & 0x3FFF)
+        if kind == b"VP8 ":
+            return int.from_bytes(b[26:28], "little") & 0x3FFF, int.from_bytes(b[28:30], "little") & 0x3FFF
+    if b[:8] == b"\x89PNG\r\n\x1a\n":
+        return int.from_bytes(b[16:20], "big"), int.from_bytes(b[20:24], "big")
+    if b[:2] == b"\xff\xd8":
+        i = 2
+        while i < len(b) - 9:
+            if b[i] != 0xFF:
+                i += 1
+                continue
+            marker, size = b[i + 1], int.from_bytes(b[i + 2:i + 4], "big")
+            if marker in (0xC0, 0xC1, 0xC2):
+                return int.from_bytes(b[i + 7:i + 9], "big"), int.from_bytes(b[i + 5:i + 7], "big")
+            i += 2 + size
+    raise ValueError("%s: not a WebP, PNG or JPEG file" % p)
+
 try:
     import markdown_it  # noqa: F401
     spec = importlib.util.spec_from_file_location("site_build", BUILD)
@@ -256,7 +283,8 @@ class OneVersion(unittest.TestCase):
 
     def test_tutorials_have_a_picture_for_every_step(self):
         # a tutorial is a walk through one run: every numbered step has a picture with real alt text, no file is
-        # missing, the clip at the top stays small, and nothing on the page names a private folder
+        # missing, every picture is sharp on a 2x screen, the film at the top is an mp4 with a poster, and nothing on
+        # the page names a private folder
         guides = [p for p in sorted((REPO / "docs" / "guides").glob("*.md")) if "<!-- tutorial:" in p.read_text(encoding="utf-8")]
         self.assertTrue(guides)
         for guide in guides:
@@ -265,10 +293,30 @@ class OneVersion(unittest.TestCase):
             self.assertGreaterEqual(len(pics), 10, guide.name)
             for alt, src in pics:
                 self.assertGreater(len(alt), 20, src)
+                if "/examples/_tutorials/" in src:
+                    continue   # the film's poster lives with the examples (another repository when published)
                 self.assertTrue((guide.parent / src).is_file(), src)
-            clip = [src for _a, src in pics if src.endswith("clip.webp")]
-            self.assertEqual(len(clip), 1, guide.name)
-            self.assertLess((guide.parent / clip[0]).stat().st_size, 3 * 1024 * 1024)
+                w, h = image_size(guide.parent / src)
+                # the docs column is 44rem (704 px) and a picture is at most 72% of the screen's height: on a 2x
+                # screen up to 1200 px tall it needs twice the width it is shown at; a full-column picture 2048 px
+                shown = min(704.0, 0.72 * 1200 * w / h)
+                self.assertTrue(w >= 2048 or w >= 2 * shown, "%s is %dx%d, shown up to %d px wide" % (src, w, h, shown))
+            self.assertNotIn("clip.webp", text, guide.name)
+            terms = [src for _, src in pics if "terminal" in src.rsplit("/", 1)[-1]]
+            self.assertTrue(terms, guide.name)
+            for src in terms:   # terminal text stays exact: no lossy compression
+                self.assertTrue(src.endswith(".webp") and webp_is_lossless(guide.parent / src), "%s is not lossless WebP" % src)
+            film = re.findall(r"<!-- video: (examples/_tutorials/([^/]+)/clip\.mp4) -->\n\[!\[[^\]]{20,}\]\(([^)]+)\)\]\(([^)]+)\)", text)
+            self.assertEqual(len(film), 1, "%s: one film marker over its linked poster" % guide.name)
+            mp4, folder, poster, link = film[0]
+            self.assertTrue(poster.endswith("examples/_tutorials/%s/clip.jpg" % folder), poster)
+            self.assertEqual(link, "https://faviovazquez.github.io/showtime/docs/guides/%s.html" % guide.stem)
+            if (REPO / "examples").is_dir():   # the checkout that has the examples (not the published main repo)
+                clip, still = REPO / mp4, REPO / (mp4[:-len(".mp4")] + ".jpg")
+                self.assertTrue(clip.is_file() and still.is_file(), mp4)
+                self.assertEqual(clip.read_bytes()[4:8], b"ftyp", mp4)
+                self.assertEqual(clip_problems(clip), [], mp4)
+                self.assertGreaterEqual(image_size(still)[0], 2048, still.name)
             for marker in ("/Users/", "/home/", "C:\\Users\\", "~/Projects"):
                 self.assertNotIn(marker, text, guide.name)
             sections = re.split(r"^## ", text, flags=re.M)[1:]
@@ -277,6 +325,73 @@ class OneVersion(unittest.TestCase):
             for sec in steps:
                 self.assertRegex(sec, r"!\[[^\]]{20,}\]\(", "%s: step '%s' has no picture" % (guide.name, sec.splitlines()[0]))
             self.assertIn("(%s)" % guide.name, (guide.parent / "README.md").read_text(encoding="utf-8") if guide.name != "first-video.md" else "(first-video.md)")
+
+    def test_image_size_reads_webp_jpeg_and_png(self):
+        out = Path(tempfile.mkdtemp(prefix="st-imgsize-"))
+        try:
+            vp8l = b"RIFF" + (21).to_bytes(4, "little") + b"WEBPVP8L" + (9).to_bytes(4, "little") + b"\x2f" + \
+                ((2999) | (1999 << 14)).to_bytes(4, "little") + b"\0" * 4
+            (out / "a.webp").write_bytes(vp8l)
+            (out / "b.jpg").write_bytes(b"\xff\xd8\xff\xe0\x00\x04ab\xff\xc0\x00\x11\x08" + (1080).to_bytes(2, "big") + (1920).to_bytes(2, "big") + b"\x03")
+            (out / "c.png").write_bytes(b"\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR" + (640).to_bytes(4, "big") + (360).to_bytes(4, "big"))
+            self.assertEqual(image_size(out / "a.webp"), (3000, 2000))
+            self.assertEqual(image_size(out / "b.jpg"), (1920, 1080))
+            self.assertEqual(image_size(out / "c.png"), (640, 360))
+        finally:
+            shutil.rmtree(out, ignore_errors=True)
+
+    def test_the_spec_checks_catch_a_lossy_terminal_and_an_off_spec_film(self):
+        # synthetic files: a film that meets the spec passes; 720p, an audio track, 24 fps, 25 s and a lossy
+        # terminal picture each fail
+        out = Path(tempfile.mkdtemp(prefix="st-spec-"))
+
+        def box(kind: bytes, payload: bytes) -> bytes:
+            return (8 + len(payload)).to_bytes(4, "big") + kind + payload
+
+        def trak(handler: bytes, w: int, h: int, scale: int, frames: int, delta: int) -> bytes:
+            tkhd = b"\0" * 76 + (w << 16).to_bytes(4, "big") + (h << 16).to_bytes(4, "big")
+            mdhd = b"\0" * 12 + scale.to_bytes(4, "big") + (frames * delta).to_bytes(4, "big") + b"\0" * 4
+            hdlr = b"\0" * 8 + handler + b"\0" * 13
+            stts = b"\0" * 4 + (1).to_bytes(4, "big") + frames.to_bytes(4, "big") + delta.to_bytes(4, "big")
+            return box(b"trak", box(b"tkhd", tkhd) + box(b"mdia", box(b"mdhd", mdhd) + box(b"hdlr", hdlr)
+                                                          + box(b"minf", box(b"stbl", box(b"stts", stts)))))
+
+        def mp4(name: str, *traks: bytes) -> Path:
+            (out / name).write_bytes(box(b"ftyp", b"isom" + b"\0" * 4) + box(b"moov", b"".join(traks)))
+            return out / name
+        try:
+            good = trak(b"vide", 1920, 1080, 15360, 540, 512)
+            self.assertEqual(clip_problems(mp4("good.mp4", good)), [])
+            self.assertEqual(clip_problems(mp4("720.mp4", trak(b"vide", 1280, 720, 15360, 540, 512))), ["is 1280x720, not 1920x1080"])
+            self.assertEqual(clip_problems(mp4("audio.mp4", good, trak(b"soun", 0, 0, 48000, 846, 1024))), ["has an audio track"])
+            self.assertEqual(clip_problems(mp4("24.mp4", trak(b"vide", 1920, 1080, 12288, 432, 512))), ["runs at 24.00 fps, not 30"])
+            self.assertEqual(clip_problems(mp4("25s.mp4", trak(b"vide", 1920, 1080, 15360, 750, 512))), ["lasts 25.0 s, not 15-20 s"])
+            chunk = lambda kind, data: kind + len(data).to_bytes(4, "little") + data + b"\0" * (len(data) & 1)
+            riff = lambda body: b"RIFF" + (4 + len(body)).to_bytes(4, "little") + b"WEBP" + body
+            (out / "l.webp").write_bytes(riff(chunk(b"VP8L", b"\x2f" + b"\0" * 8)))
+            (out / "x.webp").write_bytes(riff(chunk(b"VP8X", b"\0" * 10) + chunk(b"VP8L", b"\x2f" + b"\0" * 8)))
+            (out / "q.webp").write_bytes(riff(chunk(b"VP8 ", b"\0" * 10)))
+            self.assertTrue(webp_is_lossless(out / "l.webp"))
+            self.assertTrue(webp_is_lossless(out / "x.webp"))
+            self.assertFalse(webp_is_lossless(out / "q.webp"))
+        finally:
+            shutil.rmtree(out, ignore_errors=True)
+
+    def test_a_guide_film_becomes_a_video_with_its_poster(self):
+        # the marker over a linked poster becomes a <video> when the film is in the build, else the poster stays
+        site = build.Site.__new__(build.Site)
+        html_in = ('<!-- video: examples/_tutorials/t/clip.mp4 -->\n<p><a href="https://example.org/t.html">'
+                   '<img src="../../a/examples/_tutorials/t/clip.jpg" alt="The whole run"></a></p>\n<p>next</p>')
+        site.media = lambda repo_rel, folder: ("media/_tutorials/t/clip.mp4", "https://github.com/x/y/blob/main/" + repo_rel)
+        got = site.guide_videos(html_in, "docs/guides/t.html")
+        self.assertIn('<video controls muted loop playsinline preload="metadata" poster="../../a/examples/_tutorials/t/clip.jpg" '
+                      'aria-label="The whole run"><source src="../../media/_tutorials/t/clip.mp4" type="video/mp4">'
+                      '<a href="../../media/_tutorials/t/clip.mp4">Watch the film (MP4)</a></video>', got)
+        self.assertIn("<p>next</p>", got)
+        site.media = lambda repo_rel, folder: (None, "https://github.com/x/y/blob/main/" + repo_rel)
+        got = site.guide_videos(html_in, "docs/guides/t.html")
+        self.assertNotIn("<video", got)
+        self.assertIn('<a href="https://github.com/x/y/blob/main/examples/_tutorials/t/clip.mp4"><img src="../../a/examples/_tutorials/t/clip.jpg"', got)
 
     def test_landing_anchors_are_of_open_sections(self):
         # a heading is linked to the section it is in, never to one that closed before it
@@ -291,6 +406,84 @@ class OneVersion(unittest.TestCase):
             self.assertNotIn("Two", got)   # no id of its own and no open section with one: folded into the text above
         finally:
             shutil.rmtree(out, ignore_errors=True)
+
+
+def webp_is_lossless(p: Path) -> bool:
+    """True when a WebP holds its picture as VP8L (lossless) and has no lossy VP8 chunk."""
+    b, ids, i = p.read_bytes(), [], 12
+    if b[:4] != b"RIFF" or b[8:12] != b"WEBP":
+        return False
+    while i + 8 <= len(b):
+        n = int.from_bytes(b[i + 4:i + 8], "little")
+        ids.append(b[i:i + 4])
+        i += 8 + n + (n & 1)
+    return b"VP8L" in ids and b"VP8 " not in ids
+
+
+def mp4_tracks(p: Path) -> "list[dict]":
+    """Each track of an MP4 file: its handler (vide, soun), width and height (tkhd), timescale and duration (mdhd)
+    and frame count and ticks (stts), read from the boxes with no media tool."""
+    b, tracks = p.read_bytes(), []
+
+    def boxes(lo: int, hi: int):
+        while lo + 8 <= hi:
+            n, kind, head = int.from_bytes(b[lo:lo + 4], "big"), b[lo + 4:lo + 8], 8
+            if n == 1:
+                n, head = int.from_bytes(b[lo + 8:lo + 16], "big"), 16
+            elif n == 0:
+                n = hi - lo
+            if n < head:
+                return
+            yield kind, lo + head, lo + n
+            lo += n
+
+    def walk(lo: int, hi: int, t: dict) -> None:
+        for kind, s, e in boxes(lo, hi):
+            v = b[s]
+            if kind == b"trak":
+                tracks.append({})
+                walk(s, e, tracks[-1])
+            elif kind in (b"moov", b"mdia", b"minf", b"stbl"):
+                walk(s, e, t)
+            elif kind == b"tkhd":
+                o = s + (88 if v == 1 else 76)
+                t["w"], t["h"] = int.from_bytes(b[o:o + 4], "big") >> 16, int.from_bytes(b[o + 4:o + 8], "big") >> 16
+            elif kind == b"mdhd":
+                o = s + (20 if v == 1 else 12)
+                n = 8 if v == 1 else 4
+                t["timescale"], t["duration"] = int.from_bytes(b[o:o + 4], "big"), int.from_bytes(b[o + 4:o + 4 + n], "big")
+            elif kind == b"hdlr":
+                t["handler"] = b[s + 8:s + 12].decode("latin-1")
+            elif kind == b"stts":
+                pairs = [(int.from_bytes(b[s + 8 + 8 * k:s + 12 + 8 * k], "big"), int.from_bytes(b[s + 12 + 8 * k:s + 16 + 8 * k], "big"))
+                         for k in range(int.from_bytes(b[s + 4:s + 8], "big"))]
+                t["frames"], t["ticks"] = sum(c for c, _ in pairs), sum(c * d for c, d in pairs)
+
+    walk(0, len(b), {})
+    return tracks
+
+
+def clip_problems(p: Path) -> "list[str]":
+    """What keeps a tutorial film from the media spec: one 1920x1080 video track at about 30 fps, no audio,
+    15-20 s long, under 8 MiB. Empty when it meets it."""
+    out, tracks = [], mp4_tracks(p)
+    vids = [t for t in tracks if t.get("handler") == "vide"]
+    if any(t.get("handler") == "soun" for t in tracks):
+        out.append("has an audio track")
+    if len(vids) != 1:
+        return out + ["has %d video tracks" % len(vids)]
+    v = vids[0]
+    if (v.get("w"), v.get("h")) != (1920, 1080):
+        out.append("is %sx%s, not 1920x1080" % (v.get("w"), v.get("h")))
+    fps = v["timescale"] * v["frames"] / v["ticks"] if v.get("ticks") else 0
+    if abs(fps - 30) > 0.5:
+        out.append("runs at %.2f fps, not 30" % fps)
+    secs = v["duration"] / v["timescale"] if v.get("timescale") else 0
+    if not 15 <= secs <= 20:
+        out.append("lasts %.1f s, not 15-20 s" % secs)
+    if p.stat().st_size >= 8 * 1024 * 1024:
+        out.append("is %.1f MiB, not under 8" % (p.stat().st_size / 1048576))
+    return out
 
 
 class PeoplePages(unittest.TestCase):

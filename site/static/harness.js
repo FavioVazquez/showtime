@@ -345,12 +345,12 @@ requestAnimationFrame(frame);
 let rT; window.addEventListener("resize", () => { clearTimeout(rT); rT = setTimeout(render, 120); });
 mq.addEventListener && mq.addEventListener("change", e => { reduced = e.matches; layoutName = ""; setPlaying(!reduced); render(); });
 
-document.querySelectorAll(".sec-head").forEach(h => { const n = h.querySelector(".sec-no"); if (!n) return; const g = document.createElement("span"); g.className = "snum"; g.setAttribute("aria-hidden","true"); g.textContent = n.textContent.trim().slice(0,2); h.prepend(g); });
+document.querySelectorAll(".sec-head").forEach(h => { const n = h.querySelector(".sec-no"); if (!n) return; const g = document.createElement("span"); g.className = "snum"; g.setAttribute("aria-hidden","true"); g.textContent = n.textContent.trim().split(/\s/)[0].slice(0,3); h.prepend(g); });
 if (reduced) ["#raceBtn"].forEach(q => { const b = $(q); if (b) b.hidden = true; });
 
 /* ================= 01 TIMELINE ================= */
 (function timeline() {
-  const DAYS = ["28","29","30","1","2","3","4","5","6","7","8","9","10","11"];
+  const DAYS = ["28","29","30","1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16"], ND = DAYS.length;
   const REL = [
     {v:"0.1.0", d:"28 Sep", day:0, t:"Public. “Your agent directs. Your machine renders.”"},
     {v:"0.2.0", d:"29 Sep", day:1, t:"Works in every coding agent; lazy downloads."},
@@ -358,15 +358,20 @@ if (reduced) ["#raceBtn"].forEach(q => { const b = $(q); if (b) b.hidden = true;
     {v:"0.3.1–0.3.5", d:"30 Sep – 3 Oct", day:2, end:5, t:"Patch releases 0.3.1 through 0.3.5."},
     {v:"0.4.0", d:"5 Oct", day:7, t:"Questions built in, a first-viewer story check, pr-video, a hearing pass."},
     {v:"0.4.1", d:"8 Oct", day:10, t:"Speed, looks, talking-head cards, a new showreel."},
-    {v:"0.4.2", d:"11 Oct", day:13, t:"Shipped once every check was green on all four systems; 16 PRs had merged on 9 Oct alone."}
+    {v:"0.4.2", d:"11 Oct", day:13, t:"Shipped once every check was green on all four systems; 16 PRs had merged on 9 Oct alone."},
+    {v:"0.4.3", d:"13 Oct", day:14.8, t:"Living diagrams; recap and repro turn a coding session or a failing test into a short narrated film."},
+    {v:"0.4.4", d:"13 Oct", day:15.3, t:"X-ray: a real clip’s inside, drawn in sync with its sound and checked with a receipt."},
+    {v:"0.4.5", d:"15 Oct", day:17, t:"X-ray from data, and the skill reorganized by family with a routing eval."},
+    {v:"0.4.6", d:"16 Oct", day:18, t:"check catches text over text, text outside a phone’s free area, and a stuck page."}
   ];
   const CTX = [
     {k:"A", d:"2 Oct", day:4, t:"Comparison rounds on Devin begin. Plain Opus won rounds 1 and 5, so showtime’s reel was not published."},
     {k:"B", d:"5 Oct", day:7, t:"Round 6, after a density fix: showtime 1st and 2nd, the plain winner 3rd."},
     {k:"C", d:"8 Oct", day:10, t:"Venues measured (Phase 0). The creative session’s first film. Jev evaluated for $0.02."},
-    {k:"D", d:"10–11 Oct", day:12, end:13, t:"The release waits until every check is green on all four systems, Intel included."}
+    {k:"D", d:"10–11 Oct", day:12, end:13, t:"The release waits until every check is green on all four systems, Intel included."},
+    {k:"E", d:"12 Oct", day:14, t:"Edition 1 of this manual goes public with the first article. Edition 2 follows with 0.4.6."}
   ];
-  const pct = d => (d + .5) / 14 * 100;
+  const pct = d => (d + .5) / ND * 100;
   const root = $("#timeline");
   let axis = `<div class="tl-axis" aria-hidden="true"><div class="tl-days">${DAYS.map((d,i) => `<span class="${i===0||i===3?"m":""}">${d}${i===0?" Sep":i===3?" Oct":""}</span>`).join("")}</div>`;
   REL.forEach(r => {
@@ -381,11 +386,11 @@ if (reduced) ["#raceBtn"].forEach(q => { const b = $(q); if (b) b.hidden = true;
   axis += `</div>`;
   let lead = `<svg class="tl-lead" viewBox="0 0 100 46" preserveAspectRatio="none" aria-hidden="true">`;
   REL.forEach((r,i) => {
-    const x0 = r.end != null ? (pct(r.day)+pct(r.end))/2 : pct(r.day), x1 = (i + .5)/7*100;
+    const x0 = r.end != null ? (pct(r.day)+pct(r.end))/2 : pct(r.day), x1 = (i + .5)/REL.length*100;
     lead += `<path d="M${x0},0 L${x0},14 L${x1},34 L${x1},46"/>`;
   });
   lead += `</svg>`;
-  const cards = `<ol class="tl-cards" style="list-style:none;margin:0;padding:0">${REL.map(r => `<li class="tl-card${r.wip?" wip":""}"><div class="v">${r.v}</div><div class="d">${r.d}</div><p>${esc(r.t)}</p></li>`).join("")}</ol>`;
+  const cards = `<ol class="tl-cards" style="list-style:none;margin:0;padding:0;--n:${REL.length}">${REL.map(r => `<li class="tl-card${r.wip?" wip":""}"><div class="v">${r.v}</div><div class="d">${r.d}</div><p>${esc(r.t)}</p></li>`).join("")}</ol>`;
   const around = `<div class="subh" style="margin-top:28px">Around the releases</div><div class="tl-around">${CTX.map(c => `<div><b>${c.k}</b><i>${c.d}</i><br>${esc(c.t)}</div>`).join("")}</div>`;
   root.innerHTML = axis + lead + cards + around;
 })();
@@ -515,6 +520,40 @@ const DAY_1011 = {date:"2026-10-11", title:"10–11 Oct: 0.4.2 waits for green, 
   {t:"", between:["20:50","22:00"], lane:"owner", model:"Favio", gate:"public", what:"0.4.2 is released on Favio’s go: public PR #50 merged, tag v0.4.2, the GitHub release, What’s new on the site"}
  ]};
 
+/* Edition 2: 15 Oct in UTC, only merges, compactions, checks, reviews and releases, generic lanes; merge and
+   compaction times are the PR list's and the compaction log's */
+const DAY_1015 = {date:"2026-10-15", src:"from the open list and the PR list", title:"15 Oct (UTC): merges, a compaction round, and a re-run that waited for nothing",
+ lanes:[{id:"owner", name:"Owner gates", abbr:"Owner", sub:"Favio"},{id:"dir", name:"Director", abbr:"Dir", sub:"one list"},
+  {id:"code", name:"Release code", abbr:"Code", sub:"lane"},{id:"checks", name:"Checks", abbr:"Check", sub:"CI · tests"},
+  {id:"films", name:"Films", abbr:"Films", sub:"lane"},{id:"rev", name:"Reviews", abbr:"Rev", sub:"lane"},{id:"other", name:"Other lanes", abbr:"Other", sub:"not named"}],
+ events:[
+  ["03:37","dir","public","0.4.5 is released on Favio’s go: the tag, the release and the site"],
+  ["~08:40","rev","","The reviewer session missed a pull request: its timer does not fire while it is idle. A message wakes it; from now on every lane messages it on each new head"],
+  ["","checks","","The first 0.4.6 pull request passes the full suite on the build machine, and every review says MERGE"],
+  ["09:17","code","merge","Merges the first 0.4.6 pull request: tests and setup on other machines"],
+  ["09:54","code","merge","Merges files stored byte for byte, with no line endings rewritten at checkout"],
+  ["10:15","code","merge","Merges a skipped cut walk as a warning, and sturdier test deadlines"],
+  ["10:20","dir","","A CI job fails on a public fix pull request, and the director re-runs it before reading its log"],
+  ["10:23","code","merge","Merges small items from the 0.4.6 plan"],
+  ["10:36","checks","","The re-run is cancelled after 15.6 minutes. The log had the cause: an icon lookup waits 38.5 s against a 30 s limit, so it fails every time"],
+  ["","dir","public","On Favio’s yes, the fix-only public pull request merges"],
+  ["11:23","code","merge","Merges the icon fix: a misspelled name gets its suggestion from the local index, before any fetch"],
+  ["11:54","owner","","Favio starts a compaction round, one lane after another"],
+  ["11:56","code","","Compacts: an 18,606-character summary that names its state file"],
+  ["11:56","rev","","Compacts: 16,900 characters, names its state file"],
+  ["11:56","other","","A lane not named here compacts: 18,172 characters, names its state file"],
+  ["11:59","code","merge","Merges a report of .gitattributes lines git ignores, and a size-read test that runs on software graphics"],
+  ["12:00","other","","Another lane compacts: 15,721 characters, names its state file"],
+  ["12:05","films","","Compacts: 18,082 characters, names its state file. Then it sits idle, because a compaction does not start a turn"],
+  ["","dir","","Checks the round: the rules card and each session’s own state file arrived whole in all four sessions checked"],
+  ["","dir","","Messages the films lane to resume from its state file, and writes the rule: a compacted lane needs a message"],
+  ["","checks","","The new overlap check, run on the film Favio caught, reports 0:45.50 to 0:47.23"],
+  ["","rev","","The reviewer session on the overlap check: FIX FIRST"],
+  ["","checks","","Round 2 of the overlap check: no false alarm over 43 projects and 10 templates laid out in portrait"],
+  ["","rev","","The reviewer session: MERGE at the new head"],
+  ["15:07","code","merge","Merges the text-over-text check, for 0.4.6"]
+ ].map(([t, lane, gate, what]) => ({t, lane, gate, what}))};
+
 (function replay() {
   const BASE = [
     {id:"owner", name:"Owner gates", abbr:"Owner", sub:"Favio"},
@@ -543,9 +582,10 @@ const DAY_1011 = {date:"2026-10-11", title:"10–11 Oct: 0.4.2 waits for green, 
   const fmt = (min, ap) => (ap ? "~" : "") + String(Math.floor(min / 60) % 24).padStart(2, "0") + ":" + String(min % 60).padStart(2, "0");
 
   function norm(raw) {
+    const own = raw.lanes, ownName = id => (own.find(l => l.id === id) || {}).name || id;
     const E = arr(raw.events).filter(e => e && (e.what || e.t)).map(e => {
       const m = TRE.exec(String(e.t || ""));
-      return {min: m ? (+m[2]) * 60 + (+m[3]) : null, ap: !!(m && m[1]), lane: laneOf(e), laneRaw: String(e.lane || ""), model: String(e.model || ""),
+      return {min: m ? (+m[2]) * 60 + (+m[3]) : null, ap: !!(m && m[1]), lane: own ? e.lane : laneOf(e), laneRaw: String(e.lane || ""), model: own ? ownName(e.lane) : String(e.model || ""),
         what: String(e.what || ""), gate: normGate(e.gate), gateRaw: String(e.gate || ""), between: Array.isArray(e.between) ? e.between : null, when: String(e.when || "")};
     });
     const timed = E.filter(e => e.min != null).map(e => e.min);
@@ -565,12 +605,12 @@ const DAY_1011 = {date:"2026-10-11", title:"10–11 Oct: 0.4.2 waits for green, 
         let a, b;
         if (e.between) { a = String(e.between[0] || ""); b = String(e.between[1] || ""); }
         else { a = prev ? prev.label : ""; b = next ? next.label : ""; }
-        e.win = e.when ? e.when : a && b ? `${a}–${b}` : b ? `before ${b}` : a ? `after ${a}` : "time not logged";
+        e.win = e.when ? e.when : a && b ? (own ? `${a} to ${b}` : `${a}–${b}`) : b ? `before ${b}` : a ? `after ${a}` : "time not logged";
         e.label = "";
       }
       i = j;
     }
-    const lanes = BASE.slice();
+    const lanes = (own || BASE).slice();
     E.forEach(e => { if (!lanes.some(l => l.id === e.lane)) lanes.push({id:e.lane, name:e.laneRaw || e.lane, abbr:(e.laneRaw || e.lane).slice(0, 6), sub:""}); });
     return {date: String(raw.date || raw._id || ""), title: String(raw.title || ""), E, lanes, start, end, dayNames: arr(raw.dayNames)};
   }
@@ -600,7 +640,7 @@ const DAY_1011 = {date:"2026-10-11", title:"10–11 Oct: 0.4.2 waits for green, 
     D.lanes.forEach(l => {
       h += `<div class="rp-lane ${l.id === "owner" ? "owner" : ""} ${used.has(l.id) ? "" : "idle"}" data-lane="${esc(l.id)}"><div class="ln"><span class="full">${esc(l.name)}</span><span class="abbr">${esc(l.abbr)}</span>${l.sub ? `<small>${esc(l.sub)}</small>` : ""}</div><div class="tr">`;
       D.E.forEach((e, i) => {
-        if (e.lane === l.id && !(l.id === "owner" && e.gate)) h += `<i class="dot ${e.min == null ? "un" : e.ap ? "ap" : ""} ${e.lane === "main" || e.lane === "owner" ? "m-main" : ""}" data-i="${i}" style="left:${X(e.pos)}"></i>`;
+        if (e.lane === l.id && !(l.id === "owner" && e.gate)) h += `<i class="dot ${e.min == null ? "un" : e.ap ? "ap" : ""} ${/^(main|owner|dir)$/.test(e.lane) ? "m-main" : ""}" data-i="${i}" style="left:${X(e.pos)}"></i>`;
         if (l.id === "owner" && e.gate) h += `<i class="gmk ${e.gate}" data-i="${i}" style="left:${X(e.pos)}"></i>`;
       });
       h += `</div></div>`;
@@ -640,7 +680,7 @@ const DAY_1011 = {date:"2026-10-11", title:"10–11 Oct: 0.4.2 waits for green, 
     else { clockEl.className = "c win"; clockEl.textContent = /\d:\d/.test(a.win) ? a.win.replace(/–/g, " – ") : a.win; clockS.textContent = withDay("in order · time not logged", a); }
     scrub.value = i; cntEl.textContent = `${String(i + 1).padStart(2, "0")} / ${String(n).padStart(2, "0")}`;
     const prev = D.E.slice(Math.max(0, i - 3), i).reverse();
-    nowEl.innerHTML = `<div class="rp-card"><div class="meta"><span style="color:var(--text-2)">${esc(withDay(a.label || a.win, a))}</span><span>${esc(laneName(a.lane))}</span>${chip(a.model, modelCls(a.model))}</div>
+    nowEl.innerHTML = `<div class="rp-card"><div class="meta"><span style="color:var(--text-2)">${esc(withDay(a.label || a.win, a))}</span>${a.model === laneName(a.lane) ? "" : `<span>${esc(laneName(a.lane))}</span>`}${chip(a.model, modelCls(a.model))}</div>
       <p class="what">${links(esc(a.what))}</p>${a.gate ? `<div class="gateline"><i class="gm ${a.gate}" aria-hidden="true"></i>${esc(GATES[a.gate])}</div>` : ""}</div>
       <div class="rp-prev"><div class="kick" style="margin-bottom:4px">Just before</div><ol>${prev.length ? prev.map(e => `<li><i>${esc(e.label || "–")}</i><span>${esc(e.what)}</span></li>`).join("") : `<li><i>·</i><span>The day starts here.</span></li>`}
       ${i < n - 1 ? `<li class="nx"><i>next</i><span>${esc(D.E[i + 1].what)}</span></li>` : ""}</ol></div>`;
@@ -658,8 +698,8 @@ const DAY_1011 = {date:"2026-10-11", title:"10–11 Oct: 0.4.2 waits for green, 
   scrub.addEventListener("input", () => { const n = D.E.length, len = root.offsetHeight - window.innerHeight + TOP, top0 = root.getBoundingClientRect().top + window.scrollY - TOP;
     window.scrollTo({top: top0 + (+scrub.value + .5) / n * len, behavior:"auto"}); });
 
-  const DAYS = [DAY_0909, DAY_1011], pickBtns = [...document.querySelectorAll(".rp-day")];
-  function pickDay(i) { pickBtns.forEach((x, j) => x.setAttribute("aria-pressed", j === i ? "true" : "false")); D = norm(DAYS[i]); build(); }
+  const DAYS = [DAY_0909, DAY_1011, DAY_1015], pickBtns = [...document.querySelectorAll(".rp-day")];
+  function pickDay(i) { pickBtns.forEach((x, j) => x.setAttribute("aria-pressed", j === i ? "true" : "false")); $(".rp-src").textContent = DAYS[i].src || "from the day log"; D = norm(DAYS[i]); build(); }
   pickBtns.forEach((x, i) => x.addEventListener("click", () => { pickDay(i); const r = root.getBoundingClientRect(); if (r.top < 0) window.scrollTo({top: r.top + window.scrollY - TOP, behavior: "auto"}); }));
   pickDay(0);
   let rz; window.addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => { if (D) build(); }, 150); });
@@ -1065,9 +1105,323 @@ stepper("#caseStall", "Issue #24", [
   run();
 })();
 
+/* ================= EDITION 2 ================= each instrument starts near the viewport; nothing autoplays */
+const lazy = (sel, fn) => { const el = $(sel); if (!el) return;
+  if (!("IntersectionObserver" in window)) return fn(el);
+  const io = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) { io.disconnect(); fn(el); } }, {rootMargin: "400px 0px"});
+  io.observe(el); };
+const css = v => getComputedStyle($(".harness")).getPropertyValue(v).trim();
+const pressOne = (btns, b) => btns.forEach(x => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
+const mmss = t => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, "0")}`;
+
+/* one list, two views: the ledger rows live in the page (#ledgerData, also the no-JS text); the cards and the
+   scars wall's edition 2 filter are drawn from them */
+const LEDGER = [...document.querySelectorAll("#ledgerData > li")].filter(li => ["t", "r", "m", "w", "who", "c", "b"].every(c => li.querySelector("." + c))).map(li => { const f = c => li.querySelector("." + c).textContent;
+  return {d:li.dataset.d, k:li.dataset.k.split(" "), l:li.dataset.l.split("|"), t:f("t").replace(/\.$/, ""), r:f("r"), m:f("m").replace(/\.$/, ""),
+    s:[...li.querySelectorAll(".s li")].map(x => x.textContent), w:f("w"), who:f("who"), c:f("c"), b:f("b")}; });
+
+(function edition() {
+  const sw = $("#edSwitch"), root = $(".harness"); if (!sw) return;
+  document.querySelectorAll(".harness section[data-ed]").forEach(sec => {
+    const k = sec.dataset.ed, c = `<em class="ed-chip ${k}">${k === "new" ? "New" : "Updated"}</em>`;
+    const no = sec.querySelector(".sec-no, .eyebrow"); if (no) no.insertAdjacentHTML("beforeend", c);
+    const a = sec.id && $(`.index a[href="#${sec.id}"]`); if (a) { a.dataset.ed = k; a.insertAdjacentHTML("beforeend", c); }
+  });
+  sw.hidden = false;
+  sw.addEventListener("click", () => { const on = sw.getAttribute("aria-checked") !== "true";
+    sw.setAttribute("aria-checked", String(on)); root.classList.toggle("ed-diff", on); });
+})();
+
+lazy("#ledgerCards", el => {
+  /* a practice per card: the rule and how to set it up on the front; the miss behind it on the back */
+  el.innerHTML = LEDGER.map((r, i) => `<article class="lc"><div class="lc-in">
+    <div class="lc-f"><div class="lc-n"><b>${String(i + 1).padStart(2, "0")}</b><span>Practice</span></div><h3>${esc(r.t)}</h3><p class="lc-r">${esc(r.r)}</p>
+      <details class="lc-s" open><summary>Set it up</summary><ol>${r.s.map(x => `<li>${esc(x)}</li>`).join("")}</ol></details>
+      <div class="lc-tags">${r.k.map(k => `<span class="tag ${k === "check" ? "amber" : "dim"}">${k}</span>`).join(" ")}</div></div>
+    <div class="lc-b" id="lcb${i}"><div class="lc-n"><b>${String(i + 1).padStart(2, "0")}</b><span>${esc(r.d)}</span></div><h3>${esc(r.m)}</h3><p>${esc(r.w)}</p>
+      <dl><div><dt>Noticed by</dt><dd>${esc(r.who)}</dd></div><div class="cost"><dt>What it cost</dt><dd>${esc(r.c)}</dd></div><div><dt>What it became</dt><dd>${esc(r.b)}</dd></div></dl>
+      <a href="#scar-e2-${i + 1}" tabindex="-1">Its card on the scars wall</a></div></div>
+    <button type="button" class="lc-btn" aria-expanded="false" aria-controls="lcb${i}">The miss behind it</button></article>`).join("");
+  el.addEventListener("click", e => {
+    const b = e.target.closest(".lc-btn"); if (!b) return;
+    const card = b.closest(".lc"), on = b.getAttribute("aria-expanded") !== "true";
+    b.setAttribute("aria-expanded", String(on)); card.classList.toggle("flip", on);
+    b.textContent = on ? "Back to the practice" : "The miss behind it";
+    card.querySelector(".lc-b a").tabIndex = on ? 0 : -1;
+  });
+  const n = LEDGER.filter(r => r.k.includes("check")).length, sum = $("#ledgerSum");
+  const W = ["none","one","two","three","four","five","six"];
+  if (sum) sum.textContent = `${W[n].replace(/^./, c => c.toUpperCase())} of the six became code. The other ${W[6 - n]} are written rules, which hold only while every session reads them; in edition 1, 22 of 41 rules had code behind them.`;
+});
+
+/* ---------- N1 · the verdict was for an earlier cut ---------- */
+lazy("#vc", vc => {
+  const FW = 1600, FH = 900, TR = {x:40, y:60, s:1.1};   /* the lanes panel's transform, film pixels */
+  /* the text a render draws at time t, in the panel's units */
+  const texts = (r, t) => { const k = Math.round(t * 10), o = [];
+    if (k >= 455 && k <= 472) o.push({n:"label b", x:560, y:420, w:420, h:56, f:"500 40px", c:"rgba(170,184,196,.7)"});
+    if (t >= 38) o.push(r === 7 ? {n:"LABEL A", x:560, y:180, w:300, h:72, f:"800 52px", c:"#ff7262"} : {n:"LABEL A", x:640, y:404, w:300, h:72, f:"800 52px", c:"#ff7262"});
+    return o; };
+  /* boxes through the transform; an overlap of more than 4 px both ways is a hit */
+  const box = b => ({l:TR.x + b.x * TR.s, t:TR.y + b.y * TR.s, r:TR.x + (b.x + b.w) * TR.s, b:TR.y + (b.y + b.h) * TR.s, n:b.n});
+  const test = (r, t) => { const B = texts(r, t).map(box), hits = [];
+    for (let i = 0; i < B.length; i++) for (let j = i + 1; j < B.length; j++) {
+      const ox = Math.min(B[i].r, B[j].r) - Math.max(B[i].l, B[j].l), oy = Math.min(B[i].b, B[j].b) - Math.max(B[i].t, B[j].t);
+      if (ox > 4 && oy > 4) hits.push({a:B[i], b:B[j], ox, oy});
+    } return {B, hits}; };
+  const thumb = r => `<svg viewBox="0 0 160 90" aria-hidden="true"><rect width="160" height="90" class="th-bg"/><path d="M8 28h144M8 56h144" class="th-ln"/>
+    <rect x="${r === 7 ? 62 : 70}" y="${r === 7 ? 24 : 47}" width="34" height="8" class="th-a"/><rect x="62" y="49" width="46" height="6" class="th-b"/>${r === 10 ? '<rect x="62" y="24" width="34" height="8" class="th-was"/>' : ""}</svg>`;
+  vc.innerHTML = `<div class="vc-tl" role="group" aria-label="Renders of one film. Select final-7 or final-10 to load it into the player">
+    <button type="button" class="vc-r" data-r="7" aria-pressed="true">${thumb(7)}<b>final-7</b><span class="stamp g">post it</span><small>critic round 2 judged this one</small></button>
+    <div class="vc-r faint" aria-hidden="true"><b>final-8</b><small>a later render</small></div>
+    <div class="vc-r faint fx" aria-hidden="true"><b>final-9</b><small>a later render; the critic’s fixes land in final-10</small></div>
+    <button type="button" class="vc-r" data-r="10" aria-pressed="false">${thumb(10)}<b>final-10</b><span class="stamp ghost">post it</span><small><span class="tag">sent</span> verdict carried, not re-judged; the director checked its contact sheet and passed it too</small></button>
+  </div>
+  <div class="vc-pl"><canvas class="vc-cv" role="img"></canvas>
+    <div class="vc-now" aria-live="polite"></div>
+    <div class="vc-scr"><div class="vc-sl" role="slider" tabindex="0" aria-label="Time in the synthetic film" aria-valuemin="0" aria-valuemax="60">
+      <div class="vc-track"><i class="vc-fill"></i><i class="vc-th"></i></div>
+      <canvas class="vc-lane" aria-hidden="true"></canvas>
+    </div><div class="vc-lk">the test, every 0.1 s, above<span>untested</span><span class="ok">no overlap</span><span class="hit">overlap</span></div></div>
+    <div class="vc-ctl"><div><button class="btn" type="button" data-a="sweep">Sweep every 0.1 s</button> <button class="btn ghost" type="button" data-a="clear">Clear the lane</button></div><p class="vc-sw" aria-live="polite"></p>
+      <p class="note">Dashed boxes are the text boxes the test measures, through the panel’s transform; red is where two overlap. Arrow keys move 0.1 s, Shift and an arrow 1 s.</p></div>
+  </div>`;
+  const cv = $(".vc-cv", vc), lane = $(".vc-lane", vc), sl = $(".vc-sl", vc), now = $(".vc-now", vc), swr = $(".vc-sw", vc);
+  const rbtn = [...vc.querySelectorAll("button.vc-r")];
+  const res = {7: new Int8Array(601), 10: new Int8Array(601)};
+  let r = 7, k = 460, sweeping = 0;
+  const fit = c => { const w = c.clientWidth, h = c.clientHeight, d = Math.min(2, window.devicePixelRatio || 1);
+    if (c.width !== Math.round(w * d)) { c.width = Math.round(w * d); c.height = Math.round(h * d); } return d; };
+  function film(t, T) {
+    const d = fit(cv), x = cv.getContext("2d"), s = cv.width / FW;
+    x.setTransform(s, 0, 0, s, 0, 0);
+    x.fillStyle = "#0b1118"; x.fillRect(0, 0, FW, FH);
+    x.strokeStyle = "rgba(120,170,200,.08)"; x.lineWidth = 1;
+    for (let g = 0; g <= FW; g += 80) { x.beginPath(); x.moveTo(g, 0); x.lineTo(g, FH); x.stroke(); }
+    x.font = "500 30px 'IBM Plex Mono',monospace"; x.fillStyle = "#81909c";
+    x.fillText("SYNTHETIC FILM · DRAWN FOR THIS PAGE", 40, 44); x.textAlign = "right"; x.fillText(`final-${r} · ${mmss(t)}`, FW - 40, 44); x.textAlign = "left";
+    x.save(); x.translate(TR.x, TR.y); x.scale(TR.s, TR.s);
+    [[120, "lane 1"], [380, "lane 2"]].forEach(([y, n]) => { x.strokeStyle = "#34485b"; x.strokeRect(40, y, 1300, 200); x.fillStyle = "#81909c"; x.font = "500 28px 'IBM Plex Mono',monospace"; x.fillText(n, 56, y + 36); });
+    x.strokeStyle = "#66d8ea"; x.lineWidth = 3; x.beginPath();
+    for (let i = 0; i <= 260; i++) { const u = i / 260, y = 330 + Math.sin(u * 18 + t * 1.3) * 34 * Math.sin(u * 3.1 + .4) - 110; i ? x.lineTo(60 + u * 1260, y) : x.moveTo(60 + u * 1260, y); }
+    x.stroke();
+    texts(r, t).forEach(b => { x.font = `${b.f} 'IBM Plex Sans',sans-serif`; x.fillStyle = b.c; x.textBaseline = "middle";
+      const m = x.measureText(b.n).width, sc = Math.min(1, (b.w - 16) / m); x.save(); x.translate(b.x + 8, b.y + b.h / 2); x.scale(sc, 1); x.fillText(b.n, 0, 0); x.restore(); });
+    x.restore(); x.textBaseline = "alphabetic";
+    T.B.forEach(b => { x.strokeStyle = "rgba(102,216,234,.85)"; x.setLineDash([8, 6]); x.lineWidth = 2; x.strokeRect(b.l, b.t, b.r - b.l, b.b - b.t); });
+    x.setLineDash([]);
+    T.hits.forEach(h => { const l = Math.max(h.a.l, h.b.l), tp = Math.max(h.a.t, h.b.t);
+      x.fillStyle = "rgba(255,114,98,.35)"; x.fillRect(l, tp, h.ox, h.oy); x.strokeStyle = "#ff7262"; x.lineWidth = 3; x.strokeRect(l, tp, h.ox, h.oy); });
+    x.fillStyle = "#223040"; x.fillRect(40, FH - 40, FW - 80, 6); x.fillStyle = "#ffb547"; x.fillRect(40, FH - 40, (FW - 80) * t / 60, 6);
+  }
+  function drawLane() {
+    const d = fit(lane), x = lane.getContext("2d"), w = lane.width, h = lane.height, R = res[r], cw = w / 600;
+    x.clearRect(0, 0, w, h); x.fillStyle = css("--bg-3"); x.fillRect(0, 0, w, h);
+    const col = [null, css("--green"), css("--red")];
+    for (let i = 0; i < 600; i++) if (R[i]) { x.globalAlpha = R[i] === 1 ? .45 : 1; x.fillStyle = col[R[i]]; x.fillRect(Math.floor(i * cw), 0, Math.floor((i + 1) * cw) - Math.floor(i * cw), h); }
+    x.globalAlpha = 1; x.fillStyle = css("--amber"); x.fillRect(Math.round(k / 600 * w) - d, 0, 2 * d, h);
+  }
+  function set(nk, quiet) {
+    k = Math.max(0, Math.min(600, Math.round(nk))); const t = k / 10, T = test(r, t);
+    if (k < 600) res[r][k] = T.hits.length ? 2 : 1;
+    film(t, T); drawLane();
+    $(".vc-fill", vc).style.width = $(".vc-th", vc).style.left = (k / 6) + "%";
+    sl.setAttribute("aria-valuenow", t.toFixed(1)); sl.setAttribute("aria-valuetext", `${t.toFixed(1)} seconds`);
+    const msg = T.hits.length ? `${mmss(t)} · ${T.B.length} texts drawn · ${T.hits[0].b.n} over ${T.hits[0].a.n}: ${Math.round(T.hits[0].ox)} × ${Math.round(T.hits[0].oy)} px` : `${mmss(t)} · ${T.B.length === 1 ? "1 text" : T.B.length + " texts"} drawn · no overlap`;
+    cv.setAttribute("aria-label", `Synthetic film, final-${r}, at ${msg}`);
+    now.classList.toggle("hit", !!T.hits.length);
+    if (!quiet) now.textContent = msg;
+  }
+  function summary() {
+    const R = res[r], hit = []; for (let i = 0; i < 600; i++) if (R[i] === 2) hit.push(i);
+    swr.textContent = hit.length ? `Sweep of final-${r}: overlap from ${mmss(hit[0] / 10)} to ${mmss(hit[hit.length - 1] / 10)}, ${hit.length} samples` : `Sweep of final-${r}: no overlap at any 0.1 s`;
+  }
+  function sweep() {
+    if (sweeping) return; const back = k;
+    if (reduced) { for (let i = 0; i < 600; i++) set(i, true); set(back); summary(); return; }
+    let i = 0; sweeping = 1;
+    const step = () => { for (let n = 0; n < 6 && i < 600; n++) set(i++, true); if (i < 600) requestAnimationFrame(step); else { sweeping = 0; set(back); summary(); } };
+    requestAnimationFrame(step);
+  }
+  rbtn.forEach(b => b.addEventListener("click", () => { r = +b.dataset.r; pressOne(rbtn, b); swr.textContent = ""; set(k); }));
+  vc.querySelector('[data-a="sweep"]').addEventListener("click", sweep);
+  vc.querySelector('[data-a="clear"]').addEventListener("click", () => { res[r].fill(0); swr.textContent = ""; set(k); });
+  const fromX = e => { const b = $(".vc-track", vc).getBoundingClientRect(); return (e.clientX - b.left) / b.width * 600; };
+  sl.addEventListener("pointerdown", e => { sl.setPointerCapture(e.pointerId); sl.focus(); set(fromX(e)); });
+  sl.addEventListener("pointermove", e => { if (sl.hasPointerCapture(e.pointerId)) set(fromX(e)); });
+  sl.addEventListener("keydown", e => {
+    const st = e.shiftKey ? 10 : 1, m = {ArrowRight:st, ArrowUp:st, ArrowLeft:-st, ArrowDown:-st, PageUp:10, PageDown:-10}[e.key];
+    if (m) set(k + m); else if (e.key === "Home") set(0); else if (e.key === "End") set(600); else return;
+    e.preventDefault();
+  });
+  let rz; window.addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => set(k, true), 150); });
+  const mo = new MutationObserver(() => set(k, true)); mo.observe(document.documentElement, {attributes:true, attributeFilter:["data-theme"]});
+  set(k);
+});
+
+/* ---------- N2 · what a compaction keeps ---------- */
+lazy("#cmp", cmp => {
+  const MAX = 13500, P = v => (v / MAX * 100).toFixed(2) + "%";
+  const st = $("#cmpStage"), rd = $("#cmpRead"), btns = [...cmp.querySelectorAll(".cmp-bar .btn")];
+  const LINES = {
+    old: [["p", "practices · first lines"], ["p2", "practices · later lines"], ["s", "this session’s state: what it was doing, what it promised"]],
+    new: [["c", "rules card · first line: read the full practices before anything else"], ["s", "this session’s own state file, matched by its session id"]]
+  };
+  const READ = {
+    old: "Old hook, reconstructed from the files: it would have printed 12,957 characters, and only a 2,000-character preview arrives. The session’s own state was printed last, so it was the first thing lost. This happened on 2 of the director’s 9 compactions under the old hook.",
+    new: "New hook: a short rules card and this session’s own state file, under the line. Both arrive whole.",
+    after: "After the compaction the session sits idle: a compaction doesn’t start a turn. A message from the director wakes it, and it resumes from its state file."
+  };
+  function show(s) {
+    const o = s === "old", a = s === "after";
+    st.innerHTML = `<div class="cmp-out${a ? " dim" : ""}"><div class="cmp-lab"><span>hook output</span><span class="num">${o ? "<b>12,957</b> to print · <b>2,000</b> arrived (reconstructed)" : "arrived whole"}</span></div>
+      <div class="cmp-track">${o ? `<div class="seg p" style="width:${P(8770)}"><span>practices</span></div><div class="seg s" style="left:${P(8770)};width:${P(4187)}"><span>state</span></div>
+        <div class="cut" style="right:${P(MAX - 12957)};--w:${P(10957)}"></div><i class="mk pv" style="left:${P(2000)}"><span>preview</span></i>`
+        : `<div class="seg c" style="width:${P(2400)}"><span>card</span></div><div class="seg s" style="left:${P(2400)};width:${P(4300)}"><span>state file</span></div><i class="mk bd" style="left:${P(9000)}"><span>budget</span></i>`}
+        <i class="mk cap" style="left:${P(10000)}"><span>cap</span></i></div></div>
+      <div class="cmp-sess${a ? " idle" : ""}"><div class="cmp-sh"><span>the session, after a compaction</span><span class="state">${a ? "idle" : "reading"}</span></div>
+        ${a ? `<p class="cmp-idle">idle: a compaction doesn’t start a turn</p><div class="env"><i aria-hidden="true"></i>from the director: resume from your state file</div><p class="cmp-wake">working again, from its own state file</p>`
+        : `<ol class="${o ? "old" : ""}">${LINES[o ? "old" : "new"].map(([c, t], i) => `<li class="${c}" style="--d:${o ? [.9, .45, 0][i] : 0}s">${esc(t)}</li>`).join("")}</ol>${o ? `<p class="cmp-pv">output saved to a file · the session gets a preview of the first 2,000 characters</p>` : ""}`}
+      </div>`;
+    rd.textContent = READ[s];
+    requestAnimationFrame(() => requestAnimationFrame(() => { st.classList.add("go");
+      if (a) setTimeout(() => { const e = $(".cmp-sess", st); if (e) { e.classList.remove("idle"); $(".state", e).textContent = "working"; } }, reduced ? 0 : 1300); }));
+    st.classList.remove("go");
+  }
+  btns.forEach(b => b.addEventListener("click", () => { pressOne(btns, b); show(b.dataset.s); }));
+  show("old");
+});
+
+/* ---------- N3 · one session became many ---------- */
+lazy("#lns", root => {
+  const svg = $("#lnsSvg"), panel = $("#lnsPanel"), K = $("#lnsK"), T = $("#lnsT"), playB = $("#lnsPlay");
+  const vbtn = [...root.querySelectorAll("[data-v]")];
+  const LN = [["release code", "The 0.4.6 pull requests, and the checks that go into showtime."],
+    ["reviews", "The reviewer session. It reads every pull request, and its verdict is part of the merge gate."],
+    ["films", "Films made with showtime. Each aspect is checked as its own film."],
+    ["experiment", "A measured experiment and its write-up."],
+    ["this article", "This page and the article that goes with it."], ["", "A lane not named here."], ["", "A lane not named here."]];
+  const ENV = [["dir", 5, "a brief, from the director to a new lane"], [0, 1, "a new PR head, sent to the reviewer"],
+    ["dir", 2, "resume from your state file, after a compaction"], [1, 0, "a verdict back to the lane"]];
+  let view = "many", playing = false, clock = 0, last = 0, vis = true, blocks = 13, fill = .18, sel = -1, geo;
+  const wide = () => root.clientWidth >= 700;
+  function layout() {
+    if (wide()) { const W = 1000; return {W, H:420, D:{x:380, y:20, w:240, h:110}, L:LN.map((_, i) => ({x:6 + i * 141.6, y:300, w:130, h:84})),
+      edge:(d, l) => `M${d.x + d.w / 2},${d.y + d.h} C${d.x + d.w / 2},${(d.y + d.h + l.y) / 2 + 20} ${l.x + l.w / 2},${(d.y + d.h + l.y) / 2 - 20} ${l.x + l.w / 2},${l.y}`}; }
+    return {W:360, H:640, D:{x:60, y:8, w:240, h:110}, L:LN.map((_, i) => ({x:56, y:150 + i * 68, w:296, h:56})),
+      edge:(d, l) => `M${d.x},${d.y + d.h / 2} H26 V${l.y + l.h / 2} H${l.x}`};
+  }
+  function draw() {
+    const g = geo = layout(); svg.setAttribute("viewBox", `0 0 ${g.W} ${g.H}`); svg.classList.toggle("tall", !wide());
+    let h = `<g class="ln-edges">${g.L.map((l, i) => `<path class="edge" id="lnE${i}" d="${g.edge(g.D, l)}"/>`).join("")}</g>`;
+    h += `<g class="node k-amber${sel === -1 ? " sel" : ""}" data-i="-1" tabindex="0" role="button" aria-label="The director: show what it keeps"><rect class="box" x="${g.D.x}" y="${g.D.y}" width="${g.D.w}" height="${g.D.h}"/><rect class="bar" x="${g.D.x}" y="${g.D.y}" width="4" height="${g.D.h}"/>
+      <text class="nl" x="${g.D.x + 16}" y="${g.D.y + 26}">director</text><text class="ns" x="${g.D.x + 16}" y="${g.D.y + 44}">THE ONE LIST · MERGES · FAVIO</text>
+      <rect class="gauge" x="${g.D.x + 16}" y="${g.D.y + 58}" width="${g.D.w - 32}" height="10"/><rect class="gfill" id="lnsG" x="${g.D.x + 16}" y="${g.D.y + 58}" width="${(g.D.w - 32) * fill}" height="10"/>
+      <text class="ns" x="${g.D.x + 16}" y="${g.D.y + 92}" id="lnsB">RESUME BLOCKS WRITTEN: ${blocks}</text></g>`;
+    h += g.L.map((l, i) => `<g class="node lane${LN[i][0] ? "" : " k-dim un"}${sel === i ? " sel" : ""}" data-i="${i}" tabindex="0" role="button" aria-label="${LN[i][0] ? LN[i][0] : "a lane not named here"}: show the shape of its state file" style="--i:${i}">
+      <rect class="box" x="${l.x}" y="${l.y}" width="${l.w}" height="${l.h}"/><rect class="bar" x="${l.x}" y="${l.y}" width="4" height="${l.h}"/>
+      <text class="nl" x="${l.x + 14}" y="${l.y + (wide() ? 32 : 25)}">${LN[i][0] || "not named"}</text><text class="ns" x="${l.x + 14}" y="${l.y + (wide() ? 54 : 44)}">STATE FILE</text></g>`).join("");
+    h += `<g id="lnsEnv" class="env-g" opacity="0"><rect x="-10" y="-7" width="20" height="14" rx="1"/><path d="M-10,-7 L0,1 L10,-7"/></g>`;
+    svg.innerHTML = h; svg.classList.toggle("one", view === "one");
+  }
+  function info(i) {
+    sel = i; svg.querySelectorAll(".node").forEach(n => n.classList.toggle("sel", +n.dataset.i === i));
+    const nm = i < 0 ? "director" : LN[i][0] || "a lane not named here";
+    panel.innerHTML = `<h3>${esc(nm)}</h3><div class="sub">${i < 0 ? "the director session" : "a lane session · the shape of its state file"}</div>
+      <p>${i < 0 ? "Keeps the one list of what is open, merges, and talks to Favio. From 8 Oct until the work split into lanes on 15 Oct it was compacted 19 times, and before at least 12 of those it wrote a resume block into its state file." : esc(LN[i][1])}</p>
+      <pre class="sf">${i < 0 ? "# RESUME HERE (written before a compaction)\nRead this, then the open list.\n\n## Waiting on the owner\n- &lt;item&gt;: &lt;the decision needed&gt;\n\n## Running\n- &lt;lane&gt;: &lt;how you’ll know it’s done&gt;"
+        : "# the lane’s state file\ncwd:     &lt;its working folder&gt;\nsession: &lt;its session id&gt;\nupdated: &lt;date, time&gt;\n\n## Now\n- &lt;what it is doing; how the director\n  will know it is done&gt;\n\n## Promises\n- &lt;what it promised, and to whom&gt;"}</pre>
+      <p class="note">Values are placeholders. The start-up hook finds this file by the session’s id and puts it in context after every compaction.</p>`;
+  }
+  function setView(v) { view = v; pressOne(vbtn, vbtn.find(b => b.dataset.v === v)); svg.classList.toggle("one", v === "one");
+    svg.setAttribute("viewBox", `0 0 ${geo.W} ${v === "one" && !wide() ? 130 : geo.H}`);
+    K.textContent = v === "one" ? "one session did almost everything" : "seven lanes today; two not named";
+    T.textContent = v === "one" ? "planning, merging, releases, articles, films: and 19 compactions before the lane split on 15 Oct" : reduced || !playing ? "messages: a brief · a new PR head to the reviewer · resume from your state file · a verdict back" : ""; }
+  function gauge(f, b) { fill = f; blocks = b; const G = $("#lnsG"), B = $("#lnsB"); if (G) G.setAttribute("width", (geo.D.w - 32) * f); if (B) B.textContent = `RESUME BLOCKS WRITTEN: ${b}`; }
+  function setPlay(v) { playing = v && !reduced; playB.setAttribute("aria-pressed", String(playing)); playB.textContent = playing ? "Pause" : "Play";
+    if (v && reduced) { gauge(.18, 13); setView("many"); }
+    if (playing) { if (clock === 0) { gauge(0, 0); setView("one"); } last = performance.now(); requestAnimationFrame(tick); } }
+  function envAt(e, u) {   /* lane to lane goes through the director */
+    const seg = [], [a, b] = e; if (a !== "dir") seg.push([a, true]); seg.push([b, false]);
+    const n = seg.length, j = Math.min(n - 1, Math.floor(u * n)), v = u * n - j, p = $("#lnE" + seg[j][0]), L = p.getTotalLength();
+    return p.getPointAtLength(seg[j][1] ? L * (1 - v) : L * v);
+  }
+  function tick(t) {
+    if (!playing) return;
+    const dt = Math.min(.1, (t - last) / 1000); last = t; if (vis) clock += dt;
+    const E = $("#lnsEnv");
+    if (clock < 6.5) { const c = clock / .5, f = c % 1; gauge(f < .8 ? .15 + f / .8 * .85 : 1 - (f - .8) / .2 * .82, Math.min(13, Math.floor(c + .2))); }
+    else if (view === "one") { gauge(.18, 13); setView("many"); T.textContent = ""; }
+    else if (clock > 7.5) { const q = (clock - 7.5) / 1.8, e = ENV[Math.floor(q) % ENV.length], u = q % 1;
+      const pt = envAt(e, Math.min(1, u / .85)); E.setAttribute("transform", `translate(${pt.x},${pt.y})`); E.setAttribute("opacity", u > .92 ? 0 : 1);
+      T.textContent = e[2]; }
+    requestAnimationFrame(tick);
+  }
+  vbtn.forEach(b => b.addEventListener("click", () => { setPlay(false); clock = 0; gauge(b.dataset.v === "one" ? .7 : .18, 13); setView(b.dataset.v); const E = $("#lnsEnv"); if (E) E.setAttribute("opacity", 0); }));
+  playB.addEventListener("click", () => setPlay(!playing));
+  const act = e => { const n = e.target.closest(".node"); if (n) info(+n.dataset.i); };
+  svg.addEventListener("click", act);
+  svg.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); act(e); } });
+  new IntersectionObserver(es => { vis = es[0].isIntersecting; }).observe(svg);
+  let rz, ww = wide(); window.addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => { if (wide() !== ww) { ww = wide(); draw(); } }, 150); });
+  draw(); setView("many"); info(-1);
+});
+
+/* ---------- N5 · three days, measured ---------- */
+lazy("#ttm", () => {
+  /* merged PRs, in merge order: minutes after 9 Oct 00:00 UTC, hours open × 1000, added lines */
+  const RAW = "40,830,165;308,4650,114;308,4658,82;368,586,43;406,1011,46;406,1377,18;446,7013,590;465,1677,350;468,2,13;530,2804,113;567,3929,213;734,5936,22;759,5206,313;838,3202,385;897,5076,123;941,5092,211;1024,2359,131;1024,2551,26;1024,2743,52;1049,117,11;1052,4693,124;1058,3406,38;1354,2708,28;1367,2868,66;1445,4149,82;1449,4192,83;1573,6221,93;1718,8638,223;1833,9456,37;1858,9123,56;2015,12250,1552;2016,6291,258;2017,3468,642;2017,6184,647;2660,7055,285;2666,2502,39;2778,1084,99;2858,1139,9;2933,897,89;3035,976,20;3243,1024,108;3419,3124,265;3707,446,15;4078,2794,128;4236,825,12;4285,290,23;4324,425,71;4722,4358,2490;4782,852,4;4886,5651,3316;5464,12934,4076;5487,3375,2870;5678,13081,510;5703,7195,285;5727,16334,158;5842,7757,2868;5876,3510,253;5989,3041,897;6063,741,6232;6203,677,19;7048,7866,12250;7048,10852,4087;7849,1596,94;7852,1649,39;7971,3261,1175;8180,7110,969;8242,2038,340;8306,882,65;8325,321,137;8335,221,19;8363,174,132;8392,49,16;8420,79,2;8458,81,3;8554,680,12;9197,2572,264;9234,2231,344;9255,3303,69;9263,998,106;9323,712,173;9359,1309,78;9547,1805,651;9702,1335,162;9811,1693,68;9824,1498,691;9834,3669,151;9879,2924,335;9911,3471,194;9928,1555,135;9978,994,35;10114,3178,776;10162,478,16;10276,627,161;10326,350,49;10348,215,36;10535,255,3;10682,1280,99;10846,890,170;10905,210,62";
+  const ART = 5383.35, END = 11160, D0 = Date.UTC(2026, 9, 9);
+  const PR = RAW.split(";").map(s => { const [m, h, a] = s.split(",").map(Number); return {m, h:h / 1000, a, since:m >= ART}; });
+  const RULES = [[ART, "first article"], [6761, "0.4.3"], [7045, "0.4.4"], [8857, "0.4.5"], [10995, "0.4.6"]];
+  const plot = $("#ttmPlot"), read = $("#ttmRead"), cmpB = $("#ttmCmp");
+  const when = m => { const d = new Date(D0 + m * 60000); return `${d.getUTCDate()} Oct ${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`; };
+  const hrs = h => h < 1 / 60 ? "under a minute" : h < 1 ? `${Math.round(h * 60)} min` : `${h.toFixed(1)} h`;
+  const say = p => `Merged ${when(p.m)} UTC · open ${hrs(p.h)} · ${p.a.toLocaleString("en-US")} added lines${p.since ? "" : " · first four days"}`;
+  $("#ttmRows").innerHTML = PR.slice().sort((a, b) => a.m - b.m).map(p => `<tr${p.since ? "" : ' class="pre"'}><td class="n">${when(p.m)}</td><td class="n">${p.h.toFixed(2)}</td><td class="n">${p.a.toLocaleString("en-US")}</td></tr>`).join("");
+  let cmp = plot.clientWidth >= 640, cur = -1, vis = [], X, Y, M;
+  function draw() {
+    const w = plot.clientWidth, h = w < 560 ? 300 : 360; M = {l:50, r:12, t:40, b:30};
+    const x0 = cmp ? 0 : ART - 360, lo = Math.log(1 / 60), hi = Math.log(24);
+    X = m => M.l + (m - x0) / (END - x0) * (w - M.l - M.r);
+    Y = v => M.t + (1 - (Math.log(Math.max(1 / 60, v)) - lo) / (hi - lo)) * (h - M.t - M.b);
+    vis = PR.filter(p => cmp || p.since).sort((a, b) => a.m - b.m);
+    let s = `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true">`;
+    [[1 / 60, "1 min"], [1 / 6, "10 min"], [1, "1 h"], [10, "10 h"]].forEach(([v, l]) => { s += `<line class="gy" x1="${M.l}" x2="${w - M.r}" y1="${Y(v)}" y2="${Y(v)}"/><text class="tx" x="${M.l - 6}" y="${Y(v) + 4}" text-anchor="end">${l}</text>`; });
+    for (let d = Math.ceil(x0 / 1440); d * 1440 <= END; d++) { const x = X(d * 1440); if (x < M.l) continue;
+      s += `<line class="gx" x1="${x}" x2="${x}" y1="${M.t}" y2="${h - M.b}"/>`;
+      if (X(d * 1440 + 720) < w - M.r) s += `<text class="tx" x="${X(d * 1440 + 720)}" y="${h - 10}" text-anchor="middle">${9 + d} Oct</text>`; }
+    RULES.forEach(([m, l], i) => { const x = X(m), up = i ? 6 : 22; if (x < M.l) return; s += `<line class="rule${i ? "" : " art"}" x1="${x}" x2="${x}" y1="${M.t - up + 2}" y2="${h - M.b}"/><text class="rl" x="${i === 1 || i === RULES.length - 1 ? x - 3 : x + 3}" y="${M.t - up}"${i === 1 || i === RULES.length - 1 ? ' text-anchor="end"' : ""}>${l}</text>`; });
+    [[0, ART, 3.0, "median 3.0 h"], [ART, END, 1.56, "median 1.6 h"]].forEach(([a, b, v, l], i) => { if (!cmp && !i) return;
+      s += `<line class="med${i ? "" : " pre"}" x1="${Math.max(M.l, X(a))}" x2="${X(b)}" y1="${Y(v)}" y2="${Y(v)}"/><text class="ml" x="${Math.max(M.l, X(a)) + 5}" y="${Y(v) - 5}">${l}</text>`; });
+    vis.slice().sort((a, b) => b.a - a.a).forEach(p => { const r = Math.max(2.5, Math.sqrt(Math.min(p.a, 4000) / 4000) * (w < 560 ? 10 : 14));
+      s += `<circle class="dt${p.since ? "" : " pre"}" cx="${X(p.m)}" cy="${Y(p.h)}" r="${r}"/>`; });
+    s += `<circle class="hl" r="0" cx="0" cy="0"/></svg>`;
+    plot.innerHTML = s; pick(cur, true);
+  }
+  function pick(i, quiet) {
+    cur = i; const c = $(".hl", plot); if (!c) return;
+    if (i < 0 || !vis[i]) { c.setAttribute("r", 0); if (!quiet) read.textContent = ""; return; }
+    const p = vis[i]; c.setAttribute("cx", X(p.m)); c.setAttribute("cy", Y(p.h)); c.setAttribute("r", 9);
+    read.textContent = say(p);
+  }
+  read.textContent = "Hover or tap a dot, or focus the chart and use the arrow keys.";
+  const near = e => { const b = plot.getBoundingClientRect(), x = e.clientX - b.left, y = e.clientY - b.top; let best = -1, bd = 900;
+    vis.forEach((p, i) => { const d = (X(p.m) - x) ** 2 + (Y(p.h) - y) ** 2; if (d < bd) { bd = d; best = i; } }); return best; };
+  plot.addEventListener("pointermove", e => { const i = near(e); if (i >= 0 && i !== cur) pick(i); });
+  plot.addEventListener("pointerdown", e => { const i = near(e); if (i >= 0) pick(i); });
+  plot.addEventListener("keydown", e => { const m = {ArrowRight:1, ArrowUp:1, ArrowLeft:-1, ArrowDown:-1}[e.key]; if (!m) return; e.preventDefault();
+    pick(cur < 0 ? (m > 0 ? 0 : vis.length - 1) : (cur + m + vis.length) % vis.length); });
+  cmpB.setAttribute("aria-pressed", String(cmp));
+  cmpB.addEventListener("click", () => { const p = vis[cur]; cmp = !cmp; cmpB.setAttribute("aria-pressed", String(cmp)); draw(); cur = p ? vis.indexOf(p) : -1; pick(cur, true); });
+  let rz, lw = plot.clientWidth; window.addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => { if (plot.clientWidth !== lw) { lw = plot.clientWidth; draw(); } }, 150); });
+  draw();
+  const wf = $("#waffle"); if (wf) wf.innerHTML = Array.from({length:181}, (_, i) => `<i class="${i < 137 ? "y" : i < 177 ? "c" : "n"}"></i>`).join("");
+});
+
 /* ================= 13 SCARS WALL ================= */
 (function scars() {
-  const AREAS = [["all","All"],["devin","Devin"],["tests","Tests & merges"],["films","Films"],["ops","Ops & state"]];
+  const AREAS = [["all","All"],["e2","New in edition 2"],["devin","Devin"],["tests","Tests & merges"],["films","Films"],["ops","Ops & state"]];
   const S = [
     {a:"tests", d:"11 Oct", t:"The tolerance we almost loosened",
      w:"An ARM Linux run failed a poster-colour test at 0.754 against a 0.75 tolerance. The first fix raised the tolerance.",
@@ -1186,19 +1540,39 @@ stepper("#caseStall", "Issue #24", [
      c:"Deliverables he couldn’t open.",
      r:"Copy to the delivery folder the app can open first; phone videos ≤30 MB; HTML as a link.", l:["delivery notes"], go:"#finder"}
   ];
+  /* edition 2, 16 Oct: four misses from the day after the six practices */
+  const NEW16 = [
+    {t:"A failed job read as still running",
+     w:"A macOS test job on a release pull request had failed: two tests ran into their 900 s limit. The CI summary showed that job with no result yet, the status line read it as still running, and the report said nothing new had failed. Noticed by Favio.",
+     c:"A failed release job went unreported until Favio asked. Its log led to a real bug: a page check could crawl for half an hour or more once a page stopped answering.",
+     r:"Read each job’s own result, not the summary, and open the log of any job that did not succeed. In 0.4.6, a page check whose page stops answering ends with an error.", l:["the practices", "the CI checks"]},
+    {t:"A PDF checked on page 1",
+     w:"A paper’s final PDF went out after a look at its first page. It had a half-empty page with one column, figure pages scattered through the text and no References heading. The next build put figures after the references, under no heading. Noticed by Favio, twice.",
+     c:"Two rejected builds of a paper, before it was published.",
+     r:"A contact sheet of every page and a full-size look at each, then a reader’s check: every page sits under a heading the reader has seen, in the order one publisher’s own author guide gives.", l:["the practices"]},
+    {t:"A speed-up that shortened the wait",
+     w:"A setting that makes a deadline test run faster also shortened the time it allowed to open the page. The test passed on a quiet machine and timed out opening the page on a busy one. Noticed by the cloud reviewer.",
+     c:"A release fix waited while the cause was found.",
+     r:"Opening the page has its own time limit, apart from the speed-up, and the test runs on a quiet and a loaded machine before it merges. It now passes on both.", l:["the test helper", "the practices"]},
+    {t:"A pull request that read like someone else wrote it",
+     w:"The body of a pull request on Favio’s own repository spoke about him in the third person and listed internal merge rules. Noticed by Favio.",
+     c:"The body was rewritten before he merged it.",
+     r:"Public text is written in Favio’s own voice and states facts, not the crew’s process. Before anything is posted, a search for process words.", l:["the practices"]}
+  ].map((x, i) => ({a:"e2", id:`scar-e2-${i + 7}`, d:"16 Oct", t:x.t, w:esc(x.w), c:esc(x.c), r:esc(x.r), l:x.l, go:"#ledger", more:"Context"}));
+  S.unshift(...NEW16, ...LEDGER.map((r, i) => ({a:"e2", id:`scar-e2-${i + 1}`, d:r.d, t:r.m, w:`${esc(r.w)} Noticed by ${esc(r.who)}.`, c:esc(r.c), r:esc(r.b), l:r.l, go:"#ledger"})));
   const wall = $("#scars"), filt = $("#scarFilt");
   const name = Object.fromEntries(AREAS);
-  wall.innerHTML = S.map(s => `<article class="scar" data-a="${s.a}"><div class="hd"><span>${esc(s.d)}</span><span class="ar">${esc(name[s.a])}</span></div><h3>${esc(s.t)}</h3>
+  wall.innerHTML = S.map(s => `<article class="scar${s.id ? " e2" : ""}" data-a="${s.a}"${s.id ? ` id="${s.id}"` : ""}><div class="hd"><span>${esc(s.d)}</span><span class="ar">${esc(name[s.a])}</span></div><h3>${esc(s.t)}</h3>
     <dl><div><dt>What happened</dt><dd>${links(s.w)}</dd></div><div class="cost"><dt>What it cost</dt><dd>${s.c}</dd></div></dl>
     <div class="rule"><div class="k">The rule now</div><p>${links(s.r)}</p></div>
-    <div class="lives"><span class="k">Lives in</span>${s.l.map(x => `<span class="chip">${esc(x)}</span>`).join("")}<a href="${s.go}">Context</a></div></article>`).join("");
+    <div class="lives"><span class="k">Lives in</span>${s.l.map(x => `<span class="chip">${esc(x)}</span>`).join("")}<a href="${s.go}">${s.more || (s.id ? "Its practice" : "Context")}</a></div></article>`).join("");
   $("#scarN").innerHTML = `${S.length}`;
   filt.innerHTML = AREAS.map(([k, l], i) => `<button type="button" data-a="${k}" aria-pressed="${i === 0}">${esc(l)}<small>${k === "all" ? S.length : S.filter(s => s.a === k).length}</small></button>`).join("");
-  filt.addEventListener("click", e => {
-    const b = e.target.closest("button"); if (!b) return;
-    filt.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
-    wall.querySelectorAll(".scar").forEach(c => { c.hidden = !(b.dataset.a === "all" || c.dataset.a === b.dataset.a); });
-  });
+  const pickArea = b => { filt.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
+    wall.querySelectorAll(".scar").forEach(c => { c.hidden = !(b.dataset.a === "all" || c.dataset.a === b.dataset.a); }); };
+  filt.addEventListener("click", e => { const b = e.target.closest("button"); if (b) pickArea(b); });
+  /* a ledger card's link opens its filter */
+  document.addEventListener("click", e => { const a = e.target.closest('a[href^="#scar-e2-"]'); if (a) pickArea(filt.querySelector('[data-a="e2"]')); });
   const W = [
     ["Critic on the storyboard","Blockers caught before any scene was built."],
     ["Independent reviewers on every number","A fresh review session found a fairer clock in a film’s data."],

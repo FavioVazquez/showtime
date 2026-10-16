@@ -380,6 +380,71 @@ class HarnessPage(unittest.TestCase):
         self.assertEqual([e["u"] for e in site.search], [build.HARNESS_PAGE])
         self.assertEqual(build.check_search(site), [])
 
+    def built(self) -> str:
+        tmp = Path(tempfile.mkdtemp(prefix="st-harness-"))
+        self.addCleanup(shutil.rmtree, tmp, True)
+        build.build_harness(build.Site(tmp, [], "owner/repo", None, "main"))
+        return (tmp / build.HARNESS_PAGE).read_text(encoding="utf-8")
+
+    def test_edition2_ledger_has_six_whole_cards(self):
+        # harness.js builds one card per top-level li of #ledgerData and skips an li that lacks any of these parts
+        from html.parser import HTMLParser
+
+        class Cards(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.cards, self.depth, self.inside = [], 0, False
+
+            def handle_starttag(self, tag, attrs):
+                a = dict(attrs)
+                if tag == "ol" and a.get("id") == "ledgerData":
+                    self.inside, self.depth = True, 0
+                    return
+                if not self.inside:
+                    return
+                if tag in ("ol", "ul"):
+                    self.depth += 1
+                    if "s" in (a.get("class") or "").split() and self.cards:
+                        self.cards[-1]["steps_ol"] = True
+                elif tag == "li" and self.depth == 0:
+                    self.cards.append({"parts": set(), "steps": 0})
+                elif tag == "li" and self.cards and self.cards[-1].get("steps_ol") and self.depth == 1:
+                    self.cards[-1]["steps"] += 1
+                for c in (a.get("class") or "").split():
+                    if self.cards:
+                        self.cards[-1]["parts"].add(c)
+
+            def handle_endtag(self, tag):
+                if not self.inside:
+                    return
+                if tag in ("ol", "ul"):
+                    if self.depth == 0:
+                        self.inside = False
+                    else:
+                        self.depth -= 1
+
+        p = Cards()
+        p.feed(self.built())
+        self.assertEqual(len(p.cards), 6)
+        for i, card in enumerate(p.cards, 1):
+            self.assertLessEqual({"t", "r", "s", "m", "w", "who", "c", "b"}, card["parts"], "card %d" % i)
+            self.assertGreaterEqual(card["steps"], 3, "card %d" % i)
+
+    def test_edition2_shows_no_private_pr_numbers(self):
+        # the working repo's PRs are private: an edition 2 section may only show a #NN that links a public issue
+        public = re.compile(r'<a href="https://github\.com/FavioVazquez/showtime/issues/(\d+)">#\1</a>')
+        sections = re.findall(r'<section\b[^>]*\bdata-ed="(?:new|updated)"[^>]*>.*?</section>', self.built(), re.S)
+        self.assertGreaterEqual(len(sections), 6)
+        for s in sections:
+            bare = re.findall(r"#\d+", re.sub(r"&#\d+;", "", public.sub("", s)))
+            self.assertEqual(bare, [], s[:80])
+        js = (REPO / "site" / "static" / "harness.js").read_text(encoding="utf-8")
+        day = js[js.index("const DAY_1015"):js.index("].map(", js.index("const DAY_1015"))]
+        ttm = js[js.index('lazy("#ttm"'):]
+        ttm = ttm[:ttm.index("\n});\n")]
+        for name, part in (("DAY_1015", day), ("#ttm", ttm)):
+            self.assertIsNone(re.search(r"#(\d+|\$\{)", part.replace('"#ttm', "")), name)
+
 
 @unittest.skipIf(build is None, "needs markdown-it-py (showtime's venv has it)")
 class StartHereAndShelves(unittest.TestCase):

@@ -1169,12 +1169,68 @@ Film.start({ look: 'dark', design: [960, 540], fonts: ['600 1em "Inter Variable"
         self.assertEqual(rc, 1)
         self.assertIn("the page's seeks stopped finishing", err.read_text(encoding="utf-8", errors="replace"))
 
+    def assert_stuck_trail(self, message, seeks, at_least):
+        """message is the error check ended with on a page whose seeks stopped finishing, seeks the last seeks it
+        listed [(t, 'ok' | 'late' | 'error')]: it ended at a late seek, two late seeks since the last that worked;
+        it names the first of them (at at_least s or later), and the seek after it, or both times when other seek
+        errors came between; it counts the seek errors since the last that worked. A list that no longer reaches
+        back to a seek that worked (6 at most) only bounds the first late seek and the count."""
+        why = "%s\n%s" % (message[-1500:], seeks)
+        self.assertEqual(seeks[-1][1], "late", why)
+        oks = [i for i, (_, o) in enumerate(seeks) if o == "ok"]
+        since = seeks[oks[-1] + 1:] if oks else seeks
+        late = [i for i, (_, o) in enumerate(since) if o == "late"]
+        errors = sum(o == "error" for _, o in since)
+        m = re.search(r"the seeks? to (\d+\.\d+)s and (?:(\d+\.\d+)s|the one after it) timed out", message)
+        self.assertTrue(m, why)
+        first = float(m.group(1))
+        self.assertGreaterEqual(first, at_least, why)
+        if oks:
+            self.assertEqual(len(late), 2, why)
+            self.assertEqual(first, since[late[0]][0], why)
+            adjacent = late[1] == late[0] + 1
+        else:
+            self.assertGreaterEqual(len(late), 1, why)
+            self.assertLessEqual(first, since[late[0]][0], why)
+            adjacent = len(late) == 2 and late[1] == late[0] + 1
+        if adjacent:
+            self.assertIsNone(m.group(2), why)
+        else:
+            self.assertIsNotNone(m.group(2), why)
+            self.assertEqual(float(m.group(2)), seeks[-1][0], why)
+        n = re.search(r"\(after (\d+) other seek errors?; the first: ", message)
+        if oks:
+            self.assertEqual(int(n.group(1)) if n else 0, errors, why)
+        elif errors:
+            self.assertTrue(n and int(n.group(1)) >= errors, why)
+
+    def test_13k_the_stuck_page_assertions_read_late_seeks_with_errors_between(self):
+        """The stuck page's assertions on a list of seeks a macOS Intel runner gave (the browser rejected the
+        seeks waiting behind the stuck one, "Resulting promise was garbage collected", before one was late again):
+        the message that names both late seeks and counts the two errors passes, and the ones that name the seek
+        after the first, the last late seek alone, or another count fail."""
+        seeks = [(1.1, "ok"), (1.2, "ok"), (1.3, "late"), (1.4, "error"), (1.5, "error"), (1.6, "late")]
+        said = ("the page's seeks stopped finishing: the seeks to 1.300s and 1.600s timed out (15 s each) (after 2 other "
+                "seek errors; the first: Resulting promise was garbage collected.)")
+        self.assert_stuck_trail(said, seeks, 1.3)
+        for wrong in (said.replace("the seeks to 1.300s and 1.600s", "the seek to 1.300s and the one after it"),
+                      said.replace("the seeks to 1.300s and 1.600s", "the seeks to 1.600s and 1.600s"),
+                      said.replace("after 2 other seek errors", "after 1 other seek error"),
+                      said.split(" (after")[0]):
+            with self.subTest(wrong=wrong[36:110]), self.assertRaises(AssertionError):
+                self.assert_stuck_trail(wrong, seeks, 1.3)
+        # back to back, and a list that no longer reaches a seek that worked
+        self.assert_stuck_trail("the seek to 1.300s and the one after it timed out (15 s each)",
+                                [(1.2, "ok"), (1.3, "late"), (1.4, "late")], 1.3)
+        self.assert_stuck_trail("the seeks to 1.300s and 1.900s timed out (15 s each) (after 5 other seek errors; the first: x)",
+                                [(1.4, "error"), (1.5, "error"), (1.6, "error"), (1.7, "error"), (1.8, "error"), (1.9, "late")], 1.3)
+
     def test_13h_check_ends_when_the_page_stops_answering(self):
         """A page that stops answering on the timeline ends check with an error naming where, instead of a check
         that skips step after step at the seek's deadline each (31 steps for 3 s; macOS CI runners), and leaves no
         browser behind: a seek that spins (between 1.25 s and 1.45 s, away from the samples: no answer to the probe),
-        a seek that never finishes while the page still answers (two late seeks in a row: the error names the first,
-        where the page got stuck, as the last seeks listed show it), the same after a seek that failed (counted), and
+        a seek that never finishes while the page still answers (two late seeks: the error names the first, where the
+        page got stuck, as the last seeks listed show it), the same after a seek that failed (counted), and
         a read on the timeline that spins (the step's canvas text). The time and the browser are checked first, so a
         message that changes never hides a browser left running."""
         cases = (
@@ -1199,18 +1255,14 @@ Film.start({ look: 'dark', design: [960, 540], fonts: ['600 1em "Inter Variable"
                     self.assertIn(s, cp.stderr, cp.stderr[-2000:])
                 self.assertIn("showtime preview", cp.stderr, "the hint points at the page's own code")
                 if name in ("lateseek", "errseek"):
-                    # the first late seek is in the window (or after it: later seeks wait behind the stuck one) and
-                    # is the first late one the listed seeks show after the last that worked
-                    m = re.search(r"the seeks? to (\d+\.\d+)s and ", cp.stderr)
-                    self.assertTrue(m, cp.stderr[-2000:])
-                    self.assertGreaterEqual(float(m.group(1)), 1.3 if name == "lateseek" else 1.4, cp.stderr[-2000:])
+                    # the message is the one the listed seeks call for (later seeks wait behind the stuck one, and
+                    # a browser may reject a seek's promise that never settles instead of leaving it late)
                     trail = re.findall(r"(\d+\.\d+)s (ok|late|error) \d+ ms", cp.stderr.split("the last seeks: ")[1].split("\n")[0])
-                    since = trail[max([i for i, r in enumerate(trail) if r[1] == "ok"] or [-1]) + 1:]
-                    self.assertEqual(next(t for t, o in since if o == "late"), m.group(1), cp.stderr[-2000:])
+                    self.assert_stuck_trail(cp.stderr, [(float(t), o) for t, o in trail], 1.3 if name == "lateseek" else 1.4)
                 if name == "lateseek":
                     report = json.loads(cp.stdout)
                     self.assertIs(report["ok"], False)
-                    self.assertEqual([r["outcome"] for r in report["seeks"]][-2:], ["late", "late"], cp.stdout)
+                    self.assert_stuck_trail(report["error"], [(r["t"], r["outcome"]) for r in report["seeks"]], 1.3)
                     # a failed report its readers count (render's layout check and adopt read the findings)
                     self.assertEqual([(f["severity"], f["code"]) for f in report["findings"]], [("error", "page_stuck")])
                     self.assertEqual(report["summary"]["errors"], 1)

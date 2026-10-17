@@ -6,7 +6,8 @@ or turned into a short. It covers the workflow, the EDL format, the render and t
 an edit correct. An EDL (edit decision list) is a JSON file, `<job>/edit/edl.json`, that lists which stretches of
 the recordings to keep, in order; showtime renders from it, so the original footage is never changed. Caption
 styles and numbers live in `captions.md`; the individual tools (scenes,
-reframe, denoise, stabilize, grade, looks, timeline views) are in `footage-tools.md`.
+reframe, denoise, stabilize, grade, looks, timeline views) are in `footage-tools.md`. For people: [see it step by
+step](https://faviovazquez.github.io/showtime/docs/guides/edit-your-footage.html), one real run with a picture of each step.
 
 Everything runs locally: speech recognition, speaker labels, audio events, face tracking, grading.
 You cannot watch or listen to the result, so every step below ends with something you can read
@@ -55,16 +56,16 @@ You cannot watch or listen to the result, so every step below ends with somethin
 <!-- section lines: kept current by scripts/check_release.py -->
 | Section | Lines |
 |---|---|
-| 1. The workflow | 69-86 |
-| 2. Transcripts | 88-138 |
-| 3. Reading the material | 140-145 |
-| 4. The EDL | 147-201 |
-| 5. Hard rules (correctness) | 203-238 |
-| 6. Self-evaluation (you cannot watch it) | 240-260 |
-| 7. Recipes | 262-274 |
-| 8. Red flags | 276-285 |
-| 9. Cards: graphics anchored to the words | 287-381 |
-| 10. Highlights: a long recording's best moments as clips | 383-434 |
+| 1. The workflow | 70-87 |
+| 2. Transcripts | 89-139 |
+| 3. Reading the material | 141-146 |
+| 4. The EDL | 148-202 |
+| 5. Hard rules (correctness) | 204-239 |
+| 6. Self-evaluation (you cannot watch it) | 241-261 |
+| 7. Recipes | 263-275 |
+| 8. Red flags | 277-286 |
+| 9. Cards: graphics anchored to the words | 288-382 |
+| 10. Highlights: a long recording's best moments as clips | 384-435 |
 
 ## 1. The workflow
 

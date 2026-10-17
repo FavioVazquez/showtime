@@ -389,7 +389,30 @@ try {
     ok('region in frame units', n1 && n1.region && Math.abs(n1.region.x - 0.2) < 0.01 && Math.abs(n1.region.y - 0.3) < 0.01 && Math.abs(n1.region.w - 0.4) < 0.01 && Math.abs(n1.region.h - 0.4) < 0.01);
     ok('composer closes, note listed', await until(() => p.evaluate(() => document.querySelector('#composer').hidden && document.querySelectorAll('#list .note').length >= 1)));
     ok('saved box shown on its frame', await until(() => p.evaluate(() => document.querySelectorAll('.box:not(.draft)').length === 1)));
+    // its number sits inside the picture (above the box, or under it when the box touches the top edge)
+    ok('box number inside the picture', await p.evaluate(() => { const l = document.querySelector('#layer').getBoundingClientRect(), k = window.reviewPage.box,
+      r = document.querySelector('.box:not(.draft) b').getBoundingClientRect(); return r.top >= l.top + k.y - 0.5 && r.bottom <= l.top + k.y + k.h + 0.5; }));
     ok('tick on the scrubber', await p.evaluate(() => document.querySelectorAll('#ticks i').length >= 1));
+    // a box drawn from the very top of the picture has no room above it: its number goes under it, inside the picture
+    await p.evaluate(() => window.reviewPage.seek(2.0));
+    await until(() => p.evaluate(() => Math.abs(window.reviewPage.time - 2.0) < 0.02 && document.querySelector('video').readyState >= 2));
+    await p.mouse.move(b.x + 0.5 * b.w, b.y + 2);
+    await p.mouse.down();
+    await p.mouse.move(b.x + 0.6 * b.w, b.y + 0.1 * b.h, { steps: 4 });
+    await p.mouse.move(b.x + 0.7 * b.w, b.y + 0.2 * b.h, { steps: 4 });
+    await p.mouse.up();
+    ok('composer opens on a top-edge box', await until(() => p.evaluate(() => !document.querySelector('#composer').hidden && /a box/.test(document.querySelector('#cWhere').textContent))));
+    await p.keyboard.type('Title cut off at the top');
+    await p.keyboard.press('Enter');
+    ok('top-edge box saved', await until(() => notes().some((n) => n.text === 'Title cut off at the top' && n.region && n.region.y * b.h < 24)));
+    ok('top-edge box shown on its frame', await until(() => p.evaluate(() => document.querySelector('#composer').hidden && document.querySelectorAll('.box:not(.draft)').length === 1)));
+    ok('top-edge box number inside the picture', await p.evaluate(() => { const l = document.querySelector('#layer').getBoundingClientRect(), k = window.reviewPage.box,
+      r = document.querySelector('.box:not(.draft) b').getBoundingClientRect(); return r.top >= l.top + k.y - 0.5 && r.bottom <= l.top + k.y + k.h + 0.5; }));
+    // deleted again, so the notes below are the same as without this check
+    const idTop = notes().find((n) => n.text === 'Title cut off at the top').id;
+    await p.click(`#list [data-id="${idTop}"] [data-act="delete"]`);
+    await p.click(`#list [data-id="${idTop}"] [data-act="delete-yes"]`);
+    ok('top-edge note deleted', await until(() => !notes().some((n) => n.id === idTop)));
     // a click (no drag) is a spot; Esc cancels; the keyboard opens a whole-frame note
     await p.evaluate(() => window.reviewPage.seek(2.5));
     await sleep(200);

@@ -110,7 +110,7 @@ The delivery card your agent shows you has the same facts and three things you c
 
 ## How long it takes
 
-Measured for this guide on a 6-core Intel Mac (i5-8500), with other jobs running (load average about 3):
+Measured for this guide on a 6-core Intel Mac, with other jobs running:
 
 | Step | Command | Time |
 |---|---|---|

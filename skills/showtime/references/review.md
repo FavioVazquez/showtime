@@ -316,7 +316,7 @@ Then record the boundary: `showtime job note --stage feedback --verified "round 
 
 Studio boards steer before the build; the notes page closes the loop after it. When the person wants to
 say what to change on a render (or should look at it before you call it done), give them the notes page
-instead of asking for timestamps in chat.
+instead of asking for timestamps in chat. For people: [see it step by step](https://faviovazquez.github.io/showtime/docs/guides/notes-and-fixes.html), one real run with a screenshot of each step.
 
 1. `showtime review open <job>` (or a video file, an HTML export, a project) prints a local link
    (127.0.0.1, with a key; `--browser` also opens it). It plays the job's latest final, else its latest

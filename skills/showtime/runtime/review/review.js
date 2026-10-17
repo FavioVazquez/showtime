@@ -212,6 +212,7 @@
       var e = el('div', 'box' + (n.video && n.video !== CFG.media ? ' old' : ''));
       e.appendChild(el('b', null, num(n)));
       place(e, n.region, b);
+      if (n.region.w !== undefined && n.region.y * b.h < 24) e.classList.add('low');   // no room above: the number goes under the box
       layer.appendChild(e);
     });
   }

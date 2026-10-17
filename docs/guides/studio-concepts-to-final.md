@@ -98,7 +98,7 @@ same session is [example 09](https://github.com/FavioVazquez/showtime-examples/b
 
 ## How long it takes
 
-Measured for this guide on a 6-core Intel Mac (i5-8500), while nothing else was rendering:
+Measured for this guide on a 6-core Intel Mac, while nothing else was rendering:
 
 | Step | What ran | Time |
 |---|---|---|

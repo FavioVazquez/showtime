@@ -7,6 +7,7 @@ look at. A few guides are tutorials: one real run as numbered steps, a screensho
 | Guide | When you want |
 |---|---|
 | [Make your first video](first-video.md) | to start: a 5-second test that checks the install, and every step it goes through |
+| [Edit your own footage](edit-your-footage.md) | the ums and long pauses cut out of a clip, captions burned in, 9:16 and 16:9, one real run in seven steps |
 | [Dress up a talking head](talking-head.md) | cards over an interview or a founder update, captions with emphasis, a word behind the speaker, 16:9 and 9:16 |
 | [Turn a Claude Design animation into an MP4](claude-design-to-mp4.md) | a Claude Design HTML export rendered as a video, then music, voice and captions |
 | [Turn a long recording into short clips](long-recording-to-clips.md) | the best 30-60 s moments of a talk, panel or podcast as vertical clips |

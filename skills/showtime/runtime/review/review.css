@@ -90,6 +90,7 @@ button { cursor: pointer; }
 .box.draft { border-style: dashed; }
 .box.old { border-color: rgba(255, 255, 255, .85); }
 .box b { position: absolute; left: -2px; top: -22px; background: var(--mark); color: #fff; font: 600 11.5px/18px var(--ui); padding: 0 6px; border-radius: 5px; white-space: nowrap; }
+.box.low b { top: auto; bottom: -22px; }
 .box.spot b { left: 18px; top: -10px; }
 .box.old b { background: rgba(10, 10, 12, .8); }
 

@@ -5,6 +5,14 @@ Versions follow [semantic versioning](https://semver.org); the version lives in 
 `python3 scripts/check_release.py` keeps the plugin manifests, the registry files and `setup/package.json` in sync with
 it.
 
+## 0.4.7 (unreleased)
+
+- **Fixed: the notes page shows the number of a box drawn at the top of the picture.** Each box note's number sits
+  above its box, so a box within 24 px of the picture's top edge had its number clipped off the picture. That number
+  now goes under the box (`review.js` marks such a box `.low`, `review.css` places its number), for notes on this
+  render and on earlier ones alike; a test drags a box from the top edge and checks that its number is inside the
+  picture.
+
 ## 0.4.6 (2026-10-16)
 
 - **Fixed: the X-ray template at 9:16 keeps its sound strip and labels where a phone shows them.** The strip sat under
